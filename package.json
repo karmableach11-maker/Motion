@@ -1,0 +1,31 @@
+{
+  "name": "remotion-motion7",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Motion7 out/video.mp4 --codec=h264 --crf=16",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.489",
+    "@remotion/three": "4.0.489",
+    "@remotion/noise": "4.0.489",
+    "@remotion/shapes": "4.0.489",
+    "@remotion/paths": "4.0.489",
+    "@remotion/transitions": "4.0.489",
+    "@remotion/layout-utils": "4.0.489",
+    "@remotion/animation-utils": "4.0.489",
+    "@remotion/motion-blur": "4.0.489",
+    "@react-three/fiber": "8.18.0",
+    "three": "0.169.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.489"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/three": "0.169.0",
+    "typescript": "5.5.4"
+  }
+}
