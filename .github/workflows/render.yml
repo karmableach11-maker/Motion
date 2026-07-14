@@ -1,0 +1,43 @@
+name: Render Motion7
+
+# Runs only when you click "Run workflow" in the Actions tab.
+on:
+  workflow_dispatch:
+
+jobs:
+  render:
+    name: Render video on GitHub servers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Shared libraries for Remotion's headless Chrome + clean fonts (Ubuntu 24.04).
+      - name: Install Chrome dependencies & fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libasound2t64 libxrandr2 \
+            libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 \
+            libgbm-dev libcups2 libcairo2 libpango-1.0-0 libatk-bridge2.0-0 \
+            fonts-liberation fonts-dejavu-core
+
+      - name: Install dependencies
+        run: npm install
+
+      # 1080p60 H.264 high quality. Three.js uses software WebGL here, so
+      # 3D-heavy compositions render slower (that is speed, not quality).
+      - name: Render video
+        run: npx remotion render Motion7 out/video.mp4 --codec=h264 --crf=16
+
+      - name: Upload MP4 as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Motion7-video
+          path: out/video.mp4
+          if-no-files-found: error
