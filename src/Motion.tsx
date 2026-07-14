@@ -1,280 +1,780 @@
-/**
- * Motion7.tsx — "AI NEURAL NETWORK — CONNECTED WORD NODES"
- * Composition: id "Motion" · 1920×1080 · 60 fps · 720 frames (12s)
- *
- * Direction: CLEAN
- * A knowledge-graph of AI terms on deep blue. "ARTIFICIAL INTELLIGENCE" is the
- * largest central hub; tiers of related terms ripple outward as glowing nodes,
- * each wired to its parent (plus a few cross-links) by thin luminous edges.
- * Nodes scale-pop in on a staggered schedule and then breathe; edges draw on,
- * then carry travelling pulses of light between nodes. Faint drifting particles
- * add depth. Original generic terminology — no logos / brands — microstock safe.
- */
-
 import React from 'react';
-import {AbsoluteFill, Easing, interpolate, random, useCurrentFrame} from 'remotion';
+import {
+  AbsoluteFill,
+  Easing,
+  interpolate,
+  spring,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 
-const W = 1920;
-const H = 1080;
-const DURATION = 720;
+const COLORS = {
+  canvas: '#e9eef5',
+  surface: '#f9fbfd',
+  ink: '#10264b',
+  muted: '#7890a6',
+  cyan: '#08b7d3',
+  cyanDark: '#038eb8',
+  cyanSoft: '#93e4ef',
+  grid: '#dce5ee',
+  track: '#e4e9ee',
+};
 
-const SANS =
-  '"Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif';
+const clamp = (value: number) => Math.min(1, Math.max(0, value));
 
-type Node = {l: string; x: number; y: number; r: number; tier: number; at: number; ph: number; sp: number};
-type Edge = {a: number; b: number; k: number; at: number; ph: number; sp: number};
+const reveal = (frame: number, fps: number, delay: number, duration: number) =>
+  interpolate((frame / fps) * 60, [delay, delay + duration], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.cubic),
+  });
 
-const NODES: Node[] = [
-  {l:"ARTIFICIAL INTELLIGENCE",x:960,y:540,r:74,tier:0,at:20,ph:6.23,sp:0.085},
-  {l:"MACHINE LEARNING",x:928,y:268,r:40,tier:1,at:62,ph:3.09,sp:0.089},
-  {l:"NEURAL NETWORKS",x:1352,y:400,r:40,tier:1,at:76,ph:4.70,sp:0.066},
-  {l:"COMPUTER VISION",x:1352,y:688,r:40,tier:1,at:90,ph:3.82,sp:0.089},
-  {l:"NATURAL LANGUAGE",x:983,y:803,r:40,tier:1,at:104,ph:3.91,sp:0.063},
-  {l:"ROBOTICS",x:570,y:675,r:40,tier:1,at:118,ph:1.07,sp:0.074},
-  {l:"BIG DATA",x:554,y:425,r:40,tier:1,at:132,ph:5.82,sp:0.074},
-  {l:"SUPERVISED",x:679,y:149,r:26,tier:2,at:170,ph:3.75,sp:0.071},
-  {l:"CLUSTERING",x:923,y:163,r:26,tier:2,at:181,ph:0.65,sp:0.055},
-  {l:"REGRESSION",x:1154,y:132,r:26,tier:2,at:192,ph:5.11,sp:0.104},
-  {l:"DEEP LEARNING",x:1381,y:214,r:26,tier:2,at:203,ph:2.35,sp:0.098},
-  {l:"TENSOR",x:1627,y:332,r:26,tier:2,at:214,ph:4.24,sp:0.113},
-  {l:"GRADIENT",x:1656,y:477,r:26,tier:2,at:225,ph:6.02,sp:0.078},
-  {l:"DETECTION",x:1576,y:693,r:26,tier:2,at:236,ph:6.21,sp:0.117},
-  {l:"SEGMENTATION",x:1528,y:788,r:26,tier:2,at:247,ph:3.71,sp:0.112},
-  {l:"SEMANTICS",x:1105,y:944,r:26,tier:2,at:258,ph:3.08,sp:0.076},
-  {l:"GENERATIVE",x:847,y:944,r:26,tier:2,at:269,ph:1.55,sp:0.111},
-  {l:"AUTONOMY",x:417,y:816,r:26,tier:2,at:280,ph:1.02,sp:0.055},
-  {l:"SENSORS",x:221,y:687,r:26,tier:2,at:291,ph:5.06,sp:0.104},
-  {l:"ANALYTICS",x:255,y:501,r:26,tier:2,at:302,ph:3.03,sp:0.109},
-  {l:"DATASETS",x:243,y:371,r:26,tier:2,at:313,ph:0.33,sp:0.068},
-  {l:"INFERENCE",x:485,y:252,r:26,tier:2,at:324,ph:1.82,sp:0.079},
-];
+const Card: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth?: number;
+  children: React.ReactNode;
+}> = ({x, y, width, height, depth = 0, children}) => {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x,
+        top: y,
+        width,
+        height,
+        borderRadius: 24,
+        overflow: 'hidden',
+        background: COLORS.surface,
+        border: '1px solid rgba(255,255,255,0.94)',
+        boxShadow:
+          '18px 20px 34px rgba(80,99,127,0.20), -13px -13px 25px rgba(255,255,255,0.94), inset 0 1px 0 rgba(255,255,255,0.98)',
+        transform: `translateZ(${depth}px)`,
+        backfaceVisibility: 'hidden',
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
-const EDGES: Edge[] = [
-  {a:0,b:1,k:0,at:68,ph:1.07,sp:0.97},
-  {a:0,b:2,k:0,at:82,ph:2.12,sp:1.80},
-  {a:0,b:3,k:0,at:96,ph:6.18,sp:1.65},
-  {a:0,b:4,k:0,at:110,ph:3.01,sp:1.15},
-  {a:0,b:5,k:0,at:124,ph:6.02,sp:1.43},
-  {a:0,b:6,k:0,at:138,ph:4.58,sp:0.93},
-  {a:1,b:7,k:1,at:176,ph:1.33,sp:1.74},
-  {a:1,b:8,k:1,at:187,ph:4.99,sp:1.78},
-  {a:1,b:9,k:1,at:198,ph:3.78,sp:1.33},
-  {a:2,b:10,k:1,at:209,ph:3.65,sp:1.75},
-  {a:2,b:11,k:1,at:220,ph:1.93,sp:1.43},
-  {a:2,b:12,k:1,at:231,ph:1.73,sp:1.67},
-  {a:3,b:13,k:1,at:242,ph:0.06,sp:1.59},
-  {a:3,b:14,k:1,at:253,ph:5.99,sp:0.92},
-  {a:4,b:15,k:1,at:264,ph:3.73,sp:1.54},
-  {a:4,b:16,k:1,at:275,ph:5.35,sp:1.48},
-  {a:5,b:17,k:1,at:286,ph:1.62,sp:1.31},
-  {a:5,b:18,k:1,at:297,ph:6.02,sp:1.81},
-  {a:6,b:19,k:1,at:308,ph:0.84,sp:0.99},
-  {a:6,b:20,k:1,at:319,ph:0.59,sp:0.93},
-  {a:6,b:21,k:1,at:330,ph:2.81,sp:1.04},
-  {a:1,b:2,k:2,at:82,ph:5.45,sp:1.56},
-  {a:3,b:4,k:2,at:110,ph:0.79,sp:1.44},
-  {a:5,b:6,k:2,at:138,ph:2.04,sp:1.39},
-  {a:2,b:3,k:2,at:96,ph:1.38,sp:1.07},
-  {a:4,b:5,k:2,at:124,ph:1.16,sp:1.28},
-  {a:6,b:1,k:2,at:138,ph:4.46,sp:1.45},
-];
-
-const spike = (v: number, c: number, w: number) =>
-  Math.exp(-((v - c) * (v - c)) / (2 * w * w));
-
-const fontFor = (tier: number) => (tier === 0 ? 30 : tier === 1 ? 20 : 15);
-
-export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-
-  const sceneIn = interpolate(frame, [0, 18], [0, 1], {extrapolateRight: 'clamp'});
-  const breathe = 1 + Math.sin(frame / 160) * 0.006;
-
-  // live node centres (gentle drift once they appear)
-  const nodePos = (n: Node) => {
-    const live = frame > n.at ? 1 : 0;
-    const dx = Math.sin(frame * n.sp + n.ph) * (n.tier === 0 ? 2 : 5) * live;
-    const dy = Math.cos(frame * n.sp * 0.8 + n.ph) * (n.tier === 0 ? 2 : 5) * live;
-    return {x: n.x + dx, y: n.y + dy};
+const TinyIcon: React.FC<{type: number}> = ({type}) => {
+  const common = {
+    fill: 'none',
+    stroke: COLORS.cyanDark,
+    strokeWidth: 2.1,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
   };
 
+  if (type === 0) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <path {...common} d="M3.5 11.5 12 4l8.5 7.5" />
+        <path {...common} d="M6.5 10.5v9h11v-9M10 19.5v-5h4v5" />
+      </svg>
+    );
+  }
+
+  if (type === 1) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <circle {...common} cx="6" cy="17" r="2.2" />
+        <circle {...common} cx="18" cy="6" r="2.2" />
+        <circle {...common} cx="15.5" cy="18" r="2.2" />
+        <path {...common} d="m7.9 15.8 8.2-8.4M8.1 17.4l5.2.5" />
+      </svg>
+    );
+  }
+
+  if (type === 2) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <path {...common} d="M4 8.5h16v10H4zM7.5 8.5V6h9v2.5" />
+        <path {...common} d="M4 12h16" />
+      </svg>
+    );
+  }
+
+  if (type === 3) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <circle {...common} cx="12" cy="12" r="8.5" />
+        <path {...common} d="M12 7.5v5M12 16.5h.01" />
+      </svg>
+    );
+  }
+
+  if (type === 4) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <path {...common} d="M4 19V9M9 19V5M14 19v-7M19 19V3M3 19.5h18" />
+      </svg>
+    );
+  }
+
+  if (type === 5) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <path {...common} d="m4 13 15-7-4.5 15-3.2-6.1L4 13Z" />
+        <path {...common} d="m11.3 14.9 3.3-3.5" />
+      </svg>
+    );
+  }
+
+  if (type === 6) {
+    return (
+      <svg width="25" height="25" viewBox="0 0 24 24">
+        <rect {...common} x="3" y="5.5" width="18" height="13" rx="1.8" />
+        <path {...common} d="m4 7 8 6 8-6" />
+      </svg>
+    );
+  }
+
   return (
-    <AbsoluteFill style={{backgroundColor: '#030d1e', overflow: 'hidden'}}>
-      {/* deep blue radial field */}
-      <AbsoluteFill
+    <svg width="25" height="25" viewBox="0 0 24 24">
+      <circle {...common} cx="12" cy="12" r="8.5" />
+      <path {...common} d="M3.8 12h16.4M12 3.5c2.4 2.3 3.7 5.2 3.7 8.5s-1.3 6.2-3.7 8.5M12 3.5C9.6 5.8 8.3 8.7 8.3 12s1.3 6.2 3.7 8.5" />
+    </svg>
+  );
+};
+
+const Sidebar: React.FC = () => {
+  const items = ['Overview', 'Analytics', 'Projects', 'Support', 'Statistics', 'Insights', 'Messages', 'Archive'];
+
+  return (
+    <Card x={22} y={20} width={370} height={1430} depth={18}>
+      <div
         style={{
-          background:
-            'radial-gradient(115% 120% at 50% 47%, #103972 0%, #0a2551 38%, #061a3a 66%, #030c1d 100%)',
+          padding: '44px 42px',
+          fontFamily: 'Inter, Avenir Next, Helvetica, Arial, sans-serif',
+          color: COLORS.ink,
+        }}
+      >
+        <div style={{display: 'flex', alignItems: 'center', marginBottom: 55}}>
+          <div style={{fontSize: 13, letterSpacing: 4.2, fontWeight: 800, color: COLORS.muted}}>
+            DASHBOARD
+          </div>
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 31}}>
+          {items.map((item, index) => (
+            <div key={item} style={{display: 'flex', alignItems: 'center', gap: 22}}>
+              <TinyIcon type={index} />
+              <div
+                style={{
+                  fontSize: 20,
+                  fontWeight: index === 0 ? 760 : 650,
+                  color: index === 0 ? COLORS.cyanDark : '#1b6682',
+                  letterSpacing: 1.8,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {item}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: 42,
+            right: 42,
+            bottom: 48,
+            borderTop: `1px solid ${COLORS.grid}`,
+            paddingTop: 25,
+            color: COLORS.muted,
+            fontSize: 13,
+            letterSpacing: 2.5,
+          }}
+        >
+          LIVE DATA · 2026
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+const SearchBar: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const pulse = 0.58 + Math.sin((frame / fps) * Math.PI * 0.7) * 0.08;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 150,
+        top: 64,
+        width: 610,
+        height: 44,
+        display: 'flex',
+        alignItems: 'center',
+        background: 'linear-gradient(90deg, rgba(147,228,239,0.72), rgba(209,246,249,0.40))',
+        borderRadius: 3,
+        boxShadow: 'inset 0 2px 8px rgba(17,153,181,0.09)',
+        color: '#49718b',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 19,
+        letterSpacing: 0.4,
+      }}
+    >
+      <span style={{paddingLeft: 16}}>Search data</span>
+      <span
+        style={{
+          display: 'inline-block',
+          width: 2,
+          height: 21,
+          marginLeft: 5,
+          background: `rgba(73,113,139,${pulse})`,
         }}
       />
+      <svg style={{marginLeft: 'auto', marginRight: 18}} width="23" height="23" viewBox="0 0 24 24">
+        <circle cx="10.7" cy="10.7" r="6.6" fill="none" stroke="#4a849a" strokeWidth="1.8" />
+        <path d="m15.8 15.8 4.2 4.2" fill="none" stroke="#4a849a" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+      <div style={{height: 27, width: 1, background: 'rgba(74,132,154,.25)', marginRight: 13}} />
+      <div style={{fontSize: 22, lineHeight: 1, marginRight: 12, marginTop: -8}}>⋮</div>
+    </div>
+  );
+};
 
-      {/* drifting particles */}
-      <AbsoluteFill style={{opacity: 0.7}}>
-        {Array.from({length: 40}).map((_, i) => {
-          const a = random(`p${i}`);
-          const b = random(`q${i}`);
-          const c = random(`r${i}`);
-          const x = ((a * W + frame * (0.1 + c * 0.35)) % (W + 60)) - 30;
-          const y = 40 + b * (H - 80) + Math.sin(frame / 80 + i) * 10;
-          const s = 1 + c * 2.4;
+const MainBars: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const primary = [62, 35, 42, 57, 77, 91, 104, 132, 146];
+  const secondary = [31, 24, 35, 18, 42, 29, 22, 16, 8];
+  const max = 180;
+  const baseline = 665;
+  const plotHeight = 565;
+
+  return (
+    <svg
+      viewBox="0 0 920 740"
+      style={{position: 'absolute', left: 43, top: 210, width: 914, height: 760, overflow: 'visible'}}
+    >
+      <defs>
+        <linearGradient id="mainBar" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#04b5d2" />
+          <stop offset="1" stopColor="#079fca" />
+        </linearGradient>
+        <linearGradient id="softBar" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#a7edf3" />
+          <stop offset="1" stopColor="#77d9e8" />
+        </linearGradient>
+      </defs>
+      {[0, 20, 40, 60, 80, 100, 120, 140, 160, 180].map((tick) => {
+        const y = baseline - (tick / max) * plotHeight;
+        return (
+          <g key={tick}>
+            <text
+              x="54"
+              y={y + 6}
+              textAnchor="end"
+              fill={COLORS.ink}
+              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              fontWeight="650"
+              fontSize="17"
+            >
+              {tick}
+            </text>
+          </g>
+        );
+      })}
+      <line x1="73" y1="78" x2="73" y2={baseline} stroke={COLORS.ink} strokeWidth="1.15" />
+      <line x1="73" y1={baseline} x2="895" y2={baseline} stroke={COLORS.ink} strokeWidth="1.15" />
+      {primary.map((value, index) => {
+        const firstState = [10, 158, 154, 118, 56, 8, 0, 0, 0][index];
+        const fillIn = spring({
+          frame,
+          fps,
+          delay: index * 28,
+          config: {damping: 19, stiffness: 72, mass: 0.95},
+        });
+        const settle = reveal(frame, fps, 280 + index * 7, 180);
+        const waveIn = reveal(frame, fps, 55 + index * 11, 100);
+        const waveOut = reveal(frame, fps, 455, 105);
+        const wave = Math.sin((frame / fps) * 1.5 + index * 0.83) * (7 + (index % 3) * 2) * waveIn * (1 - waveOut);
+        const stagedValue = firstState + (value - firstState) * settle + wave;
+        const height = (stagedValue / max) * plotHeight * fillIn;
+        const secondaryHeight = (secondary[index] / max) * plotHeight * fillIn;
+        const x = 102 + index * 86;
+        return (
+          <g key={index}>
+            <rect x={x} y={baseline - height} width="26" height={height} rx="2" fill="url(#mainBar)" />
+            <rect
+              x={x + 34}
+              y={baseline - secondaryHeight}
+              width="20"
+              height={secondaryHeight}
+              rx="2"
+              fill="url(#softBar)"
+              opacity="0.93"
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const PrimaryCard: React.FC = () => {
+  return (
+    <Card x={420} y={20} width={1000} height={1050} depth={30}>
+      <SearchBar />
+      <MainBars />
+    </Card>
+  );
+};
+
+const Donut: React.FC<{
+  value: number;
+  size: number;
+  stroke: number;
+  delay: number;
+  centerLabel?: boolean;
+  segments?: boolean;
+  duration?: number;
+}> = ({value, size, stroke, delay, centerLabel = false, segments = false, duration = 240}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const progress = reveal(frame, fps, delay, duration);
+  const animatedValue = value * progress;
+  const radius = (size - stroke) / 2;
+  const circumference = Math.PI * 2 * radius;
+
+  if (segments) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={COLORS.track} strokeWidth={stroke} />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={COLORS.cyanDark}
+            strokeWidth={stroke}
+            strokeDasharray={`${circumference * 0.34 * progress} ${circumference}`}
+            strokeDashoffset={0}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={COLORS.cyan}
+            strokeWidth={stroke}
+            strokeDasharray={`${circumference * 0.36 * progress} ${circumference}`}
+            strokeDashoffset={-circumference * 0.39}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={COLORS.cyanSoft}
+            strokeWidth={stroke}
+            strokeDasharray={`${circumference * 0.20 * progress} ${circumference}`}
+            strokeDashoffset={-circumference * 0.78}
+          />
+        </g>
+      </svg>
+    );
+  }
+
+  return (
+    <div style={{position: 'relative', width: size, height: size}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={COLORS.track} strokeWidth={stroke} />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={COLORS.cyan}
+            strokeWidth={stroke}
+            strokeLinecap="butt"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - animatedValue / 100)}
+          />
+        </g>
+      </svg>
+      {centerLabel ? (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: COLORS.cyan,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontWeight: 800,
+            fontSize: size * 0.17,
+            letterSpacing: 1,
+          }}
+        >
+          {Math.round(animatedValue)}%
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const AreaAndDonut: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const progress = reveal(frame, fps, 72, 270);
+
+  return (
+    <Card x={1440} y={20} width={850} height={410} depth={24}>
+      <svg viewBox="0 0 580 320" style={{position: 'absolute', left: 20, top: 49, width: 590, height: 320}}>
+        <defs>
+          <clipPath id="areaReveal">
+            <rect x="62" y="0" width={470 * progress} height="275" />
+          </clipPath>
+          <linearGradient id="areaOne" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#85dceb" stopOpacity="0.83" />
+            <stop offset="1" stopColor="#5ebcd8" stopOpacity="0.52" />
+          </linearGradient>
+          <linearGradient id="areaTwo" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#25bfda" stopOpacity="0.75" />
+            <stop offset="1" stopColor="#078dbd" stopOpacity="0.67" />
+          </linearGradient>
+        </defs>
+        {[0, 20, 40, 60, 80, 100].map((tick) => {
+          const y = 270 - tick * 2.25;
           return (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                left: x,
-                top: y,
-                width: s,
-                height: s,
-                borderRadius: '50%',
-                background: '#7cc4ff',
-                opacity: 0.15 + c * 0.3,
-                boxShadow: '0 0 6px #4aa8ff',
-              }}
+            <text
+              key={tick}
+              x="47"
+              y={y + 5}
+              textAnchor="end"
+              fill={COLORS.ink}
+              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              fontWeight="650"
+              fontSize="14"
+            >
+              {tick}
+            </text>
+          );
+        })}
+        <line x1="61" y1="36" x2="61" y2="270" stroke={COLORS.ink} strokeWidth="1" />
+        <line x1="61" y1="270" x2="542" y2="270" stroke={COLORS.ink} strokeWidth="1" />
+        <g clipPath="url(#areaReveal)">
+          <path
+            d="M63 270 C88 200 120 194 151 224 C178 251 199 250 226 177 C251 113 280 144 304 204 C329 263 353 221 376 151 C400 83 430 103 448 184 C469 277 492 130 525 154 L525 270 Z"
+            fill="url(#areaOne)"
+          />
+          <path
+            d="M63 270 C92 254 113 201 139 203 C167 204 184 261 211 242 C239 223 247 146 278 149 C308 151 315 240 344 228 C371 218 384 120 411 121 C450 122 462 232 488 219 C510 208 516 154 525 151 L525 270 Z"
+            fill="url(#areaTwo)"
+            opacity="0.72"
+          />
+        </g>
+      </svg>
+      <div style={{position: 'absolute', right: 50, top: 100}}>
+        <Donut value={100} size={190} stroke={35} delay={165} duration={82} segments />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          right: 18,
+          top: 78,
+          width: 225,
+          height: 230,
+          color: COLORS.ink,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontWeight: 700,
+          fontSize: 14,
+        }}
+      >
+        <span style={{position: 'absolute', right: 3, top: 55}}>37%</span>
+        <span style={{position: 'absolute', right: 52, bottom: 2}}>35%</span>
+        <span style={{position: 'absolute', left: 2, top: 58}}>21%</span>
+        <span style={{position: 'absolute', left: 78, top: 0}}>7%</span>
+      </div>
+    </Card>
+  );
+};
+
+const LineChart: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const draw = reveal(frame, fps, 38, 330);
+  const ghostDraw = reveal(frame, fps, 135, 270);
+  const years = ['2020', '2021', '2022', '2023', '2024', '2025', '2026'];
+
+  return (
+    <Card x={1440} y={450} width={500} height={560} depth={27}>
+      <svg viewBox="0 0 500 520" style={{position: 'absolute', inset: 14, width: 472, height: 520}}>
+        <line x1="34" y1="438" x2="472" y2="438" stroke={COLORS.cyanDark} strokeWidth="2" />
+        <path
+          d="M35 352 L79 284 L114 337 L147 236 L179 384 L216 274 L251 341 L290 248 L326 335 L368 250 L409 343 L455 172"
+          fill="none"
+          stroke={COLORS.cyan}
+          strokeWidth="3.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - draw}
+        />
+        <path
+          d="M35 392 L79 338 L114 301 L147 361 L179 300 L216 346 L251 285 L290 349 L326 302 L368 325 L409 281 L455 264"
+          fill="none"
+          stroke="#bfeef3"
+          strokeWidth="2.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.82"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - ghostDraw}
+        />
+        {years.map((year, index) => (
+          <text
+            key={year}
+            x={38 + index * 69}
+            y="472"
+            textAnchor="middle"
+            fill={COLORS.ink}
+            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+            fontWeight="750"
+            fontSize="14.5"
+          >
+            {year}
+          </text>
+        ))}
+      </svg>
+    </Card>
+  );
+};
+
+const RisingBars: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const values = [44, 72, 108, 127, 139];
+
+  return (
+    <Card x={1960} y={450} width={400} height={560} depth={23}>
+      <svg viewBox="0 0 370 520" style={{position: 'absolute', inset: 16, width: 368, height: 520}}>
+        <line x1="52" y1="66" x2="52" y2="447" stroke={COLORS.ink} strokeWidth="1.1" />
+        <line x1="52" y1="447" x2="345" y2="447" stroke={COLORS.ink} strokeWidth="1.1" />
+        {values.map((value, index) => {
+          const p = spring({
+            frame,
+            fps,
+            delay: 120 + index * 32,
+            config: {damping: 20, stiffness: 70, mass: 1},
+          });
+          const height = value * 2.35 * p;
+          return (
+            <rect
+              key={value}
+              x={78 + index * 51}
+              y={447 - height}
+              width="34"
+              height={height}
+              rx="2"
+              fill={index < 2 ? COLORS.cyanDark : '#149eb5'}
+              opacity={0.88 + index * 0.02}
             />
           );
         })}
-      </AbsoluteFill>
+      </svg>
+    </Card>
+  );
+};
 
-      <AbsoluteFill style={{transform: `scale(${breathe})`, transformOrigin: '50% 48%', opacity: sceneIn}}>
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-          <defs>
-            <filter id="nGlow" x="-120%" y="-120%" width="340%" height="340%" colorInterpolationFilters="sRGB">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="a" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="c" />
-              <feMerge>
-                <feMergeNode in="c" />
-                <feMergeNode in="b" />
-                <feMergeNode in="a" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="eGlow" x="-40%" y="-40%" width="180%" height="180%" colorInterpolationFilters="sRGB">
-              <feGaussianBlur stdDeviation="2.5" />
-            </filter>
-            <radialGradient id="hubFill" cx="50%" cy="38%" r="70%">
-              <stop offset="0%" stopColor="#1b539c" />
-              <stop offset="70%" stopColor="#0c2f63" />
-              <stop offset="100%" stopColor="#08203f" />
-            </radialGradient>
-            <radialGradient id="nodeFill" cx="50%" cy="38%" r="70%">
-              <stop offset="0%" stopColor="#123f7d" />
-              <stop offset="100%" stopColor="#08203f" />
-            </radialGradient>
-          </defs>
+const YearProgress: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const rows = [
+    ['2026', 92],
+    ['2025', 79],
+    ['2024', 62],
+    ['2023', 48],
+    ['2022', 35],
+    ['2021', 25],
+    ['2020', 14],
+  ] as const;
 
-          {/* ── EDGES ─────────────────────────────────────────────── */}
-          <g>
-            {EDGES.map((e, i) => {
-              const draw = interpolate(frame, [e.at, e.at + 20], [0, 1], {
-                extrapolateLeft: 'clamp',
-                extrapolateRight: 'clamp',
-                easing: Easing.out(Easing.cubic),
-              });
-              if (draw <= 0.001) return null;
-              const A = nodePos(NODES[e.a]);
-              const B = nodePos(NODES[e.b]);
-              const ex = A.x + (B.x - A.x) * draw;
-              const ey = A.y + (B.y - A.y) * draw;
-              const cross = e.k === 2;
-              const base = cross ? 0.16 : 0.4;
-              const flow = 0.5 + 0.5 * Math.sin(frame * 0.06 * e.sp + e.ph);
-              return (
-                <g key={i}>
-                  <line
-                    x1={A.x}
-                    y1={A.y}
-                    x2={ex}
-                    y2={ey}
-                    stroke="#4aa6f2"
-                    strokeWidth={cross ? 1 : 1.8}
-                    opacity={(base + flow * 0.25) * draw}
-                    filter="url(#eGlow)"
-                  />
-                  {/* travelling pulse */}
-                  {draw >= 1 ? (
-                    (() => {
-                      const t = (frame * 0.012 * e.sp + e.ph / 6) % 1;
-                      const px = A.x + (B.x - A.x) * t;
-                      const py = A.y + (B.y - A.y) * t;
-                      return (
-                        <circle cx={px} cy={py} r={cross ? 2 : 3} fill="#bfe6ff" opacity={cross ? 0.5 : 0.85} filter="url(#eGlow)" />
-                      );
-                    })()
-                  ) : null}
-                </g>
-              );
-            })}
-          </g>
-
-          {/* ── NODES ─────────────────────────────────────────────── */}
-          {NODES.map((n, i) => {
-            const pop = interpolate(frame, [n.at, n.at + 22], [0, 1], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-              easing: Easing.out(Easing.back(2.2)),
-            });
-            if (pop <= 0.001) return null;
-            const P = nodePos(n);
-            const hub = n.tier === 0;
-            const pulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(frame * n.sp * 1.4 + n.ph));
-            const landFlash = spike(frame, n.at + 20, 5);
-            const rr = n.r * pop;
-            const f = fontFor(n.tier);
-
-            return (
-              <g key={i} opacity={Math.min(1, pop)}>
-                {/* halo */}
-                <circle
-                  cx={P.x}
-                  cy={P.y}
-                  r={rr}
-                  fill="none"
-                  stroke={hub ? '#8ad4ff' : '#5ec8ff'}
-                  strokeWidth={hub ? 3 : 2}
-                  opacity={0.25 * pulse + landFlash * 0.6}
-                  filter="url(#nGlow)"
+  return (
+    <Card x={420} y={1090} width={1000} height={340} depth={20}>
+      <div style={{position: 'absolute', left: 88, top: 34, right: 78, bottom: 28}}>
+        {rows.map(([year, value], index) => {
+          const p = reveal(frame, fps, 350 + (rows.length - 1 - index) * 13, 175);
+          return (
+            <div
+              key={year}
+              style={{
+                height: 38,
+                display: 'grid',
+                gridTemplateColumns: '78px 1fr',
+                alignItems: 'center',
+                gap: 14,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 18,
+                fontWeight: 750,
+                color: COLORS.ink,
+              }}
+            >
+              <span>{year}</span>
+              <div style={{height: 16, position: 'relative', background: COLORS.track, overflow: 'hidden'}}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: `${value * p}%`,
+                    background: index === 0 ? COLORS.cyan : index < 3 ? COLORS.cyanDark : COLORS.cyanSoft,
+                  }}
                 />
-                {/* disc */}
-                <circle cx={P.x} cy={P.y} r={rr} fill={hub ? 'url(#hubFill)' : 'url(#nodeFill)'} />
-                <circle
-                  cx={P.x}
-                  cy={P.y}
-                  r={rr}
-                  fill="none"
-                  stroke={hub ? '#9bd8ff' : '#5ec8ff'}
-                  strokeWidth={hub ? 2.5 : 1.8}
-                  opacity={0.85}
-                />
-                {/* specular */}
-                <ellipse cx={P.x - rr * 0.32} cy={P.y - rr * 0.4} rx={rr * 0.34} ry={rr * 0.22} fill="#cfeaff" opacity={0.22} />
-                {/* label */}
-                <text
-                  x={P.x}
-                  y={P.y}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontFamily={SANS}
-                  fontSize={f * (0.6 + 0.4 * pop)}
-                  fontWeight={hub ? 800 : 700}
-                  fill="#eaf6ff"
-                  opacity={interpolate(pop, [0.5, 1], [0, 1], {extrapolateLeft: 'clamp'})}
-                  letterSpacing={hub ? 1 : 0.3}
-                >
-                  {n.l}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </AbsoluteFill>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+};
 
-      {/* vignette */}
-      <AbsoluteFill
+const DonutCard: React.FC<{x: number; value: number; delay: number; segmented?: boolean}> = ({
+  x,
+  value,
+  delay,
+  segmented = false,
+}) => {
+  return (
+    <Card x={x} y={1050} width={430} height={380} depth={28}>
+      <div style={{position: 'absolute', left: 77, top: 48}}>
+        <Donut
+          value={value}
+          size={275}
+          stroke={52}
+          delay={delay}
+          duration={segmented ? 118 : 82}
+          centerLabel={!segmented}
+          segments={segmented}
+        />
+      </div>
+    </Card>
+  );
+};
+
+const Dashboard: React.FC = () => {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: 2400,
+        height: 1490,
+        background: COLORS.canvas,
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      <Sidebar />
+      <PrimaryCard />
+      <AreaAndDonut />
+      <LineChart />
+      <RisingBars />
+      <YearProgress />
+      <DonutCard x={1440} value={80} delay={298} />
+      <DonutCard x={1890} value={100} delay={328} segmented />
+    </div>
+  );
+};
+
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {durationInFrames} = useVideoConfig();
+  const end = Math.max(1, durationInFrames - 1);
+  const phaseOne = Math.round(end * 0.15);
+  const phaseTwo = Math.round(end * 0.32);
+  const turn = Math.round(end * 0.63);
+  const ease = Easing.inOut(Easing.cubic);
+
+  const cameraX = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [2, -248, -472, -515, -205], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const cameraY = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [-6, -28, -182, -510, -245], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const cameraScale = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [1.08, 1.1, 1.105, 1.1, 0.9], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const rotateX = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [0.35, 0.65, 1.15, 1.65, 0.75], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const rotateY = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [-0.75, -0.1, 0.8, 1.2, -0.7], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const rotateZ = interpolate(frame, [0, phaseOne, phaseTwo, turn, end], [0.02, -0.08, -0.25, -0.4, 0.18], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: ease,
+  });
+  const ambientX = interpolate(clamp(frame / end), [0, 1], [34, -76]);
+
+  return (
+    <AbsoluteFill
+      style={{
+        overflow: 'hidden',
+        background:
+          'radial-gradient(circle at 76% 18%, rgba(255,255,255,0.98) 0%, rgba(239,244,249,0.96) 43%, #e6ecf3 100%)',
+        fontFamily: 'Inter, Avenir Next, Helvetica, Arial, sans-serif',
+      }}
+    >
+      <div
         style={{
-          background:
-            'radial-gradient(125% 105% at 50% 50%, rgba(0,0,0,0) 55%, rgba(2,8,20,0.45) 80%, rgba(2,6,14,0.82) 100%)',
+          position: 'absolute',
+          left: ambientX,
+          top: -220,
+          width: 1180,
+          height: 1180,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(123,225,238,0.12), rgba(123,225,238,0) 68%)',
+          filter: 'blur(14px)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 8,
+          top: 0,
+          width: 2400,
+          height: 1490,
+          transformOrigin: '0 0',
+          transformStyle: 'preserve-3d',
+          willChange: 'transform',
+          transform: `perspective(2600px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${cameraScale})`,
+        }}
+      >
+        <Dashboard />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          opacity: 0.09,
+          backgroundImage:
+            'radial-gradient(circle at 1px 1px, rgba(27,61,88,0.23) 0.65px, transparent 0.8px)',
+          backgroundSize: '7px 7px',
+          mixBlendMode: 'multiply',
         }}
       />
     </AbsoluteFill>
