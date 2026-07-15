@@ -1,488 +1,1730 @@
 import React from 'react';
-import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import {
+  AbsoluteFill,
+  Easing,
+  interpolate,
+  random,
+  spring,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 
-const C = {
-  background: '#030a12',
-  background2: '#071522',
-  board: '#081722',
-  panel: 'rgba(12, 31, 44, 0.88)',
-  panelSoft: 'rgba(15, 38, 52, 0.76)',
-  ink: '#f3faff',
-  muted: '#8097a8',
-  dim: '#536c7c',
-  line: 'rgba(133, 181, 204, 0.14)',
-  cyan: '#46ddf3',
-  emerald: '#2ed6a1',
-  gold: '#f0c76b',
-  violet: '#9a8cff',
+const COLORS = {
+  bg: '#02060d',
+  panel: '#07111d',
+  cyan: '#49f5df',
+  cyanSoft: '#18aeb8',
+  blue: '#4c8dff',
+  magenta: '#ff4f96',
+  amber: '#ffc85c',
+  text: '#eafcff',
+  muted: '#6f8da2',
+  line: 'rgba(104, 226, 235, 0.16)',
 };
 
-const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026] as const;
-const REVENUE = [74.2, 82.8, 91.5, 105.4, 118.7, 132.9, 148.6] as const;
-const EBITDA = [12.6, 15.4, 18.8, 23.5, 28.9, 34.1, 40.8] as const;
-const MARGIN = [17.0, 18.6, 20.5, 22.3, 24.3, 25.7, 27.5] as const;
-const CASH_FLOW = [8.4, 10.6, 12.9, 16.8, 21.3, 25.7, 31.4] as const;
+const FONT =
+  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const MONO = '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace';
 
-const loopProgress = (
-  timeline: number,
-  enterStart: number,
-  enterEnd: number,
-  exitStart = 790,
-  exitEnd = 900,
-) => {
-  const enter = interpolate(timeline, [enterStart, enterEnd], [0, 1], {
+const clamp = (value: number) => Math.min(1, Math.max(0, value));
+
+const smooth = (frame: number, input: [number, number]) =>
+  interpolate(frame, input, [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.cubic),
+    easing: Easing.bezier(0.22, 1, 0.36, 1),
   });
-  const exit = interpolate(timeline, [exitStart, exitEnd], [1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.cubic),
-  });
-  return Math.min(enter, exit);
+
+const pulse = (frame: number, speed: number, offset = 0) =>
+  (Math.sin(frame * speed + offset) + 1) / 2;
+
+const panelStyle: React.CSSProperties = {
+  position: 'relative',
+  overflow: 'hidden',
+  border: '1px solid rgba(111, 233, 240, 0.16)',
+  borderRadius: 18,
+  background:
+    'linear-gradient(145deg, rgba(10, 28, 43, 0.90), rgba(3, 10, 19, 0.76))',
+  boxShadow:
+    'inset 0 1px rgba(213, 255, 255, 0.05), inset 0 -18px 48px rgba(0,0,0,0.16), 0 28px 70px rgba(0,0,0,0.34)',
+  backdropFilter: 'blur(18px)',
 };
 
-const pop = (progress: number) =>
-  progress + Math.sin(progress * Math.PI) * 0.075;
-
-const valueAt = (data: readonly number[], progress: number) => {
-  const p = Math.max(0, Math.min(0.99999, progress)) * (data.length - 1);
-  const index = Math.floor(p);
-  const local = p - index;
-  return data[index] + (data[Math.min(index + 1, data.length - 1)] - data[index]) * local;
-};
-
-const svgPath = (
-  data: readonly number[],
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  max: number,
-) =>
-  data
-    .map((value, index) => {
-      const x = left + (index / (data.length - 1)) * width;
-      const y = top + height - (value / max) * height;
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-
-const pointOnSeries = (
-  data: readonly number[],
-  progress: number,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  max: number,
-) => {
-  const p = Math.max(0, Math.min(0.99999, progress)) * (data.length - 1);
-  const index = Math.floor(p);
-  const local = p - index;
-  const value = data[index] + (data[Math.min(index + 1, data.length - 1)] - data[index]) * local;
-  return {
-    x: left + (p / (data.length - 1)) * width,
-    y: top + height - (value / max) * height,
+const CornerBrackets: React.FC<{color?: string; inset?: number}> = ({
+  color = 'rgba(73,245,223,0.56)',
+  inset = 11,
+}) => {
+  const common: React.CSSProperties = {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderColor: color,
+    pointerEvents: 'none',
   };
+  return (
+    <>
+      <div
+        style={{
+          ...common,
+          left: inset,
+          top: inset,
+          borderLeft: '1px solid',
+          borderTop: '1px solid',
+        }}
+      />
+      <div
+        style={{
+          ...common,
+          right: inset,
+          top: inset,
+          borderRight: '1px solid',
+          borderTop: '1px solid',
+        }}
+      />
+      <div
+        style={{
+          ...common,
+          left: inset,
+          bottom: inset,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+        }}
+      />
+      <div
+        style={{
+          ...common,
+          right: inset,
+          bottom: inset,
+          borderRight: '1px solid',
+          borderBottom: '1px solid',
+        }}
+      />
+    </>
+  );
 };
 
-const money = (value: number) => `$${value.toFixed(1)}M`;
-
-const GlassCard: React.FC<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  reveal?: number;
-  depth?: number;
-  float?: number;
-  children: React.ReactNode;
-}> = ({x, y, width, height, reveal = 1, depth = 0, float = 0, children}) => (
-  <div
-    data-safe-object="true"
-    style={{
-      position: 'absolute',
-      left: x,
-      top: y,
-      width,
-      height,
-      overflow: 'hidden',
-      borderRadius: 20,
-      background: C.panel,
-      border: '1px solid rgba(133, 181, 204, 0.16)',
-      boxShadow:
-        '0 20px 45px rgba(0, 4, 10, 0.32), inset 0 1px 0 rgba(211, 240, 255, 0.055)',
-      opacity: 0.82 + reveal * 0.18,
-      transform: `translate3d(0, ${(1 - reveal) * 10 + float}px, ${depth}px) scale(${0.986 + reveal * 0.014})`,
-      transformStyle: 'preserve-3d',
-      backfaceVisibility: 'hidden',
-      willChange: 'transform, opacity',
-    }}
-  >
+const SignalIcon: React.FC<{frame: number}> = ({frame}) => {
+  const rotation = frame * 0.18;
+  const core = 0.75 + pulse(frame, 0.08) * 0.25;
+  return (
     <div
       style={{
-        position: 'absolute',
-        inset: 0,
-        background:
-          'linear-gradient(132deg, rgba(255,255,255,.038), transparent 28%, transparent 74%, rgba(70,221,243,.018))',
-        pointerEvents: 'none',
+        width: 44,
+        height: 44,
+        position: 'relative',
+        display: 'grid',
+        placeItems: 'center',
       }}
-    />
-    {children}
-  </div>
-);
-
-const NavIcon: React.FC<{index: number; active: boolean}> = ({index, active}) => {
-  const stroke = active ? C.cyan : '#7190a2';
-  const common = {
-    fill: 'none',
-    stroke,
-    strokeWidth: 1.8,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-  };
-  const icons = [
-    <g key="overview"><rect {...common} x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect {...common} x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect {...common} x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect {...common} x="13.5" y="13.5" width="7" height="7" rx="1.5"/></g>,
-    <g key="performance"><path {...common} d="M3.5 18.5 8.5 13l4 2.8 7.8-10"/><path {...common} d="M16 5.8h4.3v4.3"/></g>,
-    <g key="revenue"><path {...common} d="M4 19V10M10 19V5M16 19v-7M22 19V3"/><path {...common} d="M2.5 20.5h21"/></g>,
-    <g key="cash"><circle {...common} cx="12" cy="12" r="8.5"/><path {...common} d="M14.8 8.5c-.7-.6-1.6-.9-2.7-.9-1.5 0-2.7.8-2.7 2s1.1 1.7 2.7 2c1.7.3 2.8.9 2.8 2.3s-1.2 2.3-3 2.3c-1.2 0-2.3-.4-3.1-1.1M12 5.4v13.2"/></g>,
-    <g key="forecast"><path {...common} d="M4 18 9 12.5l4 3 7-9"/><path {...common} d="M15.5 6.5H20V11"/><path {...common} d="M4 5.5h5"/></g>,
-    <g key="reports"><path {...common} d="M6 3.5h9l3 3v14H6zM15 3.5v4h3M9 12h6M9 16h6"/></g>,
-  ];
-  return <svg width="23" height="23" viewBox="0 0 24 24">{icons[index]}</svg>;
-};
-
-const Sidebar: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
-  const reveal = loopProgress(timeline, 0, 75, 835, 900);
-  const items = ['Overview', 'Performance', 'Revenue', 'Cash Flow', 'Forecast', 'Reports'];
-  return (
-    <GlassCard x={24} y={24} width={218} height={792} reveal={reveal} depth={5} float={Math.sin(phase * 2) * 0.8}>
-      <div style={{position: 'absolute', left: 25, right: 25, top: 28, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-          <div style={{position: 'relative', width: 34, height: 34, borderRadius: 11, border: '1px solid rgba(70,221,243,.35)', background: 'rgba(70,221,243,.08)'}}>
-            <div style={{position: 'absolute', left: 8, right: 8, bottom: 8, height: 2, borderRadius: 2, background: C.cyan}}/>
-            {[0, 1, 2].map((i) => <div key={i} style={{position: 'absolute', left: 9 + i * 6, bottom: 10, width: 3, height: 7 + i * 5, borderRadius: 2, background: i === 2 ? C.gold : C.cyan, opacity: .75 + i * .1}}/>)}
-          </div>
-          <div>
-            <div style={{color: C.ink, fontSize: 17, fontWeight: 820, letterSpacing: 2.1}}>FINANCE</div>
-            <div style={{marginTop: 4, color: C.muted, fontSize: 8.5, fontWeight: 720, letterSpacing: 1.6}}>EXECUTIVE VIEW</div>
-          </div>
-        </div>
-        <div style={{height: 1, margin: '25px 0 27px', background: C.line}}/>
-        <div style={{display: 'flex', flexDirection: 'column', gap: 13}}>
-          {items.map((item, index) => {
-            const itemReveal = loopProgress(timeline, 30 + index * 17, 92 + index * 17, 800 - index * 4, 885);
-            const active = index === 0;
-            return (
-              <div key={item} style={{position: 'relative', height: 48, display: 'flex', alignItems: 'center', gap: 13, padding: '0 11px', borderRadius: 13, background: active ? 'rgba(70,221,243,.075)' : 'transparent', border: active ? '1px solid rgba(70,221,243,.14)' : '1px solid transparent', opacity: .34 + itemReveal * .66, transform: `translateX(${(1 - itemReveal) * 10}px)`}}>
-                {active ? <div style={{position: 'absolute', left: -1, top: 12, width: 2, height: 24, borderRadius: 2, background: C.cyan, boxShadow: '0 0 14px rgba(70,221,243,.7)'}}/> : null}
-                <NavIcon index={index} active={active}/>
-                <span style={{color: active ? C.ink : '#9bb0be', fontSize: 13, fontWeight: active ? 760 : 630, letterSpacing: .5, whiteSpace: 'nowrap'}}>{item}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div style={{position: 'absolute', left: 25, right: 25, bottom: 25, paddingTop: 18, borderTop: `1px solid ${C.line}`, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <div style={{display: 'flex', alignItems: 'center', gap: 8, color: C.emerald, fontSize: 8.5, fontWeight: 800, letterSpacing: 1.1}}><span style={{width: 7, height: 7, borderRadius: '50%', background: C.emerald, boxShadow: '0 0 10px rgba(46,214,161,.65)'}}/>DATA CONNECTED</div>
-        <div style={{marginTop: 9, color: C.dim, fontSize: 8.1, fontWeight: 680, lineHeight: 1.55, letterSpacing: .9}}>USD MILLIONS<br/>ILLUSTRATIVE DATA</div>
-      </div>
-    </GlassCard>
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 3,
+          border: '1px solid rgba(73,245,223,0.54)',
+          clipPath: 'polygon(50% 0, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%)',
+          transform: `rotate(${rotation}deg)`,
+          boxShadow: '0 0 22px rgba(73,245,223,0.2)',
+        }}
+      />
+      <div
+        style={{
+          width: 13,
+          height: 13,
+          borderRadius: '50%',
+          background: COLORS.cyan,
+          transform: `scale(${core})`,
+          boxShadow: '0 0 7px #49f5df, 0 0 22px rgba(73,245,223,0.82)',
+        }}
+      />
+    </div>
   );
 };
 
-const Header: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
-  const reveal = loopProgress(timeline, 8, 82, 830, 900);
-  const dataProgress = loopProgress(timeline, 95, 310, 775, 900);
-  const revenueValue = valueAt(REVENUE, dataProgress);
-  const pulse = .82 + (Math.sin(phase * 2) + 1) * .07;
+const Header: React.FC<{frame: number; reveal: number}> = ({frame, reveal}) => {
+  const scan = (frame * 3.1) % 420;
   return (
-    <GlassCard x={260} y={24} width={1364} height={88} reveal={reveal} depth={6} float={Math.sin(phase * 2 + .4) * .65}>
-      <div style={{position: 'absolute', left: 25, top: 19, display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <div style={{position: 'relative', width: 39, height: 39, borderRadius: 13, display: 'grid', placeItems: 'center', border: '1px solid rgba(70,221,243,.22)', background: 'radial-gradient(circle, rgba(70,221,243,.13), rgba(70,221,243,.03))'}}>
-          <svg width="25" height="25" viewBox="0 0 25 25"><path d="M3 18.5 8.2 13l4.1 2.7 8-10" fill="none" stroke={C.cyan} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/><path d="M16 5.7h4.3V10" fill="none" stroke={C.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    <div
+      style={{
+        height: 96,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 28px',
+        borderBottom: '1px solid rgba(103,222,230,0.14)',
+        background:
+          'linear-gradient(90deg, rgba(73,245,223,0.055), transparent 28%, transparent 72%, rgba(255,79,150,0.04))',
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * -24}px)`,
+      }}
+    >
+      <SignalIcon frame={frame} />
+      <div style={{marginLeft: 14}}>
+        <div
+          style={{
+            color: COLORS.text,
+            fontFamily: FONT,
+            fontWeight: 700,
+            fontSize: 19,
+            letterSpacing: 4.8,
+            lineHeight: 1,
+          }}
+        >
+          CYBER THREAT GRID
         </div>
-        <div>
-          <div style={{color: C.ink, fontSize: 21, fontWeight: 820, letterSpacing: 1.45}}>FINANCIAL PERFORMANCE · 2020–2026</div>
-          <div style={{marginTop: 5, color: C.muted, fontSize: 9.2, fontWeight: 680, letterSpacing: 1.15}}>EXECUTIVE KPI OBSERVATORY · ILLUSTRATIVE USD MILLIONS</div>
+        <div
+          style={{
+            color: COLORS.muted,
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: 2.4,
+            marginTop: 8,
+          }}
+        >
+          GLOBAL SIGNAL INTELLIGENCE / LIVE TELEMETRY
         </div>
       </div>
-      <div style={{position: 'absolute', right: 20, top: 16, display: 'flex', gap: 9, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+
+      <div
+        style={{
+          flex: 1,
+          height: 1,
+          margin: '0 28px',
+          overflow: 'hidden',
+          background: 'rgba(90,220,228,0.12)',
+        }}
+      >
+        <div
+          style={{
+            width: 96,
+            height: 1,
+            background:
+              'linear-gradient(90deg, transparent, rgba(73,245,223,0.9), transparent)',
+            transform: `translateX(${scan}px)`,
+          }}
+        />
+      </div>
+
+      <div style={{display: 'flex', alignItems: 'center', gap: 24}}>
         {[
-          ['2020 BASE', money(REVENUE[0]), C.muted],
-          ['2026 OUTLOOK', money(revenueValue), C.cyan],
-          ['6Y CAGR', `${(12.3 * dataProgress).toFixed(1)}%`, C.gold],
+          ['UPLINK', 'STABLE', COLORS.cyan],
+          ['LATENCY', '12 MS', COLORS.blue],
+          ['RISK MODE', 'ELEVATED', COLORS.magenta],
         ].map(([label, value, color], index) => (
-          <div key={label} style={{width: index === 1 ? 142 : 119, height: 56, padding: '8px 12px', boxSizing: 'border-box', borderRadius: 12, border: `1px solid ${index === 1 ? 'rgba(70,221,243,.24)' : C.line}`, background: index === 1 ? `rgba(70,221,243,${.045 + pulse * .025})` : 'rgba(255,255,255,.018)'}}>
-            <div style={{color: C.muted, fontSize: 7.6, fontWeight: 760, letterSpacing: 1}}>{label}</div>
-            <div style={{marginTop: 6, color, fontSize: 15, fontWeight: 840, fontVariantNumeric: 'tabular-nums'}}>{value}</div>
+          <div key={label} style={{minWidth: index === 2 ? 118 : 86}}>
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 8,
+                letterSpacing: 1.5,
+                color: COLORS.muted,
+                marginBottom: 6,
+              }}
+            >
+              {label}
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 7}}>
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 9,
+                  background: color,
+                  boxShadow: `0 0 12px ${color}`,
+                  opacity: 0.65 + pulse(frame, 0.09, index) * 0.35,
+                }}
+              />
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontWeight: 700,
+                  fontSize: 10,
+                  letterSpacing: 1.3,
+                  color,
+                }}
+              >
+                {value}
+              </div>
+            </div>
           </div>
         ))}
+        <div
+          style={{
+            height: 38,
+            minWidth: 116,
+            padding: '0 16px',
+            borderRadius: 9,
+            border: '1px solid rgba(73,245,223,0.28)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: COLORS.cyan,
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: 1.7,
+            background: 'rgba(73,245,223,0.05)',
+            boxShadow: 'inset 0 0 18px rgba(73,245,223,0.03)',
+          }}
+        >
+          LIVE / {String(Math.floor(frame / 60) + 1).padStart(2, '0')}
+        </div>
       </div>
-    </GlassCard>
+    </div>
   );
 };
 
-const MiniSparkline: React.FC<{id: string; data: readonly number[]; color: string; progress: number; phase: number}> = ({id, data, color, progress, phase}) => {
-  const max = Math.max(...data) * 1.08;
-  const d = svgPath(data, 5, 6, 103, 39, max);
-  const endY = 6 + 39 - (data[data.length - 1] / max) * 39;
+const Sparkline: React.FC<{
+  frame: number;
+  color: string;
+  seed: string;
+  reveal: number;
+}> = ({frame, color, seed, reveal}) => {
+  const points = Array.from({length: 17}, (_, index) => {
+    const base = random(`${seed}-${index}`);
+    const wave = Math.sin(frame * 0.026 + index * 0.86 + base * 3) * 5;
+    const x = index * 11.5;
+    const y = 34 - (8 + base * 19 + wave);
+    return `${x},${y}`;
+  }).join(' ');
+  const areaPoints = `0,38 ${points} 184,38`;
   return (
-    <svg viewBox="0 0 116 52" width="116" height="52">
-      <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="0"><stop stopColor={color} stopOpacity=".25"/><stop offset="1" stopColor={color}/></linearGradient></defs>
-      <path d="M5,46H108" fill="none" stroke={C.line} strokeWidth="1.2"/>
-      <path d={d} fill="none" stroke={color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" opacity=".12"/>
-      <path d={d} fill="none" stroke={`url(#${id})`} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - progress}/>
-      <circle cx="108" cy={endY} r={(3.7 + (Math.sin(phase * 2) + 1) * .5) * pop(progress)} fill={C.board} stroke={color} strokeWidth="2" opacity={progress}/>
+    <svg width="184" height="42" viewBox="0 0 184 42" style={{overflow: 'visible'}}>
+      <defs>
+        <linearGradient id={`spark-${seed}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.26" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <filter id={`spark-glow-${seed}`} x="-50%" y="-100%" width="200%" height="300%">
+          <feGaussianBlur stdDeviation="2.2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <path d={`M 0 37 H 184`} stroke="rgba(120,220,230,0.08)" />
+      <polygon points={areaPoints} fill={`url(#spark-${seed})`} opacity={reveal} />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={`${reveal} 1`}
+        filter={`url(#spark-glow-${seed})`}
+      />
     </svg>
   );
 };
 
-const KPI_DATA = [
-  {label: 'NET REVENUE', unit: '$', data: REVENUE, color: C.cyan, delta: '+11.8%', note: 'YOY GROWTH'},
-  {label: 'EBITDA', unit: '$', data: EBITDA, color: C.emerald, delta: '+19.6%', note: 'YOY GROWTH'},
-  {label: 'OPERATING MARGIN', unit: '', data: MARGIN, color: C.gold, delta: '+1.8 pp', note: 'VS 2025'},
-  {label: 'FREE CASH FLOW', unit: '$', data: CASH_FLOW, color: C.violet, delta: '+22.2%', note: 'YOY GROWTH'},
-] as const;
-
-const KpiCard: React.FC<{index: number; timeline: number; phase: number}> = ({index, timeline, phase}) => {
-  const item = KPI_DATA[index];
-  const reveal = loopProgress(timeline, 55 + index * 27, 130 + index * 27, 808 - index * 5, 895);
-  const dataProgress = loopProgress(timeline, 105 + index * 27, 315 + index * 25, 775 - index * 4, 900);
-  const sparkProgress = loopProgress(timeline, 135 + index * 24, 305 + index * 24, 770, 900);
-  const chipProgress = loopProgress(timeline, 245 + index * 24, 320 + index * 24, 768, 892);
-  const value = valueAt(item.data, dataProgress);
-  const isPercent = index === 2;
-  const sheen = loopProgress(timeline, 575 + index * 18, 670 + index * 18, 718 + index * 6, 785 + index * 4);
-  const sheenOpacity = Math.sin(sheen * Math.PI) * .24;
+const MetricCard: React.FC<{
+  frame: number;
+  delay: number;
+  label: string;
+  value: string;
+  delta: string;
+  color: string;
+  seed: string;
+}> = ({frame, delay, label, value, delta, color, seed}) => {
+  const reveal = smooth(frame, [delay, delay + 45]);
+  const sheen = ((frame - delay) * 2.5) % 360;
   return (
-    <GlassCard x={260 + index * 344} y={130} width={330} height={132} reveal={reveal} depth={8 + index * .5} float={Math.sin(phase * 2 + index * .7) * 1.35 * reveal}>
-      <div style={{position: 'absolute', left: 18, top: 16, display: 'flex', alignItems: 'center', gap: 9, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <span style={{width: 8, height: 8, borderRadius: '50%', background: item.color, boxShadow: `0 0 14px ${item.color}88`}}/>
-        <span style={{color: '#a6bac7', fontSize: 9.2, fontWeight: 760, letterSpacing: 1.05}}>{item.label}</span>
-      </div>
-      <div style={{position: 'absolute', left: 18, top: 45, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <span style={{color: C.ink, fontSize: 28, fontWeight: 840, letterSpacing: -.65, fontVariantNumeric: 'tabular-nums'}}>{item.unit}{value.toFixed(1)}{isPercent ? '%' : 'M'}</span>
-        <div style={{marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, opacity: .35 + chipProgress * .65, transform: `translateY(${(1 - chipProgress) * 4}px)`}}>
-          <span style={{padding: '4px 7px', borderRadius: 7, color: item.color, background: `${item.color}14`, border: `1px solid ${item.color}28`, fontSize: 8.5, fontWeight: 820}}>{item.delta}</span>
-          <span style={{color: C.dim, fontSize: 7.7, fontWeight: 720, letterSpacing: .8}}>{item.note}</span>
+    <div
+      style={{
+        ...panelStyle,
+        height: 126,
+        padding: '18px 20px',
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * -34}px) scale(${0.97 + reveal * 0.03})`,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: -130,
+          width: 100,
+          height: '100%',
+          background:
+            'linear-gradient(90deg, transparent, rgba(215,255,255,0.06), transparent)',
+          transform: `translateX(${sheen}px) skewX(-18deg)`,
+        }}
+      />
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: 1.7,
+            color: COLORS.muted,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 8,
+            color,
+            padding: '4px 7px',
+            borderRadius: 5,
+            border: `1px solid ${color}40`,
+            background: `${color}0d`,
+          }}
+        >
+          {delta}
         </div>
       </div>
-      <div style={{position: 'absolute', right: 13, bottom: 12}}><MiniSparkline id={`kpi-spark-${index}`} data={item.data} color={item.color} progress={sparkProgress} phase={phase + index * .5}/></div>
-      <div style={{position: 'absolute', left: -70 + sheen * 470, top: -55, width: 58, height: 245, transform: 'rotate(18deg)', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent)', filter: 'blur(4px)', opacity: sheenOpacity, pointerEvents: 'none'}}/>
-    </GlassCard>
+      <div style={{display: 'flex', alignItems: 'flex-end', marginTop: 12}}>
+        <div
+          style={{
+            color: COLORS.text,
+            fontFamily: FONT,
+            fontSize: 28,
+            fontWeight: 650,
+            letterSpacing: -0.8,
+            minWidth: 103,
+            textShadow: `0 0 24px ${color}22`,
+          }}
+        >
+          {value}
+        </div>
+        <Sparkline frame={frame} color={color} seed={seed} reveal={reveal} />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 24,
+          width: 2,
+          height: 37,
+          background: color,
+          boxShadow: `0 0 14px ${color}`,
+        }}
+      />
+    </div>
   );
 };
 
-const PerformanceChart: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
-  const reveal = loopProgress(timeline, 105, 195, 820, 900);
-  const plot = {left: 70, top: 68, width: 776, height: 260};
-  const max = 160;
-  const revenueProgress = loopProgress(timeline, 150, 415, 770, 900);
-  const ebitdaProgress = loopProgress(timeline, 205, 455, 770, 900);
-  const cashProgress = loopProgress(timeline, 245, 490, 770, 900);
-  const forecastProgress = loopProgress(timeline, 410, 560, 770, 900);
-  const railProgress = loopProgress(timeline, 260, 530, 770, 900);
-  const scanProgress = loopProgress(timeline, 175, 560, 760, 900);
-  const heroIn = interpolate(timeline, [575, 625], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic)});
-  const heroOut = interpolate(timeline, [760, 810], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic)});
-  const hero = Math.min(heroIn, heroOut);
-  const scannerOpacity = Math.sin(scanProgress * Math.PI) * .48;
-  const tracerProgress = ((timeline - 585) / 150 + 10) % 1;
-  const tracer = pointOnSeries(REVENUE, tracerProgress, plot.left, plot.top, plot.width, plot.height, max);
-  const revenuePath = svgPath(REVENUE, plot.left, plot.top, plot.width, plot.height, max);
-  const ebitdaPath = svgPath(EBITDA, plot.left, plot.top, plot.width, plot.height, max);
-  const cashPath = svgPath(CASH_FLOW, plot.left, plot.top, plot.width, plot.height, max);
-  const revenueArea = `${revenuePath} L${plot.left + plot.width},${plot.top + plot.height} L${plot.left},${plot.top + plot.height} Z`;
-  const x2025 = plot.left + (5 / 6) * plot.width;
-  const y2025 = plot.top + plot.height - (REVENUE[5] / max) * plot.height;
-  const x2026 = plot.left + plot.width;
-  const y2026 = plot.top + plot.height - (REVENUE[6] / max) * plot.height;
+const RiskGauge: React.FC<{frame: number; reveal: number}> = ({frame, reveal}) => {
+  const score = 72 + Math.round(Math.sin(frame * 0.021) * 3);
+  const circumference = 2 * Math.PI * 42;
+  const arc = circumference * 0.74 * reveal;
   return (
-    <GlassCard x={260} y={280} width={905} height={536} reveal={reveal} depth={6} float={Math.sin(phase * 2 + 1.6) * .9 * reveal}>
-      <div style={{position: 'absolute', left: 24, top: 19, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <div style={{color: C.ink, fontSize: 14, fontWeight: 820, letterSpacing: 1.2}}>FINANCIAL PERFORMANCE 2020–2026</div>
-        <div style={{marginTop: 5, color: C.muted, fontSize: 8.6, fontWeight: 660, letterSpacing: .9}}>ANNUAL TREND · USD MILLIONS</div>
+    <div
+      style={{
+        ...panelStyle,
+        flex: 1,
+        minHeight: 176,
+        padding: '20px',
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * -30}px)`,
+      }}
+    >
+      <CornerBrackets color="rgba(255,79,150,0.34)" />
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 9,
+          letterSpacing: 1.7,
+          color: COLORS.muted,
+        }}
+      >
+        GLOBAL RISK INDEX
       </div>
-      <div style={{position: 'absolute', right: 23, top: 22, display: 'flex', alignItems: 'center', gap: 15, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        {[
-          ['NET REVENUE', C.cyan],
-          ['EBITDA', C.emerald],
-          ['FREE CASH FLOW', C.violet],
-          ['2026 OUTLOOK', C.gold],
-        ].map(([label, color]) => <span key={label} style={{display: 'flex', alignItems: 'center', gap: 6, color: C.muted, fontSize: 7.6, fontWeight: 760, letterSpacing: .65}}><i style={{width: 15, height: 3, borderRadius: 2, background: color, boxShadow: `0 0 8px ${color}44`}}/>{label}</span>)}
+      <div style={{display: 'flex', alignItems: 'center', marginTop: 14}}>
+        <svg width="116" height="116" viewBox="0 0 116 116">
+          <defs>
+            <linearGradient id="risk-gradient" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0" stopColor={COLORS.amber} />
+              <stop offset="1" stopColor={COLORS.magenta} />
+            </linearGradient>
+            <filter id="risk-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4" result="b1" />
+              <feMerge>
+                <feMergeNode in="b1" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <circle
+            cx="58"
+            cy="58"
+            r="42"
+            fill="none"
+            stroke="rgba(110,215,224,0.08)"
+            strokeWidth="7"
+          />
+          <circle
+            cx="58"
+            cy="58"
+            r="42"
+            fill="none"
+            stroke="url(#risk-gradient)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray={`${arc} ${circumference}`}
+            transform="rotate(132 58 58)"
+            filter="url(#risk-glow)"
+          />
+          {Array.from({length: 24}, (_, i) => {
+            const angle = (i / 24) * Math.PI * 2;
+            return (
+              <circle
+                key={i}
+                cx={58 + Math.cos(angle) * 51}
+                cy={58 + Math.sin(angle) * 51}
+                r={i % 3 === 0 ? 1.3 : 0.8}
+                fill="rgba(117,218,227,0.32)"
+              />
+            );
+          })}
+          <text
+            x="58"
+            y="56"
+            textAnchor="middle"
+            fill={COLORS.text}
+            fontSize="25"
+            fontFamily={FONT}
+            fontWeight="650"
+          >
+            {score}
+          </text>
+          <text
+            x="58"
+            y="72"
+            textAnchor="middle"
+            fill={COLORS.muted}
+            fontSize="7"
+            fontFamily={MONO}
+            letterSpacing="1.6"
+          >
+            ELEVATED
+          </text>
+        </svg>
+        <div style={{flex: 1, marginLeft: 12}}>
+          {([
+            ['CRITICAL', 0.18, COLORS.magenta],
+            ['ELEVATED', 0.54, COLORS.amber],
+            ['GUARDED', 0.76, COLORS.cyan],
+          ] as const).map(([label, width, color], index) => (
+            <div key={String(label)} style={{marginBottom: 12}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 5}}>
+                <span
+                  style={{fontFamily: MONO, color: COLORS.muted, fontSize: 7, letterSpacing: 1}}
+                >
+                  {label}
+                </span>
+                <span style={{fontFamily: MONO, color, fontSize: 7}}>
+                  {String(Math.round(Number(width) * 100)).padStart(2, '0')}%
+                </span>
+              </div>
+              <div style={{height: 3, background: 'rgba(121,220,229,0.08)', borderRadius: 9}}>
+                <div
+                  style={{
+                    width: `${Number(width) * 100 * reveal}%`,
+                    height: '100%',
+                    background: color,
+                    borderRadius: 9,
+                    boxShadow: `0 0 9px ${color}`,
+                    transformOrigin: 'left',
+                    opacity: 0.7 + pulse(frame, 0.05, index) * 0.3,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <svg viewBox="0 0 905 370" width="905" height="370" style={{position: 'absolute', left: 0, top: 54}}>
+    </div>
+  );
+};
+
+const LeftColumn: React.FC<{frame: number}> = ({frame}) => {
+  const riskReveal = smooth(frame, [116, 168]);
+  const liveSignals = (18420 + Math.floor(frame * 2.7)).toLocaleString('en-US');
+  const secured = (28670 + Math.floor(frame * 0.22)).toLocaleString('en-US');
+  const neutralized = (93.8 + pulse(frame, 0.014) * 1.1).toFixed(1) + '%';
+  return (
+    <div style={{width: 315, display: 'flex', flexDirection: 'column', gap: 14}}>
+      <MetricCard
+        frame={frame}
+        delay={48}
+        label="ACTIVE SIGNALS"
+        value={liveSignals}
+        delta="+12.8%"
+        color={COLORS.magenta}
+        seed="signals"
+      />
+      <MetricCard
+        frame={frame}
+        delay={68}
+        label="SECURED NODES"
+        value={secured}
+        delta="+8.2%"
+        color={COLORS.cyan}
+        seed="nodes"
+      />
+      <MetricCard
+        frame={frame}
+        delay={88}
+        label="NEUTRALIZED"
+        value={neutralized}
+        delta="LIVE"
+        color={COLORS.blue}
+        seed="neutral"
+      />
+      <RiskGauge frame={frame} reveal={riskReveal} />
+    </div>
+  );
+};
+
+// Natural Earth 1:110m public-domain geography, projected once at build time.
+const NATURAL_EARTH_LAND_D = "M739,321.6L739.4,321.3L739.7,321.8L739.3,322.6L738.4,322.8L737.7,322.6L737.8,321.9L738.4,321.4ZM741.9,320.1L740.9,320.5L740,320.8L740,320.2L740.7,319.9L741.2,319.8L742.1,319.3L742.1,319.3L741.9,320.1ZM257.9,319.3L257.9,319.3L257.9,319.3L258.2,319.3L258.2,320L258.1,320.1L258.1,320.1L257.9,319.3ZM561.8,233.4L562.4,234.6L563.7,234.9L564.7,235.7L566.5,236L568.4,235.6L568.5,235.2L568.1,234.1L568,232.4L566.9,231.9L567,230.8L566.2,230.7L566.2,229.4L567.4,229.8L568.4,229.3L567.3,228.4L566.8,227.5L565.9,227.9L566,229L565.4,228L565.2,227.6L565.4,227L565.1,226.4L563.5,225.9L562.7,224.5L561.9,224.1L561.8,223.6L563,223.7L562.8,222.6L563.8,222.3L564.9,222.6L564.8,221.1L564.4,220.1L563.2,220.2L562.1,219.8L560.8,220.5L559.8,220.8L559.4,221.7L558.3,222L557.4,223.6L558.7,225.1L558.8,226.1L560.5,227.9L561.3,228.8L562.1,229.9L562.7,230L563.2,230.4L562.2,230.5L562.2,231.7L562.1,232.3L561.7,232.7ZM313.8,188L313.8,188L315.1,189L316.2,190.4L315.1,191.2L315.4,191.6L316.3,190.6L318.9,190.8L319.6,192L317.8,192.6L315.9,192.8L314.4,194.1L313.6,194.4L312.7,194.4L312.4,193.9L311.4,193.5L311.9,192.9L311,192.7L309.6,192.8L309.6,192.4L310.4,191.9L308.8,192.2L308.5,192.8L307.2,193.4L307.2,193.4L313.8,188ZM692.8,193.4L692.8,193.4L692.1,194L690.6,193.9L692.4,194.7L694.4,195.8L695.3,196.2L696.1,196.8L696.2,197.2L693.8,196.9L691.9,197.9L691.1,198.1L690.5,199.1L689.8,200L690,200.6L687.4,199.6L685.7,200.7L684.6,200.2L684.1,200.8L682.5,200.6L683,201.6L683,203L683.5,203.6L685.1,203.9L686.9,206L685.9,206.1L686.5,207.3L687.5,208L686.1,208.7L687.1,210.4L685.6,210.8L686.5,212.3L685.9,213.7L684.6,212.7L682.4,210.5L679.1,207.2L678,205.1L678.2,204.3L677.6,203.6L679.1,203.3L679.4,201.4L680,199.9L680.8,198.8L679.7,196.8L678.5,196.9L679,198.1L677.7,199.7L675.1,197.9L672.8,198.4L672.2,200.8L673.9,201.7L671.8,202L670.1,202.2L669.3,201.2L667.4,200.9L666.6,201.6L663,201.4L659.6,201.8L658.2,204.7L656.4,208.1L658.4,208.3L659.6,209.3L661,209.6L661.2,208.9L662.5,209L665.4,210.6L666.3,211.9L666.4,213.4L667.5,215.2L668.6,217.6L668.1,219.9L668.3,220.9L667.7,222.7L667,224.5L666.7,225.5L665.5,226.4L664.7,226.4L663.6,225.6L662.5,226.8L662.6,227.3L662,227.2L661.8,227.7L661.6,228.3L662.2,229.4L661.7,229.7L661.6,230L661.4,230.5L660.7,230.7L660.3,231.2L660.6,231.9L660.5,232L661.1,232.3L662.1,233L664,234.8L664.7,235.9L665.5,237.7L665.3,238.6L664.3,238.9L663.5,239.5L662.4,239.6L661.9,238.8L661.7,237.6L660.5,236L661.4,235.7L659.9,234.3L659.2,234L659.2,234.3L658.8,234.5L658.7,234.2L658.3,234L657.8,233.8L657.9,233.1L658.1,232.9L657.9,232.6L657.9,231.8L657.7,231.5L656.8,231.3L656.1,230.9L654.5,231.4L653.9,232.1L652.7,232.5L653.1,231.8L652.6,231.2L653.1,230.1L652.1,229.3L651.2,229.9L650.3,231L649.9,232L648.7,232L648.4,232.8L649.5,233.8L650.6,234.1L650.9,234.8L652.1,235.3L653.1,234.1L654.4,234.8L655.3,234.8L655.8,235.6L654.2,236.1L653.9,236.9L653,237.7L652.7,238.8L654.4,239.7L655.4,241.3L656.7,242.7L658,243.9L658.3,245.1L657.7,245.5L658.2,246.4L659.2,246.9L659.3,248.2L659.4,249.4L658.7,249.6L658.2,251.3L657.7,253.4L656.9,255.3L655.4,256.7L653.9,258L652.4,258.2L651.8,258.9L651.2,258.4L650.6,259.2L648.9,260L647.6,260.2L647.4,261.9L646.7,262L646.1,260.9L646.3,260.2L644.4,259.7L643.9,260L642.3,261.4L641.5,262.8L641.4,263.9L642.7,265.6L644.2,267.7L645.6,268.7L646.6,269.9L647.6,272.8L647.7,275.6L646.7,276.7L645.2,277.7L644.2,279L642.6,280.5L642.1,279.4L642.4,278.4L641.3,277.5L640.1,277.2L639.5,276.4L638.7,274.8L637.4,274.1L636.2,274.1L636.3,272.9L635.1,272.9L635.2,274.6L634.7,276.9L634.3,278.3L634.5,279.4L635.4,279.5L636.1,280.9L636.4,282.3L637.2,283.2L638,283.4L638.8,284.2L639.1,284.4L639.9,285.3L640.6,286.4L640.7,287.4L640.6,288.1L640.7,288.7L640.8,289.6L641.3,290L641.9,291.4L641.9,292L640.9,292.1L639.6,290.9L638,289.7L637.8,288.9L637,287.8L636.7,286.5L636.2,285.6L636.3,284.5L636,283.8L635.4,283.2L635.1,282.4L634.3,281.5L633.6,280.8L633.5,281.7L633.2,280.8L633.2,279.9L633.5,278.4L633.3,277.2L633.6,276L633.1,275L633,273.3L632.4,272.5L631.7,270.6L631.2,268.6L630.5,267.3L629.7,268.1L628.3,269.2L627.5,269.1L626.7,268.7L626.9,266.8L626.4,265.3L625.1,263.5L625.2,262.9L624.4,262.7L623.2,261.4L622.7,260.6L622.5,259.8L622.1,259L621.4,258.1L620.2,258L620.4,258.7L620.1,259.5L619.5,259.2L619.4,259.5L619,259.3L618.4,259.2L618.3,259.8L617.4,259.8L615.8,260.1L616.1,261.3L615.5,262.2L613.7,263.3L612.5,265.1L611.6,266.1L610.4,267.2L610.4,267.9L609.8,268.3L608.7,268.9L608,268.9L607.8,270.1L608.2,272.2L608.4,273.5L608,275L608.2,277.7L607.5,277.8L606.9,279L607.4,279.5L606.2,279.9L605.8,281L605.2,281.5L603.9,280L603.1,277.8L602.5,276.2L602,275.4L601.1,273.9L600.6,271.9L600.3,271L598.9,268.8L598,265.7L597.4,263.7L597.2,261.8L596.7,260.3L594.9,261.3L594,261.1L592,259.1L592.6,258.6L592.1,258L590.3,256.6L589.3,256.2L588.8,255.1L587.6,253.9L585.2,254.2L583.1,254.2L581.2,254.4L578.7,253.9L577.2,253.6L575.7,253.4L574.9,251.4L574.2,251.1L573.2,251.4L572,252.2L570.3,251.7L568.9,250.4L567.6,250L566.5,248.5L565.3,246.4L564.6,246.6L563.7,246.1L563.3,246.7L562.5,246.6L562.9,247.3L562.8,247.7L563.4,248.9L564,250.3L564.7,250.6L565,251.2L566,251.9L566.1,252.5L566,253L566.3,253.6L566.7,254L566.9,254.5L567.2,254.9L567,253.8L567.2,252.9L567.6,252.8L568,253.3L568.1,254.2L567.9,255.1L568.3,255.7L568.5,255.7L568.6,256.1L569.6,255.8L570.7,255.9L571.5,255.9L572.3,254.9L573.2,253.8L573.9,252.9L574.2,252.3L574.4,252.5L574.3,253.1L574.2,253.4L574.5,254.7L575.2,255.7L576,256.3L577,256.5L577.9,256.8L578.6,257.7L579,258.2L579.5,258.4L579.5,258.8L579.1,259.7L579,260.2L578.4,260.7L578.1,261.8L577.4,261.7L577.2,262.1L577.1,262.9L577.3,263.9L577.2,264.1L576.6,264.1L575.8,264.7L575.7,265.5L575.5,265.8L574.6,265.8L574.1,266.2L574.2,266.8L573.6,267.3L572.8,267.1L572,267.7L571.4,267.8L570.4,268.2L570.2,268.9L570.2,269.4L568.9,270.1L566.8,270.8L565.7,271.9L565.1,272L564.7,271.9L563.9,272.6L563.1,272.9L561.9,273L561.6,273.1L561.3,273.5L561,273.6L560.8,274L560.1,274L559.7,274.2L558.7,274.1L558.4,273.2L558.4,272.3L558.1,271.8L557.8,270.7L557.4,270L557.6,269.9L557.5,269.2L557.6,268.9L557.5,268.2L557.3,267.6L556.9,267.1L556.7,266.4L556,265.9L555.2,264.6L554.7,263.3L553.7,262.2L553.1,261.9L552.1,260.4L551.9,259.3L551.9,258.4L551,256.6L550.3,256L549.6,255.7L549.1,254.8L549.1,254.4L548.7,253.6L548.3,253.2L547.7,252L546.8,250.8L546,249.7L545.4,249.7L545.5,248.8L545.5,248.3L545.6,247.6L545.6,247.4L545.3,248L545.1,249.2L544.8,250.1L544.5,250.3L544,249.8L543.4,249.1L542.3,246.8L542.1,247L542.8,248.7L543.7,250.3L544.9,252.7L545.5,253.6L546,254.5L547.3,256.2L547,256.5L547.1,257.5L548.8,259L549,259.3L549.6,260.8L549.3,261.1L549.6,262.8L550.2,264.6L550.7,265L551.5,265.6L552.4,267.5L552.8,268.9L553.6,269.7L555.5,271.2L556.3,272.1L557.1,273L557.5,273.5L558.2,274L558.5,274.5L558.5,275.1L557.8,275.5L558.4,275.9L558.8,276.2L559.1,276.9L559.7,277.5L560.4,277.6L561.7,277.1L563.1,277L564.3,276.5L565,276.4L565.5,276.1L566.2,276L566.7,276L567.3,275.8L568,275.6L568.6,275.1L569.1,275.1L569.2,275.5L569.1,276.4L569.1,277.2L568.9,277.8L568.5,279.5L567.9,281.3L567.2,283.3L566.1,285.6L564.9,287.4L563.4,289.5L562,290.8L560,292.3L558.7,293.5L557.2,295.4L556.9,296.3L556.6,296.7L555.6,297.3L555.3,297.9L554.8,298.1L554.6,299.2L554.1,299.8L553.9,300.8L553.3,301.4L553.3,301.4L552.6,303.3L552.7,304.2L553.6,304.8L553.6,305.2L553.2,306.1L553.3,306.6L553.2,307.4L553.6,308.4L554.1,309.9L554.6,310.3L554.8,311L554.7,312.5L554.8,313.9L554.7,316.4L554.9,317.2L554.5,318.3L553.9,319.4L553,320.4L551.7,321L550.2,321.7L548.6,323.4L548.1,323.7L547.1,324.8L546.5,325.2L546.3,326.3L546.9,327.5L547.1,328.5L547.1,328.9L547.3,328.9L547.2,330.4L546.9,331.1L547.2,331.4L546.9,332.1L546.3,332.6L545.2,333.2L543.6,334L543,334.6L543,335.3L543.4,335.4L543.2,336.2L542.8,337.4L542.5,338.7L542.1,339.4L541.2,340.2L540.9,340.4L540.3,341.3L539.8,342.1L539,343.2L537.4,344.8L536.4,345.8L535.4,346.5L534,347.1L533.4,347.2L533.2,347.6L532.4,347.4L531.7,347.7L530.4,347.4L529.6,347.6L529,347.5L527.7,348.1L526.6,348.4L525.7,349L525.1,349L524.6,348.5L524.2,348.4L523.7,347.7L523.6,348L523.5,347.5L523.5,346.6L523.2,345.5L523.6,345.2L523.6,344L522.8,342.5L522.2,341.2L522.2,341.2L521.4,339.1L520.5,337.9L520,336.8L519.7,335.2L519.5,334.1L519.1,331.6L519.1,329.8L519,328.9L518.5,328.2L517.8,326.9L517.1,325L516.9,324L515.8,322.5L515.7,321.3L515.6,320.3L515.8,318.9L516.3,317.5L516.4,316.8L516.9,315.4L517.2,314.7L518,313.7L518.4,313L518.6,311.8L518.5,310.9L518.1,310.3L517.8,309.4L517.5,308.4L517.5,308.1L518,307.5L517.6,306L517.3,304.9L516.6,303.9L516.7,303.6L516.6,303.1L516.2,301.9L515.1,300.3L513.7,298.7L512.8,297.4L512,295.8L512,295.2L512.3,294.7L512.6,293.6L512.9,292.4L512.7,292.2L513.1,290.4L513.3,289.2L512.8,288.1L512.2,287.9L511.9,287.1L511.5,286.9L511.6,286.5L510.1,287.1L509.6,287L509.1,287.3L508,287.3L507.3,286.3L506.8,285.2L505.9,284.1L504.9,284.1L503.7,284.1L502.5,284.3L501.4,284.7L499.3,285.6L498.6,286.1L497.3,286.6L496.1,286.1L495.5,286.2L494.6,285.8L493.7,285.9L492.1,286.1L491.1,286.6L489.8,287.2L489.5,287.1L489.2,287.1L487.8,286.4L486.5,285.2L485.4,284.3L484.5,283.3L484.1,283.2L483.1,282.6L482.4,281.7L482.2,281.1L482,280L481.5,279L480.9,278.4L480.6,278.2L480.3,277.9L480.1,277.2L479.9,276.9L479.5,276.6L478.8,275.9L478.2,275.8L477.9,275.4L477.9,275.2L477.5,274.8L477.5,274.5L477.3,273.3L477.4,272.6L476.9,271.3L476.3,270.8L476.9,270.5L477.5,269.4L477.9,268.6L477.8,267.7L478.2,266.9L478.4,265.4L478.3,263.9L478.1,263.1L478.3,262.3L477.9,261.6L477.3,260.9L477.3,260.2L477.4,259.5L477.9,259L478.4,258.2L478.3,257.7L478.8,256.6L479.6,255.5L480,255.3L480.4,254.4L480.5,253.5L481,252.5L481.9,252L482.8,250.3L482.8,250.3L483.5,249.7L484.7,249.5L485.7,248.5L486.4,248L487.5,246.7L487.3,244.7L487.8,243.4L488,242.5L488.8,241.5L490.1,240.7L491.1,240.1L492,238.4L492.4,237.5L493.4,237.5L494.1,238.2L495.3,238L496.7,238.4L497.2,238.4L498.5,237.5L499.8,237.3L500.6,236.6L501.9,236.1L504,235.9L506.1,235.7L506.8,236L508,235.3L509.3,235.3L509.8,235.7L510.7,235.6L512.1,235L513,235.2L513,236L514,235.4L514.1,235.7L513.5,236.5L513.5,237.2L514,237.6L513.9,238.9L513,239.7L513.3,240.6L514,240.6L514.3,241.4L514.8,241.6L516.4,242.2L516.9,242L518,242.3L519.7,243L520.4,244.4L521.6,244.7L523.4,245.4L524.8,246.2L525.5,245.8L526,245L525.7,243.8L526,243.1L526.9,242.3L527.8,242.1L529.6,242.4L530.1,243.1L530.5,243.1L531,243.4L532.3,243.6L532.6,244.1L534.3,244.1L535.6,244.5L536.9,245L537.6,245.2L538.5,244.7L539,244.3L540.2,244.1L541.1,244.3L541.5,245.1L541.8,244.6L542.9,245L543.9,245.1L544.5,244.7L544.8,244.2L544.7,244.1L545,243.3L545.1,242.1L545.3,241.7L545.3,241.7L545.6,240.4L546.2,239.3L546.2,239.2L545.9,238L546.2,237.4L545.6,236.7L546,236.1L545.3,236.2L544.2,235.8L543.4,236.8L541.5,236.9L540.4,236.1L539,236L538.7,236.7L537.9,236.9L536.6,236L535.2,236.1L534.3,234.5L533.3,233.6L533.8,232.4L532.9,231.6L534.2,230.1L536.1,230.1L536.5,228.9L538.9,229.1L540.3,228.1L541.7,227.6L543.7,227.6L546.1,228.7L547.9,229.3L549.4,229.1L550.5,229.2L551.8,228.4L551.9,227.7L551.4,226.6L550.6,226.1L549.9,225.9L549.4,225.4L547.6,224.1L546.1,223.5L544.9,222.6L545.8,222.3L546.6,221L545.8,220.4L547.5,219.8L547.4,219.5L546.3,219.7L545.4,219.8L544.7,220.3L543.5,220.4L542.6,221L542.8,221.8L542.8,222L543.4,222.3L544.7,222.2L544.5,222.8L543.2,223.1L541.7,224L541,223.6L541.1,222.9L539.7,222.5L539.9,222.2L541,221.6L540.8,221.5L540.6,221.3L538.6,220.9L538.5,220.3L537.4,220.5L537,221.4L536.2,222.5L536.3,222.9L535.8,223.2L535.4,223.1L535.2,225L534.7,225.6L534.3,226.7L534.8,227.6L535,228.2L536.2,228.7L536,229.1L534.5,229.2L534,229.7L533.1,230.6L532.6,229.8L532.6,229.5L531.8,229.4L531.2,229.3L529.7,229.7L530.6,230.6L530,230.8L529.3,230.9L528.6,230L528.4,230.4L528.7,231.3L529.4,232.1L529,232.4L529.7,233.1L530.4,233.6L530.5,234.5L529.3,234.1L529.7,234.9L528.9,235L529.5,236.4L528.7,236.5L527.6,235.8L527,234.5L526.7,233.5L526.2,232.7L525.5,231.8L525.3,231.4L525.1,231.3L525.1,230.9L524.3,230.4L524.2,229.6L524.2,228.6L524.3,228.1L524.1,227.8L523.8,227.7L523.5,227.2L522.9,226.9L521.7,226.3L520.9,225.8L519.8,225.3L518.7,224.1L518.9,224L518.3,223.4L518.3,222.8L517.5,222.6L517.1,223.3L516.7,222.8L516.7,222.2L516.8,222.2L517,222.1L516.1,221.8L515.1,222.4L515.2,223.1L515.1,223.6L515.5,224.4L516.7,225.2L517.4,226.5L518.8,227.7L519.8,227.7L520.1,228.1L519.8,228.4L521,228.9L521.9,229.4L523,230.2L523.2,230.5L523,231.1L522.2,230.4L521.1,230.1L520.7,231.1L521.6,231.7L521.5,232.5L521,232.6L520.4,234L519.9,234.1L519.8,233.6L520.1,232.8L520.3,232.4L519.8,231.5L519.3,230.7L518.8,230.5L518.4,229.8L517.6,229.6L517,228.9L516.1,228.8L515.1,228.1L513.9,227.1L513,226.2L512.6,224.6L512,224.5L510.9,224L510.4,224.2L509.7,224.9L509.2,225L508.1,225.9L505.6,225.5L503.8,226L503.7,226.9L503.8,227.8L502.6,228.9L501,229.2L500.9,229.7L500.1,230.6L499.6,231.9L500.1,232.8L499.4,233.5L499.1,234.5L498.2,234.8L497.3,236L495.7,236.1L494.4,236L493.6,236.6L493.1,237.2L492.5,237.1L492.1,236.5L491.7,235.6L490.5,235.4L490,235.8L489.3,235.6L488.7,235.7L488.9,234.5L488.8,233.5L488.3,233.4L488,232.8L488.1,231.7L488.6,231.2L488.7,230.5L489,229.6L489,228.9L488.8,228.4L488.8,227.8L488.9,226.7L488.4,226L490.2,224.9L491.7,225.2L493.3,225.2L494.6,225.5L495.7,225.4L497.6,225.4L498.3,224.5L498.5,221.4L497.3,219.8L496.4,219L494.6,218.4L494.5,217.3L496,216.9L498.1,217.3L497.7,215.6L498.8,216.3L501.6,215.1L501.9,213.8L503,213.5L503.9,213.2L504.5,212.8L505.5,210.6L507.1,210L508.1,210L508.3,209.7L509.2,209.6L509.5,209.9L510.2,209.2L509.9,208.6L509.9,207.8L509.3,207L509.2,205.5L509.4,205.1L509.7,204.6L510.7,204.5L511.1,204.1L512,203.7L512,204.5L511.7,205L511.8,205.4L512.5,205.6L512.2,206.1L511.9,206L511.1,207L511.5,207.8L511.5,208.3L512.7,208.7L512.7,209.2L513.9,208.9L514.5,208.5L515.9,209.1L516.5,209.6L517.2,209.2L519,208.5L520.4,208L521.6,208.2L521.7,208.6L522.8,208.6L523,207.9L524.5,207.5L524.2,206.2L524.1,205.1L524.5,204.2L525.5,203.7L526.6,204.8L527.5,204.8L527.5,203.6L527.6,202.8L527.2,203L526.4,202.4L526.2,201.6L527.5,201.2L528.9,201L530.2,201.2L531.3,201.2L532.4,200.4L531.2,199.7L529.2,199.8L527.3,200.4L525.5,200.7L524.8,199.9L523.6,199.4L523.7,198L523,196.7L523.4,195.9L524.3,195L526.5,193.5L527.2,193.2L527,192.7L525.4,192L523.6,192.4L522.7,193.4L523,194.2L521.4,195.3L519.5,196.5L518.9,198.5L519.8,199.5L520.9,200.3L520.1,201.9L518.9,202.3L518.7,204.7L518.2,206.1L516.8,206L516.2,207.1L514.9,207.2L514.5,205.8L513.4,204.1L512.4,202.1L511.6,201.2L509.5,202.9L508,203.2L506.4,202.5L505.9,200.9L505.5,197.6L506.5,196.7L509.3,195.5L511.3,194.1L513.1,192.2L515.4,189.5L517.1,188.5L519.7,186.9L521.9,186.3L523.5,186.3L524.9,185.3L526.8,185.3L528.5,185.1L531.9,186L530.7,186.4L532,187.2L533,186.7L534.8,187.5L537.7,187.9L542.1,189.4L543.1,190L543.4,190.9L542.4,191.6L540.8,192L535.8,191L535,191.1L537,192.1L537.2,192.8L537.6,194.2L539.1,194.6L540,195L540,194.3L539.2,193.7L539.8,193.2L542.6,194.1L543.4,193.7L542.4,192.7L544.5,191.4L545.5,191.4L546.6,191.9L547,191L545.9,190.2L546.1,189.4L545.1,188.5L548.2,189L549,189.7L547.7,189.9L548,190.6L548.9,191.1L550.5,190.8L550.4,189.9L552.4,189.3L555.6,188.1L556.4,188.2L555.7,189L557.1,189.2L557.6,188.7L559.6,188.7L560.9,188.1L562.4,188.9L563.2,188L561.8,187.3L562.1,186.8L565.3,187.2L567,187.6L571.4,189.2L571.8,188.5L570.4,187.8L570.2,187.5L568.9,187.3L569,186.7L567.9,185.7L567.7,185.3L569,184.1L569,182.9L569.6,182.7L572.4,183L573,183.7L572.7,184.8L573.5,185.2L574.3,186.1L575,187.9L576.6,188.7L576.6,189.6L575.5,191.6L576.8,191.8L577,191.3L578,190.9L577.9,190.3L578.5,189.6L577.5,188.8L577.5,188L576.3,187.9L575.7,187.1L575.8,185.8L573.9,184.7L575.2,183.8L574.5,182.9L574.9,182.9L575.9,183.6L576.2,184.9L577.4,185.1L576.4,184.2L577.8,183.6L579.8,183.6L582.1,184.3L580.6,183.2L579.6,181.9L581.2,181.6L583.6,181.7L585.6,181.5L584.4,180.9L584.9,180L586,180L587.5,179.4L589.9,179.2L589.9,178.9L592.4,178.8L593.4,179L595,178.4L596.8,178.4L596.6,177.9L597,177.4L598.8,176.9L600.8,177.3L599.8,177.6L602.1,177.8L603,178.4L603.6,178.1L606.4,178.1L609.1,178.7L610.3,179.1L610.7,179.8L610,180.1L608,180.8L607.6,181.2L609,181.4L610.7,181.7L611.4,181.5L612.7,182.3L612.8,181.9L614.2,181.7L617.6,182L618.4,182.6L622.7,182.7L621.8,181.8L624.1,182L625.7,182L628,182.7L629.3,183.5L629.2,184L631.4,185L633.5,185.6L633.2,184.2L635.4,184.8L636.8,184.4L639.1,184.8L639.5,184.5L641.3,184.7L639.3,183.5L640.1,182.9L650,183.7L651.7,184.5L655.5,185.5L659.3,185.3L661.6,185.5L663.1,186L664.1,187L665.8,187.4L666.8,187.1L668.6,187.1L670.9,187.3L672.6,187.2L675.9,188.4L676.6,187.9L674.8,187.1L674.5,186.5L678.2,186.9L680.3,186.8L684,187.4L686.2,188L692.8,193.4ZM355.1,187L356.7,187.3L357.7,188L358.7,188.1L360.1,187.5L361.8,187.1L363.2,187.3L365.3,186.7L367.2,186.4L367.4,186.9L368.5,186.6L369.3,186L369.9,186.1L370.5,187.3L372.7,186.4L371.9,187.4L373.4,187.2L374.1,186.8L375.3,186.9L376.4,187.4L378.4,187.9L379.6,188.2L380.7,188.1L381.6,188.8L379.6,189.4L381.2,189.7L384.2,189.6L385.3,189.3L385.8,190.1L387.4,189.4L386.8,188.9L387.8,188.4L389.1,188.3L390,188.2L390.6,188.5L391.1,189.3L392.4,189.2L393.8,189.8L395.6,189.6L397.1,189.6L397.5,188.7L398.6,188.5L399.9,189L399.1,190.2L400.4,189.2L401.3,189.2L402.6,187.9L402.1,187L401.2,186.5L402.3,185L404.2,184.1L405.4,184.3L406,184.9L406.4,186.4L405,187L406.8,187.3L405.9,188.7L408,187.6L408.7,188.5L407.7,189.5L408.2,190.4L409.9,189.4L411.3,188.2L412.3,186.8L413.7,186.9L415.1,187.1L416.1,187.7L415.8,188.4L414.6,189.1L414.9,189.8L414.4,190.5L411.8,191.4L410.2,191.7L409.4,191.2L408.7,191.9L407,193.1L406.3,193.7L404.5,194.6L402.9,194.7L401.7,195.3L401.1,196.2L399.8,196.4L397.8,197.6L395.7,199.2L394.6,200.3L393.6,202L395.1,202.2L394.9,203.6L394.9,204.7L396.6,204.4L398.4,205L399.3,205.6L399.8,206.3L401,206.7L402,207.3L403.8,207.4L405,207.5L404.3,208.8L404,210.3L404.2,212L405.4,213.4L406.5,212.9L407.7,211.4L408.1,209L407.6,208.2L409.7,207.5L411.4,206.5L412.5,205.5L412.8,204.5L412.6,203.3L411.7,202.2L413.7,200.7L413.8,199.4L414.5,197.1L415.4,196.8L417.1,197.2L418.2,197.3L419.3,197L420.1,197.4L421,198.3L421.1,198.8L423.1,198.9L422.5,200.1L422.2,201.9L423.1,202.2L423.6,203L425.5,202.2L427.2,200.6L428.2,200L428.6,201.2L429.4,203.1L430,204.8L429.3,205.8L430.5,206.6L431.3,207.4L433,207.8L433.6,208.3L433.7,209.6L434.5,209.8L434.8,210.3L434.5,212L433.4,212.6L432.5,213.1L430.4,213.7L428.5,214.9L426.4,215.1L424,214.8L422.2,214.8L420.9,214.9L419.6,216L417.8,216.7L415.5,218.7L413.7,220.1L414.8,219.9L417.3,217.9L420.2,216.6L422.1,216.4L422.9,217.2L421.5,218.2L421.4,219.9L421.5,221L422.8,221.8L424.9,221.6L426.6,219.9L426.4,221L427,221.5L425.3,222.6L422.3,223.5L420.9,224.1L419.3,225.2L418.4,225.1L418.7,223.8L421.1,222.5L419.2,222.6L417.7,222.8L417.8,223.3L416.3,224L414.9,224.6L413.5,225L412.6,225.9L412.3,226.3L412,227.1L412.2,228L412.7,228L412.7,227.4L413,227.8L412.8,228.2L411.9,228.5L411.3,228.4L410.3,228.7L409.7,228.8L409,228.9L407.8,229.3L409.7,229L410,229.3L408.2,229.8L407.4,229.8L407.5,229.6L407,230L407.3,230.1L406.7,231.2L405.5,232.5L405.5,232.1L405.3,232L405,231.6L405,232.4L405.2,232.7L405.1,233.3L404.6,233.9L403.5,235.2L403.4,235.1L404.1,234L403.6,233.4L403.8,232.1L403.4,232.8L403.4,233.8L402.6,233.6L403.3,234.1L403,235.6L403.4,235.7L403.4,236.2L403.2,237.8L402.1,239L400.7,239.5L399.6,240.4L398.9,240.5L398.2,241.1L397.9,241.6L396.2,242.6L395.3,243.4L394.5,244.3L394.1,245.4L394.1,246.6L394.2,247.9L394.6,249L394.5,249.7L394.8,251.6L394.5,252.6L394.4,253.2L393.9,254.2L393.4,254.4L392.8,254.2L392.7,253.5L392.3,253.2L391.8,251.8L391.5,250.6L391.4,250L391.8,248.9L391.7,248L390.9,246.7L390.5,246.5L389,247.2L388.8,247.1L388.3,246.4L387.6,246L386.1,246.2L384.9,246L383.9,246.1L383.3,246.4L383.5,246.8L383.3,247.4L383.5,247.7L383.2,247.9L382.8,247.7L382.2,248L381.3,248L380.5,247.1L379.3,247.3L378.5,246.9L377.6,247.1L376.4,247.4L375,248.6L373.5,249.3L372.6,250L372.2,250.8L371.9,251.9L371.8,252.6L372,253.2L371.2,254.5L370.7,255.7L370.2,257.8L369.9,258.6L370,259.4L370.3,260.2L370.4,261.4L371,262.6L371.2,263.5L371.6,264.3L373,264.7L373.4,265.4L374.7,264.9L375.7,264.8L376.8,264.5L377.7,264.2L378.6,263.6L379.1,262.7L379.4,261.3L379.7,260.9L380.6,260.5L382.1,260.1L383.3,260.1L384.1,260L384.4,260.3L384.2,261.1L383.3,262L382.9,263L383.1,263.3L382.8,264L382.3,265.2L382,264.8L381.7,264.8L381.7,265.1L382,265.1L381.9,265.5L381.6,266.2L381.7,266.4L381.5,267L381.5,267.1L381.3,267.9L381,268.4L380.7,268.4L380.4,269L380.8,269.2L380.9,269L381.3,269.2L381.4,269.3L381.8,269L382.1,269L382.3,269.1L382.5,269L383.1,269.2L383.7,269.1L384.2,268.9L384.3,268.8L384.8,268.9L385.1,269L385.4,268.9L385.7,268.8L386.3,269L386.5,269L386.9,269.3L387.2,269.7L387.7,269.9L388,270.4L387.9,270.5L387.8,270.9L387.9,271.4L387.5,272L387.3,272.6L387.2,273.3L387.2,273.7L387.2,274.4L387,274.6L386.8,275.3L386.9,275.7L386.6,276.1L386.6,276.5L386.8,276.8L387,277.6L387.5,278.3L388.1,278.9L388.6,279.5L388.5,279.8L389.1,279.9L389.2,279.8L389.5,280.2L390.2,280L390.8,279.6L391.7,279.3L392.2,278.9L392.9,279L392.8,279.1L393.6,279.2L394.2,279.4L394.6,279.9L395.1,280.3L395.8,280.4L396.9,279.3L397.4,279.1L397.5,278.6L397.8,277.3L398.6,276.5L399.5,276.5L399.6,276.2L400.7,276.3L401.8,275.5L402.3,275.2L403,274.4L403.5,274.5L403.8,274.9L403.5,275.4L403.5,275.8L402.7,276L403.1,276.7L403,277.5L402.3,278.5L402.8,279.7L403.4,279.6L403.7,278.5L403.4,277.9L403.4,276.7L405.1,276.1L404.9,275.3L405.5,274.8L405.9,275.9L406.8,276L407.6,276.9L407.7,277.4L408.9,277.4L410.3,277.2L411.1,277.9L412.1,278.1L412.9,277.6L412.9,277.2L414.6,277.1L416.2,277.1L415,277.6L415.5,278.3L416.6,278.4L417.5,279.2L417.7,280.5L418.4,280.5L418.9,280.8L419.8,281.4L420.6,282.4L420.6,283.2L421.1,283.3L421.8,284L422.3,284.6L424,284.9L424.1,284.6L425.2,284.5L426.7,284.9L427.1,285.1L428.1,285.5L429.5,286.8L429.7,287.5L430.2,287.4L430.5,288.3L431.3,291L432,291.3L432,292.4L431,293.6L431.4,294.1L433.8,294.4L433.9,295.9L434.9,294.9L436.6,295.5L438.9,296.4L439.6,297.4L439.3,298.2L440.9,297.8L443.6,298.6L445.6,298.5L447.6,299.8L449.4,301.6L450.4,302L451.6,302.1L452.1,302.6L452.6,304.6L452.8,305.6L452.4,308.2L451.7,309.2L449.9,311.4L449.1,313.2L448.1,314.5L447.8,314.6L447.4,315.7L447.7,318.7L447.4,321.1L447.3,322.2L447,322.8L446.9,324.9L445.6,327L445.5,328.6L444.5,329.3L444.3,330.2L442.8,330.2L440.8,330.9L439.9,331.6L438.5,332L437,333.3L436.1,334.9L436,336L436.3,336.9L436.3,338.5L436.1,339.3L435.2,340.2L434.1,343L433.2,344.2L432.4,345L432,346.5L431.3,347.4L430.9,348.4L429.6,349.2L428.6,348.9L427.9,349.1L426.6,348.4L425.8,348.5L424.8,347.6L424.9,348.4L426.8,349.8L426.8,350.9L427.7,351.6L427.8,352.3L426.9,354.3L425.2,355.2L422.8,355.5L421.3,355.4L421.8,356.3L421.8,357.5L422.2,358.3L421.6,358.8L420.3,359L419,358.5L418.6,358.9L419.2,360.4L420.1,360.9L420.7,360.4L421.3,361.2L420.2,361.7L419.5,362.7L419.7,364.3L419.6,365.1L418.5,365.1L417.7,365.9L417.7,367L419.2,368.2L420.5,368.5L420.4,369.9L419.3,370.7L419.1,372.5L418.2,373.1L417.9,373.8L418.8,375.4L419.9,376.3L419.4,376.2L418.3,376.2L417.9,376.6L417,377.1L417.3,378.5L416.8,378.6L415.3,378.1L413.6,377L411.8,376.2L411.1,375.2L411.1,374.3L410.2,373.3L409.1,370.7L409.2,369.2L410,368L408.1,367.6L408.8,366.2L408.4,363.6L410,364.2L409.7,360.9L408.7,360.5L408.9,362.5L408.1,362.3L407.8,360L407.5,357.1L407.8,356L407,354.5L406.5,352.7L407,352.7L407.2,350.1L407.6,347.6L407.6,345.2L406.9,342.9L407,341.5L406.5,339.6L407,337.7L406.7,334.6L406.7,331.3L406.6,327.8L406.2,325.2L405.7,322.9L404.3,322L404.1,321.4L401.3,319.8L398.7,318.1L397.6,317.1L396.9,315.8L397.1,315.3L395.8,313.3L394.2,310.3L392.8,307.2L392.2,306.5L391.7,305.3L390.6,304.3L389.6,303.7L390,303L389.3,301.5L389.7,300.4L390.8,299.4L391.5,298.2L391.2,297.5L390.6,298.2L389.8,297.5L390.1,297.1L389.8,295.7L390.3,295.4L390.6,294.4L391.1,293.4L391,292.8L391.7,292.5L392.7,291.8L392.5,291.3L393,291.2L393,290.4L393.3,289.9L394,289.8L394.6,288.8L395.1,287.9L394.6,287.6L394.9,286.6L394.6,285.2L394.9,284.8L394.8,283.5L394.3,282.6L393.8,282.2L393.6,281.3L393.9,280.9L393.6,280.8L393.4,280.3L392.7,279.8L392.1,279.9L391.8,280.5L391.2,280.9L390.9,280.9L390.8,281.3L391.4,282.1L391,282.3L390.8,282.5L390.2,282.6L390,281.7L389.8,282L389.3,281.9L389.1,281.2L388.6,281.1L388.2,280.9L387.6,280.9L387.6,281.3L387.4,281L386.7,280.7L386.5,280.4L386.6,280.1L386.6,279.7L386.2,279.4L385.7,279.1L385.3,278.9L385.2,278.4L384.9,278.1L384.9,278.6L384.6,278.9L384.4,278.5L383.9,278.4L383.8,278L383.8,277.6L384,277.1L383.7,276.8L384,276.5L383.6,276L383,275.4L382.7,274.9L382.2,274.4L381.6,273.7L381.8,273.4L382,273.6L382.1,273.5L381.9,273L381.5,272.9L381.3,273.3L380.5,273.3L380.1,273.1L379.5,272.8L378.8,272.7L378.4,272.4L377.8,272.1L376.9,272L376.4,271.7L375.7,271.1L374.4,269.4L373.7,268.9L372.7,268.5L371.9,268.6L370.8,269.2L370.1,269.3L369.2,268.9L368.2,268.6L367,267.9L366.1,267.7L364.6,266.9L363.6,266.2L363.4,265.7L362.6,265.7L361.3,265.2L360.9,264.4L359.6,263.5L359.1,262.5L358.9,261.8L359.4,261.6L359.3,261.2L359.7,260.8L359.8,260.2L359.5,259.5L359.5,258.9L359.2,258.1L358.3,256.5L357.3,255.2L356.9,254.3L355.9,253.6L355.7,253.2L356.2,252.2L355.6,251.9L355,251.1L354.9,250L354.3,249.9L353.7,249L353.3,248.3L353.4,247.8L353,246.6L352.9,245.4L353.1,244.7L352.4,244.1L351.9,244.2L351.3,243.8L350.9,244.4L350.9,245.2L350.7,246.3L350.9,247L351.6,248.1L351.7,248.5L351.9,248.6L351.9,249.1L352.1,249.1L352.1,250.1L352.4,250.5L352.6,251.1L353.2,251.9L353.3,253.4L353.5,254.1L353.7,254.8L353.6,255.6L354.2,255.7L354.6,256.4L354.9,257.1L354.8,257.4L354.1,258L353.9,258L353.7,257L353.1,256.1L352.3,255.4L351.7,254.9L352,253.8L352,252.9L351.5,252.4L350.8,251.7L350.6,251.9L350.3,251.5L349.6,251.1L349.1,250.2L349.2,250.1L349.7,250.2L350.4,249.6L350.6,248.9L349.9,247.7L349.3,247.3L349.1,246.3L348.9,245.3L348.7,244L348.6,242.6L348.7,241.8L348.1,240.9L347.6,240.7L347.6,240.2L346.9,240.1L346.6,239.7L345.5,239.6L345.2,239.3L345.4,238.4L344.7,236.8L344.5,234.6L344.7,234.3L344.4,233.8L343.9,232.4L344.3,231.2L344,230.3L344.9,229L345.4,227.7L345.6,226.5L346.8,225L347.6,223.6L348.5,222.2L349.4,220.1L349.7,218.8L349.7,218L350,217.7L351.5,218.3L351.4,219.7L351.9,219.3L352.4,218.1L352.6,216.8L352.5,216.8L351,215.3L350.6,214.6L348.8,214L348.9,212.7L349.7,211.7L348.6,211.1L349.2,209.9L348.5,208.8L349,208L348.7,207.5L348,207L348.6,205.7L348,204.5L348.5,203.2L347.4,203.1L345.7,203L344.7,202.6L343.6,201.1L342.7,200.8L341.2,200.3L339.5,200.4L337.9,199.8L337.1,199.2L335.6,199.5L335,200.5L334.3,200.6L332.7,200.9L331.3,201.3L329.8,201.7L330.4,200.8L332.2,199.4L333.7,199L333.8,198.6L331.6,199.4L330,200.4L327.5,201.4L327.7,202.1L325.7,203.1L324,203.7L322.4,204.2L321.6,204.8L319.1,205.6L318.2,206.3L316.3,206.9L315.6,206.8L314.2,207.2L312.6,207.7L311.2,208.2L308.9,208.6L308.9,208.4L310.7,207.7L312.3,207.2L314.2,206.4L315.8,206.3L316.9,205.6L319.2,204.8L319.7,204.5L321,204L322.2,202.9L323.5,202L321.8,202.4L321.7,202.2L320.6,202.7L320.6,202L319.8,202.5L320,201.8L318.4,202.4L317.7,202.4L318.4,201.5L319.1,201L318.8,200.5L317.1,200.7L316.8,200.1L316.4,199.7L317.2,198.9L317,198.3L318.2,197.5L319.9,196.7L321,196L322,195.9L322.6,196.1L324.1,195.4L324.8,195.5L326.1,195.1L326.5,194.5L326.2,194.2L327.5,193.7L326.8,193.7L325.4,194L324.7,194.3L324.2,194L322.5,194.2L321.3,193.8L321.5,193.3L321,192.5L323.1,191.9L326.2,191.2L327.1,191.2L326.2,191.9L328.5,191.9L328.5,191L327.8,190.5L327.8,189.8L327.5,189.2L326.5,188.8L327.9,188.1L329.8,188.1L331.8,187.5L332.8,186.8L334.6,186.2L335.8,186L338.4,185.4L339.2,185.5L341.6,184.8L342.8,185.1L342.9,185.7L343.6,185.4L345.2,185.5L344.8,185.8L346.2,186L347.3,185.9L349,186.3L350.9,186.5L351.5,186.6L353.1,186.4L354.2,186.8ZM408.1,196.9L409.3,196.3L410.8,196.3L410.6,196.6L408.9,197.4L408.2,197.3ZM420.4,183L419.7,182.3L420.1,181.8L420.6,181.7L422.8,181.9L424.1,182.6L424,182.9L422.9,182.9L421.9,182.9L420.7,183ZM411.9,197.5L412.5,197L413,197.1L413.1,197.4L412.3,198.1L411.9,198L411.8,197.6ZM408.7,180.2L407.8,180.7L406.4,180.6L405.5,180.3L406.4,179.7L408.1,179.4L408.6,179.8ZM411,177.1L410.5,177.1L408.8,177.1L408.8,176.7L410.7,176.7L411.2,177ZM409.5,175.6L410.3,176L409.6,176.5L408,176.7L407.5,176.4L407.5,176L407.9,175.5L409.1,175.6ZM413.5,180.9L412,180.8L409.7,180.4L409.9,179.7L410.2,179.1L409.7,178.5L407.8,178.4L407,178L407.8,177.5L409.7,177.6L410.5,178L412.3,178L412.9,178.4L412.3,178.8L413.2,179.1L413.6,179.4L414.8,179.5L416.2,179.6L417.9,179.3L419.9,179.2L421.5,179.3L422.2,179.8L422.1,180.3L421.2,180.6L419.6,180.9L418.4,180.7L415.5,180.9ZM395.2,176.4L396.3,176.5L395.7,176.9L393.5,177.2L392.5,176.8L393.7,176.5ZM396.3,175.6L397.3,175.8L395.9,176.1L394.3,176.1L394.5,175.9L395.9,175.5ZM434.2,213.3L433.3,214.2L432.2,215.6L433.1,215L433.8,215.4L433.3,215.9L434.2,216.3L434.9,215.9L435.9,216.4L435.3,217.5L436.2,217.3L436.2,218.1L436.3,219L435.5,220.4L434.9,220.5L434.2,220.2L434.8,218.9L434.5,218.7L432.7,220.1L432,220L433.1,219.3L432,218.9L430.7,219L428.3,218.9L428.3,218.5L429.2,217.9L428.7,217.5L430,216.6L431.9,214.2L432.9,213.3L434,212.8L434.6,212.9ZM410.3,193.2L411.2,193.7L412.2,194.1L411.9,194.8L412.8,194.7L413.3,195.2L412.1,195.6L410.6,195.3L410.3,194.6L408.9,195.4L406.9,196.1L407,195.3L405.5,195.4L406.8,194.7L407.5,193.6L408.6,192.4L409.3,192.5L409.2,193.1L409.8,192.9ZM421.1,183.5L422.3,183L424.2,183.7L425.2,184.3L425,184.9L427.1,184.6L427.7,185.4L429.9,185.9L430.5,186.5L430.9,187.7L428.7,188.3L430.7,189.2L432.2,189.5L433.2,190.7L434.8,190.8L434.1,191.8L431.5,193.4L430.5,192.8L429.4,191.5L427.9,191.7L427.5,192.4L428.2,193.2L429.4,193.9L429.7,194.2L429.8,195.6L429,196.6L427.8,196.3L425.6,195.1L426.6,196.3L427.4,197.2L427.3,197.7L424.6,197.1L422.6,196.3L421.6,195.6L422.2,195.2L420.9,194.5L419.6,193.8L419.5,194.2L416.2,194.5L415.6,194L416.8,193L418.8,192.9L421.1,192.8L421,192.3L421.7,191.6L423.7,190.3L423.7,189.7L423.5,189.2L422.3,188.5L420.4,188.1L421.3,187.7L420.6,186.9L419.8,186.8L419.2,186.4L418.4,186.8L416.5,187L412.9,186.7L411,186.3L409.5,186.1L408.9,185.6L410.4,185L408.9,185L409.5,183.7L411.1,182.5L412.5,182L415.2,181.7L414,182.5L414.2,183.3L415.8,182.3L418.7,181.7L419.5,183.1L418.9,183.9ZM407,181.3L409,181.3L410.7,181.6L408.4,182.7L407,183L405.2,184L404.1,183.9L404.3,182.8L404.8,182.1L405.7,181.6ZM381.6,178.8L384.2,177.9L387,177.1L388.4,177.1L389.9,177L388.8,177.9L387.6,178.3L386.7,178.4L384.3,178.9L382.6,179.1ZM345.7,209.2L346.9,209.1L345.4,210.8L345.6,212L345.2,212L344.9,211.3L344.9,210.6L344.6,210.1L344.9,209.5L345.3,209ZM402,175L403.7,175.2L405.8,175.6L405.9,176.2L405.8,176.6L404.4,176.5L403.3,176.1L401.2,176.1L402.5,175.7L401.6,175.5ZM351.4,217.5L350.7,217.8L349.1,217.1L349.1,216.5L348.3,216L348.3,215.6L347.3,215.3L347.3,214.5L347.6,214.1L348.7,214.4L349.3,214.7L350.3,214.8L350.4,215.3L350.6,216.1L351.4,216.7ZM380.8,180.9L381.9,181.1L384.3,181.2L385,181.6L385.5,182.1L384,182.4L380.7,183.3L378.7,184.2L378.2,184.8L374.9,185.4L374.9,184.9L373.2,184.2L374.2,183.6L375.8,182.7L377.4,181.8L377.2,181.1ZM395.8,179.1L396.8,178.9L397.8,179L397.4,179.6L396.3,180.2L392.8,180.4L389.9,180.9L388.3,180.9L388.6,180.5L391.1,180L386.6,180.1L385.4,179.9L388,178.7L389.2,178.4L391.5,178.8L392.5,179.5L394.1,179.6L393.9,178.4L395.2,178L396,178.1L395.8,178.7ZM394,182.6L394.7,183.1L394.3,184.4L393.9,185.3L395.2,186L396.6,186.6L396,187.2L394.2,187.3L394.5,187.8L393.8,188.3L392.1,188.1L390.6,187.7L389.3,187.8L387.1,188.2L384.3,188.4L382.3,188.6L382.3,187.9L381.1,187.6L380.1,187.7L379.7,186.7L380.5,186.5L382.3,186.3L383.7,186.4L385.2,186.1L383.5,185.8L381.2,185.9L379.8,185.9L379.7,185.4L382.5,184.9L380.9,184.9L379.4,184.6L381.1,183.6L382.3,183.1L385.7,182.3L386.5,182.6L385.4,183.2L388,182.8L388.8,183.4L390.5,182.8L391.1,183.2L390.9,184.4L391.8,183.9L392.2,182.6L393.2,182.4ZM399.7,183.1L399.3,182.2L400.9,181.6L401.9,181.9L403.8,181.7L403.8,182.1L402.4,182.7L403.5,183.3L402.4,184.4L400.4,184.9L399.5,184.8L399.2,184.3L397.5,183.3L397.8,182.9ZM394.5,181.9L395.9,181.9L396.4,182.2L394.8,183L394,182.1ZM405.7,178.1L405.9,178.6L405.4,179.3L404.2,180.2L402.5,180.3L401.6,180.1L402.3,179.4L400.6,179.5L401.4,178.5L402.4,178.6L404.2,178.2L405.5,178.2ZM412.3,173.6L413.3,173.3L414.3,173.2L414.2,172.9L416.4,172.9L416.9,173.5L418.2,173.7L419.5,173.9L419.5,174.6L420.3,175L418.8,175.3L416.3,176.2L414.5,176.3L412.7,176.1L412.1,175.7L412.5,175.2L413.6,174.9L411.9,174.9L411.2,174.6L411.2,174.1ZM417.9,172.2L419.4,172L420.5,172L422.5,171.8L424.2,171.5L425.2,171.5L425.9,171.8L427.2,171.3L428.5,171.1L430.2,171L433,171L433.3,171.1L436,170.9L437.9,171L439.7,171L442,171.1L443.8,171.2L445.1,171.5L444.9,171.7L442.3,172.2L440,172.4L439,172.6L440.9,172.6L438.3,173.3L436.6,173.6L434.3,174.5L432.3,174.7L431.5,174.9L428.6,175L429.8,175.1L429,175.4L429.3,175.9L428.1,176.3L426.4,176.7L425.6,177.1L424,177.5L424,177.7L425.7,177.7L425.5,178L422.4,178.7L420.1,178.4L417.2,178.6L415.8,178.4L414.1,178.4L414.4,177.8L416.4,177.5L416.6,176.7L417.3,176.6L419.4,177.1L418.7,176.3L417.4,176.1L418.5,175.7L420.4,175.4L421,175L420.1,174.5L420.2,174L422.7,174L423.3,174.1L425.1,173.7L423.2,173.6L419.9,173.7L418.7,173.3L418.4,172.9L417.7,172.6ZM421.1,190L420.2,190.4L419,190.5L419.1,189.8L420,189.1L421,188.9L421.6,189.3L421.3,189.9ZM400.9,187.3L401.2,187.8L400.2,188.3L399.1,187.9L398.2,188L397.2,187.4L398.4,187L399.5,186.4L400.3,186.8L400.8,187ZM423,215.5L423.4,215.3L424.9,215.7L425.9,216.4L425.9,216.6L425.3,216.7L423.9,216.2ZM422.4,219.8L422.6,220.6L423.4,220.8L424.5,220.7L423.8,221.4L423.3,221.5L421.9,220.8L421.8,220.3ZM292.5,262.3L292.7,262.5L292.8,262.7L293,263.2L293,263.3L292.4,263.7L291.9,263.9L291.6,264.2L291.4,263.9L291.5,263.5L291.4,262.9L291.5,262.7L291.8,262.5L291.8,262.2L291.9,262L292,262.1ZM292,261.2L291.8,261.4L291.3,261.5L291.2,261.2L291.1,261.1L291.1,261L291.2,260.9L291.7,261ZM291.1,260.6L291,260.8L290.3,260.7L290.5,260.5ZM289.7,259.7L289.7,259.8L290,260.4L289.9,260.5L289.8,260.4L289.4,260.4L289.3,260L289.2,260ZM288.1,258.9L288,259.3L287.8,259.5L287.5,259.2L287.6,259.1L287.8,258.9ZM315,199.9L315.7,200L315.3,200.6L314.4,200.8L313.9,200.5L313.7,200.1ZM326.6,203.4L327.3,203.5L327.4,203.9L325.8,204.6L324.2,205.2L323.9,204.8L324.3,204.1L325.8,203.6ZM314.2,195.1L314.6,195.3L315.4,195.2L315.9,195.6L316.8,195.8L316.5,195.9L315.4,196.2L314.9,195.9L314.7,195.7L313.7,195.7L313.6,195.6ZM691.9,298.1L694.2,299.2L696.7,300.1L697.6,300.9L698.3,301.7L698.4,302.6L700.6,303.6L700.9,304.4L699.6,304.6L699.8,305.6L701,306.7L701.7,308.3L702.4,308.3L702.3,309L703.3,309.3L702.9,309.6L704.2,310.2L704,310.7L703.1,310.8L702.8,310.4L701.7,310.2L700.4,310L699.4,309L698.8,308.1L698.2,306.7L696.5,306L695.3,306.5L694.4,307L694.5,308.2L693.4,308.7L692.6,308.4L691.2,308.4L690.1,307.1L688.8,306.8L688.4,307.2L686.7,307.2L687.4,306L688.3,305.5L688.1,303.8L687.5,302.5L684.9,301.2L683.8,301L681.8,299.6L681.4,300.3L680.9,300.5L680.6,299.9L680.6,299.2L679.6,298.4L681.1,297.9L682,297.9L681.9,297.5L679.9,297.5L679.4,296.5L678.2,296.3L677.6,295.5L679.5,295.1L680.2,294.6L682.4,295.2L682.6,295.8L682.9,298.4L684.3,299.3L685.5,297.6L687,296.7L688.3,296.7L689.4,297.2L690.4,297.8ZM707.6,299.8L708.1,300.3L708.2,301.1L707.8,301.5L707.6,300.6L707.3,300L706.7,299.5L706,298.8L705,298.3L705.4,297.9L706.1,298.4L706.6,298.7L707.1,299.1ZM705.6,303.2L704.8,303.6L704.1,303.9L703.4,303.9L702.3,303.5L701.6,303.1L701.7,302.6L702.9,302.8L703.7,302.7L703.9,301.9L704.1,301.9L704.2,302.7L705,302.6L705.4,302.1L706.2,301.5L706.1,300.6L706.9,300.5L707.2,300.8L707.1,301.7L706.6,302.6L705.9,302.8ZM710.4,302.4L710.8,302.8L711.3,303.8L711.9,304.3L711.7,304.7L711.3,304.9L710.8,304.3L710.3,303.3L710.1,302.1L710.3,301.9ZM669.6,308.8L668.6,310L667.4,310.3L667.2,310.1L667.4,309.6L668.1,308.6L669.5,308L669.7,307.6L670.9,307.3L671.8,307.2L672.3,307L672.8,307.2L672.2,307.7L670.7,308.3ZM682.3,304.9L682.2,303.7L682.5,303.1L682.8,302.6L683.1,303L683,303.8ZM656.9,285.4L657.9,284.3L658.5,283.1L659.1,283.1L659.8,283.9L659.9,284.6L660.8,285L662,285.5L661.9,286.1L661,286.2L661.3,286.9L660.3,287.5L659.6,288.9L660.6,290.4L660.4,291.1L662,292.6L660.4,292.8L659.9,293.8L660,295.3L658.6,296.3L658.6,297.9L658,300.3L657.8,299.8L656.2,300.5L655.7,299.5L654.7,299.4L654.1,298.9L652.5,299.5L652,298.7L651.1,298.8L650,298.6L649.8,296.5L649.1,296.1L648.5,294.7L648.3,293.3L648.4,291.9L649.2,290.8L650.2,291.4L651.3,291.1L651.5,289.8L652.1,289.5L653.7,289.1L654.7,287.9L655.3,286.9L655.8,286.3ZM676,298.4L677.5,298.9L678,300.1L676.8,299.4L675.7,299.3L674.9,299.4L674,299.3L674.3,298.5ZM672.6,300L671.6,299.7L671.4,299L672.8,298.9L673.1,299.4ZM674.1,290.6L674.2,291.4L675,291.6L675.1,292.2L675.1,293.6L674.4,293.4L674.2,294.4L674.7,295.2L674.3,295.4L673.8,294.4L673.4,292.4L673.7,291.2ZM667.3,292.6L668.9,292.6L670.2,291.4L670.4,291.8L669.4,293.3L668.3,293.6L667,293.3L664.8,293.4L663.6,293.6L663.4,294.8L664.6,296.2L665.3,295.5L667.9,295L667.8,295.7L667.2,295.5L666.6,296.4L665.4,297L666.6,299L666.3,299.6L667.5,301.4L667.4,302.4L666.7,302.9L666.2,302.3L666.9,301L665.5,301.6L665.2,301.2L665.4,300.6L664.5,299.7L664.6,298.1L663.7,298.6L663.7,300.5L663.7,302.7L662.8,302.9L662.3,302.5L662.7,301L662.6,299.5L662,299.5L661.6,298.4L662.2,297.4L662.4,296.1L663.1,293.8L663.4,293.1L664.5,291.9L665.6,292.4ZM662.9,310.2L661.2,309.1L662.5,308.7L663.2,309.2L663.6,309.7L663.5,310.1ZM664.6,307.4L665.5,307.3L666.8,306.7L666.5,307.6L664.4,308.1L662.6,307.9L662.7,307.3L663.8,307ZM660.4,307.2L661.3,307L661.6,307.7L660,308L659,308.2L658.3,308.2L658.8,307.3L659.6,307.3L660,306.7ZM647.4,304.1L647.5,304.7L650.1,304.8L650.5,304.2L652.9,304.9L653.4,306L655.4,306.2L657,307.2L655.4,307.8L653.9,307.1L652.7,307.2L651.3,307.1L650.1,306.8L648.5,306.2L647.5,306L647,306.2L644.5,305.6L644.3,304.9L643.1,304.8L644.1,303.3L645.8,303.4L646.8,304ZM642.1,295.7L642.3,296.8L642.7,297.7L643.7,297.8L644.4,298.8L644,300.8L643.8,303.2L642.3,303.2L641.2,301.9L639.5,300.6L639,299.7L638,298.4L637.3,297.2L636.3,295L635.1,293.7L634.7,292.4L634.2,291.1L632.9,290.1L632.2,288.8L631.2,287.9L629.7,286.2L629.5,285.4L630.4,285.4L632.5,285.7L633.8,287.3L634.9,288.3L635.6,289L637,290.7L638.3,290.7L639.5,291.8L640.3,293.1L641.3,293.8L640.8,295.1L641.6,295.7ZM419.5,376.7L420.1,377.4L421.1,378.5L422.9,379.4L424.7,379.8L424.4,380.6L423.4,380.6L422.6,380.1L422.4,380.7L421.6,381.2L421,381.1L420.3,381L419.3,380.5L418,380.3L416.2,379.5L414.7,378.7L412.5,377L413.6,377.3L415.6,378.3L417.3,378.9L417.7,378.2L417.7,377.2L418.6,376.5ZM403.9,265.5L403,265.3L402.4,265.4L401.6,265.3L400.9,265.6L400.2,265.1L400.4,264.6L401.6,264.8L402.6,264.9L403.1,264.6L402.6,263.9L402.7,263.3L401.9,263L402.2,262.6L403,262.7L404.2,262.9L404.4,262.6L405.4,262.6L406.2,263.1L406.5,263L406.7,263.6L407.4,263.5L407.3,264L407.9,264.1L408.5,264.6L408,265.3L407.3,264.9L406.7,265L406.3,264.9L406,265.2L405.5,265.3L405.3,264.9L404.9,265.2L404.2,266.3L403.9,266ZM585.1,173.1L586.8,172.9L589.2,173.4L592.5,174.5L593.3,175.5L591.4,175.7L588.5,175.3L586.5,174.9L585,174.1L583.6,173.9ZM595.5,175.1L598.6,175.7L598.8,176.2L593.9,176.6L594.1,175.1L594.8,175ZM633.8,178.8L636.4,178.8L640.7,179.5L641,180.4L637.4,180.4L636.1,180.7L633.3,179.8L632.8,179ZM644.1,179.7L646.9,180.1L646.4,180.6L644.7,180.5L642.3,180L642,179.6ZM638.7,182.2L639.1,181.7L640.2,181.6L642.2,182.1L642.7,182.4L641.2,182.4L639,182.3ZM541,173.6L542.6,173.4L544,173.4L544.4,173.7L544.7,173.4L545.5,173.2L547,173.5L546.7,173.6L545.6,173.8L544.8,173.9L544.8,174.1L543.8,174.2L542.7,174L543,173.6ZM552.9,181.7L554.7,180.6L554.2,180.1L556.1,179.4L558.9,178.6L562,178.4L563.3,178L565.1,177.8L566.1,178.3L565.6,178.7L562.6,179.3L559.9,179.9L557.5,181L556.5,182.3L555.5,183.5L556.2,184.6L558.6,185.7L558,185.8L554.6,185.6L554.1,185L552.1,184.7L551.7,184L552.6,183.7L552.3,183L553.8,181.9ZM666.5,209.7L668,211.1L669,212.6L670.5,214.1L673.6,216.8L671.5,216.3L672.1,218.5L674.3,220.1L674.9,221.2L673.4,220.3L673.3,221.5L672.3,220.2L671.6,218.7L670.4,217L669.9,215.9L668.6,213.8L666.9,212.3L665.5,210.3L666.1,209.6L665.2,208.9L665.5,208.7ZM683,185.5L682,185.6L681.3,185.2L681.8,184.6L683,185.5ZM318.2,184.6L318.2,184.6L318.2,184.6L318.4,184.6L319.2,184.6L320.2,184.9L319.9,185.1L318.4,185.4L317,185.5L317,185.5L318.2,184.6ZM396.1,251.7L396.8,251.6L397.6,251.6L397.6,252L396.1,252.3ZM397.8,251.3L398.7,252L398.3,253.1L398.1,252.9L398.2,252.1L397.7,251.5ZM396.8,254.2L397.1,254.3L397.4,255.6L397.3,256.5L396.9,256.6L396.7,255.7L396.3,255.2ZM427.8,375.5L429,374.6L430.1,375L430.6,374.4L431.8,375.1L431.6,375.6L430.1,376.1L429.4,375.5L428.6,376.2ZM514,174.6L514.3,174.2L515.6,174.2L516.9,174.6L520.1,175.4L517.8,175.9L517.5,176.7L516.7,177L516.4,178L515.2,178L513.1,177.3L513.9,176.8L512.4,176.5L510.5,175.5L509.7,174.6L512.1,174.2L512.7,174.6ZM525.2,174.2L524,174.8L521.4,174.9L518.6,174.7L518.4,174.4L517,174.4L515.9,173.9L518.7,173.6L520.1,173.9L520.9,173.5L523.3,173.8ZM523.4,176.7L521.4,177.2L519.6,176.9L520.2,176.6L519.6,176.2L521.5,176L521.9,176.4ZM458.5,171.5L461.9,170.9L464.9,170.9L466.2,170.6L469.4,170.5L476.3,170.6L481.5,171.4L479.8,171.8L476.4,171.8L471.5,171.9L471.9,172.1L475.1,172L477.7,172.3L479.5,172L480.2,172.4L479,173L481.4,172.6L485.9,172.2L488.5,172.4L489,172.8L485.1,173.6L484.6,173.9L481.6,174L483.7,174.1L482.5,174.9L481.6,175.7L481.4,177L482.4,177.7L480.9,177.8L479.2,178.2L480.9,178.8L480.9,179.9L479.9,180L481,181.1L478.8,181.1L479.8,181.7L479.4,182.1L478,182.3L476.6,182.3L477.7,183.2L477.6,183.8L475.7,183.2L475.2,183.6L476.4,183.9L477.6,184.7L477.8,185.7L476,186L475.3,185.5L474.2,184.7L474.4,185.6L473,186.3L475.7,186.4L477.1,186.4L474.2,187.6L471.2,188.7L468,189.1L466.9,189.1L465.7,189.6L463.9,191.1L461.4,192L460.6,192.1L459.1,192.4L457.5,192.8L456.4,193.6L456.1,194.6L455.3,195.5L453.3,196.6L453.4,197.7L452.6,198.9L451.7,200.3L450.1,200.4L448.8,199.2L446.6,199.2L445.7,198.4L445.4,197L444.1,195.3L443.8,194.4L444.1,193.1L443.1,191.9L443.8,190.9L443.3,190.4L444.9,188.8L446.6,188.3L447.2,187.7L447.8,186.7L446.5,187.2L445.9,187.4L444.9,187.6L443.8,187.1L444,186.2L444.7,185.5L445.7,185.5L447.6,185.9L446.2,185L445.5,184.6L444.4,184.8L443.7,184.4L445.3,183.2L444.9,182.8L444.5,181.9L443.9,180.5L442.9,180.1L443.2,179.5L440.9,178.8L438.9,178.7L436.3,178.8L433.9,178.9L433,178.5L431.9,177.7L434.6,177.3L436.5,177.3L432.7,177L430.9,176.5L431.3,176L435.3,175.5L439,174.9L439.7,174.5L437.5,174.1L438.6,173.7L442.3,172.9L443.7,172.8L443.7,172.3L446.1,172.1L448.9,171.9L451.7,171.9L452.4,172.2L455.2,171.7L457.1,172L458.3,172.1L459.9,172.5L458.1,171.9ZM582.9,370.6L583.5,371.1L584.6,371.3L584.5,371.6L584,372.3L582.1,372.4L582.3,371.6L582.7,370.9ZM510.9,226.7L511.6,226.1L511.9,227.4L511.5,228.6L510.9,228.3L510.6,227.2ZM411.2,264.8L411.9,264.9L412.1,265.3L411.7,265.7L410.7,265.6L409.9,265.7L409.9,265L410.1,264.8ZM396.1,264.8L397,265L397.7,265.4L397.8,265.8L396.9,265.8L396.5,266.1L395.7,265.8L395,265.3L395.2,264.9L395.8,264.8ZM390.8,257.4L392,257.5L393,257.5L394.2,258.1L394.6,258.7L395.9,258.5L396.3,258.8L397.3,259.8L398,260.5L398.5,260.5L399.2,260.8L399.1,261.3L400.1,261.4L401,262L400.8,262.4L399.9,262.6L399,262.7L398.1,262.5L396.1,262.7L397.1,261.8L396.6,261.4L395.8,261.3L395.4,260.8L395.2,259.9L394.4,260L393.3,259.6L392.9,259.2L391.2,259L390.8,258.7L391.3,258.3L390.1,258.2L389,259L388.4,259L388.2,259.4L387.5,259.6L386.9,259.5L387.7,259L388.1,258.4L388.7,258L389.5,257.7L390.5,257.6ZM566.9,313.6L567.3,314.3L567.6,315.4L567.7,317.3L568,318L567.8,318.8L567.5,319.2L567.1,318.3L566.8,318.8L567,319.9L566.9,320.6L566.5,321L566.3,322.3L565.6,324.2L564.8,326.3L563.7,329.3L563,331.5L562.2,333.4L561.1,333.7L559.9,334.4L559.2,334L558.2,333.4L557.9,332.6L557.9,331.2L557.6,329.9L557.5,328.8L557.9,327.7L558.5,327.4L558.5,326.9L559.3,325.7L559.5,324.7L559.2,323.9L559,322.9L559,321.5L559.5,320.6L559.8,319.6L560.4,319.5L561.2,319.2L561.7,318.9L562.3,318.9L563.1,318L564.3,317L564.7,316.2L564.6,315.5L565.2,315.7L566,314.6L566,313.7L566.5,313ZM724.9,319.1L725.6,320L725.1,320.2L724.8,319.5ZM724.4,318.7L724.3,318.3L724.5,317.1L725.1,317.5L725,318.8L724.7,318.6ZM533.6,238.2L533.5,238.7L531.7,238.8L531.7,238.5L530.1,238.2L530.3,237.6L531,238.1L532,238L533,238.1L533,238.4ZM492.8,209.4L492.9,210.5L492,211.8L489.9,212.7L488.2,212.5L489.3,210.9L488.7,209.4L490.4,208.2L491.3,207.5L492.2,207.5L493.4,208.4ZM720.9,327.3L721.8,328.2L722.2,329L721.6,329.3L721,328.9L720.3,328.2L719.7,327.4L719.1,326.3L719,325.7L719.6,325.7L720.2,326.3L720.6,326.8ZM719.5,310.5L719.8,311.1L718.9,311L718.5,310.1L719.3,310.5ZM719.1,309.1L718.9,309.4L718,308L717.9,307.1L718.3,307.1L718.7,308.4ZM717.9,309.6L717.4,309.6L716.6,309.4L716.4,309.2L716.5,308.6L717.4,308.8L717.8,309.1ZM716.6,306.6L716.9,307.1L716.9,307.4L715.9,306.8L715.3,306.2L714.8,305.7L715,305.5L715.6,305.9ZM713.4,305.1L713.9,305.6L713.6,305.7L713.1,305.3L712.6,304.7L712.6,304.4ZM722,357.3L721,358.2L719.7,359.2L718.4,359.9L718.4,359.5L718,359.2L719.6,357.9L719.7,357.1L718.7,356.4L719.1,355.9L720.3,355.3L721.2,354.1L721.8,353.1L721.8,352L722,351.7L721.8,351.1L721.5,349.7L721.6,348.6L722.1,348.5L722.3,349.3L723.1,349.7L722.7,351.1L722.7,352.8L723.4,351.7L723.7,352.2L723.2,353.4L723.9,353.9L724.7,354L725.8,353.4L726.3,353.6L725.2,355L724.3,355.9L723.3,355.9L722.7,356.3L722.4,357ZM709.5,362.8L711.1,362L712.4,361.2L713.7,360L714.4,359.6L715.2,358.7L716.5,358L716.4,358.7L716.2,359.3L717.5,358.7L717.5,359.3L717,360L716.1,360.7L714.5,361.9L713.5,362.5L713.4,363.2L712.5,363.3L711,363.9L710,364.9L708.2,366.4L706.7,367.1L705.8,367.6L704.7,367.5L704.3,367L703.1,366.9L703.2,366.4L704.7,365.2L707.3,363.7L708.3,363.4ZM684.8,358.5L685.5,358.6L684.5,360.4L683.8,361L683,362.2L682.8,361.8L681.3,362.9L681.1,362.8L680.4,362.8L680.4,361.4L680.8,360.4L680.8,359L681.2,358.3L681.9,358.5L682.8,359L683.6,358.8ZM663.2,344.9L661.6,345.7L660.3,346.1L659.8,346.9L659.1,347.6L658,347.6L657.1,347.7L656.1,347.5L655.1,347.6L654.2,347.7L653.1,348.5L652.8,348.5L652,348.9L651.2,349.4L650.3,349.4L649.4,349.4L648.4,348.3L647.8,348L648.1,347.1L648.8,346.9L649.2,346.6L649.3,346L649.8,344.9L650,344L649.8,342.3L649.8,341.4L650.1,340.5L649.9,339.5L650,339L649.6,338.4L649.7,337.2L649.3,335.9L649.3,335.2L649.7,335.9L649.6,334.5L650.2,334.9L650.4,335.5L650.6,334.7L650.2,333.5L650.2,333L650,332.5L650.4,331.6L650.7,331.2L651.1,330.4L651.1,329.5L651.9,328.3L651.8,329.5L652.6,328.4L653.8,327.9L654.5,327.2L655.7,326.7L656.3,326.5L656.6,326.7L657.8,326.1L658.6,326L658.9,325.6L659.3,325.5L660,325.5L661.5,325L662.4,324.3L662.9,323.5L663.8,322.7L664,322.1L664.2,321.2L665.3,319.9L665.7,321.2L666.3,320.9L665.9,320.2L666.5,319.4L667,319.7L667.4,318.5L668.2,317.8L668.7,317.1L669.4,316.9L669.5,316.4L670,316.6L670.1,316.2L670.7,316L671.4,315.8L672.3,316.5L672.9,317.4L673.8,317.4L674.6,317.6L674.4,316.7L675.3,315.5L675.9,315L675.8,314.7L676.5,313.8L677.4,313.2L678,313.4L679.2,313.1L679.3,312.3L678.4,311.8L679.1,311.5L680,311.9L680.6,312.6L681.7,313L682.1,312.8L682.9,313.3L683.7,312.8L684.2,313L684.6,312.7L685.1,313.5L684.6,314.3L684,314.9L683.5,315L683.6,315.6L683.1,316.4L682.5,317.2L682.5,317.6L683.4,318.5L684.4,319L685,319.6L685.8,320.5L686.1,320.5L686.8,320.9L686.9,321.4L688.1,321.9L689,321.4L689.5,320.5L689.9,319.8L690.2,319L690.8,317.7L690.8,316.9L691,316.5L690.9,315.6L691.3,314.4L691.6,314.1L691.5,313.5L691.9,312.7L692.3,311.8L692.4,311.4L693,310.8L693.2,311.6L693.2,312.6L693.5,312.8L693.5,313.4L693.9,314.2L693.8,315.1L693.7,315.7L694,316.9L694.9,316.3L695.3,317L695.8,317.6L695.5,318.3L695.6,319.7L695.6,320.5L695.9,320.7L696,322L695.7,322.8L695.9,323.9L697.2,324.7L697.9,325.5L698.7,326.2L698.4,326.5L698.9,327.5L699,329.3L699.6,328.9L699.9,329.6L700.3,329.3L700.1,331L700.7,332L701.2,332.6L701.8,333.9L701.8,335.2L701.5,336.1L701.1,337L701.2,338.4L700.6,339.8L700.1,340.5L699.2,341.9L698.9,342.9L698.2,344L697,345.4L695.7,346.2L694.7,347.4L694,348.2L693,349.6L692.1,350.4L691.2,351.6L690.6,352.7L690.4,353.2L689.4,353.7L687.9,353.8L686.5,354.4L685.6,355L684.5,355.7L683.8,355L683.1,354.7L683.7,353.9L682.9,354.2L681.2,355.3L680.4,354.9L679.8,354.7L679.1,354.5L678.1,354.1L677.7,353.1L678,351.9L678.1,351.1L677.7,350.5L676.6,350.3L677.3,349.5L677.5,348.3L676.4,349.4L675.1,349.7L676.2,348.9L676.7,347.9L677.5,347.2L677.9,346L676.3,347.3L675.3,347.9L674.3,349.1L673.6,348.5L673.9,347.7L673.6,346.5L673.1,345.9L673.5,345.5L672.2,344.6L671.3,344.5L670.3,343.8L667.9,343.9L666.1,344.5L664.4,345ZM611,282.2L610.9,283.8L610.4,284.2L609.2,284.6L608.5,283.3L608.1,281.1L608.6,278.5L609.6,279.4L610.3,280.5ZM646.7,265.3L645.5,264.8L645.3,263.5L645.8,262.7L647.2,262.3L647.9,262.3L648.4,262.9L647.9,263.6L647.7,264.5ZM661.1,255.5L660.9,258L660.6,259.3L659.6,258L659.2,256.8L659.6,255.3L660.4,254.1L661.1,254.5ZM518.7,233.7L519.6,233.6L519.2,234.8L519.5,235.3L519.2,236.1L518.2,235.5L517.6,235.4L515.8,234.6L515.9,233.7L517.4,233.9ZM510.9,229.4L511.5,228.9L512.3,230L512.2,232.1L511.6,232L511.1,232.5L510.6,232.1L510.5,230.2L510.2,229.3ZM514.2,206.1L514.6,206.8L514,208L512.7,207.2L512.5,206.6ZM496.4,210.1L496.4,210.1L496.6,209.3L495.8,208.3L495.8,208.3L494.4,208.1L494.1,207.7L494.6,207L494.2,206.6L493.6,207.3L493.5,205.9L493,205.1L493.4,203.6L494.4,202.4L495.3,202.5L496.6,202.4L495.4,204L496.5,203.8L497.8,203.8L497.5,205L496.4,206.3L497.6,206.4L497.7,206.6L498.7,208.3L499.5,208.5L500.2,210.2L500.6,210.8L502,211.1L501.8,212.1L501.2,212.5L501.7,213.3L500.7,214.1L499.1,214.1L497,214.5L496.5,214.2L495.7,214.9L494.6,214.7L493.7,215.3L493.1,215L494.9,213.4L496,213.1L496,213.1L494.1,212.9L493.8,212.3L495,211.8L494.4,211L494.7,210ZM484.7,191.4L484.3,192.3L485.4,193.2L483.9,194.3L480.7,195.2L479.8,195.5L478.4,195.3L475.4,194.8L476.6,194.2L474.3,193.5L476.3,193.3L476.3,192.9L474.1,192.5L474.9,191.7L476.6,191.5L478.1,192.4L479.8,191.6L481.1,192L482.9,191.3ZM663.2,274L662.4,272.8L663.6,272.8L664.1,273.4L663.9,274.8ZM666.1,278.3L666.4,277.8L666.4,276.9L667.2,276.8L667.1,277.8L667.9,276.3L667.9,277.8L667.5,278.3L667.2,279.3L666.8,279.8L665.8,278.7ZM671.5,280.7L671.7,281.8L671.8,282.7L671.5,284.1L670.8,282.5L670.3,283.3L670.8,284.5L670.4,285.2L668.8,284.3L668.3,283.2L668.7,282.4L667.8,281.7L667.4,282.3L666.7,282.3L665.8,283.1L665.6,282.7L666,281.3L666.8,280.9L667.5,280.3L668,281L669,280.6L669.2,279.9L670.1,279.8L669.9,278.6L671.1,279.4L671.3,280.2ZM660.6,279.3L659,280.8L659.5,279.7L660.4,278.7L661.1,277.7L661.7,276.1L662.1,277.4L661.3,278.2ZM663.9,265.3L663.8,265.9L664.5,267.1L664.3,268.4L663.6,268.9L663.6,270.2L664.1,271.4L664.8,271.6L665.4,271.4L667.2,272.3L667.2,273.1L667.7,273.5L667.7,274.2L666.5,273.5L665.9,272.6L665.6,273.2L664.6,272.3L663.4,272.5L662.7,272.2L662.7,271.5L663.1,271.1L662.6,270.7L662.5,271.3L661.7,270.4L661.4,269.7L661.1,268.2L661.8,268.7L661.5,266.3L661.7,264.8L662.5,264.8L663.4,265.3L663.7,264.9ZM665.1,276L664.8,275.3L665.7,275.8L666.5,275.7L666.6,276.4L666,277.1L665.2,277.6L665.1,276.8ZM669.7,274.8L670.2,276.6L669.1,276.2L669.2,276.7L669.7,277.7L669.1,278L668.9,276.9L668.5,276.8L668.2,275.9L669,276L668.9,275.4L667.9,274.2L669.2,274.2ZM678.8,232.1L678.4,233.7L679.1,235.3L679.2,236.6L679.8,237.3L679.6,238.5L678.3,239.2L676.1,239.3L674.9,241.1L673.8,240.5L673.3,239.3L671.2,239.7L670,240.4L668.5,240.4L670.2,241.6L670.3,244.3L669.7,245L668.9,244.4L668.7,242.9L667.7,242.5L666.8,241.4L667.8,240.9L668.1,239.9L669.1,239.1L669.6,238L672,237.5L673.5,237.8L673.6,235L674.8,235.8L676,234.2L676.4,233.6L676.3,231.7L675.2,229.9L675.2,228.9L676.4,228.6L678.2,230.8ZM678.2,224.6L678.7,223.9L680,225.7L678.4,226.1L678.2,227.7L675.6,226.6L675.9,228.3L674.5,228.3L673.5,226.8L673.5,225.6L674.7,225.5L673.9,223.3L673.6,222.1L675.9,223.7L677.2,224.3ZM670.5,241.1L670.9,240.2L671.7,240.4L672,239.7L673,240L673.4,240.6L673,241.5L672.3,241L671.8,241.4L671.8,242.3L670.8,241.9ZM454.1,411.5L454.6,411.5L455.9,411.3L457.4,411.5L458.8,412L459.5,412.7L459.8,413.2L460.1,413.8L458.9,414.1L457.5,414.4L455.9,414.7L454.2,414.9L452,414.8L450.6,414.4L450.4,414L452.2,413.7L452.8,413.3L453.2,412.8L453.4,412.4L453.7,412ZM439.2,414L441.3,414.1L443.3,414.2L443.7,413.7L443.9,413.3L445.2,413.8L445.3,414.4L445.4,414.8L443.3,414.7L441.4,414.8L440,414.4L439.9,414.4ZM425.2,403.1L425.8,402.9L427,403L426.9,402.3L426.7,401.8L426.1,400.7L426.4,400.1L427.3,399.9L428.1,400.4L428.5,400.9L429.3,401.5L429.9,402.1L430.5,402.6L430.9,403.2L431,403.7L431,404.2L429.9,404.4L428.9,404.7L427.6,404.6L427.8,404.1L426.7,404.3L425.7,404.5L424.7,404.1L424.3,403.6ZM397,403.9L397.5,403.6L398.9,403.8L400.4,403.9L401.7,404.1L402.6,403.9L403.8,404.7L402.9,404.6L401.7,404.6L400.5,404.6L399.2,404.7L397.9,404.4ZM378.7,406.1L378.5,405.7L379.9,405.9L381.4,406.1L382.4,405.9L382.2,406.4L381.6,406.7L380.1,406.6ZM373.9,405.9L374.3,405.6L375.6,405.9L377.6,406.4L377,406.4L375.6,406.2ZM346.6,412.2L346.5,411.7L348.5,411.9L350,412.3L351.4,412.7L352.5,413.2L351,413.3L349.1,412.9L347.9,412.5L347.7,412.5ZM345.9,418.4L345.9,418.4L345.9,418.4L346,418.4L345.1,417.9L347.5,418.2L347.5,418.2L347.6,417.9L347.7,417.9L347.8,417.9L350.2,418.3L350.2,417.9L350.2,417.9L352.3,417.7L353.8,417.9L354.5,418L356.6,418.3L359.7,418.5L362.5,418.8L366.4,419L368.1,418.8L372.2,418.9L375,419.2L376.5,418.9L378.2,418.7L377.3,418.3L373.9,418.3L370.5,418.1L368.9,417.7L366.1,417.5L365.3,417.1L364.7,416.7L364.2,416.3L363.2,415.9L361.2,415.7L359.8,415.3L357.7,415L360.1,415L361.9,414.8L363.8,415.2L364.9,414.9L365.7,414.5L365.8,414.1L364.8,413.7L363.1,413.4L361.2,413L359.2,413L357.3,412.8L355.3,412.7L354,412.3L352.3,411.9L350.9,411.5L348.7,410.1L349.3,410.3L350.7,410.6L352.1,410.5L353.4,410.4L354.9,410.9L356.2,410.8L357.1,410.5L357.9,410.2L358.4,409.8L359.7,409.6L359.1,409.2L358.2,408.7L358,408.3L358.9,408.1L360,408.5L361.2,408.2L362,407.9L363.3,407.9L364.5,407.8L365.5,407.5L366.2,407.2L367.1,407L368,407L368.8,407.1L370,407L371.6,407.2L372.9,407.1L374,407L375.5,407.1L377.1,407.2L378.4,407.2L379.8,407.2L381.3,407.2L382.6,407.2L383.2,406.8L384.2,406.6L385.7,406.9L386.7,406.7L387.4,406.2L388.4,406.6L389.1,407L390.1,407.5L390.8,407.1L392.4,407.6L393.8,407.7L395.3,408.1L396.6,408L397.6,407.8L399.2,407.8L400.6,408L402.1,408.2L402.2,407.7L401.2,407.2L400.4,406.8L399,406.7L398.1,406.2L397.5,405.8L396.4,404.8L397.3,405L398.7,405.1L399.9,405L401.2,405.2L402.5,405.6L403.3,406L404.7,406.1L405.8,405.9L407,405.7L408.1,405.5L409.3,405.8L410.6,405.7L410.8,404.7L412,405.3L413.3,405.5L414.4,405.4L415.6,405.9L416.9,406L418.2,406.1L419.6,406.4L420.1,405.9L420.2,405.5L421.5,406L422.7,405.8L423.9,406.1L424.8,406.5L426.1,406.4L427,406.1L427.8,405.8L428.9,405.6L430.2,405.5L431.4,405.3L432.2,405L432.6,404.6L432.5,404.1L432.1,403.5L431.6,403L431,402.5L430.4,402L429.9,401.5L429.6,401L429.4,400.5L429.7,400L429.8,399.4L429.7,398.9L429.3,398.3L428.9,397.8L429.1,397.2L429.5,396.8L430,396.3L430.5,395.8L431.2,395.4L431.4,394.8L431.8,394.5L432.3,394.1L433.3,394L433.8,393.6L434.5,393.3L435.3,393.2L436,392.8L436.4,392.4L437.2,392.2L438,392.6L437.7,393L436.8,393.4L436.4,393.7L435.5,393.5L434.7,393.7L434.1,394L433.5,394.3L433.1,394.7L433.2,395.3L433.5,395.8L434.1,396.2L433.6,396.6L432.6,396.7L432.2,397.1L431.8,397.6L431.4,398.1L431.4,398.6L432.1,399.2L432.8,399.6L433.8,399.9L434.8,400.4L435.4,400.9L435.9,401.4L436.4,401.9L437.1,402.3L437.6,402.8L438.3,404L438.8,404.5L439.1,405L439.7,405.5L439.9,406.2L439.6,406.7L439.2,407.1L438,407.3L437.8,407.7L437.4,408.2L436.2,408.6L435,408.8L433.9,409.1L432.8,409.3L432.3,409.8L430.8,409.9L429.1,409.8L427.6,409.9L426,409.9L426.7,410.4L428.3,410.6L429.5,410.9L430.4,411.4L429.6,411.7L427.9,411.6L426.8,411.9L427.1,412.4L427.4,412.8L428.8,413.2L429.4,413.6L430.9,414L432.9,414.2L434.8,414.5L436.4,414.8L438.3,415.2L440.7,415.3L443.2,415.6L444.9,415.9L446.9,416.3L448.1,416.7L448.8,417.1L449.6,416.8L450.9,416.5L452.2,416.1L453.9,415.9L455.3,415.6L457.5,415.6L459.8,415.7L461.7,416L462.1,415.5L463.2,415.2L465.4,415.2L467.1,415L468.7,414.7L470.6,414.6L472.5,414.4L473.8,414.1L473.1,413.7L472.5,413.3L472.4,412.9L470.6,413L468.8,413.1L467,413.1L466.6,412.7L466.4,411.9L466.7,411.6L468,411.3L469.5,411.1L470.5,410.7L471.6,410.4L472.3,409.9L473.6,409.7L474.9,409.5L475.5,409.4L477,409.4L478.3,409.2L479.5,408.9L480.6,408.7L481.6,408.4L482.9,408L483.7,407.6L484.6,407.2L484.8,406.7L483.8,406.4L484,405.9L484.6,405.5L485.6,405.2L486.7,404.9L487.7,404.5L488.4,404L488.9,403.4L489.6,403L490.8,403.1L491.3,403.6L492.5,403.6L492.5,403.1L493,402.6L494.1,402.7L494.4,403.2L495.6,403.3L496.9,403.1L498.2,402.9L499.3,403L499.8,403.5L500.9,403.1L501.9,402.9L503.1,402.7L504.2,402.5L505.3,402.2L506.4,402L507.3,401.7L507.9,401.2L508.7,401.6L509.8,401.4L510.5,402L511,402.5L512.2,402.2L512.7,401.7L513.8,401.3L515.1,401.4L515.4,401.9L516.3,401.4L517.5,401.3L518.7,401.2L519.8,401.2L520.9,401.4L522,401.5L522.4,401.9L523,402.3L524.1,402.1L525.3,402L526.5,402L527.6,402L528.7,401.8L529.8,401.7L530.8,401.3L531.8,401.1L532.9,400.9L533.8,400.6L534.5,399.8L535.2,399.4L536.2,399.6L536.5,400.1L537.3,400.4L538.4,400.3L539,400.7L539.7,401.1L540.8,400.8L541.3,400.2L542.3,400L543.5,399.5L544.6,399.3L545.9,399.1L546.8,398.8L547.8,398.5L548.7,398.2L549.6,398.3L550.7,397.9L551.5,397.5L552.5,397.5L553.5,397.2L553.9,396.7L554.9,396.3L555.8,396.1L557,395.8L558,395.7L558.9,395.8L559.9,396L560.6,396.3L560.4,396.9L561.2,397.4L561.7,397.7L562.9,397.9L563.4,398.3L564.1,398.6L565.1,398.7L566,398.5L567.2,397.9L568,398.2L569,398.4L569.9,398.5L570.9,398.6L571.9,398.6L572.1,400L571.9,400.4L571.5,401L570.3,401.3L569.3,401.8L569.2,402.3L570.3,402.3L569.9,402.8L569.2,403.3L568.4,403.8L569,404.2L570.1,404.3L571.3,404.1L572.2,403.6L572.8,403.1L573.5,402.7L574.4,402.3L574.9,401.9L575.8,401.2L576.5,401.1L577.7,401L578.8,400.9L580,400.7L580.7,400.1L581.3,399.6L582.3,399.1L583.5,398.8L584.5,398.5L585.4,398.1L586.1,397.9L587,397.6L588,397.8L589,397.6L590.1,397.5L591.2,397.6L592.2,397.2L593.3,396.3L593.4,396.7L593.5,397.3L594.3,397.6L595.2,397.7L596.3,397.5L597.3,397.6L598.3,397.6L599,397.5L599.9,397.6L600.5,397.9L601.6,397.7L602.7,397.7L603.8,397.5L604.7,397.7L605.8,397.2L606.6,396.8L607.6,396.4L609.6,395.4L610.2,395.6L610.7,396L611.1,396.4L611.8,397.3L612.9,397.3L613.8,397.3L615.1,397.1L616.4,396.9L617.5,396.6L618.5,396.2L619.7,396.1L620.8,395.8L621.4,396.1L621.6,396.5L622,396.9L623.2,396.9L623.7,397.2L624.6,397.6L625.9,397.7L627,397.6L628.2,397.2L629.3,396.8L630.3,396.7L631.1,396.8L632.1,397L633.3,396.8L634.2,396.8L635,396.9L635.9,397L637,396.8L638.4,396.6L639.5,396.5L640.7,396.5L641.8,396.4L642.8,396.3L643.7,395.6L644.3,395L644.6,395.4L644.2,396L644.1,396.6L644.1,397.1L644.8,397.3L646,397.2L647.4,397.2L648.5,397.1L649.9,397.1L650.9,397.1L652.2,397.1L653.3,397.2L653.6,397.7L652.9,398.2L653.2,398.6L654,398.9L654.8,399.2L655.9,399.5L657.1,399.7L657.9,399.9L659,399.9L660.2,399.5L660.7,399.8L661,400.3L661.6,400.6L662.7,400.7L663.7,400.9L663.6,401.4L664.4,401.7L664.7,402.1L665.6,402.4L666.8,402.3L667.8,402.4L669,402.4L670.1,402.5L671,402.7L671.7,403L672.4,403.2L672.6,403.6L671.9,404.1L670.8,404.6L669.5,405.2L668.6,405.6L667.4,406.1L665.9,406.3L664.7,406.8L663.1,407L662,407.5L660.7,408L659.4,408.4L658.3,408.9L657.4,409.4L656.6,409.9L655.9,410.4L655.8,410.8L655.3,411.3L655.1,411.7L656.6,411.8L656.2,412.3L654.2,412.5L652.4,412.8L650.5,412.8L648.7,413.5L647.6,414L646.5,414.4L645.2,414.8L645.8,415.1L645.4,415.6L645.4,416L645.7,416.3L646.2,416.6L646.8,416.9L648.1,417.2L647.3,417.7L649.3,417.8L649.3,417.9L649.1,418.2L652.2,418L653.3,418.2L654.1,418.4L654.1,418.4L645.7,420.3L634.8,421.4L500,421.4L365.2,421.4L354.3,420.3ZM541.9,238.5L542,238.5L542.1,238.1L543.1,238.1L544.2,237.6L543.4,238.3L543.5,238.6L543.6,238.7L542.3,239.4L541.7,239.2L541.3,238.5ZM416.5,277L417.3,276.8L417.6,276.9L417.5,278.1L416.3,278.2L416.1,278.1L416.5,277.7Z";
+const NATURAL_EARTH_BORDERS_D = "M554.6,310.3L553.5,311.2L552,311.8L551.2,311.8L550.7,312.2L549.7,312.3L549.4,312.5L547.8,312L546.7,312.2L546.4,310L546,309.3L545.7,308.8L544.4,308.5L543.7,308.1L542.8,307.8L542.3,307.5L541.7,307.1L541,305.1L540.2,304.3L540,303.4L540.1,302.5L539.9,301.1L540.5,301L541,300.4L541.5,299.6L541.8,299.3L541.8,298.8L541.5,298.4L541.5,297.8L541.9,297.6L541.9,296.7L541.4,295.8L541.9,295.6L543.4,295.6L546.1,295.5L546.4,295.7L551.3,298.9L551.4,299.8L553.3,301.4M477.3,260.2L477.4,260.2L480.4,260.1L480.5,259.5L481.1,258.8L481.6,256.6L483.5,254.9L484.1,252.9L484.6,252.8L485,251.5L486.1,251.4L486.6,251.6L487.2,251.6L487.6,251.2L488.4,251.2L488.4,250.3L488.6,250.3L488.6,250.4L488.6,250.7L488.5,253.1L484.2,253.1L484.2,257.1L482.9,257.3L482.6,258.1L482.8,260.4L477.6,260.3L477.3,260.9M349,208L350.1,207.3L350.7,206.4L349.4,205.5L349.5,203.8L349.6,202.7L349.1,202.1L348.8,201.5L348.8,200.7L347.3,201.2L345.5,202L345.3,201.1L345,200.4L344.3,200L343.2,200L350.3,192L355.1,187M417.7,222.8L417.2,221.9L417.8,219.8L417.4,219.3L416.5,219.6L416.2,219.2L414.9,220.3L414.2,221.5L413.6,222.3L413,222.5L412.6,222.6L412.3,223L410.1,223L408.2,223L407.6,223.3L405.9,224.4L405.7,224.5L405.2,225.1L404,225.1L402.8,225.1L402.2,225.4L402.3,225.7L402.3,226.1L402.2,226.3L400.3,227.1L399,227.3L397.3,228.2L397,228.2L396.6,227.9L396.5,227.7L396.6,227.5L397.1,227L397.9,226.1L398.6,225.2L398.8,223.8L399,222.4L397.9,221.7L398.2,221.4L398.1,221.2L397.7,221.2L397.6,221L397.7,220.6L397.4,220.8L397,220.7L397.2,220.6L396.9,220.4L397,220L396.2,219.5L395.4,219L394.5,218.4L393.6,217.9L392.3,218.3L391.9,218.3L390.6,217.9L389.5,218.1L388.6,217.6L387.4,217.4L386.6,217.3L386.4,217L386.5,216.2L386.1,216.2L385.8,216.8L383.4,216.8L379.3,216.8L375.2,216.8L371.6,216.8L368,216.8L364.4,216.8L360.8,216.8L359.6,216.8L356,216.8L352.6,216.8M372,253.2L371.4,253.2L370.6,252.9L369.6,252.4L369.4,251.6L369.4,250.5L368.8,249.6L368.6,248.7L368.2,247.6L367.5,247L366.4,247L365.2,248.2L364.3,247.8L363.7,247.3L363.6,246.4L363.4,245.6L362.8,244.9L362.3,244.4L362,243.8L359.8,243.8L359.6,244.5L358.5,244.5L355.9,244.5L353.3,243.4L351.6,242.6L351.8,242.3L350.1,242.5L348.6,242.6M559.8,220.8L559.1,220.5L559.1,219.8L558.1,218.7L557.2,218.8L555.9,217.7L556.4,216.6L556,216.3L556.6,214.6L558,215.5L557.9,214.3L559.9,212.7L561.8,212.7L564.6,213.7L566.2,214.3L567.3,213.7L569.2,213.7L570.9,214.4L571.1,214L572.8,214.1L572.9,213.3L570.7,212.3L571.6,211.6L571.2,211.2L572.2,210.8L571.1,209.7L571.5,209.2L575.6,208.7L576.1,208.3L578.8,207.8L579.6,207.2L581.8,207.5L582.7,209L583.8,208.7L585.5,209.2L585.7,210L586.8,209.9L589.1,208.5L588.9,209L590.8,210.1L595,214L595.3,213.2L597.3,214L598.8,213.6L599.6,213.9L600.5,214.8L601.4,215.1L602.2,215.7L603.7,215.5L604.7,216.5L604.2,217.5L603.2,217.6L603.7,219.2L603.3,219.9L600.7,219.4L600.8,222.1L600.3,222.5L598.1,223.1L600.1,225.8L599.3,226.2L599.7,227.1L598.9,226.9L598.1,226.3L596.2,226.1L594.1,226.1L593.7,226.3L591.8,225.6L591.2,225.9L591.2,226.9L589,226.3L588.3,226.5L588.2,227.2L587.5,227.5L586.2,228.6L585.9,229.7L585.5,229.7L584.9,229L583.3,229L582.8,227.7L582.2,227.7L581.9,226.1L580.1,224.9L578,225.1L576.6,225.3L575.1,223.9L573.9,223.3L571.8,222.2L571.5,222.1L568.6,223L569.9,228.7L569.2,228.8L568.1,227.6L567.2,227.1L565.8,227.5L565.4,228M588.2,227.2L588.6,227.4L587.8,228.4L588.9,229L589.7,228.6L591.4,229.4L590.1,230.6L589.1,230.4L588.6,230.4L588.3,230L588.3,229.3L586.8,229.6L586.6,230.7L586.2,231.5L585.2,231.4L585,232.1L586,232.5L586.5,233.7L586.2,235.3L585.2,235L584.5,234.9L584.3,234L582.4,233.3L581,232.5L580,231.8L578.3,230.7L577.3,229.1L576.8,228.8L575.5,228.9L575,228.5L574.5,227.3L572.7,226.5L571.8,227.4L570.9,227.9L571.3,228.7L569.9,228.7M691.2,308.4L691.6,303.2L691.9,298.1M669.5,308L669.6,308.3L669.6,308.8M649.2,290.8L649.5,291.9L650.4,292.8L651.3,292.5L652.2,292.6L652.9,291.8L653.6,291.6L654.9,292.1L656,291.7L656.7,289.6L657.2,289L657.6,287.2L659.1,287.2L660.3,287.5M422.6,380.1L421.9,380.1L420.6,380.1L419.5,376.7M419.4,376.2L418.2,376L415.3,375.8L414.5,374.9L414.1,373.8L413.4,373.9L412.7,373.3L412.1,371.7L412.8,371L412.9,370L412.5,369.3L412.7,368L412.5,365.9L412.1,365L412.6,364.7L412.3,364.1L411.6,363.8L411.8,363.1L411.1,362.6L410.3,360.7L410.8,360.4L410,358.5L409.9,356.9L409.9,355.5L410.5,354.9L409.8,353.4L409.5,351.9L410.2,350.9L409.9,349.6L410.3,348L410,346.6L409.6,346.3L408.5,343.6L409,341.9L408.6,340.4L408.8,339L409.4,337.5L410.2,336.5L409.7,335.9L409.9,335.3L409.5,332.7L410.8,331.9L411.1,330.3L410.9,329.9L411.8,328.4L413.6,328.8L414.5,330L414.9,328.7L416.4,328.8L416.7,329.1L419.4,331.7L420.5,331.9L422.3,333.1L423.7,333.7L424,334.4L423,336.8L424.4,337.3L425.9,337.5L426.9,337.3L427.9,336L428,334.6L428.6,334.3L429.4,335.2L429.5,336.5L428.5,337.4L427.7,338L426.4,339.6L425,341.7L424.8,343L424.7,344.6L425,346.2L424.8,346.6L424.8,347.6M405.7,322.9L406.4,322.5L406.6,321.7L407.4,322.8L407.7,323.9L408.5,324.6L408.2,326.1L409.2,327.9L409.9,330.1L410.9,329.9M541.7,307.1L541.2,307L539.3,307.2L539,307.4L538.6,308.4L538.9,309.1L538.6,311L538.4,312.6L538.7,312.9L539.7,313.5L540,313.2L540.1,314.9L539.1,314.9L538.5,314L538.1,313.3L537,313.1L536.7,312.3L535.9,312.8L534.8,312.6L534.4,311.9L533.5,311.7L532.9,311.7L532.8,311.3L532.4,311.2L531.8,311.1L530.9,311.4L530.3,311.3L530,311.5L530.1,309.6L529.7,309L529.6,308L529.8,307.1L529.5,306.5L529.5,305.5L527.9,305.5L528,304.9L527.3,304.9L527.2,305.2L526.4,305.3L526,306.2L525.8,306.6L525.1,306.4L524.6,306.6L523.7,306.7L523.2,305.9L522.9,305.4L522.5,304.4L522.2,303.3L518.2,303.2L517.7,303.4L517.3,303.4L516.7,303.6M516.6,303.1L516.9,303L516.9,302.3L517.2,301.9L517.7,301.5L518,301.7L518.5,301.1L519.2,301.1L519.3,301.5L519.8,301.8L520.6,300.8L521.4,300.1L521.8,299.6L521.7,298.3L522.3,296.7L523,295.9L523.9,295.2L524,294.7L524,294.1L524.3,293.5L524.2,292.7L524.4,291.3L524.6,290.3L525,289.4L525.1,288.5L525.2,287.4L525.7,286.6L526.5,286.1L527.6,286.6L528.5,287.2L529.5,287.3L530.5,287.7L530.9,286.7L531.1,286.6L531.7,286.7L533.2,286L533.7,286.3L534.2,286.2L534.4,285.9L534.9,285.7L535.9,285.9L536.8,285.9L537.2,285.8L538.1,287.1L538.7,287.2L539,287L539.7,287.1L540.4,286.8L540.7,287.4L541.9,288.5L541.9,290.3L542.4,290.5L542,291.1L541.5,291.5L541,292.3L540.7,293.1L540.6,294.3L540.3,294.9L540.3,296.1L539.9,296.6L539.8,297.5L539.6,297.6L539.5,298.5L539.8,299.2L539.9,301.1M556.6,296.7L555.8,295.4L555.8,289.6L556.9,287.8L557.3,287.3L558.2,287.3L559.4,286.2L561.1,286.1L564.9,281.4L565.8,280.1L566.3,279.1L566.3,278.3L566.2,276.7L566.2,276L566.2,276M546.1,295.5L546.1,293.8L546.5,293.2L547.2,292.1L547.7,291L547.1,289.2L546.9,288.4L546.2,287.3L547.1,286.4L548,285.3L548.7,285.6L548.7,286.5L549.2,287L550.1,287L551.9,288.3L552.3,288.3L552.6,288.3L552.9,288.5L553.8,288.6L554.2,288L555.4,287.3L556,287.8L556.9,287.8M551.5,265.6L550.9,266.5L549.9,266.8L549.5,267.3L549.4,268.3L548.9,270.6L549.1,271.3L548.9,272.6L548.5,274.2L547.7,275L547.1,276.2L547,276.8L546.4,277.3L546,278.9L546.1,280.3L546,279.1L545.8,279.1L545.9,278.3L545.7,277.7L545,277.1L544.8,276L544.9,274.8L544.3,274.7L544.2,275.1L543.4,275.1L543.7,275.6L543.8,276.5L543.1,277.4L542.5,278.5L541.8,278.7L540.6,277.8L540.1,278.1L540,278.6L539.3,278.9L539.3,279.2L537.9,279.2L537.7,278.9L536.7,278.8L536.3,279.1L535.9,279L535.2,278L534.9,277.6L534,277.8L533.6,278.5L533.3,280L532.8,280.3L532.4,280.4L533.3,281L532.3,280.3L531.8,279.9L531.7,279.4L531.9,278.7L531.9,278.1L531.1,277.1L530.9,276.4L531,276.1L530.4,275.6L530.4,274.7L530.1,274.1L529.6,274.2L529.8,273.6L530.1,272.9L529.9,272.3L530.4,271.8L530.1,271.4L530.4,270.4L531,269.3L532.1,269.4L531.9,263.1L531.9,262.5L533.4,262.4L533.3,259.3L538.6,259.3L543.8,259.3L549,259.3M530.9,276.4L530.1,276.7L529.4,277.4L528.5,279.1L527.2,279.8L525.9,279.7L525.5,279.9L525.7,280.4L525,281L524.4,281.6L522.7,282.2L522.3,281.8L522.1,281.8L521.9,282.2L520.7,282.3L521,281.9L520.5,280.8L520.3,280.1L519.7,279.9L518.9,279L519.2,278.2L519.8,278.4L520.2,278.3L521,278.3L520.2,276.8L520.2,275.8L520.1,274.7L519.6,273.7L519.7,273L518.8,273L518.8,271.9L518.3,271.4L518.8,269.3L520.5,267.8L520.5,265.7L521,262.5L521.2,261.8L520.7,261.3L520.6,260.8L520.1,260.4L519.7,257.9L521,257.1L526.4,260.1L531.9,263.1M404.2,262.9L404.2,263.8L404,264.4L403.7,264.6L404,265.1L403.9,265.5M524.5,207.5L525.8,207.7L526.3,208L526.2,208.4L526.4,208.7L524.3,208.8L522.8,208.6M662.6,227.3L662.2,227L661.8,226.2L662.5,226.2L661.7,224.4L660.7,223L661.4,222.5L663.1,222.7L663.1,221.2L662.5,219.5L662.7,219L662.5,217.6L660.7,218.1L660.1,218.7L658.2,218.7L656.9,217.2L654.8,216.1L652.5,215.6L651.1,214.1L650.2,213.2L649.3,212.6L647.6,211L646.3,210.5L644.2,210L642.7,210.1L641.4,210.4L640.9,211.1L641.8,211.5L642.3,212.3L641.9,212.8L641.8,214.4L642.1,215.1L641,216L639.2,215.4L637.9,215.6L637,215.1L636.2,214.9L635,216L633.6,216.2L632.7,216.6L631,216.3L629.9,216.4L628.8,215.6L627.3,214.9L626,214.7L624.6,214.9L623.6,215.1L621.6,214.5L620.8,213.4L619.2,213L618.1,212.8L616.4,212.2L616,213.7L616.9,214.6L616.2,215.7L614.3,215.3L613.1,215.2L612,214.5L610.7,214.5L609.5,214L608,214.8L606.2,216.1L605.1,216.3L604.7,216.5M560.5,227.9L559.9,228.6L559.7,229L559.2,228.9L558.1,227.9L557.8,227.9L556.9,227.5L556.4,226.9L555.2,226.5L554.5,226.8L554.3,226.5L552.4,225.7L550.6,225.5L549.5,225.2L549.4,225.4M546.3,219.7L546.3,219L546.8,218.6L548,218.5L548.1,218L547.7,217.1L548,216.3L547.9,215.9L546,215.4L545.4,215.4L544.5,214.7L543.6,214.9L542,214.4L542,214.1L541.5,213.4L540.5,213.4L540.3,212.9L540.6,212.6L539.7,211.7L538.5,211.9L538.1,211.8L537.9,212.1L537.4,212.1L537,211.1L536.6,210.6L536.8,210.5L537.8,210.5L538.2,210.2L537.8,209.8L537,209.5L537,209.3L536.5,209L535.6,208L535.8,207.6L535.5,206.9L534.4,206.6L533.8,206.8L533.6,206.4L532.3,206L531.8,205.1L531.6,204.4L531,204.1L531.4,203.6L530.9,202.3L531.5,201.4L531.3,201.2M531.2,199.7L533.2,197.9L534.1,197.1L534.3,196.4L532.6,195.4L532.8,194.5L531.7,193.5L532.1,192.3L530.6,190.7L531.4,189.7L529.6,188.8L529.6,187.9L530.4,187.7L532,187.2M540.8,221.5L541.1,221.1L542,221.4L542.4,221.5L542.6,221.8L542.8,221.8M529.6,187.9L529.8,186.9L528.4,186.4L526.9,186.8L526.5,187.8L525.7,188.4L524.5,188.1L523.2,188.2L521.9,187.5L521.3,187.8L520.7,187.9L520.7,188.7L518.7,188.5L518.5,189.3L517.5,189.3L516.9,190.2L516,191.7L514.5,193.7L515,194.2L514.6,194.7L513.6,194.7L513,196L513.2,197.9L513.9,198.6L513.7,200.3L512.8,201.3L512.4,202.1M521.4,339.1L522,338.4L522.5,338.8L522.7,339.5L523.3,339.6L524.1,339.9L524.8,339.8L526,339L526.3,333.1L526.6,333.3L527.4,334.8L527.2,335.8L527.5,336.4L528.4,336.2L529.1,335.5L529.8,335L530.1,334.3L530.8,333.9L531.3,334.1L531.9,334.5L533,334.6L533.9,334.2L534,333.7L534.3,333L535,332.9L535.5,332.3L536,331.2L537.2,330L539.1,328.9L539.7,328.9L540.3,329.1L540.8,329L541.5,329.1L542,331.3L542.2,332.5L541.9,334.2L542,334.8L541.3,334.5L540.9,334.6L540.8,335.1L540.4,335.7L540.4,336.2L541.1,337.1L541.9,336.9L542.2,336.2L543.2,336.2M537.9,339.7L537.3,339.2L536.7,339.6L536,340.2L535.2,341.2L536.1,342.4L536.6,342.3L536.8,341.8L537.6,341.5L537.8,341L538.3,340.2L537.9,339.7M381.7,264.8L381.5,264.8L380.9,265.8L380.7,265.6L380.5,265.7L380.5,265.9L379.2,265.9L378,265.9L377.9,266.8L377.2,266.8L377.7,267.3L378.1,267.7L378.2,268L378.4,268.1L378.3,268.7L376.6,268.7L375.8,270L376,270.3L375.8,270.6L375.7,271.1M425,341.7L425.8,341.6L427.3,342.8L427.7,342.7L429.2,343.8L430.4,344.6L431.3,345.7L430.8,346.5L431.3,347.4M428,334.6L428.1,333.7L428.2,332.8L428.1,331.9L427.6,331.6L427.1,331.9L426.6,331.8L426.4,331.2L426.1,329.8L425.8,329.3L424.9,328.8L424.4,329.2L422.9,328.9L422.8,326.7L422.3,325.8L422.7,325.5L422.5,324.6L422.8,323.9L422.9,322.7L422.5,321.7L421.8,321.2L421.6,320.6L421.7,319.7L419.1,319.6L418.5,317.8L418.9,317.8L418.8,317.1L418.5,316.6L418.4,315.7L417.6,315.2L416.7,315.3L416.1,314.8L415.2,314.5L414.6,313.9L413.1,313.6L411.5,312.2L411.6,311.2L411.4,310.6L411.5,309.4L409.7,309.6L409,310.2L407.9,310.9L407.6,311.4L406.9,311.4L405.9,311.3L405.1,311.5L404.5,311.3L404.5,308.9L403.4,309.9L402.2,309.8L401.6,309L400.7,308.9L401,308.2L400.2,307.3L399.6,305.9L399.9,305.6L399.9,304.9L400.7,304.4L400.5,303.6L400.8,303L400.9,302.3L402.4,301.2L403.5,300.9L403.7,300.7L404.9,300.8L405.5,296.5L405.5,295.8L405.3,294.9L404.7,294.3L404.7,293.1L405.5,292.9L405.7,293.1L405.8,292.4L405,292.3L405,291.3L407.6,291.3L408.1,290.8L408.5,291.3L408.7,292.2L409,292L409.7,292.9L410.8,292.8L411.1,292.3L412.1,291.9L412.6,291.6L412.8,291L413.8,290.5L413.7,290.2L412.5,290.1L412.4,289.1L412.4,288L411.8,287.6L412.1,287.5L413.1,287.7L414.2,288.1L414.6,287.7L415.6,287.4L417.1,286.9L417.6,286.3L417.4,285.8L418.1,285.7L418.5,286.1L418.3,286.8L418.7,287L419,287.8L418.6,288.3L418.4,289.7L418.7,290.5L418.8,291.2L419.7,291.9L420.3,292L420.5,291.7L420.9,291.6L421.5,291.4L422,290.9L422.7,291.1L423.1,291L423.8,291.1L423.9,290.8L423.7,290.5L423.8,290L424.4,290.2L425,290L425.8,290.4L426.4,290.7L426.8,290.3L427.1,290.3L427.3,290.8L428,290.7L428.5,290.1L428.9,288.9L429.7,287.5M422.3,325.8L422.3,325.3L420.9,324.5L419.7,324.5L417.4,325L416.9,326.4L417,327.2L416.7,329.1M406.6,321.7L407.3,320L406.6,318.7L406.9,318.2L406.6,317.6L407.1,316.8L407,315.4L407,314.3L407.2,313.8L405.9,311.3M390.8,299.4L390.9,300L390.6,300.4L390.6,301L391.2,300.8L391.7,301L392.3,301.8L393.1,301.2L393.3,300.1L394.1,298.7L395.7,298.1L397.2,296.5L397.6,295.4L397.4,294.2L397.8,294.1L398.7,294.8L399.1,295.6L399.7,296L400.6,297.6L401.6,297.8L402.3,297.4L402.8,297.7L403.6,297.6L404.7,298.3L403.8,299.9L404.2,299.9L404.9,300.8M397.4,294.2L396.8,293.9L396.2,293.3L395.8,293.6L394.6,293.4L394.3,292.7L394,292.7L392.7,291.8M394.3,282.6L394.5,281.9L394.9,282L395.2,281.5L394.9,280.6L395.1,280.3M403.5,275.4L402.6,275.7L402.3,276.5L401.7,277L401.3,277.5L401,278.7L400.6,279.6L401.3,279.7L401.4,280.4L401.7,280.8L401.8,281.4L401.6,282L401.6,282.3L402,282.4L402.3,283L404,282.8L404.8,283L405.7,284.4L406.3,284.2L407.2,284.3L408,284.1L408.5,284.4L408.2,285.2L407.9,285.8L407.8,286.9L408,288L408.4,288.4L408.4,288.8L407.7,289.6L408.2,289.9L408.6,290.5L409,292M387.4,281L387.5,280.7L387.6,280.4L387.6,280.1L387.8,279.9L387.6,279.7L387.6,279.1L388.1,278.9M384,276.5L384.2,276.3L385.1,276.7L385.4,276.5L385.8,276.7L386,277L386.4,277.1L386.8,276.8M382.1,273.5L382.5,273.5L382.7,273.1L382.9,273.1L383,272.3L383.3,272.3L383.6,272.3L383.9,271.9L384.3,272.2L384.4,272L384.7,271.8L385.2,271.4L385.2,271.1L385.4,271.1L385.6,270.7L385.7,270.6L385.9,270.9L386.2,271L386.5,270.8L386.9,270.8L387.3,270.5L387.6,270.3L388,270.4M381.5,272.9L381.7,272.3L381.5,272.1L381.2,272L380.6,272.2L380.6,272L380.2,271.7L379.9,271.4L379.6,271.3L379.9,270.9L379.8,270.6L379.9,270.3L380.6,269.8L381.3,269.2M378.4,272.4L378.5,272.1L379,271.7L379.3,271.5L379.2,271.4L379.6,271.3M380.5,265.9L380.3,267.2L380,269L380.4,269M418.9,280.8L417.8,281.7L417.7,282.3L418.1,282.9L417.8,283.2L416.9,283.5L416.9,284.2L416.5,284.6L417.4,285.8M422.3,284.6L422.1,286L421.3,286.4L421.3,286.8L421.1,287.6L421.6,288.7L422.1,288.8L422.2,289.6L423.1,291M426.7,284.9L425.9,286.3L426,287.4L426.5,288.3L426.3,289L426.2,289.7L425.8,290.4M503,213.5L503.2,214.1L503.7,214.1L504.3,214.7L505.1,215.4L505.7,215.3L506.8,216L507.1,216.1L507.4,216.1L508,216.5L509.7,216.8L509.1,217.8L509,218.9L508.7,219.2L508.1,219L508.2,219.4L507.3,220.3L507.3,221L507.9,220.8L508.3,221.4L508.3,221.9L508.7,222.5L508.3,222.9L508.6,224.1L509.3,224.3L509.2,225M503.7,226.9L502.3,227.1L500.9,226.4L500.4,226.7L498.1,226L497.6,225.4M539.1,328.9L538.3,328.1L537.3,327.9L537,326.9L537,326.3L536.4,326.2L535,324.4L534.6,323.5L534.4,323.2L533.9,322L535.4,322.1L535.8,322.3L536.3,322.3L537,321.3L538.3,320L538.7,319.8L538.9,319.3L539.7,318.7L540.7,318.4L540.8,319L541.9,319L542.5,319.3L542.8,319.7L543.4,319.8L544.1,320.3L544,322.3L543.7,323.4L543.6,324.6L543.8,325.1L543.6,326L543.4,326.2L543,327.3L541.5,329.1M526.3,333.1L526.5,328.5L527.8,328.4L528,322.8L529,322.7L531.1,322.2L531.6,322.8L532.5,322.2L532.9,322.2L533.6,321.8L533.9,322M515.7,321.3L516.4,321L517.2,320.7L518.1,320.8L518.9,321.5L519.1,321.4L524.5,321.3L525.4,322.1L528.7,322.3L531.1,321.6L532.3,321.3L533.1,321.4L533.6,321.7L533.6,321.8M477.9,268.6L478.3,268.1L479,268.2L479.7,267.9L480.4,267.8L481,268.3L481.9,268.7L482.7,269.9L483.6,271L483.6,271.9L483.9,272.8L484.4,273.3L484.5,273.9L484.4,274.4L484.2,274.5L483.5,274.4L483.4,274.5L483.1,274.6L482.1,274.2L481.5,274.2L479,274.1L478.6,274.3L478.2,274.2L477.5,274.5M477.3,273.3L478.5,273.3L478.8,273.1L479.1,273.1L479.6,272.7L480.1,273L480.7,273.1L481.3,272.7L481.1,272.3L480.6,272.5L480.2,272.5L479.7,272.1L479.2,272.2L478.9,272.5L477.4,272.6M483.6,271L484.1,270.7L484.3,269.7L484.7,269.7L485.7,270.1L486.4,269.8L486.9,269.9L487.1,269.6L492.5,269.6L492.9,268.5L492.6,268.3L492,261.4L491.5,254.6L493.5,254.6L497.9,258L502.4,261.5L502.8,262.2L503.6,262.7L504.2,262.9L504.2,263.9L505.7,263.8L505.7,267.4L505,268.5L504.9,269.5L503.7,269.7L501.9,269.8L501.4,270.4L500.5,270.5L499.6,270.5L499.3,270.2L498.6,270.4L497.3,271.1L497,271.5L496,272.3L495.8,272.7L495.2,273L494.6,272.8L494.2,273.2L494,274.2L492.9,275.5L493,276.1L492.6,276.7L492.7,277.7L492.1,277.9L491.8,278.1L491.6,277.4L491.2,277.6L491,277.6L490.7,278L489.7,278L489.3,277.8L489.1,277.9L488.7,277.5L488.8,277L488.6,276.8L488.3,277L488.4,276.5L488.7,276.1L488.1,275.4L488,275L487.7,274.6L487.4,274.6L487.1,274.8L486.6,275L486.3,275.3L485.7,275.2L485.3,274.8L485.1,274.8L484.7,275L484.5,275L484.4,274.4M488.6,250.7L493.5,254.6M502.5,284.3L502.2,283.2L502.3,279.6L502,279.3L501.9,278.5L501.5,278L501,277.5L501.2,276.7L501.7,276.5L502,275.8L502.6,275.7L502.9,275.2L503.4,274.7L503.9,274.7L504.9,275.6L504.8,276.2L505.1,277.1L504.9,277.7L505,278.1L504.4,279.1L503.9,279.6L503.7,280.6L503.7,281.6L503.7,284.1M519.6,273.7L519.2,273.8L519.2,274.3L518.9,274.4L518,272.6L517.7,272.6L516.6,273.5L515.6,273L514.8,272.9L514.4,273.1L513.7,273.1L512.9,273.8L512.2,273.8L510.5,273L509.9,273.4L509.2,273.3L508.7,272.7L507.3,272.1L505.9,272.3L505.5,272.7L505.4,273.6L505,274.2L504.9,275.6M502.9,275.2L502.9,274.1L501.4,273.7L501.3,273L500.6,272L500.4,271.2L500.5,270.5M505.7,263.8L507.6,263.1L511.4,260L515.9,257L518,257.6L518.8,258.5L519.7,257.9M519.2,274.3L519.7,275L519.6,275.2L519.5,275.8L518.4,277L518,278L517.8,278.8L517.6,279.2L517.3,280.3L516.6,280.9L516.4,281.7L516.1,282.4L516,283L515,283.5L514.3,282.9L513.7,282.9L512.9,283.8L512.5,283.9L511.9,285.4L511.6,286.5M520.7,282.3L520.1,283.9L519.7,284.2L519.7,285.4L519.8,286.1L519.7,286.5L520.3,287.4L520.5,287.9L521,288.7L521.6,289.3L521.6,290L521.8,290.4L521.7,291.3L520.6,290.9L519.5,290.5L517.8,290.4L517.6,290.3L516.8,290.5L516,290.3L515.3,290.4L513.1,290.4M501.4,284.7L501.1,284.1L500.8,283.1L500.7,282.3L501,280.9L500.6,280.3L500.5,279.1L500.5,277.9L499.9,277.1L500,276.6L501.2,276.7M496.1,286.1L496.2,285.5L495.6,284.2L496,282.4L496.5,281.1L496.2,278.8L496,277.6L496,276.7L498.4,276.7L499,276.8L499.4,276.5L500,276.6M492.7,277.7L493.3,278L493.5,278.5L494.1,278.9L494.6,278.5L495.2,278.4L496.2,278.8M489.5,287.1L489.6,285.8L489.8,285.6L489.7,285L489.1,284.4L488.7,284.2L488.3,283.8L488.6,283.1L488.5,282.4L488.5,281.9L488.8,281.9L488.8,281.2L488.7,280.9L488.9,280.7L489.4,280.5L489,279.2L488.7,278.6L488.9,278L489.1,277.9M488.5,281.9L488.2,281.9L487.9,282.5L487.5,282.5L487.2,282.1L487.3,281.5L486.8,280.5L486.4,280.7L486.1,280.8L485.7,280.9L485.8,280.3L485.6,279.9L485.6,279.4L485.3,278.7L484.9,278.2L483.9,278.2L483.5,278.5L483.2,278.5L482.9,278.8L482.8,279.3L482,280M479.5,276.6L480.1,275.8L480.5,275.9L480.9,275.6L481.2,275.6L481.4,275.4L481.3,274.9L481.5,274.7L481.5,274.2M484.5,283.3L484.8,282.8L484.9,282.4L485.5,281.5L486.1,280.8M525.1,288.5L524.2,288.4L523.3,288.1L522.5,289L521.8,290.4M533.3,281L534.1,281.7L534.1,282.2L535,283L535.6,283.7L536,284.6L537,285.3L537.2,285.8M517.7,301.5L517.2,301L516.7,301.3L516.2,301.9M515.1,300.3L516.1,299.4L515.6,298.4L516.1,298L517,297.8L517.1,297.1L517.8,297.8L519,297.9L519.5,297.1L519.6,296.1L519.5,294.9L518.8,293.9L519.4,292.1L519.1,291.8L518.1,291.9L517.7,291.1L517.8,290.4M512.9,292.4L513.4,292.3L515.4,292.3L515.3,290.4M544.4,308.5L545,309.2L545.3,310.6L545.1,311L544.8,312.3L545,313.6L544.6,314.1L544.1,315.6L544.8,316L540.7,317.3L540.7,318.4M531.1,321.6L530.3,320.6L529.4,319.3L529.6,314.3L532.4,314.3L532.3,313.8L532.5,313.2L532.3,312.5L532.5,311.7L532.4,311.2M546.7,312.2L546.3,313.3L546.6,315.4L547.1,315.4L547.6,315.9L548.1,317L548.1,319.1L547.5,319.4L547.1,320.5L546.2,319.5L546.2,318.4L546.5,317.7L546.4,317L545.9,316.6L545.5,316.8L544.8,316M542.2,336.2L542.1,335.5L542,334.8M539.5,298.5L540.3,298.6L540.7,297.7L541.5,297.8M545.3,241.7L545.7,241.7L545.8,241.4L546.2,241.4L546.3,242.1L546.1,242.3L546.1,242.3L546,242.8L545.5,242.6L545.3,243.6L545.6,243.8L545.3,244L545.3,244.5L545.9,244.2L546,244.9L545.6,247.4L545.4,247L544.5,244.7M546.2,239.2L546.8,239.3L547,239.9L546.4,240.5L546.2,241.4M546,242.8L546.1,243.8L545.9,244.2M514.8,241.6L514.8,242.8L514.2,243.3L513.8,243.8L512.9,244.4L513.1,245.1L513,245.8L512.3,246.1L511.7,243.3L510.9,242.6L510.9,242.2L509.8,241.3L509.7,240.1L510.4,239.2L510.7,237.9L510.5,236.4L510.7,235.6M488.6,250.3L488.7,248.4L490.8,247.3L492.1,247L493.2,246.6L493.7,245.8L495.2,245.2L495.3,244L496,243.9L496.6,243.3L498.3,243L498.5,242.4L498.2,242.1L497.8,240.4L497.7,239.4L497.2,238.4M512.3,246.1L512.8,247.5L512.9,248.3L512.7,249.5L512.8,250.3L512.6,251.1L512.8,252.1L512.3,252.8L513.1,254L513.1,254.6L513.6,255.5L514.2,255.2L515.3,256L515.9,257M546.1,242.3L547.6,242.9L550,241.2L550.7,243.2L550.5,243.4L548,244.2L549.4,245.8L549,246.1L548.9,246.6L547.9,246.8L547.6,247.4L547.1,247.9L545.6,247.6M573.9,252.9L574.2,253.4M574.5,254.7L573.8,254.7L573.8,255.7L574.1,255.9L573.5,256.2L573.6,256.9L573.3,257.5L573.3,258.2L573.1,258.5L569,257.7L568.4,256.1L568.3,255.7M567.9,255.1L567.6,255.2L567.2,254.9M563.4,248.9L562.4,248.9L562,248.2L560.8,248L561.6,246.5L562.5,246.6M550,241.2L552.6,239.6L552.9,237.7L552.6,236.5L553.3,236.1L553.8,235.2L554.3,234.9L555.8,235.1L556.3,235.5L556.9,235.2L558,237.1L558.9,237.6L559.1,238.5L558.5,239.1L558.4,240.3L559.5,241.8L561.2,242.7L562,243.9L561.9,245L562.4,245L562.5,245.9L563.3,246.7M560.8,248L558.4,247.9L554.4,244.7L552.3,243.6L550.7,243.2M571.4,267.8L570.8,266.6L569.6,264L573.5,262.5L574,259.3L573.3,258.2M638.7,274.8L638.1,272.9L638.9,271.6L640.6,271.3L641.9,271.5L643,272.1L643.5,271L644.8,271.6L645.2,272.7L645.3,274.6L643.1,275.8L643.8,276.7L642.4,276.8L641.3,277.5M638.8,284.2L638.4,284.8L637.5,285L637.3,284.2L636.2,283.5L636,283.8M633.5,278.4L634.1,276.7L634.7,275.3L634,273.8L633.9,273.1L633.7,272.2L632.6,271L632.2,270.2L632.7,269.9L633,268.5L632.3,267.5L631.3,266.3L630.4,264.9L631,264.6L631.3,262.9L632.2,262.8L632.9,262.2L633.6,261.8L634.3,262.3L634.5,263.2L635.4,263.3L635.3,265L635.6,266.4L636.9,265.4L637.3,265.7L638.1,265.7L638.3,265.1L639.3,265.2L640.5,266.5L640.8,268.1L642.1,269.5L642.2,270.8L641.9,271.5M633.6,261.8L633.8,261.2L634.8,260.2L634.9,260.6L635.7,260.6L635.1,258.8L635.8,258.6L636.8,259.8L637.6,261.2L639.3,261.3L640,262.6L639.3,263L639,263.6L640.7,264.6L642.1,266.4L643.2,267.8L644.3,268.9L644.8,270L644.8,271.6M623.2,261.4L622.9,260.1L623.4,260.4L623.3,259.2L623.9,258.8L623.6,258.2L623.8,257.6L623.6,256L624.7,256.4L625,255.1L624.9,254.3L625.4,252.9L625.2,252L626.6,250.9L627.6,251.2L627.3,250.3L627.7,250L627.5,249.4L628.2,249.2L628.9,250.2L629.5,250.6L629.8,251.8L630,253.1L629.1,254.4L629.3,256.3L630.6,256L631.2,257.5L632.1,257.8L632,259.1L633.1,259.7L633.7,260L634.6,259.5L634.8,260.2M635.8,258.6L636.4,258.2L637.5,258.2L638.7,258L639.7,257.1L640.5,257.7L641.7,258L641.7,258.9L642.4,259.6L643.9,260M662.1,233L662.1,233.4L661.6,233.5L660.7,233.5L660.5,234.2L660,234.2L659.9,234.3M656.1,230.9L656.7,229.9L657.7,229L658,227.9L658.8,228.4L659.9,228.5L659.3,227.7L660.9,227L661,226.1L662.2,227M639.2,215.4L639.3,216.6L639.2,218.1L639.9,218.8L640.4,218.6L641.8,218.8L642.4,218.2L643.6,218.7L645.3,219.8L645.4,220.3L644.4,220.2L642.7,220.4L642.1,220.8L641.7,221.8L640.1,222.4L639.3,223.3L637.8,222.9L637.1,222.8L636.9,223.8L637.6,224.4L638,224.9L637.3,225.5L636.8,226.3L635.6,226.8L633.8,226.9L632,227.4L630.8,228.3L630.1,227.8L628.6,227.8L626.4,226.8L625.1,226.6L623.5,226.8L620.8,226.5L619.5,226.5L618.4,225.6L617.3,224.1L616.5,224L614.6,223L612.9,222.8L611.3,222.5L610.6,221.9L610.4,220L609.1,218.8L607.2,218.2L605.8,217.4L605.1,216.3M623.3,259.2L622.1,256.7L621.8,256.7L621.7,257.7L620.9,256.9L621.1,256L621.7,255.9L622,254.6L621.2,254.3L620,254.3L618.7,254.1L618.4,253L617.7,252.9L616.6,252.2L616.3,253.3L617.4,254.2L616.7,254.7L616.5,255.3L617.4,255.8L617.3,256.7L618,257.9L618.4,259.2M590.3,256.6L591.1,255.5L594,255.6L593.5,254.2L592.7,253.4L592.3,252.2L591.4,251.5L592.6,249.8L594.1,249.9L595.2,248.3L595.7,246.6L596.7,245.1L596.4,243.9L597.3,243L596.1,242.2L595.5,241.1L594.7,239.8L595.2,239.1L597.2,239.5L598.6,239.2L599.5,237.9L601.3,239.8L601.5,241L602.2,241.9L602.3,242.7L601.4,242.5L602.1,244.2L603.6,245.2L605.6,246.3L604.9,247L604.7,248.5L606.1,249.1L607.5,249.9L609.4,250.8L611.2,251L612.1,251.8L613.2,251.9L614.8,252.3L615.9,252.3L615.9,251.7L615.6,250.7L615.5,250L616.3,249.6L616.6,250.9L616.7,251.2L618,251.8L618.8,251.6L619.9,251.7L621,251.6L620.9,250.6L620.3,250.1L621.3,249.9L622.2,248.8L623.5,247.8L624.7,248.1L625.4,247.5L626.3,248.5L626,249.1L627.5,249.4M616.6,250.9L617.3,249.7L617.9,249.3L618.9,249.7L619.6,249.7L620.3,250.1M605.6,246.3L606.1,245.9L607.2,246.4L608.8,247.5L609.5,247.7L610.1,248.4L611.2,248.8L612.4,249.5L614,249.8L615.5,250M581.2,254.4L581.5,252.6L583.3,251.8L583.1,251L582.4,250.8L582.2,249.4L580.8,248.7L580.1,247.7L579.4,246.9L581.7,247.7L582.9,247.4L583.7,247.7L584,247.3L584.9,247.4L586.5,246.8L586.3,245.4L586.9,244.5L587.8,244.5L587.9,244.1L588.8,243.9L589.4,244L589.8,243.6L589.5,242.6L589.9,241.7L590.6,241.3L589.9,240.2L591.1,240.3L591.4,239.7L591.2,239.1L591.7,238.4L591.4,237.7L590.9,237L591.5,236.3L592.8,236L594.2,235.8L594.8,235.5L595.5,235.3L596.6,236L597.3,237.3L599.5,237.9M586.2,235.3L586.6,235.5L587.4,235L587.9,235.3L588.2,234.6L588.9,234.6L589.1,234.4L589.1,233.7L589.5,233.2L590.2,233.5L590.2,234L590.6,234.1L590.8,235.4L591.4,235.9L591.8,235.6L592.3,235.4L593,234.7L593.9,234.9L595.2,234.9L595.5,235.3M579.4,246.9L580.3,245.4L580,244.4L579,244.2L578.8,243.1L578.1,241.9L578.5,241L577.9,240.8L578.1,239.6L578.2,237.7L579.6,238.3L580.6,238L580.7,237.3L581.7,237.1L582.3,236.6L582.3,235.3L583.3,235L583.4,234.5L584.1,234.9L584.5,234.9M589.1,230.4L588.7,230.9L587.3,230.6L587.4,231.5L588.7,231.4L590.4,231.9L592.7,231.7L593.4,233.1L593.8,233L594.7,233.3L594.8,234L595.2,234.9M599.7,227.1L599.6,227.5L597.9,228.3L597.7,228.9L596.1,229.1L595.9,230.1L594.5,229.9L593.7,230.2L592.7,231L593,231.3L592.7,231.7M578.2,237.7L577.9,236.3L576.9,236.3L575.2,234.9L574.1,234.7L572.6,233.9L571.7,233.7L571.2,234L570.3,234L569.6,234.9L568.5,235.2M556.9,235.2L556,234L556.2,233.5L555.5,231.7L556.3,231.2L556.6,231.8L557.4,232.6L558.3,232.8L558.7,232.7L560,231.6L560.5,231.4L560.9,231.9L560.6,232.7L561.5,233.5L561.8,233.4M546.2,237.4L546.5,237L546.8,236.7L546.7,235.8L547.2,236.1L548.5,235.7L549.3,236L550.3,236L551.7,235.4L552.4,235.4L553.8,235.2M558.3,232.8L557.6,231.9L557.6,231.6L557,231.6L556.6,231.2L556.3,231.2L555.7,230.8L554.8,230.4L554.8,229.6L554.5,229.1L556.2,228.8L556.5,229.2L557,229.5L556.8,229.9L557.6,230.4L557.3,230.9L557.9,231.4L558.5,231.6L558.7,232.7M521.3,187.8L522.8,188.5L524.6,189.4L524.9,191.5L525.4,192M537.4,212.1L536.4,212.2L536.1,212.5L536.2,213.3L535.7,213.1L534.6,213.2L534.2,212.8L533.8,213.1L533.4,212.9L532.4,212.9L531.1,212.5L529.9,212.4L528.9,212.4L528.4,212.8L527.8,212.9L527.7,212.2L527.2,211.5L527.9,211.2L527.9,210.6L527.5,210L527.3,209.4L528.5,209.4L529.6,208.8L529.8,208L530.7,207.5L530.5,206.8L531.1,206.6L532.3,206M536.2,222.5L535.7,222.2L535.1,222.5L534.5,222.2L534.8,222L535,221.5L535.2,221L535.1,220.7L535.4,220.6L535.5,220.8L536.2,220.9L536.5,220.8L536.3,220.6L536.3,220.4L535.9,220L535.6,219.3L535.1,219.1L535.2,218.6L534.6,218.1L534.1,218.1L533.1,217.6L532.3,217.8L532.1,218L531.6,218L531.3,218.4L530.4,218.5L530,218.7L529.4,218.4L528.7,218.4L527.9,218.2L527.4,218.5L527.3,218.1L526.6,217.7L526.8,217.1L527,216.7L527.3,216.8L526.9,216.1L527.9,214.8L528.5,214.6L528.5,214.2L527.8,212.9M527,216.7L525.9,216.1L525,216.3L524.4,216.1L523.8,216.5L523.1,215.9L522.6,216.1L522.5,216L521.9,215.3L521,215.2L520.9,214.7L520.1,214.5L519.9,214.9L519.2,214.6L519.3,214.2L518.4,214.1L517.8,213.6L517.2,212.6L517.3,212.1L516.9,211.3L516.5,210.8L516.8,210.4L516.5,209.6M526.4,208.7L527,208.9L527.3,209.4M527.4,218.5L526.7,218.8L526.2,219.9L525.6,220.9L524.6,221.2L523.9,221.2L523,221.6L522.5,221.8L521.5,221.5L520.5,220.8L520.2,220.6L519.9,220.1L519.7,220.1M520.5,218.1L520.4,218.8L519.7,218.8L520,219.1L519.7,220.1L519.5,220.4L518.4,220.4L517.8,220.7L516.8,220.6L515,220.2L514.7,219.7L513.5,220L513.4,220.3L512.7,220L512.1,220L511.5,219.7L511.7,219.3L511.6,219.1L512,219L512.6,219.4L512.8,219L513.8,219.1L514.7,218.8L515.3,218.8L515.6,219.1L515.7,218.9L515.5,217.9L515.9,217.7L516.3,217L517.2,217.5L517.9,216.9L518.3,216.7L519.3,217.2L519.8,217.1L520.4,217.4L520.3,217.6L520.5,218.1L521.1,218.5L521.6,218.7L522.6,218.5L522.6,218.2L523.1,218.2L523.7,217.9L523.8,218L524.4,217.8L524.6,217.5L525,217.4L526.3,217.8L526.6,217.7M534.5,222.2L534.2,221.5L534.3,220.8L534.2,220.2L533.4,219.2L532.9,218.6L532.5,218.1L532.1,218M535.2,225L534.5,224.8L533.5,224.3L532.1,224.6L531.6,225L529.7,224.9L528.8,224.7L528.3,224.8L527.9,224.2L527.6,223.9L527.9,223.6L527.6,223.4L527.2,223.8L526.5,223.3L526.3,222.7L525.5,222.3L525.4,221.8L524.6,221.2M524.2,206.2L525.4,205.8L527.3,205.9L528.5,205.7L528.7,206L529.3,206.1L530.5,206.8M527.5,203.6L528.5,203.4L529,203.6L530,204.1L531,204.1M517.8,213.6L517.3,213.7L516.9,213.6L516.7,213.9L515.8,214.2L515.4,214.5L514.6,214.9L514.8,215.3L515,216L515.6,216.3L516.3,217M511.6,219.1L510.3,218.6L510.1,218.9L509,218.9M507.4,216.1L507.5,215.4L507.2,215.1L507.3,214L507.1,212.5L507.8,212.5L508,211.9L508.3,210.5L508.1,210M509.9,207.8L510.7,208L511.5,207.8M534.8,227.6L533.7,227.4L532.5,227.9L532.6,228.7L531.5,228.8L530.5,228.3L529.6,228.7L528.6,228.7L528.5,227.7L527.8,227.1L528,226.9L527.8,226.7L528,226.2L528.4,225.8L527.8,225.1L527.6,224.5L527.9,224.2M532.5,227.9L533.2,228.3L532.9,229.3L532.6,229.5M525.3,231.4L525.9,230.6L525.9,230.1L526.3,229.9L526.3,229.5L527.1,229.3L527.6,229L528.2,229L528.4,228.7L528.6,228.7M551.8,228.4L553.1,228.3L554.5,229.1M524.1,227.8L524,227.3L524.5,226.6L524.6,226.9L524.9,226.7L525.2,227.1L525.5,227.3L525.6,227.9L525.5,228.4L525.7,229.1L526.3,229.5M523,221.6L523.3,222.2L523.7,222.6L523.3,223.2L522.7,222.8L521.9,222.9L520.8,222.6L520.2,222.6L520,223L519.5,222.6L519.3,223.2L520,224L520.3,224.5L520.9,225L521.4,225.4L521.9,226L523,226.6L522.9,226.9M516.8,222.2L517.6,222.2L517.8,222L518.3,222.2L518.7,222.3L518.7,221.8L519.1,221.7L519.2,221L520.2,220.6M512.7,220L512.6,220.7L512.1,220.9L511.2,220.7L510.9,221.4L510.4,221.4L510.1,221.2L509.5,221.7L508.9,221.8L508.3,221.4M506.8,216L506.9,215.1L507.2,215.1M503.9,213.2L504.8,213.3L505.9,213L506.6,213.7L507.3,214M488.8,227.8L489.2,227.4L489.7,227.2L490,228L490.8,228L491,227.8L491.7,227.8L492,228.6L491.4,229L491.4,230.3L491.2,230.5L491.1,231.2L490.6,231.4L491.1,232.3L490.7,233.4L491.1,233.8L490.9,234.2L490.4,234.8L490.5,235.4M491.3,207.5L491.5,208.3L491.2,209.1L491.9,209.1L492.8,209.4M516.8,220.6L516.7,221.4L517,222.1M556.2,228.8L556.4,228.6L557.4,229L558.1,229.1L558.2,228.9L557.5,228.1L557.8,227.9M655.3,286.9L655.9,287.7L656.2,287.2L656.9,287.2L656.9,286.2L656.9,285.4M520.4,217.4L520.5,217.1L521.1,217.1L521.5,216.9L521.5,216.8L521.7,216.7L521.8,216.4L522,216.3L522.2,216L522.5,216M558.2,274L557.8,274.4L557.2,274.2L556.7,273.7L556.1,272.8L555.5,272.3L555.2,271.8L553.9,271.1L553,271.1L552.7,270.8L551.9,271.1L551.1,270.4L550.7,271.6L549.1,271.3M557.5,268.2L558.1,267.7L557.9,267.1L558.2,266.3L558.8,266.7L559.1,266.5L560.7,266.5L560.9,266.7L562.2,266.8L562.7,266.8L563.1,267.3L563.7,267L564.6,265.4L565.8,264.6L569.6,264M543.5,238.6L543.4,238.5L543.1,238.7L542.9,238.6L542.9,238.7L542.8,238.5L542.7,238.4L542.5,238.4L542.2,238.5L541.9,238.5M533.3,259.3L533,253.5L532.6,247.8L532.2,246.5L532.5,245.6L532.2,244.9L532.6,244.1M548,285.3L547.1,283.6L546.5,283.2L546.3,282.6L545.6,281.9L544.7,281.7L545.2,280.8L545.9,280.8L546.1,280.3M557.2,274.2L556.8,274.9L556.4,275.7L556.5,276.1L556.5,276.6L557.3,276.6L557.6,276.5L557.9,276.8L557.6,277.3L558.2,278.2L558.7,279L559.2,279.5L563.7,281.4L564.9,281.4M558.4,275.9L557.9,276.8M541.4,295.8L540.6,296.3L540.3,296.1M541.9,288.5L542.5,288L543.4,288.4L544.5,288L545.4,288L546.2,287.3M523.3,223.2L523.8,223.2L523.5,223.9L524.1,224.5L524,225.2L523.7,225.3L523.5,225.4L523.1,225.8L523,226.6M525.6,227.9L525.8,227.9L525.8,227.6L526.5,227.3L526.8,227.3L527.2,227.2L527.8,227.1M526.8,227.3L526.8,227.1L526.9,227L527,226.6L526.8,226.6L526.6,226.3L526.4,226.2L526.2,226L525.9,225.9L525.7,225.7L525.5,225.7L525.4,226.3L525.1,226.4L525.2,226.2L524.7,225.9L524.3,225.8L524.1,225.5L523.7,225.3M525.1,226.4L524.9,226.7";
+const NATURAL_EARTH_GRATICULE_D = "M365.2,421.4L353.7,420.2L344.9,418.1L331.7,412.3L321,405.5L311.3,398L293.8,382.1L279.3,365L268.3,347.3L260.8,329.5L256.4,311.7L255,294L256.4,276.3L260.8,258.5L268.3,240.7L279.3,223L293.8,205.9L311.3,190L321,182.5L331.7,175.7L344.9,169.9L353.7,167.8L365.2,166.6M387.6,421.4L378.1,420.2L370.8,418.1L359.7,412.3L342.8,398L328.2,382.1L316.1,365L307,347.3L300.7,329.5L297,311.7L295.8,294L297,276.3L300.7,258.5L307,240.7L316.1,223L328.2,205.9L342.8,190L359.7,175.7L370.8,169.9L378.1,167.8L387.6,166.6M410.1,421.4L402.5,420.2L396.6,418.1L387.8,412.3L374.2,398L362.5,382.1L352.9,365L345.6,347.3L340.5,329.5L337.6,311.7L336.7,294L337.6,276.3L340.5,258.5L345.6,240.7L352.9,223L362.5,205.9L374.2,190L387.8,175.7L396.6,169.9L402.5,167.8L410.1,166.6M432.6,421.4L426.9,420.2L422.5,418.1L415.8,412.3L405.7,398L396.9,382.1L389.7,365L384.2,347.3L380.4,329.5L378.2,311.7L377.5,294L378.2,276.3L380.4,258.5L384.2,240.7L389.7,223L396.9,205.9L405.7,190L415.8,175.7L422.5,169.9L426.9,167.8L432.6,166.6M455.1,421.4L451.2,420.2L448.3,418.1L443.9,412.3L437.1,398L431.3,382.1L426.4,365L422.8,347.3L420.3,329.5L418.3,294L420.3,258.5L422.8,240.7L426.4,223L431.3,205.9L437.1,190L443.9,175.7L448.3,169.9L451.2,167.8L455.1,166.6M477.5,421.4L474.2,418.1L471.9,412.3L468.6,398L463.2,365L460.1,329.5L459.2,294L460.1,258.5L463.2,223L468.6,190L471.9,175.7L474.2,169.9L477.5,166.6M500,421.4L500,398L500,365L500,329.5L500,294L500,258.5L500,223L500,190L500,166.6M522.5,421.4L525.8,418.1L528.1,412.3L531.4,398L536.8,365L539.9,329.5L540.8,294L539.9,258.5L536.8,223L531.4,190L528.1,175.7L525.8,169.9L522.5,166.6M544.9,421.4L548.8,420.2L551.7,418.1L556.1,412.3L562.9,398L568.7,382.1L573.6,365L577.2,347.3L579.7,329.5L581.7,294L579.7,258.5L577.2,240.7L573.6,223L568.7,205.9L562.9,190L556.1,175.7L551.7,169.9L548.8,167.8L544.9,166.6M567.4,421.4L573.1,420.2L577.5,418.1L584.2,412.3L594.3,398L603.1,382.1L610.3,365L615.8,347.3L619.6,329.5L621.8,311.7L622.5,294L621.8,276.3L619.6,258.5L615.8,240.7L610.3,223L603.1,205.9L594.3,190L584.2,175.7L577.5,169.9L573.1,167.8L567.4,166.6M589.9,421.4L597.5,420.2L603.4,418.1L612.2,412.3L625.8,398L637.5,382.1L647.1,365L654.4,347.3L659.5,329.5L662.4,311.7L663.3,294L662.4,276.3L659.5,258.5L654.4,240.7L647.1,223L637.5,205.9L625.8,190L612.2,175.7L603.4,169.9L597.5,167.8L589.9,166.6M612.4,421.4L621.9,420.2L629.2,418.1L640.3,412.3L657.2,398L671.8,382.1L683.9,365L693,347.3L699.3,329.5L703,311.7L704.2,294L703,276.3L699.3,258.5L693,240.7L683.9,223L671.8,205.9L657.2,190L640.3,175.7L629.2,169.9L621.9,167.8L612.4,166.6M299.4,387.6L302.2,387.6L304.9,387.6L307.7,387.6L310.5,387.6L313.3,387.6L316.1,387.6L318.9,387.6L321.7,387.6L324.4,387.6L327.2,387.6L330,387.6L332.8,387.6L335.6,387.6L338.4,387.6L341.2,387.6L344,387.6L346.7,387.6L349.5,387.6L352.3,387.6L355.1,387.6L357.9,387.6L360.7,387.6L363.5,387.6L366.2,387.6L369,387.6L371.8,387.6L374.6,387.6L377.4,387.6L380.2,387.6L383,387.6L385.8,387.6L388.5,387.6L391.3,387.6L394.1,387.6L396.9,387.6L399.7,387.6L402.5,387.6L405.3,387.6L408,387.6L410.8,387.6L413.6,387.6L416.4,387.6L419.2,387.6L422,387.6L424.8,387.6L427.5,387.6L430.3,387.6L433.1,387.6L435.9,387.6L438.7,387.6L441.5,387.6L444.3,387.6L447.1,387.6L449.8,387.6L452.6,387.6L455.4,387.6L458.2,387.6L461,387.6L463.8,387.6L466.6,387.6L469.3,387.6L472.1,387.6L474.9,387.6L477.7,387.6L480.5,387.6L483.3,387.6L486.1,387.6L488.9,387.6L491.6,387.6L494.4,387.6L497.2,387.6L500,387.6L502.8,387.6L505.6,387.6L508.4,387.6L511.1,387.6L513.9,387.6L516.7,387.6L519.5,387.6L522.3,387.6L525.1,387.6L527.9,387.6L530.7,387.6L533.4,387.6L536.2,387.6L539,387.6L541.8,387.6L544.6,387.6L547.4,387.6L550.2,387.6L552.9,387.6L555.7,387.6L558.5,387.6L561.3,387.6L564.1,387.6L566.9,387.6L569.7,387.6L572.5,387.6L575.2,387.6L578,387.6L580.8,387.6L583.6,387.6L586.4,387.6L589.2,387.6L592,387.6L594.7,387.6L597.5,387.6L600.3,387.6L603.1,387.6L605.9,387.6L608.7,387.6L611.5,387.6L614.2,387.6L617,387.6L619.8,387.6L622.6,387.6L625.4,387.6L628.2,387.6L631,387.6L633.8,387.6L636.5,387.6L639.3,387.6L642.1,387.6L644.9,387.6L647.7,387.6L650.5,387.6L653.3,387.6L656,387.6L658.8,387.6L661.6,387.6L664.4,387.6L667.2,387.6L670,387.6L672.8,387.6L675.6,387.6L678.3,387.6L681.1,387.6L683.9,387.6L686.7,387.6L689.5,387.6L692.3,387.6L695.1,387.6L697.8,387.6L700.6,387.6M265.5,341.4L268.7,341.4L272,341.4L275.2,341.4L278.5,341.4L281.8,341.4L285,341.4L288.3,341.4L291.5,341.4L294.8,341.4L298,341.4L301.3,341.4L304.6,341.4L307.8,341.4L311.1,341.4L314.3,341.4L317.6,341.4L320.8,341.4L324.1,341.4L327.4,341.4L330.6,341.4L333.9,341.4L337.1,341.4L340.4,341.4L343.6,341.4L346.9,341.4L350.2,341.4L353.4,341.4L356.7,341.4L359.9,341.4L363.2,341.4L366.4,341.4L369.7,341.4L373,341.4L376.2,341.4L379.5,341.4L382.7,341.4L386,341.4L389.3,341.4L392.5,341.4L395.8,341.4L399,341.4L402.3,341.4L405.5,341.4L408.8,341.4L412.1,341.4L415.3,341.4L418.6,341.4L421.8,341.4L425.1,341.4L428.3,341.4L431.6,341.4L434.9,341.4L438.1,341.4L441.4,341.4L444.6,341.4L447.9,341.4L451.1,341.4L454.4,341.4L457.7,341.4L460.9,341.4L464.2,341.4L467.4,341.4L470.7,341.4L473.9,341.4L477.2,341.4L480.5,341.4L483.7,341.4L487,341.4L490.2,341.4L493.5,341.4L496.7,341.4L500,341.4L503.3,341.4L506.5,341.4L509.8,341.4L513,341.4L516.3,341.4L519.5,341.4L522.8,341.4L526.1,341.4L529.3,341.4L532.6,341.4L535.8,341.4L539.1,341.4L542.3,341.4L545.6,341.4L548.9,341.4L552.1,341.4L555.4,341.4L558.6,341.4L561.9,341.4L565.1,341.4L568.4,341.4L571.7,341.4L574.9,341.4L578.2,341.4L581.4,341.4L584.7,341.4L587.9,341.4L591.2,341.4L594.5,341.4L597.7,341.4L601,341.4L604.2,341.4L607.5,341.4L610.7,341.4L614,341.4L617.3,341.4L620.5,341.4L623.8,341.4L627,341.4L630.3,341.4L633.6,341.4L636.8,341.4L640.1,341.4L643.3,341.4L646.6,341.4L649.8,341.4L653.1,341.4L656.4,341.4L659.6,341.4L662.9,341.4L666.1,341.4L669.4,341.4L672.6,341.4L675.9,341.4L679.2,341.4L682.4,341.4L685.7,341.4L688.9,341.4L692.2,341.4L695.4,341.4L698.7,341.4L702,341.4L705.2,341.4L708.5,341.4L711.7,341.4L715,341.4L718.2,341.4L721.5,341.4L724.8,341.4L728,341.4L731.3,341.4L734.5,341.4M255,294L258.4,294L261.8,294L265.2,294L268.6,294L272,294L275.4,294L278.8,294L282.2,294L285.6,294L289,294L292.4,294L295.8,294L299.2,294L302.6,294L306,294L309.4,294L312.8,294L316.3,294L319.7,294L323.1,294L326.5,294L329.9,294L333.3,294L336.7,294L340.1,294L343.5,294L346.9,294L350.3,294L353.7,294L357.1,294L360.5,294L363.9,294L367.3,294L370.7,294L374.1,294L377.5,294L380.9,294L384.3,294L387.7,294L391.1,294L394.5,294L397.9,294L401.3,294L404.7,294L408.1,294L411.5,294L414.9,294L418.3,294L421.7,294L425.1,294L428.5,294L431.9,294L435.3,294L438.8,294L442.2,294L445.6,294L449,294L452.4,294L455.8,294L459.2,294L462.6,294L466,294L469.4,294L472.8,294L476.2,294L479.6,294L483,294L486.4,294L489.8,294L493.2,294L496.6,294L500,294L503.4,294L506.8,294L510.2,294L513.6,294L517,294L520.4,294L523.8,294L527.2,294L530.6,294L534,294L537.4,294L540.8,294L544.2,294L547.6,294L551,294L554.4,294L557.8,294L561.3,294L564.7,294L568.1,294L571.5,294L574.9,294L578.3,294L581.7,294L585.1,294L588.5,294L591.9,294L595.3,294L598.7,294L602.1,294L605.5,294L608.9,294L612.3,294L615.7,294L619.1,294L622.5,294L625.9,294L629.3,294L632.7,294L636.1,294L639.5,294L642.9,294L646.3,294L649.7,294L653.1,294L656.5,294L659.9,294L663.3,294L666.7,294L670.1,294L673.5,294L676.9,294L680.3,294L683.8,294L687.2,294L690.6,294L694,294L697.4,294L700.8,294L704.2,294L707.6,294L711,294L714.4,294L717.8,294L721.2,294L724.6,294L728,294L731.4,294L734.8,294L738.2,294L741.6,294L745,294M265.5,246.6L268.7,246.6L272,246.6L275.2,246.6L278.5,246.6L281.8,246.6L285,246.6L288.3,246.6L291.5,246.6L294.8,246.6L298,246.6L301.3,246.6L304.6,246.6L307.8,246.6L311.1,246.6L314.3,246.6L317.6,246.6L320.8,246.6L324.1,246.6L327.4,246.6L330.6,246.6L333.9,246.6L337.1,246.6L340.4,246.6L343.6,246.6L346.9,246.6L350.2,246.6L353.4,246.6L356.7,246.6L359.9,246.6L363.2,246.6L366.4,246.6L369.7,246.6L373,246.6L376.2,246.6L379.5,246.6L382.7,246.6L386,246.6L389.3,246.6L392.5,246.6L395.8,246.6L399,246.6L402.3,246.6L405.5,246.6L408.8,246.6L412.1,246.6L415.3,246.6L418.6,246.6L421.8,246.6L425.1,246.6L428.3,246.6L431.6,246.6L434.9,246.6L438.1,246.6L441.4,246.6L444.6,246.6L447.9,246.6L451.1,246.6L454.4,246.6L457.7,246.6L460.9,246.6L464.2,246.6L467.4,246.6L470.7,246.6L473.9,246.6L477.2,246.6L480.5,246.6L483.7,246.6L487,246.6L490.2,246.6L493.5,246.6L496.7,246.6L500,246.6L503.3,246.6L506.5,246.6L509.8,246.6L513,246.6L516.3,246.6L519.5,246.6L522.8,246.6L526.1,246.6L529.3,246.6L532.6,246.6L535.8,246.6L539.1,246.6L542.3,246.6L545.6,246.6L548.9,246.6L552.1,246.6L555.4,246.6L558.6,246.6L561.9,246.6L565.1,246.6L568.4,246.6L571.7,246.6L574.9,246.6L578.2,246.6L581.4,246.6L584.7,246.6L587.9,246.6L591.2,246.6L594.5,246.6L597.7,246.6L601,246.6L604.2,246.6L607.5,246.6L610.7,246.6L614,246.6L617.3,246.6L620.5,246.6L623.8,246.6L627,246.6L630.3,246.6L633.6,246.6L636.8,246.6L640.1,246.6L643.3,246.6L646.6,246.6L649.8,246.6L653.1,246.6L656.4,246.6L659.6,246.6L662.9,246.6L666.1,246.6L669.4,246.6L672.6,246.6L675.9,246.6L679.2,246.6L682.4,246.6L685.7,246.6L688.9,246.6L692.2,246.6L695.4,246.6L698.7,246.6L702,246.6L705.2,246.6L708.5,246.6L711.7,246.6L715,246.6L718.2,246.6L721.5,246.6L724.8,246.6L728,246.6L731.3,246.6L734.5,246.6M299.4,200.4L302.2,200.4L304.9,200.4L307.7,200.4L310.5,200.4L313.3,200.4L316.1,200.4L318.9,200.4L321.7,200.4L324.4,200.4L327.2,200.4L330,200.4L332.8,200.4L335.6,200.4L338.4,200.4L341.2,200.4L344,200.4L346.7,200.4L349.5,200.4L352.3,200.4L355.1,200.4L357.9,200.4L360.7,200.4L363.5,200.4L366.2,200.4L369,200.4L371.8,200.4L374.6,200.4L377.4,200.4L380.2,200.4L383,200.4L385.8,200.4L388.5,200.4L391.3,200.4L394.1,200.4L396.9,200.4L399.7,200.4L402.5,200.4L405.3,200.4L408,200.4L410.8,200.4L413.6,200.4L416.4,200.4L419.2,200.4L422,200.4L424.8,200.4L427.5,200.4L430.3,200.4L433.1,200.4L435.9,200.4L438.7,200.4L441.5,200.4L444.3,200.4L447.1,200.4L449.8,200.4L452.6,200.4L455.4,200.4L458.2,200.4L461,200.4L463.8,200.4L466.6,200.4L469.3,200.4L472.1,200.4L474.9,200.4L477.7,200.4L480.5,200.4L483.3,200.4L486.1,200.4L488.9,200.4L491.6,200.4L494.4,200.4L497.2,200.4L500,200.4L502.8,200.4L505.6,200.4L508.4,200.4L511.1,200.4L513.9,200.4L516.7,200.4L519.5,200.4L522.3,200.4L525.1,200.4L527.9,200.4L530.7,200.4L533.4,200.4L536.2,200.4L539,200.4L541.8,200.4L544.6,200.4L547.4,200.4L550.2,200.4L552.9,200.4L555.7,200.4L558.5,200.4L561.3,200.4L564.1,200.4L566.9,200.4L569.7,200.4L572.5,200.4L575.2,200.4L578,200.4L580.8,200.4L583.6,200.4L586.4,200.4L589.2,200.4L592,200.4L594.7,200.4L597.5,200.4L600.3,200.4L603.1,200.4L605.9,200.4L608.7,200.4L611.5,200.4L614.2,200.4L617,200.4L619.8,200.4L622.6,200.4L625.4,200.4L628.2,200.4L631,200.4L633.8,200.4L636.5,200.4L639.3,200.4L642.1,200.4L644.9,200.4L647.7,200.4L650.5,200.4L653.3,200.4L656,200.4L658.8,200.4L661.6,200.4L664.4,200.4L667.2,200.4L670,200.4L672.8,200.4L675.6,200.4L678.3,200.4L681.1,200.4L683.9,200.4L686.7,200.4L689.5,200.4L692.3,200.4L695.1,200.4L697.8,200.4L700.6,200.4";
+
+type NetworkNode = {
+  id: string;
+  x: number;
+  y: number;
+  tier: number;
+  color: string;
+};
+
+const networkNodes: NetworkNode[] = [
+  {id: 'SFO', x: 344.8, y: 234.3, tier: 2, color: COLORS.amber},
+  {id: 'NYC', x: 407.4, y: 229.7, tier: 2, color: COLORS.cyan},
+  {id: 'TOR', x: 402, y: 225.1, tier: 1, color: COLORS.cyan},
+  {id: 'MEX', x: 367.5, y: 263.4, tier: 1, color: COLORS.cyan},
+  {id: 'BOG', x: 399.3, y: 286.6, tier: 1, color: COLORS.blue},
+  {id: 'LIM', x: 395.8, y: 313, tier: 1, color: COLORS.magenta},
+  {id: 'SCL', x: 409, y: 346.9, tier: 1, color: COLORS.cyan},
+  {id: 'SAO', x: 438.2, y: 331.2, tier: 2, color: COLORS.cyan},
+  {id: 'BUE', x: 425.1, y: 348.7, tier: 1, color: COLORS.blue},
+  {id: 'LON', x: 499.8, y: 213, tier: 2, color: COLORS.cyan},
+  {id: 'PAR', x: 502.8, y: 217, tier: 1, color: COLORS.magenta},
+  {id: 'MAD', x: 495.4, y: 230.1, tier: 1, color: COLORS.amber},
+  {id: 'FRA', x: 510.3, y: 215.1, tier: 2, color: COLORS.blue},
+  {id: 'STO', x: 520.2, y: 201.4, tier: 1, color: COLORS.cyan},
+  {id: 'WAW', x: 524.7, y: 211.9, tier: 1, color: COLORS.cyan},
+  {id: 'IST', x: 536.2, y: 229.2, tier: 2, color: COLORS.magenta},
+  {id: 'MOS', x: 543.2, y: 206.6, tier: 1, color: COLORS.blue},
+  {id: 'CAS', x: 490.2, y: 240.9, tier: 1, color: COLORS.cyan},
+  {id: 'CAI', x: 540.7, y: 246.5, tier: 2, color: COLORS.cyan},
+  {id: 'LOS', x: 504.6, y: 283.7, tier: 1, color: COLORS.cyan},
+  {id: 'NBO', x: 550.1, y: 296, tier: 1, color: COLORS.magenta},
+  {id: 'JNB', x: 536.9, y: 335.4, tier: 2, color: COLORS.cyan},
+  {id: 'DXB', x: 573, y: 254.2, tier: 2, color: COLORS.amber},
+  {id: 'DEL', x: 600.8, y: 248.7, tier: 2, color: COLORS.cyan},
+  {id: 'BOM', x: 597.5, y: 263.9, tier: 1, color: COLORS.blue},
+  {id: 'BKK', x: 635.6, y: 272.3, tier: 1, color: COLORS.magenta},
+  {id: 'SIN', x: 641.3, y: 291.9, tier: 2, color: COLORS.cyan},
+  {id: 'JKT', x: 645.2, y: 303.8, tier: 2, color: COLORS.cyan},
+  {id: 'MNL', x: 663, y: 271, tier: 1, color: COLORS.blue},
+  {id: 'HKG', x: 651.8, y: 258.8, tier: 1, color: COLORS.cyan},
+  {id: 'PEK', x: 646.2, y: 230.9, tier: 2, color: COLORS.magenta},
+  {id: 'SEL', x: 661.1, y: 234.6, tier: 1, color: COLORS.cyan},
+  {id: 'TYO', x: 678.5, y: 237.6, tier: 2, color: COLORS.blue},
+  {id: 'SYD', x: 694.5, y: 347.5, tier: 2, color: COLORS.amber},
+  {id: 'MEL', x: 683.7, y: 353.8, tier: 1, color: COLORS.cyan},
+  {id: 'AKL', x: 722.3, y: 352.2, tier: 1, color: COLORS.magenta},
+];
+
+const networkNodeMap = Object.fromEntries(
+  networkNodes.map((node) => [node.id, node]),
+) as Record<string, NetworkNode>;
+
+type NetworkRoute = {
+  from: string;
+  to: string;
+  bend: number;
+  color: string;
+  active?: boolean;
+};
+
+const networkRoutes: NetworkRoute[] = [
+  {from: 'NYC', to: 'LON', bend: 0.32, color: COLORS.magenta, active: true},
+  {from: 'NYC', to: 'PAR', bend: 0.24, color: COLORS.cyan},
+  {from: 'SFO', to: 'TYO', bend: 0.36, color: COLORS.magenta, active: true},
+  {from: 'SFO', to: 'SYD', bend: 0.18, color: COLORS.blue},
+  {from: 'SFO', to: 'MEX', bend: 0.12, color: COLORS.cyan},
+  {from: 'MEX', to: 'SAO', bend: 0.22, color: COLORS.cyan, active: true},
+  {from: 'BOG', to: 'MAD', bend: 0.27, color: COLORS.blue},
+  {from: 'LIM', to: 'SCL', bend: -0.11, color: COLORS.cyan},
+  {from: 'SCL', to: 'SYD', bend: -0.24, color: COLORS.magenta, active: true},
+  {from: 'SAO', to: 'LON', bend: 0.21, color: COLORS.cyan},
+  {from: 'BUE', to: 'JNB', bend: 0.13, color: COLORS.amber},
+  {from: 'TOR', to: 'FRA', bend: 0.29, color: COLORS.cyan},
+  {from: 'NYC', to: 'SAO', bend: -0.18, color: COLORS.magenta, active: true},
+  {from: 'NYC', to: 'TOR', bend: 0.08, color: COLORS.blue},
+  {from: 'LON', to: 'FRA', bend: 0.12, color: COLORS.cyan},
+  {from: 'LON', to: 'JNB', bend: -0.17, color: COLORS.blue},
+  {from: 'FRA', to: 'WAW', bend: 0.1, color: COLORS.cyan},
+  {from: 'WAW', to: 'MOS', bend: 0.12, color: COLORS.cyan},
+  {from: 'MAD', to: 'CAS', bend: 0.12, color: COLORS.amber},
+  {from: 'PAR', to: 'CAI', bend: 0.2, color: COLORS.magenta, active: true},
+  {from: 'IST', to: 'DXB', bend: 0.15, color: COLORS.cyan},
+  {from: 'MOS', to: 'PEK', bend: 0.28, color: COLORS.blue},
+  {from: 'CAI', to: 'NBO', bend: 0.12, color: COLORS.cyan},
+  {from: 'LOS', to: 'JNB', bend: -0.13, color: COLORS.cyan},
+  {from: 'JNB', to: 'DXB', bend: 0.18, color: COLORS.magenta, active: true},
+  {from: 'DXB', to: 'DEL', bend: 0.13, color: COLORS.amber},
+  {from: 'DXB', to: 'SIN', bend: 0.22, color: COLORS.cyan},
+  {from: 'FRA', to: 'DXB', bend: 0.19, color: COLORS.cyan},
+  {from: 'DEL', to: 'BOM', bend: 0.1, color: COLORS.blue},
+  {from: 'BOM', to: 'SIN', bend: 0.17, color: COLORS.cyan},
+  {from: 'BKK', to: 'JKT', bend: 0.12, color: COLORS.cyan},
+  {from: 'SIN', to: 'JKT', bend: -0.08, color: COLORS.magenta},
+  {from: 'JKT', to: 'SYD', bend: -0.17, color: COLORS.cyan, active: true},
+  {from: 'SIN', to: 'HKG', bend: 0.13, color: COLORS.cyan},
+  {from: 'HKG', to: 'PEK', bend: 0.1, color: COLORS.blue},
+  {from: 'PEK', to: 'SEL', bend: 0.08, color: COLORS.cyan},
+  {from: 'SEL', to: 'TYO', bend: 0.08, color: COLORS.magenta},
+  {from: 'TYO', to: 'SYD', bend: 0.2, color: COLORS.blue, active: true},
+  {from: 'MNL', to: 'TYO', bend: 0.13, color: COLORS.cyan},
+  {from: 'MNL', to: 'SIN', bend: -0.11, color: COLORS.cyan},
+  {from: 'SYD', to: 'AKL', bend: -0.11, color: COLORS.amber},
+  {from: 'MEL', to: 'AKL', bend: -0.09, color: COLORS.cyan},
+];
+
+const GEO_SCALE_X = 1.04;
+const GEO_SCALE_Y = 1.18;
+const GEO_MAP_TRANSFORM = `translate(500 294) scale(${GEO_SCALE_X} ${GEO_SCALE_Y}) translate(-500 -294)`;
+
+const projectNetworkPoint = (point: {x: number; y: number}) => ({
+  x: 500 + (point.x - 500) * GEO_SCALE_X,
+  y: 294 + (point.y - 294) * GEO_SCALE_Y,
+});
+
+const getNetworkRoutePath = (route: NetworkRoute) => {
+  const from = projectNetworkPoint(networkNodeMap[route.from]);
+  const to = projectNetworkPoint(networkNodeMap[route.to]);
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const controlX = (from.x + to.x) / 2;
+  const controlY = (from.y + to.y) / 2 - distance * route.bend;
+  return `M ${from.x} ${from.y} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${to.x} ${to.y}`;
+};
+
+const GlobeNetwork: React.FC<{frame: number}> = ({frame}) => {
+  const reveal = smooth(frame, [38, 126]);
+  const gridReveal = smooth(frame, [64, 148]);
+  const borderReveal = smooth(frame, [92, 184]);
+  const scanAngle = (frame * 0.34) % 360;
+  const halo = 0.7 + pulse(frame, 0.022) * 0.3;
+  const focusTargets = ['NYC', 'FRA', 'DXB', 'SIN', 'TYO', 'SYD', 'SAO'];
+  const focusPosition = (frame / 126) % focusTargets.length;
+  const focusIndex = Math.floor(focusPosition);
+  const focusMix = Easing.inOut(Easing.cubic)(focusPosition - focusIndex);
+  const focusFrom = projectNetworkPoint(networkNodeMap[focusTargets[focusIndex]]);
+  const focusTo = projectNetworkPoint(networkNodeMap[focusTargets[(focusIndex + 1) % focusTargets.length]]);
+  const focusX = focusFrom.x + (focusTo.x - focusFrom.x) * focusMix;
+  const focusY = focusFrom.y + (focusTo.y - focusFrom.y) * focusMix;
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        flex: 1,
+        height: 650,
+        minWidth: 0,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 34}px) scale(${0.965 + reveal * 0.035})`,
+        background:
+          'radial-gradient(circle at 50% 47%, rgba(21,125,139,0.15), transparent 35%), linear-gradient(145deg, rgba(7,23,36,0.92), rgba(2,8,15,0.82))',
+      }}
+    >
+      <CornerBrackets />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.26,
+          backgroundImage:
+            'linear-gradient(rgba(77,198,210,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(77,198,210,0.07) 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+          backgroundPosition: `${(frame * 0.12) % 32}px ${(frame * 0.07) % 32}px`,
+          maskImage: 'radial-gradient(circle at 50% 48%, black, transparent 72%)',
+        }}
+      />
+      <svg
+        viewBox="0 0 1000 600"
+        preserveAspectRatio="xMidYMid meet"
+        style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}}
+      >
         <defs>
-          <linearGradient id="revenue-area-finance" x1="0" y1="0" x2="0" y2="1"><stop stopColor={C.cyan} stopOpacity=".28"/><stop offset="1" stopColor={C.cyan} stopOpacity="0"/></linearGradient>
-          <filter id="soft-data-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <clipPath id="revenue-area-clip"><rect x={plot.left} y={plot.top - 10} width={plot.width * revenueProgress} height={plot.height + 20}/></clipPath>
+          <radialGradient id="globe-fill" cx="50%" cy="48%" r="54%">
+            <stop offset="0" stopColor="#126174" stopOpacity="0.29" />
+            <stop offset="0.64" stopColor="#073342" stopOpacity="0.18" />
+            <stop offset="1" stopColor="#020812" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="sphere-sheen" cx="35%" cy="26%" r="78%">
+            <stop offset="0" stopColor="#8ffff5" stopOpacity="0.11" />
+            <stop offset="0.48" stopColor="#0e8590" stopOpacity="0.018" />
+            <stop offset="0.82" stopColor="#020913" stopOpacity="0.12" />
+            <stop offset="1" stopColor="#00040b" stopOpacity="0.46" />
+          </radialGradient>
+          <linearGradient id="land-fill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#0b5d68" stopOpacity="0.82" />
+            <stop offset="0.52" stopColor="#063947" stopOpacity="0.78" />
+            <stop offset="1" stopColor="#082b42" stopOpacity="0.72" />
+          </linearGradient>
+          <linearGradient id="scan-gradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor={COLORS.cyan} stopOpacity="0" />
+            <stop offset="0.62" stopColor={COLORS.cyan} stopOpacity="0.02" />
+            <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0.38" />
+          </linearGradient>
+          <pattern id="land-dots" width="7" height="7" patternUnits="userSpaceOnUse">
+            <circle cx="1.8" cy="1.8" r="0.85" fill={COLORS.cyan} opacity="0.44" />
+            <circle cx="5.3" cy="5.3" r="0.44" fill={COLORS.blue} opacity="0.22" />
+          </pattern>
+          <clipPath id="sphere-clip">
+            <circle cx="500" cy="294" r="254" />
+          </clipPath>
+          <filter id="map-soft-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="5" result="wide" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="tight" />
+            <feMerge>
+              <feMergeNode in="wide" />
+              <feMergeNode in="tight" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="node-glow" x="-400%" y="-400%" width="800%" height="800%">
+            <feGaussianBlur stdDeviation="5.5" result="wide" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="tight" />
+            <feMerge>
+              <feMergeNode in="wide" />
+              <feMergeNode in="tight" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
-        <rect x={x2026 - 38} y={plot.top - 16} width="76" height={plot.height + 43} rx="12" fill={`rgba(240,199,107,${.025 + forecastProgress * .055})`} stroke={`rgba(240,199,107,${forecastProgress * .13})`}/>
-        {[0, 40, 80, 120, 160].map((tick) => {
-          const y = plot.top + plot.height - (tick / max) * plot.height;
-          return <g key={tick}><line x1={plot.left} y1={y} x2={plot.left + plot.width} y2={y} stroke={tick === 0 ? 'rgba(143,180,199,.28)' : C.line} strokeWidth={tick === 0 ? 1.4 : 1.05}/><text x={plot.left - 15} y={y + 4} textAnchor="end" fill={C.dim} fontFamily="Arial, Helvetica, sans-serif" fontSize="9" fontWeight="650">{tick}</text></g>;
-        })}
-        <path d={revenueArea} fill="url(#revenue-area-finance)" opacity={.18 + revenueProgress * .82} clipPath="url(#revenue-area-clip)"/>
-        {[
-          {data: REVENUE, d: revenuePath, color: C.cyan, progress: revenueProgress, start: 150},
-          {data: EBITDA, d: ebitdaPath, color: C.emerald, progress: ebitdaProgress, start: 205},
-          {data: CASH_FLOW, d: cashPath, color: C.violet, progress: cashProgress, start: 245},
-        ].map((series, seriesIndex) => (
-          <g key={series.color}>
-            <path d={series.d} fill="none" stroke={series.color} strokeWidth={seriesIndex === 0 ? 3.2 : 2.7} strokeLinecap="round" strokeLinejoin="round" opacity=".11"/>
-            <path d={series.d} fill="none" stroke={series.color} strokeWidth={seriesIndex === 0 ? 3.2 : 2.7} strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - series.progress} filter={seriesIndex === 0 ? 'url(#soft-data-glow)' : undefined}/>
-            {series.data.map((value, pointIndex) => {
-              const markerProgress = loopProgress(timeline, series.start + pointIndex * 23, series.start + 54 + pointIndex * 23, 770, 900);
-              const x = plot.left + (pointIndex / 6) * plot.width;
-              const y = plot.top + plot.height - (value / max) * plot.height;
-              const endpoint = pointIndex === 6;
-              return <circle key={pointIndex} cx={x} cy={y} r={(endpoint ? 4.7 : 2.8) * pop(markerProgress)} fill={C.board} stroke={endpoint ? C.gold : series.color} strokeWidth={endpoint ? 2.2 : 1.6} opacity={.12 + markerProgress * .88}/>;
+
+        <g opacity={reveal} transform={`translate(0 ${8 * (1 - reveal)})`}>
+          <circle cx="500" cy="294" r="254" fill="url(#globe-fill)" />
+          {[254, 278, 289].map((radius, i) => (
+            <circle
+              key={radius}
+              cx="500"
+              cy="294"
+              r={radius}
+              fill="none"
+              stroke={i === 0 ? 'rgba(79,238,231,0.42)' : 'rgba(84,207,217,0.13)'}
+              strokeWidth={i === 0 ? 1.25 : 0.75}
+              strokeDasharray={i === 0 ? '5 10' : i === 1 ? '2 18' : '19 33'}
+              strokeDashoffset={frame * (i % 2 === 0 ? -0.18 : 0.12)}
+            />
+          ))}
+
+          <g clipPath="url(#sphere-clip)" opacity={0.62 * gridReveal}>
+            {[-60, -30, 0, 30, 60].map((latitude) => {
+              const radians = (latitude * Math.PI) / 180;
+              return (
+                <ellipse
+                  key={`latitude-${latitude}`}
+                  cx="500"
+                  cy={294 - Math.sin(radians) * 218}
+                  rx={Math.cos(radians) * 244}
+                  ry={8 + Math.cos(radians) * 10}
+                  fill="none"
+                  stroke="rgba(91,210,221,0.105)"
+                  strokeWidth="0.62"
+                  strokeDasharray="2 7"
+                  strokeDashoffset={frame * -0.055}
+                />
+              );
             })}
+            {[58, 112, 166, 218].map((radius, index) => (
+              <ellipse
+                key={`meridian-${radius}`}
+                cx="500"
+                cy="294"
+                rx={radius}
+                ry="249"
+                fill="none"
+                stroke={index % 2 === 0 ? 'rgba(91,210,221,0.09)' : 'rgba(97,147,255,0.08)'}
+                strokeWidth="0.58"
+                strokeDasharray="3 8"
+                strokeDashoffset={frame * (index % 2 === 0 ? 0.045 : -0.04)}
+              />
+            ))}
           </g>
-        ))}
-        <path d={`M${x2025},${y2025} L${x2026},${y2026}`} fill="none" stroke={C.gold} strokeWidth="3.4" strokeLinecap="round" strokeDasharray="8 8" pathLength={1} strokeDashoffset={1 - forecastProgress} opacity={forecastProgress} filter="url(#soft-data-glow)"/>
-        <line x1={plot.left + plot.width * scanProgress} y1={plot.top - 6} x2={plot.left + plot.width * scanProgress} y2={plot.top + plot.height + 8} stroke={C.cyan} strokeWidth="1.3" opacity={scannerOpacity}/>
-        <circle cx={plot.left + plot.width * scanProgress} cy={plot.top - 6} r="3.3" fill={C.cyan} opacity={scannerOpacity}/>
-        <circle cx={tracer.x} cy={tracer.y} r={4.2} fill={C.cyan} opacity={hero}/><circle cx={tracer.x} cy={tracer.y} r={9 + (Math.sin(phase * 3) + 1) * 1.3} fill="none" stroke={C.cyan} strokeWidth="1.3" opacity={hero * .36}/>
-        {YEARS.map((year, index) => {
-          const x = plot.left + (index / 6) * plot.width;
-          return <text key={year} x={x} y={plot.top + plot.height + 28} textAnchor="middle" fill={year === 2026 ? C.gold : '#89a2b2'} fontFamily="Arial, Helvetica, sans-serif" fontSize="9.2" fontWeight={year === 2026 ? 820 : 650}>{year}</text>;
-        })}
-        <g opacity={forecastProgress} transform={`translate(${x2026 - 74} ${Math.max(26, y2026 - 55)}) scale(${.92 + pop(forecastProgress) * .08})`}>
-          <rect width="77" height="39" rx="10" fill="rgba(240,199,107,.12)" stroke="rgba(240,199,107,.34)"/>
-          <text x="38.5" y="16" textAnchor="middle" fill={C.gold} fontFamily="Arial, Helvetica, sans-serif" fontSize="8" fontWeight="750">2026 OUTLOOK</text>
-          <text x="38.5" y="30" textAnchor="middle" fill={C.ink} fontFamily="Arial, Helvetica, sans-serif" fontSize="11" fontWeight="820">$148.6M</text>
+
+          <g clipPath="url(#sphere-clip)" opacity={gridReveal}>
+            <g transform={GEO_MAP_TRANSFORM}>
+              <path
+                d={NATURAL_EARTH_GRATICULE_D}
+                fill="none"
+                stroke="rgba(91,210,221,0.105)"
+                strokeWidth="0.62"
+                strokeDasharray="2 5"
+                strokeDashoffset={frame * -0.08}
+              />
+            </g>
+          </g>
+
+          <g
+            clipPath="url(#sphere-clip)"
+            opacity={gridReveal}
+          >
+            <g transform={GEO_MAP_TRANSFORM}>
+              <path
+                d={NATURAL_EARTH_LAND_D}
+                fill="rgba(73,245,223,0.08)"
+                stroke={COLORS.cyan}
+                strokeOpacity="0.2"
+                strokeWidth="4"
+                filter="url(#map-soft-glow)"
+              />
+              <path d={NATURAL_EARTH_LAND_D} fill="url(#land-fill)" stroke="none" />
+              <path d={NATURAL_EARTH_LAND_D} fill="url(#land-dots)" opacity="0.76" stroke="none" />
+              <path
+                d={NATURAL_EARTH_BORDERS_D}
+                fill="none"
+                stroke="rgba(113,171,255,0.34)"
+                strokeWidth="0.55"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={borderReveal}
+              />
+              <path
+                d={NATURAL_EARTH_LAND_D}
+                fill="none"
+                stroke="rgba(73,245,223,0.72)"
+                strokeWidth="0.92"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pathLength={1}
+                strokeDasharray={`${borderReveal} 1`}
+              />
+            </g>
+          </g>
+
+          <circle
+            cx="500"
+            cy="294"
+            r="252"
+            fill="url(#sphere-sheen)"
+            opacity={0.72 * gridReveal}
+            pointerEvents="none"
+          />
+
+          <g clipPath="url(#sphere-clip)" opacity={0.74 * gridReveal}>
+            <path
+              d="M 500 294 L 764 294 A 264 264 0 0 1 744 395 Z"
+              fill="url(#scan-gradient)"
+              transform={`rotate(${scanAngle} 500 294)`}
+            />
+            <line
+              x1="500"
+              y1="294"
+              x2="764"
+              y2="294"
+              stroke={COLORS.cyan}
+              strokeWidth="1.2"
+              opacity="0.5"
+              transform={`rotate(${scanAngle} 500 294)`}
+              filter="url(#node-glow)"
+            />
+            <rect
+              x="240"
+              y={(frame * 1.18) % 540 + 24}
+              width="520"
+              height="18"
+              fill="rgba(73,245,223,0.035)"
+            />
+            <line
+              x1="244"
+              y1={(frame * 1.18) % 540 + 33}
+              x2="756"
+              y2={(frame * 1.18) % 540 + 33}
+              stroke="rgba(73,245,223,0.2)"
+            />
+          </g>
+
+          <g clipPath="url(#sphere-clip)">
+          {networkRoutes.map((route, index) => {
+            const delay = 116 + (index % 14) * 8;
+            const draw = smooth(frame, [delay, delay + 64]);
+            const speed = 0.0042 + (index % 6) * 0.00055;
+            const travel = ((frame - delay) * speed + index * 0.137) % 1;
+            const routePath = getNetworkRoutePath(route);
+            const active = route.active || index % 4 === 0;
+            return (
+              <g key={`${route.from}-${route.to}`} opacity={draw}>
+                <path
+                  d={routePath}
+                  fill="none"
+                  stroke={route.color}
+                  strokeOpacity={active ? 0.085 : 0.045}
+                  strokeWidth={active ? 4 : 2.6}
+                  filter="url(#node-glow)"
+                />
+                <path
+                  d={routePath}
+                  fill="none"
+                  stroke={route.color}
+                  strokeOpacity={active ? 0.4 : 0.22}
+                  strokeWidth={active ? 1.05 : 0.62}
+                  pathLength={1}
+                  strokeDasharray={`${draw} 1`}
+                />
+                {active ? (
+                  <>
+                    <path
+                      d={routePath}
+                      fill="none"
+                      stroke={route.color}
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      pathLength={1}
+                      strokeDasharray="0.024 0.976"
+                      strokeDashoffset={-travel}
+                      filter="url(#node-glow)"
+                    />
+                    <path
+                      d={routePath}
+                      fill="none"
+                      stroke="rgba(230,255,255,0.92)"
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                      pathLength={1}
+                      strokeDasharray="0.009 0.991"
+                      strokeDashoffset={-(travel + 0.48)}
+                    />
+                  </>
+                ) : null}
+              </g>
+            );
+          })}
+          </g>
+
+          <g clipPath="url(#sphere-clip)">
+          {networkNodes.map((node, index) => {
+            const nodeReveal = smooth(frame, [102 + (index % 12) * 5, 142 + (index % 12) * 5]);
+            const nodePulse = pulse(frame, 0.055, index * 0.8);
+            const coreRadius = node.tier === 2 ? 2.7 : 1.45;
+            const ringRadius = node.tier === 2 ? 5.5 + nodePulse * 5 : 3.3 + nodePulse * 2.5;
+            const displayNode = projectNetworkPoint(node);
+            return (
+              <g key={node.id} opacity={nodeReveal}>
+                <circle
+                  cx={displayNode.x}
+                  cy={displayNode.y}
+                  r={ringRadius}
+                  fill="none"
+                  stroke={node.color}
+                  strokeWidth={node.tier === 2 ? 0.75 : 0.45}
+                  opacity={0.1 + (1 - nodePulse) * (node.tier === 2 ? 0.42 : 0.24)}
+                />
+                <circle
+                  cx={displayNode.x}
+                  cy={displayNode.y}
+                  r={coreRadius}
+                  fill={node.color}
+                  filter="url(#node-glow)"
+                />
+                {node.tier === 2 ? (
+                  <circle
+                    cx={displayNode.x}
+                    cy={displayNode.y}
+                    r="0.85"
+                    fill="rgba(236,255,255,0.95)"
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+          </g>
+
+          <g opacity={gridReveal}>
+            <circle
+              cx={focusX}
+              cy={focusY}
+              r={24 + pulse(frame, 0.05) * 7}
+              fill="none"
+              stroke={COLORS.magenta}
+              strokeWidth="0.8"
+              strokeDasharray="4 5"
+              transform={`rotate(${frame * 0.7} ${focusX} ${focusY})`}
+            />
+            <circle cx={focusX} cy={focusY} r="2.5" fill={COLORS.magenta} filter="url(#node-glow)" />
+            <path
+              d={`M ${focusX - 36} ${focusY} H ${focusX - 16} M ${focusX + 16} ${focusY} H ${
+                focusX + 36
+              } M ${focusX} ${focusY - 36} V ${focusY - 16} M ${focusX} ${
+                focusY + 16
+              } V ${focusY + 36}`}
+              stroke="rgba(255,79,150,0.48)"
+              strokeWidth="0.8"
+            />
+          </g>
+
+          <circle
+            cx="500"
+            cy="294"
+            r="278"
+            fill="none"
+            stroke="rgba(73,245,223,0.13)"
+            strokeWidth="1"
+            strokeDasharray="2 21"
+            strokeDashoffset={frame * -0.38}
+            opacity={halo}
+          />
+          <circle
+            cx="500"
+            cy="294"
+            r="289"
+            fill="none"
+            stroke="rgba(76,141,255,0.11)"
+            strokeWidth="0.7"
+            strokeDasharray="17 31"
+            strokeDashoffset={frame * 0.22}
+          />
         </g>
       </svg>
-      <div style={{position: 'absolute', left: 23, right: 23, bottom: 18, height: 82, borderRadius: 15, border: `1px solid ${C.line}`, background: 'rgba(4,16,25,.42)', fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        <div style={{position: 'absolute', left: 31, right: 31, top: 38, height: 2, borderRadius: 2, background: 'rgba(133,181,204,.13)'}}/>
-        <div style={{position: 'absolute', left: 31, top: 38, width: `${(838 - 62) * railProgress}px`, height: 2, borderRadius: 2, background: `linear-gradient(90deg, ${C.cyan}, ${C.gold})`, boxShadow: '0 0 10px rgba(70,221,243,.22)'}}/>
-        {[2020, 2022, 2024, 2026].map((year, index) => {
-          const nodeProgress = loopProgress(timeline, 270 + index * 60, 325 + index * 60, 770, 900);
-          const x = 31 + index * ((838 - 62) / 3);
-          const labels = ['BASE YEAR', 'SCALE', 'EXPANSION', 'OUTLOOK'];
-          return <div key={year} style={{position: 'absolute', left: x - 43, top: 8, width: 86, textAlign: 'center', opacity: .28 + nodeProgress * .72, transform: `translateY(${(1 - nodeProgress) * 3}px)`}}><div style={{color: year === 2026 ? C.gold : C.ink, fontSize: 9.5, fontWeight: 820}}>{year}</div><div style={{position: 'absolute', left: 37, top: 25, width: 12, height: 12, borderRadius: '50%', boxSizing: 'border-box', background: year <= 2024 ? C.cyan : C.gold, border: `2px solid ${year <= 2024 ? C.cyan : C.gold}`, boxShadow: year === 2026 ? '0 0 0 6px rgba(240,199,107,.1)' : 'none', transform: `scale(${pop(nodeProgress)})`}}/><div style={{marginTop: 31, color: C.dim, fontSize: 7.2, fontWeight: 730, letterSpacing: .8}}>{labels[index]}</div></div>;
-        })}
-      </div>
-    </GlassCard>
-  );
-};
 
-const AllocationCard: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
-  const reveal = loopProgress(timeline, 225, 320, 805, 900);
-  const donutProgress = loopProgress(timeline, 390, 590, 770, 900);
-  const parts = [
-    {label: 'Operations', value: 42, color: C.cyan},
-    {label: 'Growth', value: 28, color: C.emerald},
-    {label: 'Innovation', value: 18, color: C.gold},
-    {label: 'Liquidity', value: 12, color: C.violet},
-  ];
-  let offset = 0;
-  const glintAngle = -Math.PI / 2 + donutProgress * Math.PI * 2 + phase * .15;
-  return (
-    <GlassCard x={1179} y={280} width={445} height={242} reveal={reveal} depth={7} float={Math.sin(phase * 2 + 2.7) * 1.15 * reveal}>
-      <div style={{position: 'absolute', left: 22, top: 18, fontFamily: 'Arial, Helvetica, sans-serif'}}><div style={{color: C.ink, fontSize: 13.5, fontWeight: 820, letterSpacing: 1.05}}>CAPITAL ALLOCATION 2026</div><div style={{marginTop: 5, color: C.muted, fontSize: 8.3, fontWeight: 660, letterSpacing: .8}}>PLANNED USE OF CAPITAL</div></div>
-      <div style={{position: 'absolute', left: 20, top: 66, width: 160, height: 160}}>
-        <svg width="160" height="160" viewBox="0 0 160 160">
-          <circle cx="80" cy="80" r="59" fill="none" stroke="rgba(133,181,204,.11)" strokeWidth="20"/>
-          <g transform="rotate(-90 80 80)">
-            {parts.map((part, index) => {
-              const currentOffset = offset;
-              offset += part.value;
-              const segmentProgress = loopProgress(timeline, 395 + index * 38, 505 + index * 38, 770, 900);
-              return <circle key={part.label} cx="80" cy="80" r="59" fill="none" stroke={part.color} strokeWidth="20" strokeLinecap="butt" pathLength={100} strokeDasharray={`${part.value * segmentProgress} ${100 - part.value * segmentProgress}`} strokeDashoffset={-currentOffset} opacity={.2 + segmentProgress * .8}/>;
-            })}
-          </g>
-          <circle cx={80 + Math.cos(glintAngle) * 59} cy={80 + Math.sin(glintAngle) * 59} r="3.2" fill="#fff" opacity={donutProgress * .8}/>
-        </svg>
-        <div style={{position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', fontFamily: 'Arial, Helvetica, sans-serif'}}><div style={{color: C.ink, fontSize: 24, fontWeight: 850, fontVariantNumeric: 'tabular-nums'}}>{Math.round(100 * donutProgress)}%</div><div style={{marginTop: 2, color: C.dim, fontSize: 7.5, fontWeight: 760, letterSpacing: 1}}>ALLOCATED</div></div>
-      </div>
-      <div style={{position: 'absolute', left: 201, right: 20, top: 65, fontFamily: 'Arial, Helvetica, sans-serif'}}>
-        {parts.map((part, index) => {
-          const rowProgress = loopProgress(timeline, 455 + index * 31, 520 + index * 31, 770 + index * 3, 890);
-          return <div key={part.label} style={{height: 38, display: 'grid', gridTemplateColumns: '11px 1fr 38px', gap: 8, alignItems: 'center', borderBottom: index < parts.length - 1 ? `1px solid ${C.line}` : 'none', opacity: .3 + rowProgress * .7, transform: `translateX(${(1 - rowProgress) * 7}px)`}}><span style={{width: 7, height: 7, borderRadius: '50%', background: part.color, boxShadow: `0 0 8px ${part.color}55`}}/><span style={{color: '#a7bbc8', fontSize: 9.8, fontWeight: 660}}>{part.label}</span><span style={{color: part.color, textAlign: 'right', fontSize: 11, fontWeight: 820, fontVariantNumeric: 'tabular-nums'}}>{Math.round(part.value * donutProgress)}%</span></div>;
-        })}
-      </div>
-    </GlassCard>
-  );
-};
-
-const CashFlowCard: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
-  const reveal = loopProgress(timeline, 300, 395, 805, 900);
-  const summaryProgress = loopProgress(timeline, 460, 640, 770, 900);
-  const max = 34;
-  return (
-    <GlassCard x={1179} y={540} width={445} height={276} reveal={reveal} depth={6} float={Math.sin(phase * 2 + 3.6) * 1.05 * reveal}>
-      <div style={{position: 'absolute', left: 22, top: 18, fontFamily: 'Arial, Helvetica, sans-serif'}}><div style={{color: C.ink, fontSize: 13.5, fontWeight: 820, letterSpacing: 1.05}}>FREE CASH FLOW 2020–2026</div><div style={{marginTop: 5, color: C.muted, fontSize: 8.3, fontWeight: 660, letterSpacing: .8}}>CASH GENERATION · USD MILLIONS</div></div>
-      <div style={{position: 'absolute', right: 21, top: 16, textAlign: 'right', fontFamily: 'Arial, Helvetica, sans-serif'}}><div style={{color: C.violet, fontSize: 19, fontWeight: 850, fontVariantNumeric: 'tabular-nums'}}>{money(valueAt(CASH_FLOW, summaryProgress))}</div><div style={{marginTop: 3, color: C.dim, fontSize: 7.4, fontWeight: 740, letterSpacing: .8}}>2026 OUTLOOK</div></div>
-      <div style={{position: 'absolute', left: 22, right: 22, top: 76, height: 133, borderBottom: '1px solid rgba(133,181,204,.18)'}}>
-        {[0, 1, 2].map((i) => <div key={i} style={{position: 'absolute', left: 0, right: 0, top: i * 43, height: 1, background: C.line}}/>)}
-        <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: '0 10px'}}>
-          {CASH_FLOW.map((value, index) => {
-            const barProgress = loopProgress(timeline, 410 + index * 31, 500 + index * 31, 775, 900);
-            const height = (value / max) * 121 * pop(barProgress);
-            const isLast = index === 6;
-            const shimmer = loopProgress(timeline, 650 + index * 5, 715 + index * 5, 745, 800);
-            return <div key={YEARS[index]} style={{position: 'relative', width: 37, height: 121, display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}><div style={{position: 'relative', width: 20, height, minHeight: 2, borderRadius: '6px 6px 2px 2px', overflow: 'hidden', background: isLast ? `linear-gradient(180deg, ${C.gold}, ${C.violet})` : `linear-gradient(180deg, ${C.violet}, rgba(154,140,255,.38))`, boxShadow: isLast ? '0 0 16px rgba(240,199,107,.22)' : '0 0 10px rgba(154,140,255,.12)'}}><div style={{position: 'absolute', left: -8, top: `${100 - shimmer * 155}%`, width: 36, height: 14, transform: 'rotate(-12deg)', background: 'linear-gradient(180deg, transparent, rgba(255,255,255,.42), transparent)', opacity: Math.sin(shimmer * Math.PI) * .7}}/></div></div>;
-          })}
+      <div
+        style={{
+          position: 'absolute',
+          left: 26,
+          top: 24,
+          opacity: smooth(frame, [88, 132]),
+        }}
+      >
+        <div style={{fontFamily: MONO, fontSize: 8, color: COLORS.muted, letterSpacing: 1.6}}>
+          NETWORK TOPOLOGY / WORLDWIDE
+        </div>
+        <div style={{display: 'flex', gap: 7, marginTop: 8}}>
+          {[COLORS.cyan, COLORS.blue, COLORS.magenta].map((color, i) => (
+            <div
+              key={color}
+              style={{
+                width: i === 0 ? 28 : 8,
+                height: 2,
+                background: color,
+                boxShadow: `0 0 8px ${color}`,
+                opacity: 0.55 + pulse(frame, 0.06, i) * 0.45,
+              }}
+            />
+          ))}
         </div>
       </div>
-      <div style={{position: 'absolute', left: 22, right: 22, top: 213, display: 'flex', justifyContent: 'space-between', padding: '0 10px', fontFamily: 'Arial, Helvetica, sans-serif'}}>{YEARS.map((year, index) => <span key={year} style={{width: 37, textAlign: 'center', color: year === 2026 ? C.gold : C.dim, fontSize: 7.8, fontWeight: year === 2026 ? 820 : 650}}>{year}</span>)}</div>
-      <div style={{position: 'absolute', left: 22, right: 22, bottom: 17, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 11px', borderRadius: 9, background: 'rgba(154,140,255,.055)', border: '1px solid rgba(154,140,255,.12)', fontFamily: 'Arial, Helvetica, sans-serif'}}><span style={{color: C.muted, fontSize: 7.8, fontWeight: 720, letterSpacing: .8}}>CASH CONVERSION</span><span style={{color: C.violet, fontSize: 11, fontWeight: 830, fontVariantNumeric: 'tabular-nums'}}>{Math.round(77 * summaryProgress)}%</span></div>
-    </GlassCard>
+
+      <div
+        style={{
+          position: 'absolute',
+          right: 26,
+          top: 22,
+          textAlign: 'right',
+          opacity: smooth(frame, [104, 148]),
+        }}
+      >
+        <div style={{fontFamily: MONO, color: COLORS.cyan, fontSize: 10, letterSpacing: 1.7}}>
+          36 GEO HUBS
+        </div>
+        <div
+          style={{fontFamily: MONO, color: COLORS.muted, fontSize: 7, letterSpacing: 1.3, marginTop: 6}}
+        >
+          42 LIVE ROUTES / SYNC ACTIVE
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 28,
+          right: 28,
+          bottom: 22,
+          height: 42,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 15px',
+          borderRadius: 10,
+          border: '1px solid rgba(74,220,229,0.11)',
+          background: 'rgba(3,12,21,0.58)',
+          opacity: smooth(frame, [128, 176]),
+        }}
+      >
+        <div
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 10,
+            background: COLORS.cyan,
+            boxShadow: `0 0 ${9 + pulse(frame, 0.06) * 8}px ${COLORS.cyan}`,
+          }}
+        />
+        <div style={{fontFamily: MONO, color: COLORS.cyan, fontSize: 8, marginLeft: 9, letterSpacing: 1.3}}>
+          ANALYSIS STREAM ACTIVE
+        </div>
+        <div style={{flex: 1, height: 1, background: 'rgba(73,245,223,0.09)', margin: '0 15px'}}>
+          <div
+            style={{
+              width: 110,
+              height: 1,
+              background: 'linear-gradient(90deg, transparent, #49f5df, transparent)',
+              transform: `translateX(${(frame * 2.8) % 520}px)`,
+            }}
+          />
+        </div>
+        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 8, letterSpacing: 1.2}}>
+          PKT {String(4028 + Math.floor(frame * 0.92)).padStart(5, '0')}
+        </div>
+      </div>
+    </div>
   );
 };
 
-const Dashboard: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => (
-  <div style={{position: 'relative', width: 1648, height: 840, borderRadius: 30, overflow: 'hidden', background: 'linear-gradient(135deg, rgba(11,29,41,.98), rgba(5,17,26,.99))', border: '1px solid rgba(160,203,224,.16)', boxShadow: '0 42px 90px rgba(0,3,9,.48), inset 0 1px 0 rgba(255,255,255,.055)', transformStyle: 'preserve-3d'}}>
-    <div style={{position: 'absolute', inset: 0, opacity: .18, backgroundImage: 'linear-gradient(rgba(85,139,164,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(85,139,164,.08) 1px, transparent 1px)', backgroundSize: '42px 42px'}}/>
-    <div style={{position: 'absolute', right: -110, top: -180, width: 720, height: 650, borderRadius: '50%', background: 'radial-gradient(circle, rgba(70,221,243,.085), rgba(70,221,243,0) 67%)', filter: 'blur(8px)'}}/>
-    <Sidebar timeline={timeline} phase={phase}/>
-    <Header timeline={timeline} phase={phase}/>
-    {[0, 1, 2, 3].map((index) => <KpiCard key={index} index={index} timeline={timeline} phase={phase}/>)}
-    <PerformanceChart timeline={timeline} phase={phase}/>
-    <AllocationCard timeline={timeline} phase={phase}/>
-    <CashFlowCard timeline={timeline} phase={phase}/>
+const EventFeed: React.FC<{frame: number}> = ({frame}) => {
+  const reveal = smooth(frame, [64, 118]);
+  const events = [
+    ['EDGE-047', 'PATTERN DETECTED', 'CRITICAL', COLORS.magenta],
+    ['NODE-218', 'ACCESS VERIFIED', 'SECURED', COLORS.cyan],
+    ['ZONE-09', 'ANOMALY CLUSTER', 'REVIEW', COLORS.amber],
+    ['GRID-631', 'ROUTE ISOLATED', 'CONTAINED', COLORS.blue],
+    ['LINK-302', 'SIGNATURE MATCH', 'TRACKING', COLORS.magenta],
+    ['CORE-117', 'POLICY UPDATED', 'SECURED', COLORS.cyan],
+  ];
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        height: 414,
+        padding: '21px 18px',
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * 36}px)`,
+      }}
+    >
+      <CornerBrackets color="rgba(76,141,255,0.34)" />
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <div style={{fontFamily: MONO, fontSize: 9, letterSpacing: 1.7, color: COLORS.muted}}>
+          LIVE EVENT STREAM
+        </div>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 7,
+            color: COLORS.cyan,
+            padding: '4px 7px',
+            border: '1px solid rgba(73,245,223,0.2)',
+            borderRadius: 5,
+          }}
+        >
+          AUTO
+        </div>
+      </div>
+
+      <div style={{marginTop: 17}}>
+        {events.map(([id, description, status, color], index) => {
+          const itemReveal = smooth(frame, [92 + index * 14, 126 + index * 14]);
+          const highlight = pulse(frame, 0.025, index * 1.2);
+          const activePhase = (frame / 90 + index) % events.length;
+          const activeDistance = Math.min(activePhase, events.length - activePhase);
+          const activeStrength = 1 - smooth(activeDistance, [0, 1]);
+          const borderAlpha = Math.round(8 + activeStrength * 46)
+            .toString(16)
+            .padStart(2, '0');
+          const backgroundAlpha = Math.round(3 + activeStrength * 9)
+            .toString(16)
+            .padStart(2, '0');
+          return (
+            <div
+              key={id}
+              style={{
+                position: 'relative',
+                height: 52,
+                marginBottom: 7,
+                padding: '9px 10px 7px 13px',
+                borderRadius: 8,
+                border: `1px solid ${color}${borderAlpha}`,
+                background: `linear-gradient(${color}${backgroundAlpha}, ${color}${backgroundAlpha}), rgba(7,22,34,0.42)`,
+                opacity: itemReveal,
+                transform: `translateX(${(1 - itemReveal) * 24}px)`,
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 10,
+                  bottom: 10,
+                  width: 2,
+                  background: color,
+                  boxShadow: `0 0 ${activeStrength * 12}px ${color}`,
+                  opacity: 0.55 + highlight * 0.4,
+                }}
+              />
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <div style={{fontFamily: MONO, fontSize: 8, letterSpacing: 1.1, color: COLORS.text}}>
+                  {id}
+                </div>
+                <div style={{fontFamily: MONO, fontSize: 7, color, letterSpacing: 0.7}}>{status}</div>
+              </div>
+              <div
+                style={{
+                  marginTop: 7,
+                  fontFamily: MONO,
+                  fontSize: 7,
+                  letterSpacing: 0.75,
+                  color: COLORS.muted,
+                }}
+              >
+                {description}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  bottom: 8,
+                  width: 5,
+                  height: 5,
+                  borderRadius: 8,
+                  background: color,
+                  boxShadow: `0 0 8px ${color}`,
+                  opacity: activeStrength,
+                  transform: `scale(${0.65 + activeStrength * 0.35})`,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const ProtocolChart: React.FC<{frame: number}> = ({frame}) => {
+  const reveal = smooth(frame, [116, 168]);
+  const bars = [0.72, 0.54, 0.83, 0.41, 0.66];
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        flex: 1,
+        padding: '20px 18px',
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * 30}px)`,
+      }}
+    >
+      <div style={{fontFamily: MONO, fontSize: 9, letterSpacing: 1.7, color: COLORS.muted}}>
+        PROTOCOL LOAD
+      </div>
+      <div style={{display: 'flex', alignItems: 'flex-end', height: 102, gap: 9, marginTop: 16}}>
+        {bars.map((bar, index) => {
+          const height = (bar + Math.sin(frame * 0.018 + index) * 0.06) * 100;
+          const color = index === 2 ? COLORS.magenta : index === 4 ? COLORS.blue : COLORS.cyan;
+          return (
+            <div key={index} style={{flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end'}}>
+              <div
+                style={{
+                  width: '100%',
+                  height: `${height * reveal}%`,
+                  borderRadius: '5px 5px 2px 2px',
+                  background: `linear-gradient(180deg, ${color}d9, ${color}18)`,
+                  border: `1px solid ${color}36`,
+                  boxShadow: `0 0 17px ${color}12`,
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: `${(frame * 0.7 + index * 17) % 100}%`,
+                    height: 1,
+                    background: 'rgba(255,255,255,0.42)',
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 10}}>
+        {['P1', 'P2', 'P3', 'P4', 'P5'].map((label) => (
+          <div key={label} style={{fontFamily: MONO, fontSize: 7, color: COLORS.muted}}>
+            {label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const RightColumn: React.FC<{frame: number}> = ({frame}) => (
+  <div style={{width: 315, display: 'flex', flexDirection: 'column', gap: 14}}>
+    <EventFeed frame={frame} />
+    <ProtocolChart frame={frame} />
   </div>
 );
 
+const BottomRail: React.FC<{frame: number}> = ({frame}) => {
+  const reveal = smooth(frame, [138, 198]);
+  const values = [
+    ['TRAFFIC', `${(8.4 + pulse(frame, 0.017) * 0.8).toFixed(1)} TB/S`, COLORS.cyan],
+    ['ANOMALIES', `${184 + Math.floor(pulse(frame, 0.023, 1) * 12)}`, COLORS.magenta],
+    ['RESPONSE', `${(2.3 + pulse(frame, 0.021, 2) * 0.5).toFixed(1)} MS`, COLORS.blue],
+    ['UPTIME', '99.998%', COLORS.cyan],
+    ['ENCRYPTION', 'ACTIVE', COLORS.amber],
+  ];
+  const progress = ((frame - 150) % 540) / 540;
+  return (
+    <div
+      style={{
+        ...panelStyle,
+        height: 100,
+        marginTop: 14,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 22px',
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 28}px)`,
+      }}
+    >
+      <div style={{width: 174}}>
+        <div style={{fontFamily: MONO, fontSize: 8, color: COLORS.muted, letterSpacing: 1.5}}>
+          SYSTEM PULSE
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 9}}>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 10,
+              background: COLORS.cyan,
+              boxShadow: `0 0 ${8 + pulse(frame, 0.1) * 12}px ${COLORS.cyan}`,
+            }}
+          />
+          <div style={{fontFamily: MONO, color: COLORS.cyan, fontSize: 10, letterSpacing: 1.1}}>
+            NOMINAL
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex: 1, height: 56, position: 'relative', marginRight: 24}}>
+        <svg width="100%" height="56" preserveAspectRatio="none" viewBox="0 0 900 56">
+          <defs>
+            <linearGradient id="pulse-stroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor={COLORS.blue} stopOpacity="0.15" />
+              <stop offset="0.48" stopColor={COLORS.cyan} />
+              <stop offset="0.72" stopColor={COLORS.magenta} />
+              <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0.15" />
+            </linearGradient>
+            <filter id="pulse-glow" x="-20%" y="-100%" width="140%" height="300%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          {Array.from({length: 18}, (_, i) => (
+            <line
+              key={i}
+              x1={i * 53}
+              y1="4"
+              x2={i * 53}
+              y2="52"
+              stroke="rgba(78,206,217,0.06)"
+            />
+          ))}
+          <path
+            d="M0 31 L92 31 L112 25 L125 38 L142 31 L250 31 L269 9 L284 49 L300 31 L422 31 L444 20 L464 39 L482 31 L592 31 L611 14 L630 45 L648 31 L754 31 L777 24 L797 37 L820 31 L900 31"
+            fill="none"
+            stroke="url(#pulse-stroke)"
+            strokeWidth="1.6"
+            pathLength={1}
+            strokeDasharray="0.17 0.83"
+            strokeDashoffset={-progress}
+            filter="url(#pulse-glow)"
+          />
+          <path
+            d="M0 31 L92 31 L112 25 L125 38 L142 31 L250 31 L269 9 L284 49 L300 31 L422 31 L444 20 L464 39 L482 31 L592 31 L611 14 L630 45 L648 31 L754 31 L777 24 L797 37 L820 31 L900 31"
+            fill="none"
+            stroke="rgba(73,245,223,0.16)"
+            strokeWidth="0.8"
+          />
+        </svg>
+      </div>
+
+      <div style={{display: 'flex', alignItems: 'center', height: 56}}>
+        {values.map(([label, value, color], index) => (
+          <div
+            key={label}
+            style={{
+              width: index === 4 ? 118 : 105,
+              paddingLeft: 15,
+              marginLeft: index === 0 ? 0 : 8,
+              borderLeft: '1px solid rgba(87,207,218,0.1)',
+            }}
+          >
+            <div style={{fontFamily: MONO, fontSize: 7, letterSpacing: 1.1, color: COLORS.muted}}>
+              {label}
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                fontFamily: MONO,
+                fontWeight: 700,
+                fontSize: 10,
+                letterSpacing: 0.8,
+                color,
+              }}
+            >
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AmbientLayer: React.FC<{frame: number}> = ({frame}) => {
+  const particles = Array.from({length: 78}, (_, index) => {
+    const x = random(`particle-x-${index}`) * 100;
+    const baseY = random(`particle-y-${index}`) * 100;
+    const size = 0.7 + random(`particle-size-${index}`) * 2.2;
+    const speed = 0.008 + random(`particle-speed-${index}`) * 0.018;
+    const y = (baseY + frame * speed) % 104 - 2;
+    const opacity = 0.08 + random(`particle-opacity-${index}`) * 0.28;
+    const color = index % 9 === 0 ? COLORS.magenta : index % 4 === 0 ? COLORS.blue : COLORS.cyan;
+    return {x, y, size, opacity, color};
+  });
+  return (
+    <AbsoluteFill style={{overflow: 'hidden', backgroundColor: COLORS.bg}}>
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(circle at 50% 47%, rgba(13,87,105,0.21), transparent 38%), radial-gradient(circle at 7% 16%, rgba(76,141,255,0.10), transparent 28%), radial-gradient(circle at 93% 77%, rgba(255,79,150,0.075), transparent 28%), linear-gradient(155deg, #020711 0%, #03101a 47%, #01040a 100%)',
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: 0.23,
+          backgroundImage:
+            'linear-gradient(rgba(69,178,194,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(69,178,194,0.055) 1px, transparent 1px)',
+          backgroundSize: '72px 72px',
+          backgroundPosition: `${(frame * 0.08) % 72}px ${(frame * 0.04) % 72}px`,
+          transform: 'perspective(1000px) rotateX(58deg) scale(1.65) translateY(20%)',
+          transformOrigin: 'center 74%',
+          maskImage: 'linear-gradient(to bottom, transparent 12%, black 60%, transparent 100%)',
+        }}
+      />
+      {particles.map((particle, index) => (
+        <div
+          key={index}
+          style={{
+            position: 'absolute',
+            left: `${particle.x}%`,
+            top: `${particle.y}%`,
+            width: particle.size,
+            height: particle.size,
+            borderRadius: '50%',
+            background: particle.color,
+            opacity: particle.opacity * (0.55 + pulse(frame, 0.025, index) * 0.45),
+            boxShadow: `0 0 ${particle.size * 4}px ${particle.color}`,
+          }}
+        />
+      ))}
+      <svg
+        width="100%"
+        height="100%"
+        style={{position: 'absolute', inset: 0, opacity: 0.035, mixBlendMode: 'screen'}}
+      >
+        <filter id="ambient-noise">
+          <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="2" seed="19" />
+          <feColorMatrix type="saturate" values="0" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#ambient-noise)" />
+      </svg>
+      <AbsoluteFill
+        style={{
+          background:
+            'linear-gradient(90deg, rgba(0,0,0,0.5), transparent 9%, transparent 91%, rgba(0,0,0,0.5)), linear-gradient(0deg, rgba(0,0,0,0.48), transparent 12%, transparent 88%, rgba(0,0,0,0.54))',
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const BootOverlay: React.FC<{frame: number}> = ({frame}) => {
+  const opacity = interpolate(frame, [0, 16, 66, 102], [0, 1, 1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const width = smooth(frame, [5, 78]) * 420;
+  return (
+    <AbsoluteFill
+      style={{
+        pointerEvents: 'none',
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity,
+      }}
+    >
+      <div style={{transform: `translateY(${interpolate(frame, [0, 100], [8, -12])}px)`}}>
+        <div
+          style={{
+            fontFamily: MONO,
+            color: COLORS.cyan,
+            fontSize: 9,
+            textAlign: 'center',
+            letterSpacing: 3.2,
+          }}
+        >
+          SYNCHRONIZING GLOBAL GRID
+        </div>
+        <div
+          style={{
+            width: 420,
+            height: 2,
+            marginTop: 17,
+            background: 'rgba(73,245,223,0.09)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              width,
+              height: '100%',
+              background: 'linear-gradient(90deg, #4c8dff, #49f5df, #ff4f96)',
+              boxShadow: '0 0 15px rgba(73,245,223,0.8)',
+            }}
+          />
+        </div>
+        <div
+          style={{
+            fontFamily: MONO,
+            color: COLORS.muted,
+            fontSize: 7,
+            textAlign: 'center',
+            marginTop: 11,
+            letterSpacing: 1.7,
+          }}
+        >
+          {String(Math.min(100, Math.floor(smooth(frame, [5, 78]) * 100))).padStart(3, '0')}% / CHANNELS SECURED
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
-  const timeline = (frame / durationInFrames) * 900;
+  const {fps, durationInFrames} = useVideoConfig();
+  const intro = spring({
+    frame,
+    fps,
+    config: {damping: 19, stiffness: 82, mass: 1.08},
+    durationInFrames: 105,
+  });
+  const outro = interpolate(frame, [durationInFrames - 68, durationInFrames - 1], [1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.cubic),
+  });
   const phase = (frame / durationInFrames) * Math.PI * 2;
-  const boardReveal = loopProgress(timeline, 0, 72, 835, 900);
-  const cameraX = Math.sin(phase) * 28 + Math.sin(phase * 2 + .6) * 6;
-  const cameraY = Math.sin(phase * 2 - .35) * 12 + Math.sin(phase + .8) * 4;
-  const cameraScale = 1.002 + Math.sin(phase - .5) * .01 + Math.sin(phase * 2 + .25) * .004;
-  const rotateX = Math.sin(phase + .7) * .38 + Math.sin(phase * 2) * .1;
-  const rotateY = Math.cos(phase) * .62 + Math.sin(phase * 2 + .4) * .14;
-  const rotateZ = Math.sin(phase - .4) * .08;
-  const sweep = loopProgress(timeline, 555, 720, 746, 810);
-  const sweepOpacity = Math.sin(sweep * Math.PI) * .12;
-  const ambientX = 1160 + Math.sin(phase) * 170;
-  const ambientY = 170 + Math.cos(phase) * 95;
-  const particles = Array.from({length: 26}, (_, index) => ({
-    x: 45 + ((index * 149 + 73) % 1830),
-    y: 35 + ((index * 97 + 41) % 1010),
-    size: 1 + (index % 3) * .55,
-    opacity: .1 + ((index * 7) % 9) * .018,
-  }));
+  const cameraX = Math.sin(phase * 0.82) * 8 + Math.sin(phase * 2.1) * 2.2;
+  const cameraY = Math.cos(phase * 0.67) * 5.5;
+  const cameraScale = 0.925 + intro * 0.045 + Math.sin(phase * 0.72) * 0.006;
+  const cameraRotateX = 0.75 + Math.sin(phase * 0.58) * 0.34;
+  const cameraRotateY = Math.sin(phase * 0.51) * 0.42;
+  const headerReveal = smooth(frame, [24, 76]);
+  const visibility = clamp(intro * 1.12) * outro;
+
   return (
-    <AbsoluteFill style={{overflow: 'hidden', background: 'radial-gradient(circle at 70% 18%, #10293a 0%, #071522 40%, #030a12 100%)', fontFamily: 'Arial, Helvetica, sans-serif'}}>
-      <div style={{position: 'absolute', inset: 0, opacity: .22, backgroundImage: 'linear-gradient(rgba(73,132,160,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(73,132,160,.08) 1px, transparent 1px)', backgroundSize: '72px 72px', transform: `translate(${Math.sin(phase) * 8}px, ${Math.cos(phase) * 6}px)`}}/>
-      <div style={{position: 'absolute', left: ambientX - 420, top: ambientY - 330, width: 840, height: 660, borderRadius: '50%', background: 'radial-gradient(circle, rgba(70,221,243,.13), rgba(70,221,243,.025) 38%, transparent 70%)', filter: 'blur(22px)'}}/>
-      <div style={{position: 'absolute', left: 110 + Math.cos(phase) * 70, bottom: -160 + Math.sin(phase) * 30, width: 720, height: 520, borderRadius: '50%', background: 'radial-gradient(circle, rgba(154,140,255,.11), transparent 70%)', filter: 'blur(28px)'}}/>
-      {particles.map((particle, index) => <div key={index} style={{position: 'absolute', left: particle.x + Math.sin(phase + index) * 5, top: particle.y + Math.cos(phase * 1.4 + index) * 4, width: particle.size, height: particle.size, borderRadius: '50%', background: index % 5 === 0 ? C.gold : C.cyan, opacity: particle.opacity * (.72 + Math.sin(phase * 2 + index) * .28), boxShadow: `0 0 ${4 + particle.size * 2}px currentColor`}}/>)}
-      <div data-safe-object="board" style={{position: 'absolute', left: 136, top: 120, width: 1648, height: 840, transformOrigin: '50% 50%', transformStyle: 'preserve-3d', opacity: .84 + boardReveal * .16, willChange: 'transform, opacity', transform: `perspective(3600px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${cameraScale * (.978 + boardReveal * .022)})`}}>
-        <Dashboard timeline={timeline} phase={phase}/>
-        <div style={{position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 30, pointerEvents: 'none', transform: 'translateZ(28px)'}}><div style={{position: 'absolute', left: -250 + sweep * 2150, top: -150, width: 100, height: 1180, transform: 'rotate(15deg)', background: 'linear-gradient(90deg, transparent, rgba(215,244,255,.55), transparent)', filter: 'blur(7px)', opacity: sweepOpacity}}/></div>
+    <AbsoluteFill style={{fontFamily: FONT, backgroundColor: COLORS.bg, overflow: 'hidden'}}>
+      <AmbientLayer frame={frame} />
+
+      <div
+        style={{
+          ...panelStyle,
+          position: 'absolute',
+          left: 74,
+          right: 74,
+          top: 92,
+          bottom: 92,
+          overflow: 'visible',
+          borderRadius: 25,
+          opacity: visibility,
+          transform: `perspective(1900px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${cameraRotateX}deg) rotateY(${cameraRotateY}deg) scale(${cameraScale})`,
+          transformOrigin: '50% 50%',
+          boxShadow:
+            '0 50px 110px rgba(0,0,0,0.52), 0 0 0 1px rgba(73,245,223,0.04), 0 0 110px rgba(21,117,136,0.08)',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: -1,
+            borderRadius: 25,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: `${((frame * 0.055) % 1) * 100}%`,
+              top: 0,
+              bottom: 0,
+              width: 180,
+              opacity: 0.08,
+              background:
+                'linear-gradient(90deg, transparent, rgba(73,245,223,0.13), transparent)',
+              transform: 'skewX(-18deg)',
+            }}
+          />
+        </div>
+
+        <Header frame={frame} reveal={headerReveal} />
+
+        <div style={{padding: '16px 18px 18px'}}>
+          <div style={{height: 650, display: 'flex', gap: 14}}>
+            <LeftColumn frame={frame} />
+            <GlobeNetwork frame={frame} />
+            <RightColumn frame={frame} />
+          </div>
+          <BottomRail frame={frame} />
+        </div>
       </div>
-      <div style={{position: 'absolute', inset: 0, pointerEvents: 'none', opacity: .075, backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(198,229,244,.44) .55px, transparent .75px)', backgroundSize: '6px 6px', mixBlendMode: 'soft-light'}}/>
-      <div style={{position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at center, transparent 56%, rgba(0,3,8,.42) 100%)'}}/>
+
+      <BootOverlay frame={frame} />
+
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          opacity: interpolate(frame, [0, 48, 112], [0.8, 0.24, 0], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          }),
+          background:
+            'linear-gradient(to bottom, transparent 0%, rgba(73,245,223,0.14) 49.8%, rgba(73,245,223,0.42) 50%, rgba(73,245,223,0.14) 50.2%, transparent 100%)',
+          transform: `translateY(${interpolate(frame, [0, 112], [-540, 540], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.inOut(Easing.cubic),
+          })}px)`,
+          mixBlendMode: 'screen',
+        }}
+      />
+
+      <AbsoluteFill
+        style={{
+          pointerEvents: 'none',
+          opacity: 1 - outro,
+          background:
+            'radial-gradient(circle at 50% 48%, rgba(20,129,139,0.12), rgba(2,6,13,0.96) 68%)',
+        }}
+      />
     </AbsoluteFill>
   );
 };
