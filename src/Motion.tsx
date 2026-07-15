@@ -12,11 +12,12 @@ const COLORS = {
   bg: '#020711',
   panel: '#06131f',
   panelBright: '#092334',
-  cyan: '#00e5e8',
-  teal: '#49f5df',
-  blue: '#22a7ff',
-  magenta: '#ff2f91',
-  amber: '#ffc857',
+  cyan: '#38d7ff',
+  teal: '#52f3d0',
+  blue: '#4e92ff',
+  violet: '#8b7dff',
+  magenta: '#ff3d81',
+  amber: '#ffc65a',
   text: '#e8fbff',
   muted: '#6c93a4',
 };
@@ -64,6 +65,23 @@ type RouteGeometry = Route & {
   omega: number;
   sinOmega: number;
   heightValue: number;
+};
+
+type CloudDataCenter = {
+  hubId: string;
+  region: string;
+  capacity: number;
+};
+
+type DdosCluster = {
+  id: string;
+  target: string;
+  angle: number;
+  orbit: number;
+  period: 180 | 225 | 300;
+  offset: number;
+  color: 'critical' | 'warning';
+  curve: number;
 };
 
 type RoutePoint = {
@@ -223,6 +241,24 @@ const cyclicPulse = (frame: number, offset: number, period: number, width: numbe
   return 1 - smooth(distance, [width * 0.14, width]);
 };
 
+const cloudStory = (phase: number) => {
+  const progress = ((phase / TAU) % 1 + 1) % 1;
+  const surge = smooth(progress, [0.14, 0.32]) * (1 - smooth(progress, [0.78, 0.96]));
+  const scrubbing = smooth(progress, [0.4, 0.59]) * (1 - smooth(progress, [0.87, 0.99]));
+  const protectedState = smooth(progress, [0.56, 0.72]) * (1 - smooth(progress, [0.9, 0.995]));
+  return {progress, surge, scrubbing, protectedState};
+};
+
+const cloudMetrics = (phase: number) => {
+  const {surge, scrubbing, protectedState} = cloudStory(phase);
+  const ingress = 3.1 + surge * 8.3 - scrubbing * 1.1 + Math.sin(phase * 3) * 0.35;
+  const malicious = 1.2 + surge * 6.7 - scrubbing * 1.1 + ((Math.sin(phase * 3) + 1) / 2) * 0.34;
+  const blockedVolume = malicious * (0.78 + scrubbing * 0.2 + protectedState * 0.01);
+  const scrubTime = 10.8 + surge * 3.6 - scrubbing * 2.5;
+  const availability = 99.992 + protectedState * 0.007;
+  return {ingress, malicious, blockedVolume, scrubTime, availability};
+};
+
 const geoToVector = ([longitude, latitude]: GeoCoord): Vec3 => {
   const lon = longitude * DEG;
   const lat = latitude * DEG;
@@ -329,6 +365,39 @@ const HUB_LABEL_OFFSETS: Record<string, [number, number]> = {
   SYD: [25, 0],
 };
 
+const CLOUD_DATA_CENTERS: CloudDataCenter[] = [
+  {hubId: 'SFO', region: 'NA-W', capacity: 94},
+  {hubId: 'NYC', region: 'NA-E', capacity: 91},
+  {hubId: 'SAO', region: 'SA-1', capacity: 82},
+  {hubId: 'LON', region: 'EU-W', capacity: 96},
+  {hubId: 'FRA', region: 'EU-C', capacity: 93},
+  {hubId: 'JNB', region: 'AF-S', capacity: 76},
+  {hubId: 'DXB', region: 'ME-1', capacity: 88},
+  {hubId: 'DEL', region: 'IN-1', capacity: 86},
+  {hubId: 'SIN', region: 'AP-S', capacity: 97},
+  {hubId: 'PEK', region: 'AP-N', capacity: 89},
+  {hubId: 'TYO', region: 'AP-E', capacity: 95},
+  {hubId: 'SYD', region: 'OC-1', capacity: 84},
+];
+const DATA_CENTER_IDS = new Set(CLOUD_DATA_CENTERS.map((center) => center.hubId));
+
+const DDOS_CLUSTERS: DdosCluster[] = [
+  {id: 'BOT-01', target: 'SFO', angle: -156 * DEG, orbit: 126, period: 225, offset: 12, color: 'critical', curve: 58},
+  {id: 'BOT-02', target: 'NYC', angle: -122 * DEG, orbit: 104, period: 180, offset: 64, color: 'warning', curve: -44},
+  {id: 'BOT-03', target: 'LON', angle: -90 * DEG, orbit: 145, period: 300, offset: 108, color: 'critical', curve: 68},
+  {id: 'BOT-04', target: 'FRA', angle: -57 * DEG, orbit: 112, period: 225, offset: 142, color: 'warning', curve: -51},
+  {id: 'BOT-05', target: 'DXB', angle: -24 * DEG, orbit: 136, period: 180, offset: 28, color: 'critical', curve: 61},
+  {id: 'BOT-06', target: 'DEL', angle: 9 * DEG, orbit: 103, period: 225, offset: 92, color: 'warning', curve: -46},
+  {id: 'BOT-07', target: 'SIN', angle: 43 * DEG, orbit: 151, period: 300, offset: 166, color: 'critical', curve: 73},
+  {id: 'BOT-08', target: 'PEK', angle: 76 * DEG, orbit: 116, period: 180, offset: 52, color: 'warning', curve: -57},
+  {id: 'BOT-09', target: 'TYO', angle: 109 * DEG, orbit: 139, period: 225, offset: 124, color: 'critical', curve: 64},
+  {id: 'BOT-10', target: 'SYD', angle: 142 * DEG, orbit: 105, period: 300, offset: 206, color: 'warning', curve: -49},
+  {id: 'BOT-11', target: 'SAO', angle: 176 * DEG, orbit: 148, period: 180, offset: 78, color: 'critical', curve: 69},
+  {id: 'BOT-12', target: 'JNB', angle: 211 * DEG, orbit: 119, period: 225, offset: 154, color: 'warning', curve: -55},
+  {id: 'BOT-13', target: 'LON', angle: 246 * DEG, orbit: 133, period: 300, offset: 34, color: 'critical', curve: 62},
+  {id: 'BOT-14', target: 'SIN', angle: 282 * DEG, orbit: 108, period: 180, offset: 112, color: 'critical', curve: -52},
+];
+
 const ROUTE_GEOMETRY: RouteGeometry[] = ROUTES.map((route, index) => {
   const start = HUB_MAP[route.from].vector;
   const end = HUB_MAP[route.to].vector;
@@ -343,6 +412,7 @@ const ROUTE_GEOMETRY: RouteGeometry[] = ROUTES.map((route, index) => {
     heightValue: route.height ?? 0.065 + (omega / Math.PI) * 0.105,
   };
 });
+const CLOUD_LINK_GEOMETRY = ROUTE_GEOMETRY.filter((_, index) => index % 2 === 0 || index === 73 || index === 75);
 
 const buildVisibleLinePath = (lines: Vec3[][], view: ViewState) => {
   let path = '';
@@ -473,6 +543,25 @@ const buildRoutePath = (route: RouteGeometry, view: ViewState) => {
 const routeColor = (risk?: RouteRisk) =>
   risk === 'critical' ? COLORS.magenta : risk === 'warning' ? COLORS.amber : COLORS.cyan;
 
+const quadraticPoint = (
+  start: {x: number; y: number},
+  control: {x: number; y: number},
+  end: {x: number; y: number},
+  t: number,
+) => {
+  const inverse = 1 - t;
+  return {
+    x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x,
+    y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y,
+  };
+};
+
+const polygonPoints = (cx: number, cy: number, radius: number, sides: number, rotation = 0) =>
+  Array.from({length: sides}, (_, index) => {
+    const angle = rotation + (index / sides) * TAU;
+    return `${round1(cx + Math.cos(angle) * radius)},${round1(cy + Math.sin(angle) * radius)}`;
+  }).join(' ');
+
 const BACKGROUND_PARTICLES = Array.from({length: 96}, (_, index) => ({
   x: random(`bg-x-${index}`) * 1920,
   y: random(`bg-y-${index}`) * 1080,
@@ -581,7 +670,7 @@ const Background: React.FC<{frame: number; phase: number}> = ({frame, phase}) =>
 );
 
 const TopBar: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
-  const throughput = 8.7 + Math.sin(phase * 3) * 0.8;
+  const {ingress, scrubTime} = cloudMetrics(phase);
   return (
     <div
       style={{
@@ -608,10 +697,10 @@ const TopBar: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
         />
         <div style={{marginLeft: 17}}>
           <div style={{fontFamily: FONT, color: COLORS.text, fontWeight: 700, fontSize: 27, letterSpacing: 5.4}}>
-            GLOBAL CYBER DEFENSE
+            GLOBAL CLOUD SHIELD
           </div>
           <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 2.4, marginTop: 7}}>
-            REAL-TIME ATTACK SURFACE / WORLDWIDE TELEMETRY
+            MULTI-REGION EDGE SECURITY / LIVE DDOS TELEMETRY
           </div>
         </div>
       </div>
@@ -630,10 +719,10 @@ const TopBar: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
       </div>
       <div style={{display: 'flex', gap: 34, marginLeft: 34}}>
         {[
-          ['UPLINK', 'STABLE', COLORS.teal],
-          ['THROUGHPUT', `${throughput.toFixed(1)} TB/S`, COLORS.cyan],
-          ['LATENCY', '11 MS', COLORS.blue],
-          ['MODE', 'AUTONOMOUS', COLORS.amber],
+          ['ANYCAST', '48 POPS', COLORS.teal],
+          ['INGRESS', `${ingress.toFixed(1)} TB/S`, COLORS.magenta],
+          ['SCRUB TIME', `${scrubTime.toFixed(1)} MS`, COLORS.blue],
+          ['ORIGIN', 'PROTECTED', COLORS.amber],
         ].map(([label, value, color]) => (
           <div key={label} style={{minWidth: 78}}>
             <div style={{fontFamily: MONO, fontSize: 9, letterSpacing: 1.5, color: COLORS.muted}}>{label}</div>
@@ -684,23 +773,24 @@ const MetricCard: React.FC<{
 );
 
 const LeftIntel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
-  const integrity = 99.972 + ((Math.sin(phase * 2) + 1) / 2) * 0.021;
-  const mitigated = 42670 + Math.round(((Math.sin(phase * 3 - 0.8) + 1) / 2) * 184);
-  const active = 68 + Math.round(((Math.sin(phase * 4 + 0.4) + 1) / 2) * 8);
-  const gauge = 0.74 + Math.sin(phase * 2) * 0.05;
+  const {surge, scrubbing} = cloudStory(phase);
+  const {malicious} = cloudMetrics(phase);
+  const edgeCapacity = 82.4 + surge * 10.8 - scrubbing * 3.6 + Math.sin(phase * 2) * 0.8;
+  const blockedPct = 99.81 + scrubbing * 0.17 + ((Math.sin(phase * 2 - 0.4) + 1) / 2) * 0.012;
+  const gauge = clamp(0.24 + surge * 0.66 - scrubbing * 0.18 + Math.sin(phase * 2) * 0.025);
   return (
     <div style={{position: 'absolute', left: 78, top: 172, width: 410}}>
       <div style={{fontFamily: MONO, color: COLORS.cyan, fontSize: 11, letterSpacing: 2.2, marginBottom: 13}}>
-        LIVE THREAT MONITOR / 06
+        CLOUD SECURITY CONTROL / 12
       </div>
       <div style={{display: 'grid', gap: 12}}>
-        <MetricCard label="NETWORK INTEGRITY" value={`${integrity.toFixed(3)}%`} accent={COLORS.teal} detail="NOMINAL" phase={phase} offset={1} />
-        <MetricCard label="THREATS MITIGATED" value={mitigated.toLocaleString('en-US')} accent={COLORS.magenta} detail="+12.8%" phase={phase} offset={2} />
-        <MetricCard label="ACTIVE DATA ROUTES" value={String(active)} accent={COLORS.blue} detail={`${HUBS.length} GEO HUBS`} phase={phase} offset={3} />
+        <MetricCard label="EDGE CAPACITY" value={`${edgeCapacity.toFixed(1)}%`} accent={COLORS.violet} detail="48 EDGE POPS" phase={phase} offset={1} />
+        <MetricCard label="MALICIOUS REQUESTS" value={`${malicious.toFixed(1)}B`} accent={COLORS.magenta} detail="DDOS INGRESS" phase={phase} offset={2} />
+        <MetricCard label="ATTACKS BLOCKED" value={`${blockedPct.toFixed(3)}%`} accent={COLORS.teal} detail="ORIGIN SAFE" phase={phase} offset={3} />
       </div>
       <div style={{...panelStyle, position: 'relative', height: 220, marginTop: 12, padding: '20px 20px'}}>
         <CornerMarks color={COLORS.blue} />
-        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.9}}>DEFENSE POSTURE</div>
+        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.9}}>SCRUBBING MESH</div>
         <div style={{display: 'flex', alignItems: 'center', marginTop: 16}}>
           <div style={{position: 'relative', width: 128, height: 128}}>
             <svg viewBox="0 0 128 128" style={{width: 128, height: 128, transform: 'rotate(-90deg)'}}>
@@ -721,15 +811,15 @@ const LeftIntel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => 
             <div style={{position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center'}}>
               <div>
                 <div style={{fontFamily: FONT, fontWeight: 700, fontSize: 30, color: COLORS.text}}>{Math.round(gauge * 100)}</div>
-                <div style={{fontFamily: MONO, fontSize: 9, color: COLORS.amber, letterSpacing: 1.4}}>GUARDED</div>
+                <div style={{fontFamily: MONO, fontSize: 9, color: COLORS.amber, letterSpacing: 1.4}}>LOAD</div>
               </div>
             </div>
           </div>
           <div style={{flex: 1, marginLeft: 20}}>
             {[
-              ['CRITICAL', 0.17, COLORS.magenta],
-              ['ELEVATED', 0.46, COLORS.amber],
-              ['SECURED', 0.81, COLORS.teal],
+              ['MALICIOUS', gauge, COLORS.magenta],
+              ['SCRUBBED', clamp(0.18 + scrubbing * 0.78), COLORS.violet],
+              ['VALID', clamp(0.92 - surge * 0.18 + scrubbing * 0.16), COLORS.teal],
             ].map(([label, width, color], index) => (
               <div key={String(label)} style={{marginBottom: index === 2 ? 0 : 17}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', fontFamily: MONO, fontSize: 9, color: COLORS.muted, letterSpacing: 1}}>
@@ -743,7 +833,7 @@ const LeftIntel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => 
           </div>
         </div>
         <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 9, letterSpacing: 1.1, marginTop: 10}}>
-          POLICY SYNC 04680 / ACTIVE
+          ANYCAST POLICY 048 / SYNCED
         </div>
       </div>
     </div>
@@ -751,25 +841,26 @@ const LeftIntel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => 
 };
 
 const IncidentQueue: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const {surge, scrubbing} = cloudStory(phase);
   const incidents = [
-    ['NA-17', 'LATERAL MOVEMENT', 'CRITICAL', COLORS.magenta],
-    ['EU-08', 'ACCESS ANOMALY', 'CONTAINED', COLORS.blue],
-    ['AP-24', 'PACKET SURGE', 'TRACKING', COLORS.amber],
-    ['SA-06', 'ROUTE DEVIATION', 'ISOLATED', COLORS.cyan],
-    ['AF-13', 'SIGNATURE MATCH', 'SECURED', COLORS.teal],
-    ['OC-09', 'EDGE PROBE', 'REVIEW', COLORS.magenta],
+    ['NA-17', 'SYN FLOOD', 'SCRUBBING', COLORS.magenta],
+    ['EU-08', 'UDP AMPLIFICATION', 'RATE-LIMITED', COLORS.violet],
+    ['AP-24', 'HTTP REQUEST BURST', 'FILTERING', COLORS.amber],
+    ['SA-06', 'DNS REFLECTION', 'SINKHOLED', COLORS.cyan],
+    ['AF-13', 'TLS HANDSHAKE SURGE', 'MITIGATED', COLORS.teal],
+    ['OC-09', 'BOTNET SWARM', 'CHALLENGED', COLORS.magenta],
   ] as const;
   return (
     <div style={{position: 'absolute', right: 78, top: 176, width: 354}}>
       <div style={{...panelStyle, height: 556, padding: '20px 17px', position: 'relative'}}>
         <CornerMarks />
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.8}}>LIVE INCIDENT QUEUE</div>
+          <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.8}}>LIVE DDOS VECTOR</div>
           <div style={{fontFamily: MONO, color: COLORS.cyan, fontSize: 9, border: '1px solid rgba(0,229,232,0.24)', borderRadius: 6, padding: '4px 7px'}}>AUTO</div>
         </div>
         <div style={{marginTop: 18}}>
           {incidents.map(([id, description, status, color], index) => {
-            const strength = cyclicPulse(frame, index * 37, 225, 58);
+            const strength = clamp(surge * (0.22 + cyclicPulse(frame, index * 37, 225, 58) * 0.78) + scrubbing * 0.12);
             return (
               <div
                 key={id}
@@ -797,15 +888,16 @@ const IncidentQueue: React.FC<{frame: number; phase: number}> = ({frame, phase})
         </div>
       </div>
       <div style={{...panelStyle, height: 158, marginTop: 12, padding: '19px 19px', position: 'relative'}}>
-        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.7}}>ATTACK VECTOR MIX</div>
+        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 11, letterSpacing: 1.7}}>DDOS PROTOCOL MIX</div>
         <div style={{display: 'flex', alignItems: 'flex-end', height: 86, gap: 14, marginTop: 12}}>
-          {[0.62, 0.43, 0.78, 0.35, 0.56, 0.47].map((base, index) => {
-            const value = clamp(base + Math.sin(phase * (index % 2 === 0 ? 2 : 3) + index) * 0.08);
-            const color = index === 2 ? COLORS.magenta : index === 4 ? COLORS.blue : COLORS.teal;
+          {['SYN', 'UDP', 'HTTP', 'DNS', 'TLS', 'API'].map((label, index) => {
+            const bases = [0.58, 0.42, 0.72, 0.36, 0.49, 0.44];
+            const value = clamp(bases[index] + surge * (index === 0 || index === 2 ? 0.19 : 0.1) - scrubbing * 0.08 + Math.sin(phase * (index % 2 === 0 ? 2 : 3) + index) * 0.06);
+            const color = index === 0 || index === 2 ? COLORS.magenta : index === 4 ? COLORS.violet : COLORS.teal;
             return (
               <div key={index} style={{flex: 1, textAlign: 'center'}}>
                 <div style={{height: value * 70, minHeight: 8, borderRadius: '5px 5px 1px 1px', background: `linear-gradient(180deg, ${color}, ${withAlpha(color, 0.14)})`, boxShadow: `0 0 12px ${withAlpha(color, 0.18)}`}} />
-                <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 8, marginTop: 6}}>V{index + 1}</div>
+                <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 8, marginTop: 6}}>{label}</div>
               </div>
             );
           })}
@@ -833,6 +925,7 @@ const Globe: React.FC<{frame: number; durationInFrames: number; phase: number}> 
   const borderPath = buildVisibleLinePath(BORDER_VECTORS, view);
   const graticulePath = buildVisibleLinePath(GRATICULE_VECTORS, view);
   const landDotPaths = buildLandDotPaths(view);
+  const {surge, scrubbing, protectedState} = cloudStory(phase);
   const scanAngle = ((frame % 300) / 300) * 360;
   const rigScale = 1 + Math.sin(phase * 2) * 0.008;
   const rigY = Math.sin(phase * 2) * 5;
@@ -865,6 +958,31 @@ const Globe: React.FC<{frame: number; durationInFrames: number; phase: number}> 
           <stop offset="0.62" stopColor={COLORS.amber} />
           <stop offset="1" stopColor={COLORS.magenta} />
         </linearGradient>
+        <linearGradient id="cloud-fill" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#7deaff" stopOpacity="0.28" />
+          <stop offset="0.42" stopColor={COLORS.violet} stopOpacity="0.22" />
+          <stop offset="1" stopColor="#082338" stopOpacity="0.76" />
+        </linearGradient>
+        <linearGradient id="cloud-rim" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={COLORS.cyan} stopOpacity="0.16" />
+          <stop offset="0.5" stopColor="#c5fbff" stopOpacity="0.72" />
+          <stop offset="1" stopColor={COLORS.teal} stopOpacity="0.16" />
+        </linearGradient>
+        <linearGradient id="shield-face" x1="0.18" y1="0" x2="0.82" y2="1">
+          <stop offset="0" stopColor="#173f61" stopOpacity="0.98" />
+          <stop offset="0.48" stopColor="#061b2e" stopOpacity="0.98" />
+          <stop offset="1" stopColor="#020b16" stopOpacity="0.98" />
+        </linearGradient>
+        <radialGradient id="cloud-bloom" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stopColor={COLORS.teal} stopOpacity="0.24" />
+          <stop offset="0.55" stopColor={COLORS.cyan} stopOpacity="0.07" />
+          <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="shield-field" cx="50%" cy="46%" r="58%">
+          <stop offset="0" stopColor={COLORS.teal} stopOpacity="0.03" />
+          <stop offset="0.72" stopColor={COLORS.violet} stopOpacity="0.055" />
+          <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0.18" />
+        </radialGradient>
         <clipPath id="sphere-clip-3d">
           <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS} />
         </clipPath>
@@ -910,84 +1028,160 @@ const Globe: React.FC<{frame: number; durationInFrames: number; phase: number}> 
           <line x1={GLOBE_CX} y1={GLOBE_CY} x2={GLOBE_CX + GLOBE_RADIUS + 6} y2={GLOBE_CY} stroke={COLORS.cyan} strokeOpacity="0.36" strokeWidth="1.1" transform={`rotate(${scanAngle} ${GLOBE_CX} ${GLOBE_CY})`} filter="url(#soft-glow)" />
         </g>
 
-        {ROUTE_GEOMETRY.map((route) => {
+        {CLOUD_LINK_GEOMETRY.map((route, cloudIndex) => {
           const path = buildRoutePath(route, view);
-          const period = [180, 225, 300][route.index % 3];
-          const packetProgress = ((frame + route.index * 29) % period) / period;
-          const strength = route.risk
-            ? cyclicPulse(frame, (route.index * 47) % period, period, period * 0.21)
-            : 0;
-          const color = routeColor(route.risk);
-          const packet = evaluateRoutePoint(route, packetProgress, view);
-          const ambientOpacity = route.risk ? 0.18 : 0.14 + (route.index % 4) * 0.015;
+          const period = [180, 225, 300][cloudIndex % 3];
+          const color = cloudIndex % 3 === 0 ? COLORS.violet : cloudIndex % 3 === 1 ? COLORS.cyan : COLORS.teal;
           return (
-            <g key={`${route.from}-${route.to}`}>
-              <path d={path} fill="none" stroke={color} strokeOpacity={ambientOpacity + strength * 0.18} strokeWidth={route.risk ? 1.05 : 0.72} />
-              <path d={path} fill="none" stroke={color} strokeOpacity={strength * 0.82} strokeWidth={1.5 + strength * 0.7} strokeDasharray="4 8" strokeDashoffset={packetProgress * 12} strokeLinecap="round" filter="url(#route-glow)" />
-              <circle cx={packet.x} cy={packet.y} r={route.risk ? 1.8 + strength * 2.3 : 1.15} fill={color} opacity={packet.visible ? 0.42 + strength * 0.58 : 0} filter="url(#route-glow)" />
+            <g key={`cloud-${route.from}-${route.to}`}>
+              <path d={path} fill="none" stroke={color} strokeOpacity={0.15 + scrubbing * 0.11} strokeWidth="0.78" />
+              {[0, 0.5].map((packetOffset) => {
+                const packetProgress = (((frame + cloudIndex * 31) % period) / period + packetOffset) % 1;
+                const packet = evaluateRoutePoint(route, packetProgress, view);
+                return <circle key={packetOffset} cx={packet.x} cy={packet.y} r={1.1 + scrubbing * 0.5} fill={color} opacity={packet.visible ? 0.38 + scrubbing * 0.34 : 0} filter="url(#route-glow)" />;
+              })}
             </g>
           );
         })}
 
-        {HUB_VECTORS.map((hub, index) => {
+        {DDOS_CLUSTERS.map((cluster, index) => {
+          const target = HUB_MAP[cluster.target];
+          const targetView = rotateToView(target.vector, view);
+          if (targetView.z <= 0.01) return null;
+          const targetScreen = toScreen(targetView, 1.012);
+          const targetDepth = smooth(targetView.z, [0.02, 0.28]);
+          const sourceAngle = cluster.angle + Math.sin(phase + index * 0.71) * 0.075;
+          const sourceRadius = GLOBE_RADIUS + cluster.orbit;
+          const source = {
+            x: GLOBE_CX + Math.cos(sourceAngle) * sourceRadius,
+            y: GLOBE_CY + Math.sin(sourceAngle) * sourceRadius * 0.78,
+          };
+          const deltaX = targetScreen.x - source.x;
+          const deltaY = targetScreen.y - source.y;
+          const length = Math.hypot(deltaX, deltaY) || 1;
+          const control = {
+            x: (source.x + targetScreen.x) / 2 + (-deltaY / length) * cluster.curve,
+            y: (source.y + targetScreen.y) / 2 + (deltaX / length) * cluster.curve,
+          };
+          const localPulse = cyclicPulse(frame, cluster.offset, cluster.period, cluster.period * 0.17);
+          const strength = surge * (0.24 + localPulse * 0.76);
+          const threatColor = cluster.color === 'critical' ? COLORS.magenta : COLORS.amber;
+          const dashProgress = ((frame + cluster.offset) % cluster.period) / cluster.period;
+          const streamPath = `M${round1(source.x)} ${round1(source.y)}Q${round1(control.x)} ${round1(control.y)} ${targetScreen.x} ${targetScreen.y}`;
+          return (
+            <g key={cluster.id} opacity={targetDepth}>
+              <path d={streamPath} fill="none" stroke={threatColor} strokeOpacity={0.06 + strength * 0.55} strokeWidth={0.85 + strength * 1.4} strokeDasharray="3 7" strokeDashoffset={dashProgress * 10} filter="url(#route-glow)" />
+              <polygon points={polygonPoints(source.x, source.y, 5 + strength * 3, 3, sourceAngle)} fill={threatColor} opacity={0.15 + strength * 0.72} filter="url(#route-glow)" />
+              {Array.from({length: 7}, (_, packetIndex) => {
+                const travel = ((frame + cluster.offset + packetIndex * (cluster.period / 7)) % cluster.period) / cluster.period;
+                const packet = quadraticPoint(source, control, targetScreen, travel);
+                const scrubMix = scrubbing * smooth(travel, [0.7, 0.94]);
+                const packetRadius = 1.25 + (packetIndex % 3) * 0.38 + strength * 0.7;
+                return (
+                  <g key={packetIndex}>
+                    <circle cx={packet.x} cy={packet.y} r={packetRadius} fill={threatColor} opacity={strength * (1 - scrubMix)} filter="url(#route-glow)" />
+                    <circle cx={packet.x} cy={packet.y} r={packetRadius * 0.92} fill={COLORS.teal} opacity={strength * scrubMix} filter="url(#route-glow)" />
+                  </g>
+                );
+              })}
+              <polygon points={polygonPoints(targetScreen.x, targetScreen.y, 13 + (1 - localPulse) * 17, 6, phase + index)} fill="none" stroke={threatColor} strokeOpacity={strength * (1 - scrubbing) * 0.72} strokeWidth="1.1" />
+              <circle cx={targetScreen.x} cy={targetScreen.y} r={3 + scrubbing * 5 + localPulse * 2} fill={COLORS.teal} opacity={strength * scrubbing * 0.48} filter="url(#route-glow)" />
+              <polygon points={polygonPoints(targetScreen.x, targetScreen.y, 15 + scrubbing * 8, 6, -phase * 1.4 + index)} fill="none" stroke={COLORS.teal} strokeOpacity={strength * scrubbing * 0.82} strokeWidth="1.25" filter="url(#route-glow)" />
+            </g>
+          );
+        })}
+
+        {HUB_VECTORS.filter((hub) => !DATA_CENTER_IDS.has(hub.id)).map((hub, index) => {
           const point = rotateToView(hub.vector, view);
           if (point.z <= 0.01) return null;
-          const screen = toScreen(point, 1.006);
+          const screen = toScreen(point, 1.004);
+          const depth = smooth(point.z, [0.02, 0.28]);
+          const pulseValue = (Math.sin(phase * (3 + (index % 2)) + index * 1.37) + 1) / 2;
+          return (
+            <g key={`edge-${hub.id}`} opacity={depth}>
+              <circle cx={screen.x} cy={screen.y} r={2.2 + pulseValue * 2.4} fill="none" stroke={COLORS.cyan} strokeOpacity={0.12 + (1 - pulseValue) * 0.22} strokeWidth="0.6" />
+              <circle cx={screen.x} cy={screen.y} r="1.25" fill={COLORS.cyan} opacity="0.72" />
+            </g>
+          );
+        })}
+
+        {CLOUD_DATA_CENTERS.map((center, index) => {
+          const hub = HUB_MAP[center.hubId];
+          const point = rotateToView(hub.vector, view);
+          if (point.z <= 0.012) return null;
+          const screen = toScreen(point, 1.014);
           const depth = smooth(point.z, [0.02, 0.3]);
-          const pulseValue = (Math.sin(phase * (4 + (index % 3)) + index * 1.7) + 1) / 2;
-          const color = index % 11 === 0 ? COLORS.amber : index % 7 === 0 ? COLORS.magenta : COLORS.cyan;
-          const core = hub.tier === 3 ? 3.2 : hub.tier === 2 ? 2.25 : 1.55;
-          const [labelDx, labelDy] = HUB_LABEL_OFFSETS[hub.id] ?? [25, 0];
+          const scale = 0.68 + Math.sqrt(Math.max(0, point.z)) * 0.34;
+          const localAttack = surge * (0.24 + cyclicPulse(frame, index * 41, 225, 42) * 0.76);
+          const [labelDx, labelDy] = HUB_LABEL_OFFSETS[hub.id] ?? [25, index % 2 === 0 ? -8 : 9];
           const labelDirection = labelDx < 0 ? -1 : 1;
           return (
-            <g key={hub.id} opacity={depth}>
-              <circle cx={screen.x} cy={screen.y} r={core + 4 + pulseValue * (hub.tier + 1.5)} fill="none" stroke={color} strokeOpacity={0.09 + (1 - pulseValue) * 0.28} strokeWidth="0.75" />
-              <circle cx={screen.x} cy={screen.y} r={core} fill={color} filter="url(#route-glow)" />
-              {hub.tier === 3 && point.z > 0.22 ? (
-                <g opacity={smooth(point.z, [0.22, 0.48])}>
-                  <path d={`M${screen.x + labelDirection * 7} ${screen.y}L${screen.x + labelDx - labelDirection * 4} ${screen.y + labelDy}`} stroke={color} strokeOpacity="0.5" strokeWidth="0.7" />
-                  <text x={screen.x + labelDx} y={screen.y + labelDy + 3} textAnchor={labelDx < 0 ? 'end' : 'start'} fill={COLORS.text} fontFamily={MONO} fontSize="10" letterSpacing="1.1">{hub.id}</text>
+            <g key={`dc-${hub.id}`} opacity={depth}>
+              <g transform={`translate(${screen.x} ${screen.y}) scale(${scale})`}>
+                <circle r={15 + localAttack * 8} fill="url(#shield-field)" stroke={COLORS.violet} strokeOpacity={0.22 + scrubbing * 0.35} strokeWidth="0.8" />
+                <polygon points={polygonPoints(0, 0, 14 + scrubbing * 4, 6, phase + index)} fill="none" stroke={COLORS.violet} strokeOpacity={0.28 * (1 - scrubbing * 0.72)} strokeWidth="0.9" />
+                <polygon points={polygonPoints(0, 0, 14 + scrubbing * 4, 6, phase + index)} fill="none" stroke={COLORS.teal} strokeOpacity={0.12 + scrubbing * 0.68} strokeWidth={0.8 + scrubbing * 0.45} filter="url(#route-glow)" />
+                <rect x="-8" y="-11" width="16" height="23" rx="2.5" fill="rgba(7,27,43,0.94)" stroke={COLORS.cyan} strokeOpacity="0.76" strokeWidth="0.9" />
+                {[-5, 1, 7].map((rackY, rackIndex) => (
+                  <g key={rackY}>
+                    <line x1="-5" y1={rackY} x2="5" y2={rackY} stroke={rackIndex === 1 ? COLORS.violet : COLORS.cyan} strokeOpacity="0.52" strokeWidth="0.8" />
+                    <circle cx="4.2" cy={rackY - 2.1} r="0.95" fill={rackIndex === 1 ? COLORS.amber : COLORS.teal} opacity={0.55 + ((Math.sin(phase * 6 + index + rackIndex) + 1) / 2) * 0.45} />
+                  </g>
+                ))}
+                <path d="M-5 -11L0 -17L5 -11Z" fill={COLORS.violet} fillOpacity="0.42" stroke={COLORS.teal} strokeOpacity="0.58" strokeWidth="0.7" />
+              </g>
+              {point.z > 0.22 ? (
+                <g opacity={smooth(point.z, [0.22, 0.5])}>
+                  <path d={`M${screen.x + labelDirection * 12} ${screen.y}L${screen.x + labelDx - labelDirection * 4} ${screen.y + labelDy}`} stroke={COLORS.teal} strokeOpacity="0.44" strokeWidth="0.7" />
+                  <text x={screen.x + labelDx} y={screen.y + labelDy + 3} textAnchor={labelDx < 0 ? 'end' : 'start'} fill={COLORS.text} fontFamily={MONO} fontSize="9.5" letterSpacing="1">{center.region} / {hub.id}</text>
                 </g>
               ) : null}
             </g>
           );
         })}
 
-        {ROUTE_GEOMETRY.filter((route) => route.risk).map((route) => {
-          const period = [180, 225, 300][route.index % 3];
-          const strength = cyclicPulse(frame, (route.index * 47) % period, period, period * 0.21);
-          const endpoint = rotateToView(route.end, view);
-          if (endpoint.z <= 0.015) return null;
-          const screen = toScreen(endpoint, 1.008);
-          const color = routeColor(route.risk);
-          return (
-            <g key={`impact-${route.from}-${route.to}`} opacity={strength}>
-              <circle cx={screen.x} cy={screen.y} r={8 + (1 - strength) * 18} fill="none" stroke={color} strokeOpacity={strength * 0.72} strokeWidth="1.1" />
-              <circle cx={screen.x} cy={screen.y} r={3.5 + strength * 2.5} fill={color} opacity={strength * 0.9} filter="url(#route-glow)" />
-            </g>
-          );
-        })}
-
         <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 2} fill="none" stroke="rgba(119,255,245,0.44)" strokeWidth="1.25" />
         <path d={`M${GLOBE_CX - GLOBE_RADIUS * 0.74} ${GLOBE_CY - GLOBE_RADIUS * 0.67}A${GLOBE_RADIUS} ${GLOBE_RADIUS} 0 0 1 ${GLOBE_CX + GLOBE_RADIUS * 0.74} ${GLOBE_CY - GLOBE_RADIUS * 0.67}`} fill="none" stroke="rgba(171,255,250,0.47)" strokeWidth="2.2" filter="url(#soft-glow)" />
-        <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 30} fill="none" stroke="rgba(0,229,232,0.11)" strokeWidth="1" strokeDasharray="3 16" strokeDashoffset={-((frame % 900) / 900) * 76} />
-        <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 48} fill="none" stroke="rgba(34,167,255,0.075)" strokeWidth="0.8" strokeDasharray="19 32" strokeDashoffset={((frame % 900) / 900) * 102} />
+        <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 18} fill="none" stroke={COLORS.magenta} strokeOpacity={surge * (1 - scrubbing) * 0.46} strokeWidth={1 + surge * 1.4} strokeDasharray="3 9" strokeDashoffset={-((frame % 300) / 300) * 12} filter="url(#route-glow)" />
+        <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 34} fill="none" stroke={COLORS.violet} strokeOpacity={0.1 + scrubbing * 0.48} strokeWidth={0.9 + scrubbing * 1.1} strokeDasharray="3 16" strokeDashoffset={-((frame % 900) / 900) * 76} />
+        <circle cx={GLOBE_CX} cy={GLOBE_CY} r={GLOBE_RADIUS + 50} fill="none" stroke={COLORS.teal} strokeOpacity={0.07 + protectedState * 0.38} strokeWidth={0.8 + protectedState * 0.9} strokeDasharray="19 32" strokeDashoffset={((frame % 900) / 900) * 102} filter="url(#soft-glow)" />
+      </g>
+
+      <g transform={`translate(${GLOBE_CX} ${136 + Math.sin(phase * 2) * 2.2})`}>
+        <ellipse cx="0" cy="4" rx="142" ry="75" fill="url(#cloud-bloom)" opacity={0.58 + scrubbing * 0.28} filter="url(#soft-glow)" />
+        <ellipse cx="0" cy="7" rx="126" ry="61" fill="none" stroke={COLORS.violet} strokeOpacity={0.1 + scrubbing * 0.18} strokeWidth="0.8" strokeDasharray="2 12" strokeDashoffset={-((frame % 300) / 300) * 14} />
+        <path d="M-92 24C-108 24-118 14-118 0C-118-14-107-26-92-28C-87-50-67-64-43-64C-24-64-8-56 1-42C11-52 24-58 39-58C61-58 79-43 85-22C103-21 117-8 117 9C117 27 103 40 83 40H-92C-108 40-120 33-120 24Z" fill="url(#cloud-fill)" stroke="url(#cloud-rim)" strokeOpacity={0.58 + scrubbing * 0.34} strokeWidth="1.5" filter="url(#soft-glow)" />
+        <path d="M-91-27C-79-33-68-31-60-24C-56-45-37-56-20-52C-9-50-1-44 4-35C15-46 30-50 44-46C59-42 69-32 73-18" fill="none" stroke="#d8fbff" strokeOpacity="0.2" strokeWidth="1.1" strokeLinecap="round" />
+        <path d="M-99 24H99" fill="none" stroke={COLORS.cyan} strokeOpacity="0.18" strokeWidth="0.8" />
+        <g opacity={0.28 + protectedState * 0.4}>
+          <path d="M-72 4H-42L-28-10M72 4H42L28-10M-58 21L-42 8M58 21L42 8" fill="none" stroke={COLORS.cyan} strokeWidth="0.8" />
+          {[-72, -42, 42, 72].map((x, index) => <circle key={x} cx={x} cy={index === 1 || index === 2 ? 4 : index === 0 ? 4 : 4} r="2" fill={index % 2 === 0 ? COLORS.violet : COLORS.teal} filter="url(#route-glow)" />)}
+        </g>
+        <path d="M0-45L30-32V-5C30 18 18 35 0 44C-18 35-30 18-30-5V-32Z" fill="url(#shield-face)" stroke={COLORS.magenta} strokeOpacity={surge * (1 - scrubbing) * 0.82} strokeWidth="2.5" filter="url(#route-glow)" />
+        <path d="M0-45L30-32V-5C30 18 18 35 0 44C-18 35-30 18-30-5V-32Z" fill="none" stroke={COLORS.teal} strokeOpacity={0.46 + scrubbing * 0.54} strokeWidth={1.5 + scrubbing * 1.4} filter="url(#soft-glow)" />
+        <path d="M0-37L22-27V-6C22 10 14 23 0 31C-14 23-22 10-22-6V-27Z" fill="none" stroke={COLORS.cyan} strokeOpacity="0.24" strokeWidth="0.8" />
+        <circle cx="0" cy="-5" r={17 + protectedState * 2} fill={COLORS.teal} opacity={0.025 + protectedState * 0.055} filter="url(#soft-glow)" />
+        <path d="M-11-4L-3 5L13-14" fill="none" stroke={COLORS.teal} strokeOpacity={0.58 + protectedState * 0.42} strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" filter="url(#route-glow)" />
+        <rect x="-99" y="49" width="198" height="19" rx="9.5" fill="rgba(2,11,20,0.9)" stroke={COLORS.teal} strokeOpacity="0.22" strokeWidth="0.7" />
+        <text x="0" y="61" textAnchor="middle" fill={COLORS.teal} fontFamily={MONO} fontSize="10" letterSpacing="1.7">CLOUD SCRUBBING MESH</text>
       </g>
 
       <g transform={`translate(${GLOBE_CX - 360} ${GLOBE_CY + 382})`}>
         <circle cx="4" cy="4" r="3.3" fill={COLORS.teal} filter="url(#route-glow)" />
-        <text x="17" y="8" fill={COLORS.teal} fontFamily={MONO} fontSize="11" letterSpacing="1.6">GLOBAL ROUTING MATRIX ACTIVE</text>
+        <text x="17" y="8" fill={COLORS.teal} fontFamily={MONO} fontSize="11" letterSpacing="1.6">ORIGIN PROTECTION ACTIVE</text>
         <line x1="252" y1="4" x2="575" y2="4" stroke="rgba(73,245,223,0.12)" />
-        <text x="588" y="8" fill={COLORS.muted} fontFamily={MONO} fontSize="10" letterSpacing="1.1">{HUBS.length} HUBS / {ROUTES.length} ROUTES</text>
+        <text x="588" y="8" fill={COLORS.muted} fontFamily={MONO} fontSize="10" letterSpacing="1.1">{CLOUD_DATA_CENTERS.length} REGIONS / {CLOUD_LINK_GEOMETRY.length} CLOUD LINKS</text>
       </g>
     </svg>
   );
 };
 
 const BottomTelemetry: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const {surge, scrubbing} = cloudStory(phase);
+  const {ingress, blockedVolume, scrubTime, availability} = cloudMetrics(phase);
   const chartPath = CHART_SEED.map((value, index) => {
     const x = index * (760 / (CHART_SEED.length - 1));
-    const shaped = value + Math.sin(phase * 3 + index * 0.43) * 0.08;
+    const shaped = value * (0.72 + surge * 0.5 - scrubbing * 0.12) + Math.sin(phase * 3 + index * 0.43) * (0.05 + surge * 0.06);
     const y = 48 - shaped * 31;
     return `${index === 0 ? 'M' : 'L'}${round1(x)} ${round1(y)}`;
   }).join('');
@@ -1007,21 +1201,31 @@ const BottomTelemetry: React.FC<{frame: number; phase: number}> = ({frame, phase
       }}
     >
       <div style={{width: 170}}>
-        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 9, letterSpacing: 1.7}}>SYSTEM PULSE</div>
-        <div style={{fontFamily: MONO, color: COLORS.teal, fontSize: 11, letterSpacing: 1.2, marginTop: 7}}>● NOMINAL</div>
+        <div style={{fontFamily: MONO, color: COLORS.muted, fontSize: 9, letterSpacing: 1.7}}>CLOUD REQUEST PIPELINE</div>
+        <div style={{fontFamily: MONO, color: COLORS.teal, fontSize: 11, letterSpacing: 1.2, marginTop: 7}}>● ORIGIN PROTECTED</div>
       </div>
       <svg viewBox="0 0 760 52" style={{width: 760, height: 52, marginRight: 26}}>
         <path d="M0 26H760" stroke="rgba(73,245,223,0.06)" />
-        <path d={chartPath} fill="none" stroke="rgba(73,245,223,0.15)" strokeWidth="5" filter="url(#soft-glow)" />
-        <path d={chartPath} fill="none" stroke="rgba(73,245,223,0.62)" strokeWidth="1.15" />
+        <path d={chartPath} fill="none" stroke={withAlpha(COLORS.magenta, 0.08 + surge * 0.1)} strokeWidth="5" filter="url(#soft-glow)" />
+        <path d={chartPath} fill="none" stroke={COLORS.cyan} strokeOpacity={0.42 + scrubbing * 0.28} strokeWidth="1.15" />
+        {['INGRESS', 'ANYCAST EDGE', 'SCRUBBING', 'ORIGIN'].map((label, index) => {
+          const x = 24 + index * 235;
+          const active = clamp(surge * (1 - index * 0.14) + scrubbing * (index * 0.23));
+          return (
+            <g key={label}>
+              <circle cx={x} cy="44" r={1.7 + active * 1.2} fill={index === 0 ? COLORS.magenta : index === 3 ? COLORS.teal : COLORS.violet} opacity={0.45 + active * 0.45} />
+              <text x={x + 7} y="47" fill={COLORS.muted} fontFamily={MONO} fontSize="6.5" letterSpacing="0.8">{label}</text>
+            </g>
+          );
+        })}
       </svg>
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', flex: 1}}>
         {[
-          ['TRAFFIC', `${(8.6 + Math.sin(phase * 3) * 0.7).toFixed(1)} TB/S`, COLORS.cyan],
-          ['INCIDENTS', String(186 + Math.round((Math.sin(phase * 2) + 1) * 7)), COLORS.magenta],
-          ['RESPONSE', `${(2.1 + (Math.sin(phase * 4) + 1) * 0.22).toFixed(1)} MS`, COLORS.blue],
-          ['UPTIME', '99.999%', COLORS.teal],
-          ['ENCRYPTION', 'ACTIVE', COLORS.amber],
+          ['INGRESS', `${ingress.toFixed(1)} TB/S`, COLORS.magenta],
+          ['BLOCKED', `${blockedVolume.toFixed(1)}B`, COLORS.violet],
+          ['SCRUB TIME', `${scrubTime.toFixed(1)} MS`, COLORS.blue],
+          ['AVAILABILITY', `${availability.toFixed(3)}%`, COLORS.teal],
+          ['EDGE NODES', '48 ACTIVE', COLORS.amber],
         ].map(([label, value, color], index) => (
           <div key={label} style={{borderLeft: '1px solid rgba(73,245,223,0.1)', paddingLeft: 18, marginLeft: index === 0 ? 0 : 10}}>
             <div style={{fontFamily: MONO, fontSize: 8, letterSpacing: 1.3, color: COLORS.muted}}>{label}</div>
