@@ -1503,7 +1503,7 @@ const HoloFooter: React.FC<{frame: number; phase: number}> = ({frame, phase}) =>
   );
 };
 
-export const Motion: React.FC = () => {
+const LegacyMotion11: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
   const phase = (frame / durationInFrames) * TAU;
@@ -1517,6 +1517,417 @@ export const Motion: React.FC = () => {
         <HoloHeader phase={phase} />
         <HolographicWorldMap frame={frame} phase={phase} />
         <HoloFooter frame={frame} phase={phase} />
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+const RMAP_LEFT = 344;
+const RMAP_TOP = 190;
+const RMAP_WIDTH = 1232;
+const RMAP_HEIGHT = 616;
+
+type RansomZone = {
+  id: string;
+  region: string;
+  lon: number;
+  lat: number;
+  severity: number;
+  files: number;
+  quarantine: boolean;
+  labelOffset: [number, number];
+};
+
+type RecoveryVault = {
+  id: string;
+  region: string;
+  lon: number;
+  lat: number;
+};
+
+type RecoveryLink = {
+  from: RecoveryVault;
+  to: RansomZone;
+  start: Vec3;
+  end: Vec3;
+  omega: number;
+  sinOmega: number;
+  path: string;
+};
+
+const rProject = (longitude: number, latitude: number) => ({
+  x: round1(RMAP_LEFT + ((longitude + 180) / 360) * RMAP_WIDTH),
+  y: round1(RMAP_TOP + ((90 - latitude) / 180) * RMAP_HEIGHT),
+});
+
+const rBuildGeoPath = (lines: GeoLine[]) => {
+  let path = '';
+  for (const line of lines) {
+    let previousX: number | null = null;
+    for (let index = 0; index < line.length; index++) {
+      const point = rProject(line[index][0], line[index][1]);
+      const seam = previousX !== null && Math.abs(point.x - previousX) > RMAP_WIDTH * 0.48;
+      path += `${index === 0 || seam ? 'M' : 'L'}${point.x} ${point.y}`;
+      previousX = point.x;
+    }
+  }
+  return path;
+};
+
+const rBuildDotPaths = () => {
+  const buckets = ['', '', '', ''];
+  for (const [longitude, latitude, size] of LAND_DOTS) {
+    const point = rProject(longitude, latitude);
+    const radius = round1(size * 0.49);
+    const bucket = Math.min(3, Math.max(0, Math.floor((size - 0.7) * 5.2)));
+    buckets[bucket] += `M${round1(point.x - radius)} ${point.y}a${radius} ${radius} 0 1 0 ${round1(radius * 2)} 0a${radius} ${radius} 0 1 0 ${round1(-radius * 2)} 0`;
+  }
+  return buckets;
+};
+
+const rBuildArcPath = (start: Vec3, end: Vec3, omega: number, sinOmega: number) => {
+  let path = '';
+  let previousX: number | null = null;
+  for (let index = 0; index <= 56; index++) {
+    const vector = slerpVector(start, end, omega, sinOmega, index / 56);
+    const geo = vectorToGeo(vector);
+    const point = rProject(geo.lon, geo.lat);
+    const seam = previousX !== null && Math.abs(point.x - previousX) > RMAP_WIDTH * 0.45;
+    path += `${index === 0 || seam ? 'M' : 'L'}${point.x} ${point.y}`;
+    previousX = point.x;
+  }
+  return path;
+};
+
+const rGeometry = (from: GeoCoord, to: GeoCoord) => {
+  const start = geoToVector(from);
+  const end = geoToVector(to);
+  const omega = Math.acos(clamp(vectorDot(start, end), -1, 1));
+  const sinOmega = Math.sin(omega);
+  return {start, end, omega, sinOmega};
+};
+
+const R_COAST_PATH = rBuildGeoPath(COAST_LINES);
+const R_BORDER_PATH = rBuildGeoPath(BORDER_LINES);
+const R_DOT_PATHS = rBuildDotPaths();
+
+const RANSOM_ZONES: RansomZone[] = [
+  {id: 'NA-17', region: 'NORTH ATLANTIC', lon: -74, lat: 40.7, severity: 0.98, files: 84, quarantine: true, labelOffset: [11, -36]},
+  {id: 'NA-08', region: 'PACIFIC EDGE', lon: -122.4, lat: 37.8, severity: 0.78, files: 51, quarantine: false, labelOffset: [-102, 16]},
+  {id: 'MX-11', region: 'CENTRAL GRID', lon: -99.1, lat: 19.4, severity: 0.68, files: 39, quarantine: true, labelOffset: [-42, 26]},
+  {id: 'SA-09', region: 'SOUTH CLUSTER', lon: -46.6, lat: -23.6, severity: 0.83, files: 66, quarantine: true, labelOffset: [12, 14]},
+  {id: 'EU-04', region: 'WESTERN CORE', lon: -0.1, lat: 51.5, severity: 0.94, files: 79, quarantine: true, labelOffset: [-82, -42]},
+  {id: 'EU-21', region: 'EASTERN GRID', lon: 21, lat: 52.2, severity: 0.76, files: 48, quarantine: false, labelOffset: [13, 15]},
+  {id: 'AF-13', region: 'AFRICA WEST', lon: 3.4, lat: 6.5, severity: 0.72, files: 43, quarantine: true, labelOffset: [-89, 17]},
+  {id: 'ME-12', region: 'GULF ROUTER', lon: 55.3, lat: 25.2, severity: 0.88, files: 71, quarantine: true, labelOffset: [11, -35]},
+  {id: 'IN-18', region: 'SOUTH ASIA', lon: 77.1, lat: 28.7, severity: 0.8, files: 58, quarantine: false, labelOffset: [-36, 24]},
+  {id: 'AP-24', region: 'ASIA PACIFIC', lon: 103.8, lat: 1.4, severity: 0.96, files: 82, quarantine: true, labelOffset: [12, 14]},
+  {id: 'AP-42', region: 'EAST ASIA', lon: 139.7, lat: 35.7, severity: 0.86, files: 69, quarantine: true, labelOffset: [-74, -42]},
+  {id: 'OC-09', region: 'OCEANIA', lon: 151.2, lat: -33.9, severity: 0.74, files: 46, quarantine: false, labelOffset: [-78, 15]},
+];
+
+const RECOVERY_VAULTS: RecoveryVault[] = [
+  {id: 'VLT-01', region: 'PACIFIC CLEAN', lon: -123.1, lat: 49.3},
+  {id: 'VLT-02', region: 'ATLANTIC CLEAN', lon: -21.9, lat: 64.1},
+  {id: 'VLT-03', region: 'AFRICA CLEAN', lon: 36.8, lat: -1.3},
+  {id: 'VLT-04', region: 'ASIA CLEAN', lon: 103.8, lat: 1.4},
+  {id: 'VLT-05', region: 'OCEANIA CLEAN', lon: 174.8, lat: -41.3},
+];
+
+const RECOVERY_PAIRS: Array<[number, number]> = [
+  [0, 0], [0, 1], [0, 2], [0, 3], [1, 0], [1, 4], [1, 5], [1, 6],
+  [2, 3], [2, 6], [2, 7], [2, 8], [3, 5], [3, 7], [3, 8], [3, 9], [3, 10],
+  [4, 9], [4, 10], [4, 11], [1, 7], [2, 9], [0, 4], [4, 8],
+];
+
+const RECOVERY_LINKS: RecoveryLink[] = RECOVERY_PAIRS.map(([vaultIndex, zoneIndex]) => {
+  const from = RECOVERY_VAULTS[vaultIndex];
+  const to = RANSOM_ZONES[zoneIndex];
+  const geometry = rGeometry([from.lon, from.lat], [to.lon, to.lat]);
+  return {...geometry, from, to, path: rBuildArcPath(geometry.start, geometry.end, geometry.omega, geometry.sinOmega)};
+});
+
+const R_ATTACK_ROUTES = ROUTE_GEOMETRY
+  .filter((route, index) => route.risk || index % 3 !== 0)
+  .slice(0, 36)
+  .map((route) => ({route, path: rBuildArcPath(route.start, route.end, route.omega, route.sinOmega)}));
+
+const RansomHeader: React.FC<{phase: number}> = ({phase}) => {
+  const encrypted = Math.round(1240 + ((Math.sin(phase - 0.8) + 1) / 2) * 382);
+  const recovery = 82.4 + ((Math.sin(phase + 1.1) + 1) / 2) * 10.8;
+  const metrics = [
+    ['ENCRYPTED NODES', encrypted.toLocaleString('en-US'), COLORS.magenta],
+    ['QUARANTINE ZONES', '08 / 12', COLORS.amber],
+    ['RECOVERY RATE', `${recovery.toFixed(1)}%`, COLORS.teal],
+    ['KEY TUNNELS', '24 ACTIVE', COLORS.violet],
+  ] as const;
+  return (
+    <div style={{position: 'absolute', left: 66, right: 66, top: 44, height: 98, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(139,184,255,0.16)'}}>
+      <div style={{display: 'flex', alignItems: 'center', minWidth: 700}}>
+        <div style={{position: 'relative', width: 38, height: 38, display: 'grid', placeItems: 'center'}}>
+          <div style={{position: 'absolute', inset: 2, transform: 'rotate(45deg)', border: `1px solid ${withAlpha(COLORS.magenta, 0.62)}`, boxShadow: `0 0 18px ${withAlpha(COLORS.magenta, 0.36)}`}} />
+          <div style={{width: 8, height: 8, borderRadius: 2, background: COLORS.magenta, boxShadow: `0 0 13px ${COLORS.magenta}`}} />
+        </div>
+        <div style={{marginLeft: 18}}>
+          <div style={{fontFamily: FONT, color: COLORS.text, fontSize: 28, fontWeight: 760, letterSpacing: 4.4}}>RANSOMWARE CONTAINMENT GRID</div>
+          <div style={{fontFamily: MONO, color: '#7794ad', fontSize: 9.5, letterSpacing: 2.2, marginTop: 7}}>SYNTHETIC GLOBAL TELEMETRY / ENCRYPTED RECOVERY OPERATIONS</div>
+        </div>
+      </div>
+      <div style={{flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(139,184,255,0.22), rgba(139,184,255,0.02))'}} />
+      <div style={{display: 'flex', gap: 30, marginLeft: 30}}>
+        {metrics.map(([label, value, color]) => (
+          <div key={label} style={{minWidth: 112}}>
+            <div style={{fontFamily: MONO, fontSize: 7.3, color: '#617e94', letterSpacing: 1.1}}>{label}</div>
+            <div style={{fontFamily: MONO, fontSize: 10.5, color, letterSpacing: 1, marginTop: 7}}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AttackChainPanel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const stages = [
+    ['01', 'INGRESS', 'VECTOR OPEN', COLORS.magenta],
+    ['02', 'EXECUTION', 'PAYLOAD RUN', COLORS.magenta],
+    ['03', 'ENCRYPTION', 'FILES LOCKED', '#ff5872'],
+    ['04', 'LATERAL SPREAD', 'MESH ACTIVE', COLORS.amber],
+    ['05', 'LOCKDOWN', 'POLICY PUSH', COLORS.teal],
+  ] as const;
+  return (
+    <div style={{...panelStyle, position: 'absolute', left: 66, top: 168, width: 238, height: 792, padding: '20px 16px', overflow: 'hidden', background: 'linear-gradient(180deg, rgba(11,24,39,0.94), rgba(3,11,21,0.96))', borderColor: 'rgba(255,54,94,0.18)'}}>
+      <div style={{fontFamily: MONO, color: COLORS.text, fontSize: 10, letterSpacing: 1.8}}>ATTACK CHAIN</div>
+      <div style={{fontFamily: MONO, color: '#69869d', fontSize: 7.4, letterSpacing: 1.2, marginTop: 7}}>RANSOMWARE / SIMULATION</div>
+      <div style={{position: 'absolute', left: 29, top: 92, bottom: 112, width: 1, background: 'linear-gradient(180deg, rgba(255,61,129,0.62), rgba(255,198,90,0.36), rgba(82,243,208,0.5))'}} />
+      <div style={{marginTop: 25, display: 'grid', gap: 11}}>
+        {stages.map(([number, label, status, color], index) => {
+          const pulse = cyclicPulse(frame, index * 51, [180, 225, 300][index % 3], 54);
+          const active = 0.36 + pulse * 0.64;
+          return (
+            <div key={label} style={{height: 102, marginLeft: 22, position: 'relative', borderRadius: 11, padding: '15px 12px 12px 20px', background: `linear-gradient(135deg, ${withAlpha(color, 0.04 + active * 0.035)}, rgba(2,10,18,0.62))`, border: `1px solid ${withAlpha(color, 0.12 + active * 0.13)}`}}>
+              <div style={{position: 'absolute', left: -14, top: 41, width: 13, height: 13, borderRadius: 2, transform: 'rotate(45deg)', background: withAlpha(color, 0.35 + active * 0.6), boxShadow: `0 0 ${8 + pulse * 10}px ${withAlpha(color, 0.72)}`}} />
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <span style={{fontFamily: MONO, color, fontSize: 8.5}}>{number}</span>
+                <span style={{fontFamily: MONO, color: '#66849b', fontSize: 6.5, letterSpacing: 0.7}}>{status}</span>
+              </div>
+              <div style={{fontFamily: MONO, color: COLORS.text, fontSize: 8.5, letterSpacing: 1.1, marginTop: 13}}>{label}</div>
+              <div style={{height: 3, marginTop: 14, borderRadius: 3, background: 'rgba(139,184,255,0.05)'}}>
+                <div style={{width: `${44 + index * 8 + pulse * 18}%`, maxWidth: '97%', height: 3, borderRadius: 3, background: color, boxShadow: `0 0 7px ${withAlpha(color, 0.7)}`}} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{position: 'absolute', left: 16, right: 16, bottom: 18, height: 74, borderTop: '1px solid rgba(255,54,94,0.12)', paddingTop: 13}}>
+        <div style={{display: 'flex', justifyContent: 'space-between'}}><span style={{fontFamily: MONO, fontSize: 7.2, color: '#66849b'}}>SPREAD VELOCITY</span><span style={{fontFamily: MONO, fontSize: 8, color: COLORS.magenta}}>{(3.2 + ((Math.sin(phase * 2) + 1) / 2) * 1.7).toFixed(1)} TB/S</span></div>
+        <svg viewBox="0 0 190 30" style={{width: '100%', height: 34, marginTop: 7}}>
+          <path d={Array.from({length: 24}, (_, i) => `${i === 0 ? 'M' : 'L'}${i * 8.2} ${18 - Math.sin(i * 1.3 + phase * 2) * (2 + (i % 5))}`).join('')} fill="none" stroke={COLORS.magenta} strokeOpacity="0.76" strokeWidth="1.2" />
+          <path d="M0 24H190" stroke="#8bb8ff" strokeOpacity="0.08" />
+        </svg>
+      </div>
+    </div>
+  );
+};
+
+const RecoveryPanel: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const recovery = 0.73 + ((Math.sin(phase - 0.35) + 1) / 2) * 0.22;
+  const circumference = 2 * Math.PI * 58;
+  const steps = [
+    ['ISOLATE NETWORK', 'COMPLETE', COLORS.teal],
+    ['VERIFY SNAPSHOT', 'VALIDATED', COLORS.teal],
+    ['KEY EXCHANGE', 'ROTATING', COLORS.violet],
+    ['RESTORE FILES', 'IN PROGRESS', COLORS.amber],
+  ] as const;
+  return (
+    <div style={{...panelStyle, position: 'absolute', right: 66, top: 168, width: 238, height: 792, padding: '20px 16px', overflow: 'hidden', background: 'linear-gradient(180deg, rgba(8,27,36,0.94), rgba(3,11,21,0.96))', borderColor: 'rgba(62,242,181,0.18)'}}>
+      <div style={{fontFamily: MONO, color: COLORS.text, fontSize: 10, letterSpacing: 1.8}}>RECOVERY OPS</div>
+      <div style={{fontFamily: MONO, color: '#69869d', fontSize: 7.4, letterSpacing: 1.2, marginTop: 7}}>ZERO-TRUST RESTORE</div>
+      <div style={{height: 174, display: 'grid', placeItems: 'center', marginTop: 4, position: 'relative'}}>
+        <svg viewBox="0 0 170 170" style={{width: 170, height: 170, transform: 'rotate(-90deg)'}}>
+          <circle cx="85" cy="85" r="58" fill="none" stroke="#8bb8ff" strokeOpacity="0.07" strokeWidth="12" />
+          <circle cx="85" cy="85" r="58" fill="none" stroke={COLORS.teal} strokeOpacity="0.2" strokeWidth="18" filter="url(#r-mint-glow)" strokeDasharray={`${circumference * recovery} ${circumference}`} strokeLinecap="round" />
+          <circle cx="85" cy="85" r="58" fill="none" stroke={COLORS.teal} strokeWidth="5" strokeDasharray={`${circumference * recovery} ${circumference}`} strokeLinecap="round" />
+        </svg>
+        <div style={{position: 'absolute', textAlign: 'center'}}><div style={{fontFamily: FONT, color: COLORS.text, fontSize: 30, fontWeight: 700}}>{Math.round(recovery * 100)}%</div><div style={{fontFamily: MONO, color: COLORS.teal, fontSize: 7.5, letterSpacing: 1.1, marginTop: 5}}>RECOVERED</div></div>
+      </div>
+      <div style={{display: 'grid', gap: 11}}>
+        {steps.map(([label, status, color], index) => {
+          const pulse = cyclicPulse(frame, index * 61 + 20, 225, 50);
+          return (
+            <div key={label} style={{height: 78, borderRadius: 10, padding: '13px 12px', border: `1px solid ${withAlpha(color, 0.12 + pulse * 0.16)}`, background: `linear-gradient(135deg, ${withAlpha(color, 0.045)}, rgba(2,10,18,0.58))`}}>
+              <div style={{display: 'flex', justifyContent: 'space-between'}}><span style={{fontFamily: MONO, color: COLORS.text, fontSize: 7.6, letterSpacing: 0.8}}>{label}</span><span style={{fontFamily: MONO, color, fontSize: 6.2, letterSpacing: 0.6}}>{status}</span></div>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(10,1fr)', gap: 3, marginTop: 14}}>{Array.from({length: 10}, (_, bar) => <div key={bar} style={{height: 4, borderRadius: 2, background: bar / 10 < 0.45 + index * 0.12 + pulse * 0.16 ? color : 'rgba(139,184,255,0.06)', boxShadow: bar / 10 < 0.45 + index * 0.12 ? `0 0 5px ${withAlpha(color, 0.45)}` : 'none'}} />)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{position: 'absolute', left: 16, right: 16, bottom: 18, height: 80, padding: '13px 12px', borderRadius: 11, background: 'rgba(62,242,181,0.035)', border: '1px solid rgba(62,242,181,0.12)'}}>
+        <div style={{display: 'flex', justifyContent: 'space-between'}}><span style={{fontFamily: MONO, fontSize: 7.2, color: '#66849b'}}>CLEAN VAULTS</span><span style={{fontFamily: MONO, fontSize: 8, color: COLORS.teal}}>05 ONLINE</span></div>
+        <div style={{display: 'flex', gap: 8, marginTop: 15}}>{RECOVERY_VAULTS.map((vault, index) => {const pulse = cyclicPulse(frame, index * 47, 180, 42); return <div key={vault.id} style={{width: 31, height: 24, borderRadius: 5, display: 'grid', placeItems: 'center', border: `1px solid ${withAlpha(COLORS.teal, 0.18 + pulse * 0.32)}`, color: COLORS.teal, fontFamily: MONO, fontSize: 5.5, boxShadow: `0 0 ${pulse * 8}px ${withAlpha(COLORS.teal, 0.4)}`}}>{String(index + 1).padStart(2, '0')}</div>;})}</div>
+      </div>
+    </div>
+  );
+};
+
+const RansomMap: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const attackLevel = 0.32 + (0.5 - Math.cos(phase) * 0.5) * 0.68;
+  const containment = 0.45 + (0.5 - Math.cos(phase - 1.9) * 0.5) * 0.55;
+  const recovery = 0.3 + (0.5 - Math.cos(phase - 3.5) * 0.5) * 0.7;
+  const diagonal = ((frame % 450) / 450) * (RMAP_WIDTH + 420) - 210;
+  return (
+    <svg viewBox="0 0 1920 1080" style={{position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible'}}>
+      <defs>
+        <linearGradient id="r-map-surface" x1="0" y1="0" x2="0.9" y2="1">
+          <stop offset="0" stopColor="#10233b" stopOpacity="0.82" />
+          <stop offset="0.48" stopColor="#071323" stopOpacity="0.96" />
+          <stop offset="1" stopColor="#030812" stopOpacity="0.98" />
+        </linearGradient>
+        <radialGradient id="r-infection-heat">
+          <stop offset="0" stopColor="#ff365e" stopOpacity="0.58" />
+          <stop offset="0.28" stopColor="#ff365e" stopOpacity="0.26" />
+          <stop offset="0.62" stopColor="#ff244f" stopOpacity="0.08" />
+          <stop offset="1" stopColor="#ff244f" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="r-recovery-bloom">
+          <stop offset="0" stopColor="#3ef2b5" stopOpacity="0.32" />
+          <stop offset="0.45" stopColor="#3ef2b5" stopOpacity="0.09" />
+          <stop offset="1" stopColor="#3ef2b5" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="r-diagonal-scan" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#8bb8ff" stopOpacity="0" />
+          <stop offset="0.45" stopColor="#8bb8ff" stopOpacity="0.025" />
+          <stop offset="0.53" stopColor="#3ef2b5" stopOpacity="0.18" />
+          <stop offset="0.58" stopColor="#8bb8ff" stopOpacity="0.035" />
+          <stop offset="1" stopColor="#8bb8ff" stopOpacity="0" />
+        </linearGradient>
+        <clipPath id="r-map-clip"><rect x={RMAP_LEFT} y={RMAP_TOP} width={RMAP_WIDTH} height={RMAP_HEIGHT} rx="12" /></clipPath>
+        <filter id="r-red-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="r-mint-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="r-blue-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+
+      <rect x="326" y="168" width="1268" height="656" rx="18" fill="url(#r-map-surface)" stroke="#8bb8ff" strokeOpacity="0.2" />
+      <path d="M342 824H1578L1561 840H359Z" fill="#020710" stroke="#8bb8ff" strokeOpacity="0.12" />
+      <rect x="335" y="177" width="1250" height="638" rx="14" fill="none" stroke="#9b7cff" strokeOpacity="0.07" strokeDasharray="4 13" />
+      <g clipPath="url(#r-map-clip)">
+        <rect x={RMAP_LEFT} y={RMAP_TOP} width={RMAP_WIDTH} height={RMAP_HEIGHT} fill="#06111e" opacity="0.76" />
+        {Array.from({length: 13}, (_, index) => {const x = RMAP_LEFT + index * (RMAP_WIDTH / 12); return <line key={`rgx-${index}`} x1={x} y1={RMAP_TOP} x2={x - 95} y2={RMAP_TOP + RMAP_HEIGHT} stroke="#8bb8ff" strokeOpacity="0.045" strokeDasharray="2 9" />;})}
+        {Array.from({length: 7}, (_, index) => {const y = RMAP_TOP + index * (RMAP_HEIGHT / 6); return <line key={`rgy-${index}`} x1={RMAP_LEFT} y1={y} x2={RMAP_LEFT + RMAP_WIDTH} y2={y} stroke="#8bb8ff" strokeOpacity="0.05" strokeDasharray="2 8" />;})}
+        <path d={R_COAST_PATH} fill="none" stroke="#55a8ff" strokeOpacity="0.1" strokeWidth="6" filter="url(#r-blue-glow)" />
+        {R_DOT_PATHS.map((path, index) => <path key={index} d={path} fill={index > 1 ? '#89baff' : '#4f87be'} opacity={[0.07, 0.12, 0.2, 0.33][index]} />)}
+        <path d={R_BORDER_PATH} fill="none" stroke="#719cd0" strokeOpacity="0.18" strokeWidth="0.5" />
+        <path d={R_COAST_PATH} fill="none" stroke="#8bb8ff" strokeOpacity="0.84" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" />
+
+        {R_ATTACK_ROUTES.map(({route, path}, index) => {
+          const progress = (((frame + index * 23) % [180, 225, 300][index % 3]) / [180, 225, 300][index % 3]) * 0.9;
+          const vector = slerpVector(route.start, route.end, route.omega, route.sinOmega, progress);
+          const geo = vectorToGeo(vector);
+          const packet = rProject(geo.lon, geo.lat);
+          const edgeFade = clamp(Math.min(packet.x - RMAP_LEFT, RMAP_LEFT + RMAP_WIDTH - packet.x) / 20);
+          return (
+            <g key={`attack-${route.from}-${route.to}-${index}`}>
+              <path d={path} fill="none" stroke="#ff365e" strokeOpacity={0.07 + attackLevel * (route.risk ? 0.24 : 0.1)} strokeWidth={route.risk ? 1.1 : 0.65} strokeDasharray={route.risk ? '2 7' : '1 8'} strokeDashoffset={-((frame % 900) / 900) * 72 - index * 2} />
+              <rect x={packet.x - 2.3} y={packet.y - 2.3} width="4.6" height="4.6" rx="0.8" transform={`rotate(45 ${packet.x} ${packet.y})`} fill="#ff4f70" opacity={(0.35 + attackLevel * 0.6) * edgeFade} filter="url(#r-red-glow)" />
+            </g>
+          );
+        })}
+
+        {RECOVERY_LINKS.map((link, index) => {
+          const period = [180, 225, 300][index % 3];
+          const progress = ((frame + index * 31 + 90) % period) / period;
+          const vector = slerpVector(link.start, link.end, link.omega, link.sinOmega, progress);
+          const geo = vectorToGeo(vector);
+          const packet = rProject(geo.lon, geo.lat);
+          const edgeFade = clamp(Math.min(packet.x - RMAP_LEFT, RMAP_LEFT + RMAP_WIDTH - packet.x) / 20);
+          return (
+            <g key={`recovery-${link.from.id}-${link.to.id}-${index}`}>
+              <path d={link.path} fill="none" stroke="#3ef2b5" strokeOpacity={0.04 + recovery * 0.12} strokeWidth="5" filter="url(#r-mint-glow)" />
+              <path d={link.path} fill="none" stroke="#3ef2b5" strokeOpacity={0.16 + recovery * 0.42} strokeWidth="0.85" strokeDasharray="3 7" strokeDashoffset={-((frame % 900) / 900) * 54 + index} />
+              <g transform={`translate(${packet.x} ${packet.y}) rotate(45)`} opacity={(0.36 + recovery * 0.58) * edgeFade} filter="url(#r-mint-glow)"><rect x="-3" y="-3" width="6" height="6" rx="1" fill="#3ef2b5"/><rect x="-7" y="-1" width="3" height="2" fill="#9b7cff"/></g>
+            </g>
+          );
+        })}
+
+        {RANSOM_ZONES.map((zone, index) => {
+          const point = rProject(zone.lon, zone.lat);
+          const pulse = cyclicPulse(frame, index * 43, [180, 225, 300][index % 3], 55);
+          const zoneAttack = clamp(zone.severity * (0.42 + attackLevel * 0.52 + pulse * 0.12));
+          const zoneRecovery = clamp(recovery * (0.35 + index * 0.045));
+          const hexRadius = 22 + zone.severity * 11 + containment * 7;
+          const showLabel = zone.severity >= 0.83;
+          return (
+            <g key={zone.id}>
+              <circle cx={point.x} cy={point.y} r={34 + zone.severity * 35 + pulse * 11} fill="url(#r-infection-heat)" opacity={0.44 + zoneAttack * 0.46} />
+              <circle cx={point.x} cy={point.y} r={30 + zone.severity * 28} fill="url(#r-recovery-bloom)" opacity={zoneRecovery * 0.7} />
+              {zone.quarantine ? <>
+                <polygon points={polygonPoints(point.x, point.y, hexRadius, 6, Math.PI / 6)} fill="rgba(255,181,71,0.025)" stroke="#ffb547" strokeOpacity={0.28 + containment * 0.55} strokeWidth="1.25" strokeDasharray="13 5" strokeDashoffset={-frame / 7 - index * 4} />
+                <polygon points={polygonPoints(point.x, point.y, hexRadius + 8 + pulse * 3, 6, Math.PI / 6)} fill="none" stroke="#ffb547" strokeOpacity={0.12 + pulse * 0.32} strokeWidth="0.75" strokeDasharray="3 6" strokeDashoffset={frame / 10 + index * 5} />
+              </> : <circle cx={point.x} cy={point.y} r={12 + (1 - pulse) * 14} fill="none" stroke="#ff365e" strokeOpacity={0.18 + pulse * 0.46} />}
+              <rect x={point.x - 4} y={point.y - 3} width="8" height="8" rx="1.3" fill={zoneRecovery > 0.62 ? '#3ef2b5' : '#ff365e'} filter={zoneRecovery > 0.62 ? 'url(#r-mint-glow)' : 'url(#r-red-glow)'} />
+              <path d={`M${point.x - 2.8} ${point.y - 3}v-3a2.8 2.8 0 0 1 5.6 0v3`} fill="none" stroke={zone.quarantine ? '#ffb547' : '#ff7187'} strokeWidth="1.2" />
+              {showLabel ? <g transform={`translate(${point.x + zone.labelOffset[0]} ${point.y + zone.labelOffset[1]})`}>
+                <rect width="108" height="31" rx="6" fill="rgba(3,10,20,0.9)" stroke={zone.quarantine ? '#ffb547' : '#ff365e'} strokeOpacity="0.28" />
+                <text x="8" y="12" fill="#e8fbff" fontFamily={MONO} fontSize="7.4" letterSpacing="0.9">{zone.id} / {zone.files}%</text>
+                <text x="8" y="24" fill={zone.quarantine ? '#ffb547' : '#ff5976'} fontFamily={MONO} fontSize="6.2" letterSpacing="0.65">{zone.quarantine ? 'QUARANTINED' : 'ENCRYPTION ACTIVE'}</text>
+              </g> : null}
+            </g>
+          );
+        })}
+
+        {RECOVERY_VAULTS.map((vault, index) => {
+          const point = rProject(vault.lon, vault.lat);
+          const pulse = cyclicPulse(frame, index * 53, 225, 50);
+          return <g key={vault.id} transform={`translate(${point.x} ${point.y})`}><circle r={8 + pulse * 5} fill="none" stroke="#3ef2b5" strokeOpacity={0.24 + pulse * 0.45}/><polygon points={polygonPoints(0, 0, 6, 6, Math.PI / 6)} fill="#071a1b" stroke="#3ef2b5" strokeWidth="1" filter="url(#r-mint-glow)"/><circle r="1.8" fill="#3ef2b5"/></g>;
+        })}
+
+        <g transform={`translate(${RMAP_LEFT + diagonal} ${RMAP_TOP - 120}) rotate(13)`} opacity="0.86"><rect x="-100" y="0" width="220" height={RMAP_HEIGHT + 250} fill="url(#r-diagonal-scan)"/><line x1="14" y1="0" x2="14" y2={RMAP_HEIGHT + 250} stroke="#3ef2b5" strokeOpacity="0.32" strokeWidth="0.7" filter="url(#r-mint-glow)"/></g>
+      </g>
+
+      <g transform="translate(356 182)"><rect width="9" height="9" transform="rotate(45 4.5 4.5)" fill="#ff365e" filter="url(#r-red-glow)"/><text x="19" y="8" fill="#e8fbff" fontFamily={MONO} fontSize="8.5" letterSpacing="1.4">GLOBAL FILE ENCRYPTION MAP</text></g>
+      <g transform="translate(1382 181)"><circle cx="4" cy="4" r="3" fill="#3ef2b5"/><text x="14" y="8" fill="#7794ad" fontFamily={MONO} fontSize="7.5" letterSpacing="1.1">RECOVERY GRID / SYNCED</text></g>
+      <path d="M338 182H370M338 182V214M1582 182H1550M1582 182V214M338 812H370M338 812V780M1582 812H1550M1582 812V780" fill="none" stroke="#8bb8ff" strokeOpacity="0.42" strokeWidth="1.1" />
+    </svg>
+  );
+};
+
+const PhaseRail: React.FC<{frame: number; phase: number}> = ({frame, phase}) => {
+  const stages = [
+    ['ATTACK', '#ff365e'],
+    ['QUARANTINE', '#ffb547'],
+    ['KEY EXCHANGE', '#9b7cff'],
+    ['RESTORE', '#3ef2b5'],
+  ] as const;
+  const playhead = 0.5 - Math.cos(phase) * 0.5;
+  return (
+    <div style={{...panelStyle, position: 'absolute', left: 326, top: 844, width: 1268, height: 116, padding: '18px 23px', overflow: 'hidden', background: 'linear-gradient(90deg, rgba(16,28,46,0.92), rgba(3,12,22,0.96))', borderColor: 'rgba(139,184,255,0.16)'}}>
+      <div style={{display: 'flex', justifyContent: 'space-between'}}><span style={{fontFamily: MONO, color: '#7794ad', fontSize: 7.4, letterSpacing: 1.3}}>CONTAINMENT RESPONSE PHASE</span><span style={{fontFamily: MONO, color: COLORS.teal, fontSize: 7.4, letterSpacing: 1.2}}>ENCRYPTED RESTORE CHANNEL VERIFIED</span></div>
+      <div style={{position: 'relative', height: 58, marginTop: 14}}>
+        <div style={{position: 'absolute', left: 20, right: 20, top: 16, height: 2, background: 'linear-gradient(90deg,#ff365e,#ffb547,#9b7cff,#3ef2b5)', opacity: 0.45}} />
+        <div style={{position: 'absolute', left: 20, top: 13, width: 8, height: 8, borderRadius: '50%', transform: `translateX(${playhead * 1134}px)`, background: COLORS.text, boxShadow: `0 0 10px ${COLORS.teal},0 0 24px ${withAlpha(COLORS.teal, 0.55)}`}} />
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', position: 'relative'}}>
+          {stages.map(([label, color], index) => {const pulse = cyclicPulse(frame, index * 67, 225, 55); return <div key={label} style={{textAlign: index === 0 ? 'left' : index === 3 ? 'right' : 'center'}}><div style={{display: 'inline-grid', placeItems: 'center', width: 32, height: 32, borderRadius: '50%', background: '#071321', border: `1px solid ${withAlpha(color, 0.38 + pulse * 0.38)}`, boxShadow: `0 0 ${pulse * 14}px ${withAlpha(color, 0.42)}`, color, fontFamily: MONO, fontSize: 7.5}}>{String(index + 1).padStart(2, '0')}</div><div style={{fontFamily: MONO, color, fontSize: 7.1, letterSpacing: 0.9, marginTop: 8}}>{label}</div></div>;})}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {durationInFrames} = useVideoConfig();
+  const phase = (frame / durationInFrames) * TAU;
+  const sceneX = Math.sin(phase) * 3.2;
+  const sceneY = Math.cos(phase) * 2.4;
+  const sceneScale = 0.997 + (0.5 - Math.cos(phase) * 0.5) * 0.006;
+  return (
+    <AbsoluteFill style={{backgroundColor: '#02060f', color: COLORS.text, fontFamily: FONT, overflow: 'hidden'}}>
+      <Background frame={frame} phase={phase} />
+      <div style={{position: 'absolute', inset: 0, transform: `translate3d(${sceneX}px, ${sceneY}px, 0) scale(${sceneScale})`, transformOrigin: '50% 50%'}}>
+        <RansomHeader phase={phase} />
+        <AttackChainPanel frame={frame} phase={phase} />
+        <RansomMap frame={frame} phase={phase} />
+        <RecoveryPanel frame={frame} phase={phase} />
+        <PhaseRail frame={frame} phase={phase} />
       </div>
     </AbsoluteFill>
   );
