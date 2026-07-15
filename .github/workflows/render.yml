@@ -33,7 +33,7 @@ jobs:
       # 1080p60 H.264 high quality. Three.js uses software WebGL here, so
       # 3D-heavy compositions render slower (that is speed, not quality).
       - name: Render video
-        run: npx remotion render Motion out/video.mp4 --codec=h264 --crf=16
+        run: npx remotion render Motion out/video.mp4 --codec=h264 --crf=16 --concurrency=4
 
       - name: Upload MP4 as artifact
         uses: actions/upload-artifact@v4
