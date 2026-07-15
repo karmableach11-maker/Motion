@@ -1,41 +1,51 @@
 import React from 'react';
-import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  spring,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 
 const C = {
-  canvas: '#e8f0ed',
+  background: '#e9efec',
+  board: '#edf3f0',
   surface: '#fbfdfc',
-  ink: '#173f3c',
-  muted: '#718d87',
-  emerald: '#18b889',
-  teal: '#087f78',
-  mint: '#9cdec8',
-  grid: '#dbe7e2',
-  track: '#e1e9e6',
+  ink: '#183a35',
+  muted: '#71877f',
+  grid: '#d8e4df',
+  track: '#e2eae6',
+  scope1: '#0b6b66',
+  scope2: '#28ae91',
+  scope3: '#9acb69',
+  graphite: '#31443f',
 };
 
-const easeProgress = (frame: number, fps: number, delay: number, duration: number) =>
-  interpolate((frame / fps) * 60, [delay, delay + duration], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.cubic),
-  });
+const YEARS = Array.from({length: 11}, (_, index) => 2020 + index);
+const SCOPE_1 = [30, 29, 27, 25, 23, 20, 17, 14, 11, 8, 5];
+const SCOPE_2 = [25, 24, 22, 20, 18, 15, 12, 9, 7, 5, 3];
+const SCOPE_3 = [45, 43, 41, 38, 35, 32, 28, 24, 20, 16, 12];
+
+const linePoints = (
+  data: readonly number[],
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  max: number,
+) =>
+  data
+    .map((value, index) => {
+      const x = left + (index / (data.length - 1)) * width;
+      const y = top + height - (value / max) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
 
 const Card: React.FC<{
   x: number;
   y: number;
   width: number;
   height: number;
-  depth?: number;
   children: React.ReactNode;
-}> = ({x, y, width, height, depth = 0, children}) => (
+  depth?: number;
+}> = ({x, y, width, height, children, depth = 0}) => (
   <div
+    data-safe-object="true"
     style={{
       position: 'absolute',
       left: x,
@@ -43,11 +53,11 @@ const Card: React.FC<{
       width,
       height,
       overflow: 'hidden',
-      borderRadius: 24,
+      borderRadius: 20,
       background: C.surface,
-      border: '1px solid rgba(255,255,255,0.96)',
+      border: '1px solid rgba(255,255,255,0.94)',
       boxShadow:
-        '18px 20px 34px rgba(69,101,91,0.18), -13px -13px 25px rgba(255,255,255,0.96), inset 0 1px 0 rgba(255,255,255,0.98)',
+        '11px 13px 24px rgba(65,92,82,0.14), -9px -9px 20px rgba(255,255,255,0.88), inset 0 1px 0 rgba(255,255,255,0.96)',
       transform: `translateZ(${depth}px)`,
       backfaceVisibility: 'hidden',
     }}
@@ -56,426 +66,253 @@ const Card: React.FC<{
   </div>
 );
 
-const SectionTitle: React.FC<{title: string; subtitle: string}> = ({title, subtitle}) => (
-  <div style={{position: 'absolute', left: 42, top: 31}}>
-    <div
-      style={{
-        color: C.ink,
-        fontFamily: 'Inter, Avenir Next, Helvetica, Arial, sans-serif',
-        fontSize: 17,
-        fontWeight: 790,
-        letterSpacing: 2.4,
-      }}
-    >
-      {title}
-    </div>
-    <div
-      style={{
-        marginTop: 7,
-        color: C.muted,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: 12,
-        fontWeight: 650,
-        letterSpacing: 1.1,
-      }}
-    >
-      {subtitle}
-    </div>
-  </div>
-);
-
-const NavIcon: React.FC<{type: number}> = ({type}) => {
+const MiniIcon: React.FC<{type: number}> = ({type}) => {
   const common = {
     fill: 'none',
-    stroke: C.teal,
-    strokeWidth: 2.05,
+    stroke: C.scope1,
+    strokeWidth: 1.8,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
   };
 
-  const icons = [
-    <path key="energy" {...common} d="m13.5 2.5-7 11h5l-1 8 7-11h-5l1-8Z" />,
-    <g key="emissions"><path {...common} d="M5.2 16.8h12.9a3.4 3.4 0 0 0 .3-6.8A6.2 6.2 0 0 0 6.5 8.7a4.1 4.1 0 0 0-1.3 8.1Z" /><path {...common} d="M8 20h8" /></g>,
-    <g key="efficiency"><path {...common} d="M4 16.8a8.7 8.7 0 1 1 16 0" /><path {...common} d="m12 13 4.6-4.1M7.2 18.5h9.6" /></g>,
-    <g key="water"><path {...common} d="M12 3.2s5.3 6.2 5.3 10.6a5.3 5.3 0 0 1-10.6 0C6.7 9.4 12 3.2 12 3.2Z" /><path {...common} d="M9.5 14.4c.3 1.4 1.2 2.2 2.6 2.4" /></g>,
-    <g key="facility"><path {...common} d="M4 20V8l6 3V6l10 4v10H4Z" /><path {...common} d="M8 15h1M13 15h1M17 15h1" /></g>,
-    <g key="target"><circle {...common} cx="12" cy="12" r="8.5" /><circle {...common} cx="12" cy="12" r="4.5" /><path {...common} d="M12 3.5V1M20.5 12H23" /></g>,
-    <g key="report"><path {...common} d="M6 3.5h9l3 3v14H6zM15 3.5v4h3M9 12h6M9 16h6" /></g>,
-    <g key="archive"><path {...common} d="M4 7h16v13H4zM3 4h18v4H3zM9 12h6" /></g>,
+  const shapes = [
+    <g key="overview"><rect {...common} x="4" y="4" width="6" height="6" rx="1" /><rect {...common} x="14" y="4" width="6" height="6" rx="1" /><rect {...common} x="4" y="14" width="6" height="6" rx="1" /><rect {...common} x="14" y="14" width="6" height="6" rx="1" /></g>,
+    <g key="scopes"><circle {...common} cx="6" cy="12" r="3" /><circle {...common} cx="18" cy="6" r="3" /><circle {...common} cx="18" cy="18" r="3" /><path {...common} d="m8.7 10.7 6.5-3.4M8.7 13.3l6.5 3.4" /></g>,
+    <g key="roadmap"><path {...common} d="M4 18 9 12l4 3 7-9" /><path {...common} d="M15.5 6H20v4.5" /></g>,
+    <g key="levers"><path {...common} d="M5 6h14M5 12h14M5 18h14" /><circle cx="9" cy="6" r="2" fill={C.surface} stroke={C.scope1} strokeWidth="1.8" /><circle cx="15" cy="12" r="2" fill={C.surface} stroke={C.scope1} strokeWidth="1.8" /><circle cx="11" cy="18" r="2" fill={C.surface} stroke={C.scope1} strokeWidth="1.8" /></g>,
+    <g key="removals"><path {...common} d="M12 21V10" /><path {...common} d="M12 13C6 13 4 9 4 5c6 0 8 3 8 8ZM12 16c6 0 8-4 8-8-6 0-8 3-8 8Z" /></g>,
+    <g key="reports"><path {...common} d="M6 3.5h9l3 3v14H6zM15 3.5v4h3M9 12h6M9 16h6" /></g>,
   ];
 
-  return <svg width="25" height="25" viewBox="0 0 24 24">{icons[type]}</svg>;
+  return <svg width="23" height="23" viewBox="0 0 24 24">{shapes[type]}</svg>;
 };
 
 const Sidebar: React.FC = () => {
-  const items = ['Energy', 'Emissions', 'Efficiency', 'Water', 'Facilities', 'Targets', 'Reports', 'Archive'];
+  const items = ['Overview', 'Scopes 1–3', 'Roadmap', 'Levers', 'Removals', 'Reports'];
 
   return (
-    <Card x={22} y={20} width={370} height={1430} depth={18}>
-      <div
-        style={{
-          padding: '44px 42px',
-          fontFamily: 'Inter, Avenir Next, Helvetica, Arial, sans-serif',
-          color: C.ink,
-        }}
-      >
-        <div style={{fontSize: 13, letterSpacing: 3.6, fontWeight: 820, color: C.muted, marginBottom: 55}}>
-          SUSTAINABILITY
-        </div>
-        <div style={{display: 'flex', flexDirection: 'column', gap: 31}}>
+    <Card x={28} y={28} width={212} height={784} depth={5}>
+      <div style={{padding: '30px 25px', fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        <div style={{color: C.ink, fontSize: 17, fontWeight: 820, letterSpacing: 2.2}}>NET ZERO</div>
+        <div style={{marginTop: 7, color: C.muted, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.55}}>PATHWAY 2030</div>
+        <div style={{height: 1, margin: '24px 0 28px', background: C.grid}} />
+        <div style={{display: 'flex', flexDirection: 'column', gap: 26}}>
           {items.map((item, index) => (
-            <div key={item} style={{display: 'flex', alignItems: 'center', gap: 22}}>
-              <NavIcon type={index} />
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: index === 0 ? 780 : 650,
-                  color: index === 0 ? C.emerald : C.teal,
-                  letterSpacing: 1.65,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {item}
-              </div>
+            <div key={item} style={{display: 'flex', alignItems: 'center', gap: 13}}>
+              <MiniIcon type={index} />
+              <span style={{color: index === 0 ? C.scope2 : C.scope1, fontSize: 14, fontWeight: index === 0 ? 800 : 670, letterSpacing: 0.8, whiteSpace: 'nowrap'}}>{item}</span>
             </div>
           ))}
         </div>
         <div
           style={{
             position: 'absolute',
-            left: 42,
-            right: 42,
-            bottom: 48,
-            paddingTop: 25,
+            left: 25,
+            right: 25,
+            bottom: 27,
+            paddingTop: 18,
             borderTop: `1px solid ${C.grid}`,
             color: C.muted,
-            fontSize: 13,
-            letterSpacing: 2.3,
+            fontSize: 9.5,
+            fontWeight: 700,
+            lineHeight: 1.65,
+            letterSpacing: 1.25,
           }}
         >
-          ILLUSTRATIVE · 2020–2026
+          ILLUSTRATIVE PATHWAY
+          <br />FIGURES NOT AUDITED
         </div>
       </div>
     </Card>
   );
 };
 
-const SearchBar: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const caret = 0.56 + Math.sin((frame / fps) * 2.1) * 0.16;
+const Header: React.FC<{phase: number}> = ({phase}) => {
+  const badgePulse = 0.9 + Math.sin(phase) * 0.06;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 150,
-        top: 62,
-        width: 610,
-        height: 44,
-        display: 'flex',
-        alignItems: 'center',
-        borderRadius: 3,
-        background: 'linear-gradient(90deg, rgba(156,222,200,0.78), rgba(215,243,233,0.48))',
-        boxShadow: 'inset 0 2px 8px rgba(8,127,120,0.08)',
-        color: '#557b74',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: 18,
-      }}
-    >
-      <span style={{paddingLeft: 16}}>Search metrics</span>
-      <span style={{width: 2, height: 21, marginLeft: 5, background: `rgba(85,123,116,${caret})`}} />
-      <svg style={{marginLeft: 'auto', marginRight: 18}} width="23" height="23" viewBox="0 0 24 24">
-        <circle cx="10.7" cy="10.7" r="6.6" fill="none" stroke="#4e8178" strokeWidth="1.8" />
-        <path d="m15.8 15.8 4.2 4.2" fill="none" stroke="#4e8178" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-      <div style={{height: 27, width: 1, background: 'rgba(78,129,120,.23)', marginRight: 13}} />
-      <div style={{fontSize: 22, lineHeight: 1, marginRight: 12, marginTop: -8}}>⋮</div>
-    </div>
+    <Card x={258} y={28} width={1354} height={94} depth={6}>
+      <div style={{position: 'absolute', left: 30, top: 22, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 13}}>
+          <svg width="29" height="29" viewBox="0 0 30 30">
+            <circle cx="15" cy="15" r="10.5" fill="none" stroke={C.scope2} strokeWidth="2" />
+            <circle cx="15" cy="15" r="4" fill="none" stroke={C.scope1} strokeWidth="2" />
+            <path d="M15 1.5v6M15 22.5v6M1.5 15h6M22.5 15h6" stroke={C.scope1} strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <div>
+            <div style={{color: C.ink, fontSize: 24, fontWeight: 820, letterSpacing: 2.1}}>NET-ZERO ROADMAP 2030</div>
+            <div style={{marginTop: 4, color: C.muted, fontSize: 11, fontWeight: 650, letterSpacing: 1.35}}>ILLUSTRATIVE EMISSIONS PATHWAY · 2020–2030</div>
+          </div>
+        </div>
+      </div>
+      <div style={{position: 'absolute', right: 24, top: 20, display: 'flex', gap: 10, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        {[
+          ['2020 BASELINE', '100 kt'],
+          ['2026 PATHWAY', '57 kt'],
+          ['2030 NET TARGET', '0 kt'],
+        ].map(([label, value], index) => (
+          <div
+            key={label}
+            style={{
+              width: index === 2 ? 152 : 132,
+              height: 54,
+              padding: '9px 13px',
+              borderRadius: 12,
+              background: index === 2 ? `rgba(40,174,145,${0.11 * badgePulse})` : '#f2f6f4',
+              border: `1px solid ${index === 2 ? 'rgba(40,174,145,.26)' : C.grid}`,
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{color: C.muted, fontSize: 8.5, fontWeight: 750, letterSpacing: 1}}>{label}</div>
+            <div style={{marginTop: 5, color: index === 2 ? C.scope2 : C.ink, fontSize: 16, fontWeight: 820}}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 };
 
-const EnergyBars: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const years = ['2020', '2021', '2022', '2023', '2024', '2025', '2026'];
-  const renewable = [42, 55, 68, 84, 103, 126, 148];
-  const conventional = [142, 132, 118, 104, 90, 76, 62];
-  const initialRenewable = [8, 48, 78, 32, 0, 0, 0];
-  const initialConventional = [24, 151, 139, 92, 0, 0, 0];
-  const baseline = 630;
-  const plotHeight = 515;
-  const max = 180;
+const MiniSparkline: React.FC<{data: readonly number[]; color: string; phase: number}> = ({data, color, phase}) => {
+  const points = linePoints(data, 4, 6, 98, 35, Math.max(...data) * 1.05);
+  const endY = 6 + 35 - (data[data.length - 1] / (Math.max(...data) * 1.05)) * 35;
+  const pulse = 4.2 + (Math.sin(phase * 2) + 1) * 0.8;
 
   return (
-    <svg viewBox="0 0 920 710" style={{position: 'absolute', left: 42, top: 246, width: 914, height: 720}}>
-      <defs>
-        <linearGradient id="renewableBar" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#19c18f" />
-          <stop offset="1" stopColor="#089879" />
-        </linearGradient>
-        <linearGradient id="conventionalBar" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#a9e3cf" />
-          <stop offset="1" stopColor="#7bcdb3" />
-        </linearGradient>
-      </defs>
-      {[0, 20, 40, 60, 80, 100, 120, 140, 160, 180].map((tick) => {
-        const y = baseline - (tick / max) * plotHeight;
-        return (
-          <text
-            key={tick}
-            x="54"
-            y={y + 6}
-            textAnchor="end"
-            fill={C.ink}
-            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-            fontWeight="680"
-            fontSize="16"
-          >
-            {tick}
-          </text>
-        );
-      })}
-      <line x1="73" y1="92" x2="73" y2={baseline} stroke={C.ink} strokeWidth="1.1" />
-      <line x1="73" y1={baseline} x2="900" y2={baseline} stroke={C.ink} strokeWidth="1.1" />
-      {years.map((year, index) => {
-        const fill = spring({frame, fps, delay: index * 29, config: {damping: 20, stiffness: 73, mass: 0.95}});
-        const settle = easeProgress(frame, fps, 275 + index * 7, 175);
-        const waveIn = easeProgress(frame, fps, 50 + index * 11, 100);
-        const waveOut = easeProgress(frame, fps, 460, 100);
-        const wave = Math.sin((frame / fps) * 1.45 + index * 0.76) * (5 + (index % 2) * 3) * waveIn * (1 - waveOut);
-        const greenValue = initialRenewable[index] + (renewable[index] - initialRenewable[index]) * settle + wave;
-        const mintValue = initialConventional[index] + (conventional[index] - initialConventional[index]) * settle - wave * 0.6;
-        const greenHeight = Math.max(0, (greenValue / max) * plotHeight * fill);
-        const mintHeight = Math.max(0, (mintValue / max) * plotHeight * fill);
-        const x = 105 + index * 111;
-        return (
-          <g key={year}>
-            <rect x={x} y={baseline - greenHeight} width="31" height={greenHeight} rx="2" fill="url(#renewableBar)" />
-            <rect x={x + 39} y={baseline - mintHeight} width="25" height={mintHeight} rx="2" fill="url(#conventionalBar)" />
-            <text
-              x={x + 31}
-              y={baseline + 35}
-              textAnchor="middle"
-              fill={C.ink}
-              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-              fontWeight="720"
-              fontSize="13"
-            >
-              {year}
-            </text>
-          </g>
-        );
-      })}
+    <svg viewBox="0 0 106 48" width="106" height="48">
+      <line x1="4" y1="42" x2="102" y2="42" stroke={C.grid} strokeWidth="1" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="102" cy={endY} r={pulse} fill={C.surface} stroke={color} strokeWidth="2" />
     </svg>
   );
 };
 
-const PrimaryCard: React.FC = () => (
-  <Card x={420} y={20} width={1000} height={1050} depth={30}>
-    <SearchBar />
-    <div style={{position: 'absolute', left: 72, top: 156}}>
-      <div style={{fontSize: 18, fontWeight: 800, letterSpacing: 2.6, color: C.ink}}>ENERGY TRANSITION</div>
-      <div style={{marginTop: 7, fontSize: 13, color: C.muted, letterSpacing: 1.25}}>ANNUAL OUTPUT · GWh</div>
+const ScopeCard: React.FC<{
+  x: number;
+  number: number;
+  title: string;
+  subtitle: string;
+  value: number;
+  change: number;
+  color: string;
+  data: readonly number[];
+  phase: number;
+}> = ({x, number, title, subtitle, value, change, color, data, phase}) => (
+  <Card x={x} y={140} width={284} height={162} depth={7}>
+    <div style={{position: 'absolute', left: 22, top: 19, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, color, background: `${color}18`, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12, fontWeight: 820}}>
+      0{number}
     </div>
-    <div style={{position: 'absolute', right: 72, top: 166, display: 'flex', gap: 28, color: C.muted, fontSize: 12, fontWeight: 700, letterSpacing: 1.1}}>
-      <span style={{display: 'flex', alignItems: 'center', gap: 8}}><i style={{width: 13, height: 13, background: C.emerald, borderRadius: 2}} />RENEWABLE</span>
-      <span style={{display: 'flex', alignItems: 'center', gap: 8}}><i style={{width: 13, height: 13, background: C.mint, borderRadius: 2}} />CONVENTIONAL</span>
+    <div style={{position: 'absolute', left: 67, top: 18, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+      <div style={{color: C.ink, fontSize: 14, fontWeight: 810, letterSpacing: 0.8}}>{title}</div>
+      <div style={{marginTop: 5, color: C.muted, fontSize: 9.5, fontWeight: 650, letterSpacing: 0.8}}>{subtitle}</div>
     </div>
-    <EnergyBars />
+    <div style={{position: 'absolute', left: 22, bottom: 20, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+      <div style={{display: 'flex', alignItems: 'baseline', gap: 5}}>
+        <span style={{color: C.ink, fontSize: 31, fontWeight: 830, letterSpacing: -0.5}}>{value}</span>
+        <span style={{color: C.muted, fontSize: 10, fontWeight: 720}}>ktCO₂e</span>
+      </div>
+      <div style={{marginTop: 2, color, fontSize: 10.5, fontWeight: 800}}>{change}% vs 2020</div>
+    </div>
+    <div style={{position: 'absolute', right: 19, bottom: 24}}><MiniSparkline data={data.slice(0, 7)} color={color} phase={phase + number * 0.6} /></div>
+    <div style={{position: 'absolute', right: 18, top: 20, color: C.muted, fontSize: 8.5, fontWeight: 730, letterSpacing: 0.8}}>2026 PLAN</div>
   </Card>
 );
 
-const Ring: React.FC<{
-  value: number;
-  size: number;
-  stroke: number;
-  delay: number;
-  duration: number;
-  label?: boolean;
-  segmented?: boolean;
-}> = ({value, size, stroke, delay, duration, label = false, segmented = false}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const p = easeProgress(frame, fps, delay, duration);
-  const radius = (size - stroke) / 2;
-  const circumference = Math.PI * 2 * radius;
+const TargetCard: React.FC<{phase: number}> = ({phase}) => {
+  const glow = 0.16 + (Math.sin(phase) + 1) * 0.035;
 
   return (
-    <div style={{position: 'relative', width: size, height: size}}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.track} strokeWidth={stroke} />
-          {segmented ? (
-            <>
-              <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.teal} strokeWidth={stroke} strokeDasharray={`${circumference * 0.32 * p} ${circumference}`} />
-              <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.emerald} strokeWidth={stroke} strokeDasharray={`${circumference * 0.38 * p} ${circumference}`} strokeDashoffset={-circumference * 0.36} />
-              <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.mint} strokeWidth={stroke} strokeDasharray={`${circumference * 0.20 * p} ${circumference}`} strokeDashoffset={-circumference * 0.78} />
-            </>
-          ) : (
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              stroke={C.emerald}
-              strokeWidth={stroke}
-              strokeDasharray={circumference}
-              strokeDashoffset={circumference * (1 - (value * p) / 100)}
-            />
-          )}
-        </g>
-      </svg>
-      {label ? (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: C.emerald,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontWeight: 820,
-            fontSize: size * 0.17,
-          }}
-        >
-          {Math.round(value * p)}%
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-const SourceMixCard: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const p = easeProgress(frame, fps, 70, 260);
-
-  return (
-    <Card x={1440} y={20} width={850} height={410} depth={24}>
-      <SectionTitle title="ENERGY SOURCES" subtitle="SOLAR · WIND · STORAGE" />
-      <svg viewBox="0 0 580 310" style={{position: 'absolute', left: 18, top: 76, width: 590, height: 308}}>
-        <defs>
-          <clipPath id="sourceReveal"><rect x="62" y="0" width={475 * p} height="280" /></clipPath>
-          <linearGradient id="solarArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#9cdec8" stopOpacity="0.86" /><stop offset="1" stopColor="#79cdb1" stopOpacity="0.45" /></linearGradient>
-          <linearGradient id="windArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#18b889" stopOpacity="0.74" /><stop offset="1" stopColor="#087f78" stopOpacity="0.56" /></linearGradient>
-        </defs>
-        {[0, 20, 40, 60, 80, 100].map((tick) => <text key={tick} x="47" y={267 - tick * 2.2} textAnchor="end" fill={C.ink} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace" fontWeight="650" fontSize="14">{tick}</text>)}
-        <line x1="61" y1="35" x2="61" y2="270" stroke={C.ink} strokeWidth="1" />
-        <line x1="61" y1="270" x2="542" y2="270" stroke={C.ink} strokeWidth="1" />
-        <g clipPath="url(#sourceReveal)">
-          <path d="M63 270 C90 226 116 199 146 218 C177 237 192 252 221 187 C249 123 278 137 307 203 C334 264 360 216 387 150 C414 84 445 118 466 186 C488 255 508 165 527 134 L527 270Z" fill="url(#solarArea)" />
-          <path d="M63 270 C93 250 112 207 141 205 C169 203 184 258 214 242 C247 224 254 157 283 150 C316 142 327 239 354 227 C386 213 397 129 425 121 C459 111 473 232 501 217 C517 208 522 165 527 134 L527 270Z" fill="url(#windArea)" opacity="0.72" />
-        </g>
-      </svg>
-      <div style={{position: 'absolute', right: 42, top: 100}}><Ring value={74} size={190} stroke={34} delay={165} duration={82} label /></div>
-      <div style={{position: 'absolute', right: 59, bottom: 43, color: C.muted, fontSize: 12, fontWeight: 760, letterSpacing: 1.7}}>RENEWABLE SHARE</div>
-    </Card>
-  );
-};
-
-const EmissionsCard: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const draw = easeProgress(frame, fps, 42, 320);
-  const targetDraw = easeProgress(frame, fps, 132, 260);
-  const years = ['2020', '2021', '2022', '2023', '2024', '2025', '2026'];
-
-  return (
-    <Card x={1440} y={450} width={500} height={560} depth={27}>
-      <SectionTitle title="EMISSIONS INTENSITY" subtitle="kg CO₂e / MWh" />
-      <div style={{position: 'absolute', right: 30, top: 42, display: 'flex', gap: 16, color: C.muted, fontSize: 10, fontWeight: 760, letterSpacing: 1}}>
-        <span style={{display: 'flex', alignItems: 'center', gap: 6}}><i style={{width: 16, height: 3, background: C.emerald}} />ACTUAL</span>
-        <span style={{display: 'flex', alignItems: 'center', gap: 6}}><i style={{width: 16, height: 3, background: C.mint}} />TARGET</span>
-      </div>
-      <svg viewBox="0 0 500 520" style={{position: 'absolute', inset: 14, width: 472, height: 520}}>
-        <line x1="34" y1="438" x2="472" y2="438" stroke={C.teal} strokeWidth="2" />
-        <path
-          d="M38 152 L105 194 L174 221 L242 278 L310 302 L379 351 L455 382"
-          fill="none"
-          stroke={C.emerald}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - draw}
-        />
-        <path
-          d="M38 178 L105 218 L174 252 L242 289 L310 326 L379 362 L455 397"
-          fill="none"
-          stroke={C.mint}
-          strokeWidth="2.5"
-          strokeDasharray="8 9"
-          pathLength={1}
-          strokeDashoffset={1 - targetDraw}
-          opacity="0.95"
-        />
-        {[38, 105, 174, 242, 310, 379, 455].map((x, index) => (
-          <g key={years[index]}>
-            <circle cx={x} cy={[152, 194, 221, 278, 302, 351, 382][index]} r="5" fill={C.surface} stroke={C.emerald} strokeWidth="3" opacity={draw} />
-            <text x={x} y="472" textAnchor="middle" fill={C.ink} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace" fontWeight="750" fontSize="14.5">{years[index]}</text>
-          </g>
+    <Card x={1164} y={140} width={448} height={162} depth={8}>
+      <div style={{position: 'absolute', left: 23, top: 20, color: C.ink, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 14, fontWeight: 820, letterSpacing: 1}}>2030 NET TARGET</div>
+      <div style={{position: 'absolute', left: 23, top: 44, color: C.muted, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9.5, fontWeight: 650, letterSpacing: 0.8}}>RESIDUAL EMISSIONS MINUS PERMANENT REMOVALS</div>
+      <div style={{position: 'absolute', left: 23, bottom: 22, display: 'flex', alignItems: 'center', gap: 13, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        {[
+          ['20', 'GROSS'],
+          ['−20', 'REMOVALS'],
+          ['0', 'NET'],
+        ].map(([value, label], index) => (
+          <React.Fragment key={label}>
+            <div style={{width: 91, height: 57, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: index === 2 ? `rgba(40,174,145,${glow})` : '#f2f6f4', border: `1px solid ${index === 2 ? 'rgba(40,174,145,.28)' : C.grid}`}}>
+              <div style={{color: index === 2 ? C.scope2 : C.ink, fontSize: 22, fontWeight: 850}}>{value}</div>
+              <div style={{marginTop: 2, color: C.muted, fontSize: 8.3, fontWeight: 760, letterSpacing: 1}}>{label}</div>
+            </div>
+            {index < 2 ? <div style={{color: C.muted, fontSize: 20, fontWeight: 500}}>{index === 0 ? '−' : '='}</div> : null}
+          </React.Fragment>
         ))}
-      </svg>
+      </div>
+      <div style={{position: 'absolute', right: 20, top: 18, padding: '6px 10px', borderRadius: 10, color: C.scope1, background: '#edf6f2', fontSize: 8.5, fontWeight: 800, letterSpacing: 1}}>ktCO₂e</div>
     </Card>
   );
 };
 
-const EfficiencyCard: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const values = [58, 63, 69, 74, 80, 86, 92];
+const MainRoadmap: React.FC<{phase: number}> = ({phase}) => {
+  const plotLeft = 57;
+  const plotTop = 75;
+  const plotWidth = 786;
+  const plotHeight = 220;
+  const pulse = 0.72 + (Math.sin(phase * 2) + 1) * 0.11;
+  const milestoneYears = [2020, 2023, 2026, 2028, 2030];
+  const milestoneLabels = ['BASELINE', 'OPERATIONS', 'TRANSITION', 'SCALE-UP', 'NET TARGET'];
 
   return (
-    <Card x={1960} y={450} width={400} height={560} depth={23}>
-      <SectionTitle title="EFFICIENCY INDEX" subtitle="FACILITY PERFORMANCE" />
-      <svg viewBox="0 0 370 500" style={{position: 'absolute', left: 14, top: 51, width: 370, height: 500}}>
-        <line x1="52" y1="72" x2="52" y2="430" stroke={C.ink} strokeWidth="1.1" />
-        <line x1="52" y1="430" x2="346" y2="430" stroke={C.ink} strokeWidth="1.1" />
-        {values.map((value, index) => {
-          const p = spring({frame, fps, delay: 118 + index * 29, config: {damping: 20, stiffness: 72, mass: 1}});
-          const height = value * 3.2 * p;
-          const x = 66 + index * 40;
+    <Card x={258} y={320} width={888} height={492} depth={6}>
+      <div style={{position: 'absolute', left: 24, top: 19, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        <div style={{color: C.ink, fontSize: 15, fontWeight: 820, letterSpacing: 1.25}}>SCOPE PATHWAY 2020–2030</div>
+        <div style={{marginTop: 5, color: C.muted, fontSize: 9.5, fontWeight: 650, letterSpacing: 0.9}}>ILLUSTRATIVE GROSS EMISSIONS · ktCO₂e</div>
+      </div>
+      <div style={{position: 'absolute', right: 23, top: 23, display: 'flex', gap: 16, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        {[
+          ['SCOPE 1', C.scope1, 'solid'],
+          ['SCOPE 2', C.scope2, 'solid'],
+          ['SCOPE 3', C.scope3, 'solid'],
+        ].map(([label, color]) => (
+          <span key={label} style={{display: 'flex', alignItems: 'center', gap: 6, color: C.muted, fontSize: 9, fontWeight: 760, letterSpacing: 0.8}}>
+            <i style={{display: 'block', width: 17, height: 3, borderRadius: 2, background: color}} />{label}
+          </span>
+        ))}
+      </div>
+      <svg viewBox="0 0 888 330" style={{position: 'absolute', left: 0, top: 55, width: 888, height: 330}}>
+        <rect x={plotLeft + plotWidth - 35} y={plotTop - 12} width="70" height={plotHeight + 35} rx="10" fill={`rgba(40,174,145,${0.045 + pulse * 0.02})`} />
+        {[0, 10, 20, 30, 40, 50].map((tick) => {
+          const y = plotTop + plotHeight - (tick / 50) * plotHeight;
           return (
-            <g key={value}>
-              <rect x={x} y={430 - height} width="25" height={height} rx="2" fill={index < 3 ? C.teal : C.emerald} opacity={0.84 + index * 0.022} />
-              <text x={x + 12.5} y="456" textAnchor="middle" fill={C.ink} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace" fontWeight="730" fontSize="12">{20 + index}</text>
+            <g key={tick}>
+              <line x1={plotLeft} y1={y} x2={plotLeft + plotWidth} y2={y} stroke={tick === 0 ? C.muted : C.grid} strokeWidth={tick === 0 ? 1.1 : 0.8} />
+              <text x={plotLeft - 13} y={y + 4} textAnchor="end" fill={C.muted} fontFamily="Arial, Helvetica, sans-serif" fontSize="9" fontWeight="650">{tick}</text>
             </g>
           );
         })}
-      </svg>
-    </Card>
-  );
-};
-
-const AnnualEfficiency: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const rows = [
-    ['2026', 92],
-    ['2025', 88],
-    ['2024', 84],
-    ['2023', 80],
-    ['2022', 75],
-    ['2021', 70],
-    ['2020', 64],
-  ] as const;
-
-  return (
-    <Card x={420} y={1090} width={1000} height={340} depth={20}>
-      <div style={{position: 'absolute', left: 54, top: 26, color: C.ink, fontSize: 14, fontWeight: 800, letterSpacing: 2.1}}>ANNUAL EFFICIENCY</div>
-      <div style={{position: 'absolute', left: 70, top: 63, right: 62}}>
-        {rows.map(([year, value], index) => {
-          const p = easeProgress(frame, fps, 340 + (rows.length - 1 - index) * 11, 140);
+        {[SCOPE_1, SCOPE_2, SCOPE_3].map((data, index) => {
+          const color = [C.scope1, C.scope2, C.scope3][index];
           return (
-            <div key={year} style={{height: 36, display: 'grid', gridTemplateColumns: '70px 1fr 46px', alignItems: 'center', gap: 13, color: C.ink, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 16, fontWeight: 760}}>
-              <span>{year}</span>
-              <div style={{height: 15, position: 'relative', overflow: 'hidden', background: C.track}}>
-                <div style={{position: 'absolute', inset: 0, width: `${value * p}%`, background: index < 2 ? C.emerald : index < 4 ? C.teal : C.mint}} />
-              </div>
-              <span style={{textAlign: 'right', color: C.muted}}>{Math.round(value * p)}%</span>
+            <g key={color}>
+              <polyline points={linePoints(data, plotLeft, plotTop, plotWidth, plotHeight, 50)} fill="none" stroke={color} strokeWidth={index === 2 ? 3.2 : 3} strokeLinecap="round" strokeLinejoin="round" opacity={0.92 + pulse * 0.06} />
+              {data.map((value, pointIndex) => {
+                const x = plotLeft + (pointIndex / (data.length - 1)) * plotWidth;
+                const y = plotTop + plotHeight - (value / 50) * plotHeight;
+                const endpoint = pointIndex === data.length - 1;
+                return <circle key={pointIndex} cx={x} cy={y} r={endpoint ? 4.5 + pulse : 2.6} fill={C.surface} stroke={color} strokeWidth={endpoint ? 2.4 : 1.6} />;
+              })}
+            </g>
+          );
+        })}
+        {YEARS.map((year, index) => {
+          const x = plotLeft + (index / (YEARS.length - 1)) * plotWidth;
+          return <text key={year} x={x} y={plotTop + plotHeight + 27} textAnchor="middle" fill={year === 2030 ? C.scope2 : C.ink} fontFamily="Arial, Helvetica, sans-serif" fontSize="9.2" fontWeight={year === 2030 ? 820 : 680}>{year}</text>;
+        })}
+        <text x={plotLeft + plotWidth} y={plotTop - 20} textAnchor="middle" fill={C.scope2} fontFamily="Arial, Helvetica, sans-serif" fontSize="8.5" fontWeight="820" letterSpacing="1">TARGET</text>
+      </svg>
+      <div style={{position: 'absolute', left: 25, right: 25, bottom: 20, height: 82, borderRadius: 14, background: '#f3f7f5', border: `1px solid ${C.grid}`}}>
+        <div style={{position: 'absolute', left: 42, right: 42, top: 36, height: 2, background: C.grid}} />
+        <div style={{position: 'absolute', left: 42, top: 36, width: '58%', height: 2, background: C.scope2}} />
+        {milestoneYears.map((year, index) => {
+          const x = 42 + (index / (milestoneYears.length - 1)) * 752;
+          const current = year === 2026;
+          const nodeScale = current ? 1 + (Math.sin(phase * 2) + 1) * 0.08 : 1;
+          return (
+            <div key={year} style={{position: 'absolute', left: x - 36, top: 8, width: 72, textAlign: 'center', fontFamily: 'Arial, Helvetica, sans-serif'}}>
+              <div style={{color: current ? C.scope2 : C.ink, fontSize: 10, fontWeight: 820}}>{year}</div>
+              <div style={{position: 'absolute', left: 30, top: 23, width: 12, height: 12, borderRadius: '50%', background: year <= 2026 ? C.scope2 : C.surface, border: `2px solid ${year <= 2026 ? C.scope2 : C.muted}`, transform: `scale(${nodeScale})`, boxSizing: 'border-box'}} />
+              <div style={{marginTop: 29, color: C.muted, fontSize: 7.7, fontWeight: 760, letterSpacing: 0.55}}>{milestoneLabels[index]}</div>
             </div>
           );
         })}
@@ -484,92 +321,164 @@ const AnnualEfficiency: React.FC = () => {
   );
 };
 
-const EnergySavedCard: React.FC = () => (
-  <Card x={1440} y={1050} width={430} height={380} depth={28}>
-    <SectionTitle title="TRANSITION TARGET" subtitle="2026 PROGRAM PROGRESS" />
-    <div style={{position: 'absolute', left: 77, top: 82}}><Ring value={86} size={275} stroke={52} delay={298} duration={82} label /></div>
+const ProgressRing: React.FC<{phase: number}> = ({phase}) => {
+  const size = 135;
+  const stroke = 21;
+  const radius = (size - stroke) / 2;
+  const circumference = Math.PI * 2 * radius;
+  const progress = 0.54;
+  const highlight = 0.8 + (Math.sin(phase * 2) + 1) * 0.09;
+
+  return (
+    <div style={{position: 'relative', width: size, height: size}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.track} strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={C.scope2} strokeWidth={stroke} strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress)} opacity={highlight} />
+        </g>
+      </svg>
+      <div style={{position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial, Helvetica, sans-serif'}}>
+        <div style={{color: C.scope2, fontSize: 27, fontWeight: 850}}>54%</div>
+        <div style={{marginTop: 2, color: C.muted, fontSize: 7.8, fontWeight: 780, letterSpacing: 0.9}}>DELIVERED</div>
+      </div>
+    </div>
+  );
+};
+
+const ProgressCard: React.FC<{phase: number}> = ({phase}) => (
+  <Card x={1164} y={320} width={448} height={237} depth={7}>
+    <div style={{position: 'absolute', left: 22, top: 18, color: C.ink, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 14, fontWeight: 820, letterSpacing: 1}}>2030 GROSS REDUCTION</div>
+    <div style={{position: 'absolute', left: 22, top: 40, color: C.muted, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9.3, fontWeight: 650, letterSpacing: 0.75}}>PROGRESS AGAINST 80 kt PLANNED ABATEMENT</div>
+    <div style={{position: 'absolute', left: 25, top: 76}}><ProgressRing phase={phase} /></div>
+    <div style={{position: 'absolute', left: 193, top: 78, right: 22, fontFamily: 'Arial, Helvetica, sans-serif'}}>
+      {[
+        ['2026 GROSS', '57 kt'],
+        ['CUT VS 2020', '−43%'],
+        ['2030 GROSS', '20 kt'],
+      ].map(([label, value], index) => (
+        <div key={label} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 40, borderBottom: index < 2 ? `1px solid ${C.grid}` : 'none'}}>
+          <span style={{color: C.muted, fontSize: 9.3, fontWeight: 740, letterSpacing: 0.85}}>{label}</span>
+          <span style={{color: index === 1 ? C.scope2 : C.ink, fontSize: 16, fontWeight: 830}}>{value}</span>
+        </div>
+      ))}
+    </div>
+    <div style={{position: 'absolute', right: 22, bottom: 17, color: C.muted, fontSize: 8.2, fontWeight: 680, letterSpacing: 0.65}}>REMOVALS TRACKED SEPARATELY</div>
   </Card>
 );
 
-const ResourceMixCard: React.FC = () => (
-  <Card x={1890} y={1050} width={430} height={380} depth={28}>
-    <SectionTitle title="RESOURCE MIX" subtitle="WIND 38 · SOLAR 32 · STORAGE 20 · GRID 10" />
-    <div style={{position: 'absolute', left: 77, top: 82}}><Ring value={100} size={275} stroke={52} delay={328} duration={118} segmented /></div>
-  </Card>
-);
+const LeversCard: React.FC<{phase: number}> = ({phase}) => {
+  const levers = [
+    ['Operations', 25, C.scope1],
+    ['Renewable power', 22, C.scope2],
+    ['Supplier transition', 20, C.scope3],
+    ['Low-carbon logistics', 8, C.scope2],
+    ['Circular materials', 5, C.scope3],
+  ] as const;
 
-const Dashboard: React.FC = () => (
-  <div style={{position: 'relative', width: 2400, height: 1490, background: C.canvas, transformStyle: 'preserve-3d'}}>
+  return (
+    <Card x={1164} y={575} width={448} height={237} depth={6}>
+      <div style={{position: 'absolute', left: 22, top: 18, color: C.ink, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 14, fontWeight: 820, letterSpacing: 1}}>REDUCTION LEVERS</div>
+      <div style={{position: 'absolute', right: 21, top: 20, color: C.muted, fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 720, letterSpacing: 0.8}}>80 kt TOTAL</div>
+      <div style={{position: 'absolute', left: 22, right: 22, top: 53}}>
+        {levers.map(([label, value, color], index) => {
+          const pulse = 0.986 + ((Math.sin(phase * 2 + index * 0.7) + 1) / 2) * 0.014;
+          return (
+            <div key={label} style={{height: 34, display: 'grid', gridTemplateColumns: '128px 1fr 35px', gap: 10, alignItems: 'center', fontFamily: 'Arial, Helvetica, sans-serif'}}>
+              <span style={{color: C.ink, fontSize: 10.5, fontWeight: 680}}>{label}</span>
+              <div style={{height: 10, borderRadius: 5, overflow: 'hidden', background: C.track}}>
+                <div style={{width: `${(value / 25) * 100 * pulse}%`, height: '100%', borderRadius: 5, background: color}} />
+              </div>
+              <span style={{color, textAlign: 'right', fontSize: 10.5, fontWeight: 820}}>{value} kt</span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{position: 'absolute', left: 22, bottom: 12, color: C.muted, fontSize: 7.8, fontWeight: 680, letterSpacing: 0.65}}>GROSS ABATEMENT ONLY · EXCLUDES 20 kt REMOVALS</div>
+    </Card>
+  );
+};
+
+const Dashboard: React.FC<{phase: number}> = ({phase}) => (
+  <div
+    style={{
+      position: 'relative',
+      width: 1640,
+      height: 840,
+      borderRadius: 30,
+      background: C.board,
+      border: '1px solid rgba(255,255,255,0.72)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72)',
+      transformStyle: 'preserve-3d',
+    }}
+  >
     <Sidebar />
-    <PrimaryCard />
-    <SourceMixCard />
-    <EmissionsCard />
-    <EfficiencyCard />
-    <AnnualEfficiency />
-    <EnergySavedCard />
-    <ResourceMixCard />
+    <Header phase={phase} />
+    <ScopeCard x={258} number={1} title="SCOPE 1" subtitle="DIRECT EMISSIONS" value={17} change={-43} color={C.scope1} data={SCOPE_1} phase={phase} />
+    <ScopeCard x={560} number={2} title="SCOPE 2" subtitle="PURCHASED ENERGY" value={12} change={-52} color={C.scope2} data={SCOPE_2} phase={phase} />
+    <ScopeCard x={862} number={3} title="SCOPE 3" subtitle="VALUE CHAIN" value={28} change={-38} color={C.scope3} data={SCOPE_3} phase={phase} />
+    <TargetCard phase={phase} />
+    <MainRoadmap phase={phase} />
+    <ProgressCard phase={phase} />
+    <LeversCard phase={phase} />
   </div>
 );
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const end = Math.max(1, durationInFrames - 1);
-  const phaseOne = Math.round(end * 0.15);
-  const phaseTwo = Math.round(end * 0.32);
-  const turn = Math.round(end * 0.63);
-  const ease = Easing.inOut(Easing.cubic);
-  const keys = [0, phaseOne, phaseTwo, turn, end];
-  const cameraX = interpolate(frame, keys, [2, -248, -472, -515, -205], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const cameraY = interpolate(frame, keys, [-6, -28, -182, -510, -245], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const cameraScale = interpolate(frame, keys, [1.08, 1.1, 1.105, 1.1, 0.9], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const rotateX = interpolate(frame, keys, [0.35, 0.65, 1.15, 1.65, 0.75], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const rotateY = interpolate(frame, keys, [-0.75, -0.1, 0.8, 1.2, -0.7], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const rotateZ = interpolate(frame, keys, [0.02, -0.08, -0.25, -0.4, 0.18], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
-  const ambientX = interpolate(frame, [0, end], [36, -74], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const phase = (frame / durationInFrames) * Math.PI * 2;
+  const cameraX = Math.sin(phase) * 14;
+  const cameraY = Math.sin(phase * 2 - 0.35) * 8;
+  const cameraScale = 1.002 + Math.sin(phase - 0.5) * 0.013;
+  const rotateX = Math.sin(phase + 0.7) * 0.3;
+  const rotateY = Math.cos(phase) * 0.42;
+  const rotateZ = Math.sin(phase - 0.4) * 0.08;
+  const ambientX = 310 + Math.sin(phase) * 85;
+  const ambientY = 90 + Math.cos(phase) * 35;
 
   return (
     <AbsoluteFill
       style={{
         overflow: 'hidden',
-        background: 'radial-gradient(circle at 76% 18%, rgba(255,255,255,0.98) 0%, rgba(239,246,243,0.96) 43%, #e4ece9 100%)',
-        fontFamily: 'Inter, Avenir Next, Helvetica, Arial, sans-serif',
+        background: 'radial-gradient(circle at 72% 18%, #f8fbf9 0%, #edf3f0 48%, #e4ebe8 100%)',
+        fontFamily: 'Arial, Helvetica, sans-serif',
       }}
     >
       <div
         style={{
           position: 'absolute',
           left: ambientX,
-          top: -220,
-          width: 1180,
-          height: 1180,
+          top: ambientY,
+          width: 900,
+          height: 650,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(98,210,171,0.13), rgba(98,210,171,0) 68%)',
-          filter: 'blur(14px)',
+          background: 'radial-gradient(circle, rgba(40,174,145,0.11), rgba(40,174,145,0) 68%)',
+          filter: 'blur(16px)',
         }}
       />
       <div
+        data-safe-object="board"
         style={{
           position: 'absolute',
-          left: 8,
-          top: 0,
-          width: 2400,
-          height: 1490,
-          transformOrigin: '0 0',
+          left: 140,
+          top: 120,
+          width: 1640,
+          height: 840,
+          transformOrigin: '50% 50%',
           transformStyle: 'preserve-3d',
           willChange: 'transform',
-          transform: `perspective(2600px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${cameraScale})`,
+          transform: `perspective(3200px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${cameraScale})`,
         }}
       >
-        <Dashboard />
+        <Dashboard phase={phase} />
       </div>
       <div
         style={{
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
-          opacity: 0.085,
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,75,65,0.22) 0.65px, transparent 0.8px)',
+          opacity: 0.075,
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(35,74,64,0.22) 0.6px, transparent 0.8px)',
           backgroundSize: '7px 7px',
           mixBlendMode: 'multiply',
         }}
