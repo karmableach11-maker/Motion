@@ -10,10 +10,10 @@ import {
 } from 'remotion';
 
 // ============================================================
-// CLOUD DOWNLOAD — CLEAN / PREMIUM-GRADE
-// Glowing cloud above, folder below, documents descending
-// from the cloud into the folder pocket; the progress ring
-// runs counter-clockwise and resolves into a checkmark.
+// PASSWORD / 2FA VERIFICATION — CLEAN / PREMIUM-GRADE
+// Generic login panel: password dots type in, a generic phone
+// receives a one-time code, the digits fly into the panel,
+// and the progress ring resolves into a green shield check.
 // 15s • 60fps • 1920x1080 • deterministic
 // ============================================================
 
@@ -21,11 +21,18 @@ const W = 1920;
 const H = 1080;
 
 // ---- Timeline (frames @60fps) ------------------------------
-const T_START = 90;
-const T_END = 780;
-const DOC_COUNT = 12;
-const DOC_TRAVEL = 104;
-const DOC_STAGGER = 52;
+const T_TYPE = 120; // password typing starts
+const DOT_COUNT = 8;
+const DOT_STAGGER = 24;
+const T_REQUEST = 330; // panel asks the phone for a code
+const T_PHONE = 368; // phone wakes, code card slides up
+const DIGIT_SHOW = 404; // OTP digits appear on the phone
+const DIGIT_SHOW_STAGGER = 14;
+const T_FLY = 490; // digits fly to the panel
+const FLY_STAGGER = 30;
+const FLY_TRAVEL = 46;
+const T_END = 700; // verified
+const OTP_COUNT = 6;
 
 // ---- Palette -----------------------------------------------
 const COL = {
@@ -33,21 +40,21 @@ const COL = {
   bgBottom: '#070B14',
   amber1: '#FFC24B',
   amber2: '#F98A1F',
-  amberDeep: '#C05E10',
-  lip: '#FFE0B0',
+  green1: '#4ADE80',
+  green2: '#10B981',
   ink: '#EAF0FA',
   dim: 'rgba(234,240,250,0.55)',
+  faint: 'rgba(234,240,250,0.22)',
   line: 'rgba(234,240,250,0.14)',
-  cloudHi: '#F2F6FD',
-  cloudLo: '#C3CEE2',
-  slate: '#33415C',
+  card: 'rgba(35,48,84,0.72)',
+  cardEdge: 'rgba(234,240,250,0.18)',
+  slate: '#1A2440',
 };
 
 // ---- Geometry ----------------------------------------------
-const CLOUD = {x: 960, y: 352};
-const RING_R = 232;
-const PATH_TOP = 452; // docs emerge from the cloud here
-const PATH_BOTTOM = 822; // inside the folder pocket (hidden by front panel)
+const PANEL = {x: 620, y: 590, w: 460, h: 440}; // world center + size
+const PHONE = {x: 1310, y: 585, w: 250, h: 500};
+const RING = {x: 960, y: 232, r: 104};
 
 const bezier = (
   t: number,
@@ -64,127 +71,14 @@ const bezier = (
 
 const easeFlight = Easing.inOut(Easing.cubic);
 
-// ============================================================
-// Folder — layered SVG with gradient body, inner lip, papers
-// ============================================================
-// Rendered in two layers so flying documents can pass BETWEEN
-// the folder's back panel and its front pocket — documents rise
-// out of the folder opening instead of appearing behind it.
-const Folder: React.FC<{
-  id: string;
-  flap: number;
-  paperLift: number;
-  layer: 'back' | 'front';
-}> = ({id, flap, paperLift, layer}) => {
-  const lift = paperLift * 26;
-  return (
-    <svg width={340} height={280} viewBox="0 0 340 280">
-      <defs>
-        <linearGradient id={`${id}-back`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={COL.amber2} />
-          <stop offset="1" stopColor={COL.amberDeep} />
-        </linearGradient>
-        <linearGradient id={`${id}-front`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={COL.amber1} />
-          <stop offset="1" stopColor={COL.amber2} />
-        </linearGradient>
-        <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="rgba(255,255,255,0.28)" />
-          <stop offset="0.45" stopColor="rgba(255,255,255,0)" />
-        </linearGradient>
-        <filter id={`${id}-soft`} x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="10" />
-        </filter>
-      </defs>
-
-      {layer === 'back' ? (
-        <>
-          <ellipse
-            cx="170"
-            cy="262"
-            rx="128"
-            ry="16"
-            fill="rgba(0,0,0,0.5)"
-            filter={`url(#${id}-soft)`}
-          />
-
-          <path
-            d="M36 70 q0 -12 12 -12 h74 l24 -20 q5 -4 12 -4 h62 q12 0 12 12 v24 h60 q12 0 12 12 v140 q0 12 -12 12 H48 q-12 0 -12 -12 Z"
-            fill={`url(#${id}-back)`}
-          />
-
-          <g transform={`translate(0 ${-lift})`}>
-            <rect x="82" y="86" width="104" height="120" rx="8" fill="#F4F7FC" transform="rotate(-5 134 146)" />
-            <rect x="150" y="80" width="110" height="126" rx="8" fill="#FFFFFF" transform="rotate(4 205 143)" />
-            <g stroke="#C9D4E6" strokeWidth="5" strokeLinecap="round" transform="rotate(4 205 143)">
-              <line x1="166" y1="104" x2="244" y2="104" />
-              <line x1="166" y1="122" x2="232" y2="122" />
-              <line x1="166" y1="140" x2="240" y2="140" />
-            </g>
-          </g>
-        </>
-      ) : (
-        <>
-          <rect x="36" y="118" width="268" height="16" rx="8" fill={COL.lip} />
-
-          <g
-            style={{
-              transformOrigin: '170px 234px',
-              transform: `scaleY(${1 - flap * 0.14}) skewX(${-flap * 5}deg)`,
-            }}
-          >
-            <path
-              d="M40 132 q0 -12 12 -12 h236 q12 0 12 12 v90 q0 12 -12 12 H52 q-12 0 -12 -12 Z"
-              fill={`url(#${id}-front)`}
-            />
-            <path
-              d="M40 132 q0 -12 12 -12 h236 q12 0 12 12 v90 q0 12 -12 12 H52 q-12 0 -12 -12 Z"
-              fill={`url(#${id}-sheen)`}
-            />
-          </g>
-        </>
-      )}
-    </svg>
-  );
-};
-
-// ============================================================
-// Document icon — glassy sheet with folded corner
-// ============================================================
-const Doc: React.FC<{glow?: boolean}> = ({glow = true}) => (
-  <svg width={92} height={112} viewBox="0 0 92 112">
-    <defs>
-      <linearGradient id="docFill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="rgba(255,255,255,0.26)" />
-        <stop offset="1" stopColor="rgba(255,255,255,0.09)" />
-      </linearGradient>
-      <filter id="docGlow" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="5" result="b1" />
-        <feGaussianBlur in="b1" stdDeviation="6" result="b2" />
-        <feMerge>
-          <feMergeNode in="b2" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
-    </defs>
-    <g filter={glow ? 'url(#docGlow)' : undefined}>
-      <path
-        d="M16 8 h40 l20 20 v76 a8 8 0 0 1 -8 8 H16 a8 8 0 0 1 -8 -8 V16 a8 8 0 0 1 8 -8 Z"
-        fill="url(#docFill)"
-        stroke="#FFFFFF"
-        strokeWidth="4"
-        strokeLinejoin="round"
-      />
-      <path d="M56 8 v14 a6 6 0 0 0 6 6 h14" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinejoin="round" />
-      <g stroke={COL.dim} strokeWidth="3.5" strokeLinecap="round">
-        <line x1="22" y1="52" x2="62" y2="52" />
-        <line x1="22" y1="66" x2="70" y2="66" />
-        <line x1="22" y1="80" x2="54" y2="80" />
-      </g>
-      <line x1="22" y1="38" x2="48" y2="38" stroke={COL.amber1} strokeWidth="4" strokeLinecap="round" />
-    </g>
-  </svg>
+// deterministic OTP digits
+const OTP = Array.from({length: OTP_COUNT}, (_, i) =>
+  Math.floor(random(`otp-${i}`) * 10)
 );
+
+// OTP box centers inside the panel viewBox (460x440)
+const otpBoxX = (i: number) => 70 + i * 64;
+const OTP_BOX_Y = 302;
 
 // ============================================================
 // Main composition
@@ -193,55 +87,95 @@ export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  // ---------------- global progress ----------------
-  const progress = interpolate(frame, [T_START, T_END], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.sin),
-  });
+  // ---------------- progress (per-phase eased segments) ----------------
+  const progress = interpolate(
+    frame,
+    [90, T_REQUEST, T_FLY, T_END],
+    [0, 0.4, 0.7, 1],
+    {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.sin),
+    }
+  );
   const pct = Math.min(100, Math.round(progress * 100));
   const done = frame > T_END;
 
   // ---------------- entrances ----------------
-  const inFolder = spring({frame: frame - 8, fps, config: {damping: 14, mass: 0.9}});
-  const inCloud = spring({frame: frame - 24, fps, config: {damping: 13, mass: 0.9}});
+  const inPanel = spring({frame: frame - 8, fps, config: {damping: 14, mass: 0.9}});
+  const inPhone = spring({frame: frame - 22, fps, config: {damping: 14, mass: 0.9}});
   const inRing = interpolate(frame, [50, 84], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
   });
-
-  // ---------------- activity envelope ----------------
-  const activity = interpolate(
-    frame,
-    [T_START - 24, T_START + 12, T_END - 6, T_END + 30],
-    [0, 1, 1, 0],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.quad)}
-  );
   const breathe = Math.sin((frame / fps) * Math.PI * 0.8) * 0.5 + 0.5;
-  const cloudBob = Math.sin((frame / fps) * Math.PI * 0.66) * 7;
 
-  // ---------------- emit (cloud) / arrive (folder) pulses ----------------
-  let emitPulse = 0; // cloud releases a document
-  let absorbPulse = 0; // folder receives a document
-  for (let i = 0; i < DOC_COUNT; i++) {
-    const emit = T_START + i * DOC_STAGGER;
-    const arrive = emit + DOC_TRAVEL;
-    emitPulse += interpolate(frame - emit, [0, 5, 26], [0, 1, 0], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    });
-    absorbPulse += interpolate(frame - arrive, [0, 5, 30], [0, 1, 0], {
+  // ---------------- password dots ----------------
+  const dots = Array.from({length: DOT_COUNT}, (_, i) => {
+    const t0 = T_TYPE + i * DOT_STAGGER;
+    return spring({frame: frame - t0, fps, config: {damping: 10, mass: 0.6}});
+  });
+  const typingActive = frame >= T_TYPE - 20 && frame < T_REQUEST;
+  const caretOn = Math.sin((frame / fps) * Math.PI * 2 * 1.4) > 0;
+  let keyPulse = 0;
+  for (let i = 0; i < DOT_COUNT; i++) {
+    keyPulse += interpolate(frame - (T_TYPE + i * DOT_STAGGER), [0, 3, 14], [0, 1, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
   }
-  emitPulse = Math.min(1, emitPulse);
-  absorbPulse = Math.min(1, absorbPulse);
+  keyPulse = Math.min(1, keyPulse);
+
+  // ---------------- request pulse (panel -> phone) ----------------
+  const reqT = interpolate(frame, [T_REQUEST, T_REQUEST + 38], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const guideOn = interpolate(frame, [T_REQUEST - 10, T_REQUEST + 10, T_END - 20, T_END + 20], [0, 1, 1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const G0 = {x: 862, y: 520};
+  const G1 = {x: 1010, y: 392};
+  const G2 = {x: 1168, y: 470};
+  const reqPos = bezier(easeFlight(reqT), G0, G1, G2);
+
+  // ---------------- phone wake + code card ----------------
+  const phoneWake = spring({frame: frame - T_PHONE, fps, config: {damping: 12, mass: 0.8}});
+  const phoneBump = interpolate(frame - (T_REQUEST + 38), [0, 5, 26], [0, 1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+
+  // ---------------- OTP digits on phone ----------------
+  const digitIn = Array.from({length: OTP_COUNT}, (_, i) =>
+    spring({frame: frame - (DIGIT_SHOW + i * DIGIT_SHOW_STAGGER), fps, config: {damping: 10, mass: 0.6}})
+  );
+
+  // ---------------- digits flying to panel ----------------
+  const flyLaunch = (i: number) => T_FLY + i * FLY_STAGGER;
+  const arriveAt = (i: number) => flyLaunch(i) + FLY_TRAVEL;
+  let boxPulse = 0;
+  for (let i = 0; i < OTP_COUNT; i++) {
+    boxPulse += interpolate(frame - arriveAt(i), [0, 4, 22], [0, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+  }
+  boxPulse = Math.min(1, boxPulse);
+
+  // world position of an OTP box center
+  const boxWorld = (i: number) => ({
+    x: PANEL.x - PANEL.w / 2 + otpBoxX(i),
+    y: PANEL.y - PANEL.h / 2 + OTP_BOX_Y,
+  });
 
   // ---------------- completion ----------------
-  const doneSpring = spring({frame: frame - (T_END + 8), fps, config: {damping: 11, mass: 0.8}});
-  const checkDraw = interpolate(frame, [T_END + 6, T_END + 34], [0, 1], {
+  const doneSpring = spring({frame: frame - (T_END + 10), fps, config: {damping: 11, mass: 0.8}});
+  const shieldIn = spring({frame: frame - (T_END + 8), fps, config: {damping: 12, mass: 0.8}});
+  const checkDraw = interpolate(frame, [T_END + 16, T_END + 42], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
@@ -254,6 +188,10 @@ export const Motion: React.FC = () => {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
+  const greenIn = interpolate(frame, [T_END, T_END + 24], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   // ---------------- global fade out ----------------
   const fadeOut = interpolate(frame, [872, 900], [1, 0], {
@@ -261,17 +199,10 @@ export const Motion: React.FC = () => {
     extrapolateRight: 'clamp',
   });
 
-  // ---------------- ring geometry ----------------
-  const RING_C = 2 * Math.PI * RING_R;
-  // counter-clockwise sweep for download
-  const tipAngle = -Math.PI / 2 - progress * Math.PI * 2;
-  const tip = {
-    x: CLOUD.x + Math.cos(tipAngle) * RING_R,
-    y: CLOUD.y + cloudBob * 0.3 + Math.sin(tipAngle) * RING_R,
-  };
+  const RING_C = 2 * Math.PI * RING.r;
 
   // ---------------- ambient particles ----------------
-  const particles = Array.from({length: 26}, (_, i) => {
+  const particles = Array.from({length: 24}, (_, i) => {
     const px = random(`px${i}`) * W;
     const py = random(`py${i}`) * H;
     const pr = 1.5 + random(`pr${i}`) * 3;
@@ -283,9 +214,9 @@ export const Motion: React.FC = () => {
     return {x: px + dx, y: py + dy, r: pr, op};
   });
 
-  // Two mirrored guide curves, defined cloud -> folder (downward)
-  const guideL = `M ${960} ${PATH_TOP} Q ${810} ${(PATH_BOTTOM + PATH_TOP) / 2} ${960} ${PATH_BOTTOM}`;
-  const guideR = `M ${960} ${PATH_TOP} Q ${1110} ${(PATH_BOTTOM + PATH_TOP) / 2} ${960} ${PATH_BOTTOM}`;
+  const panelStroke = done
+    ? `rgba(74,222,128,${0.35 + greenIn * 0.35})`
+    : COL.cardEdge;
 
   return (
     <AbsoluteFill
@@ -300,11 +231,11 @@ export const Motion: React.FC = () => {
           {particles.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={p.r} fill={COL.ink} opacity={p.op} />
           ))}
-          <line x1={480} y1={922} x2={1440} y2={922} stroke={COL.line} strokeWidth={2} strokeLinecap="round" />
+          <line x1={300} y1={898} x2={1620} y2={898} stroke={COL.line} strokeWidth={2} strokeLinecap="round" />
         </svg>
 
-        {/* ---------- guide curves + rising data dots ---------- */}
-        <svg width={W} height={H} style={{position: 'absolute', opacity: activity}}>
+        {/* ---------- request guide + traveling pulse ---------- */}
+        <svg width={W} height={H} style={{position: 'absolute', opacity: guideOn}}>
           <defs>
             <filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
               <feGaussianBlur stdDeviation="4" result="b1" />
@@ -315,147 +246,179 @@ export const Motion: React.FC = () => {
               </feMerge>
             </filter>
           </defs>
-          {[guideL, guideR].map((d, i) => (
-            <path
-              key={i}
-              d={d}
-              fill="none"
-              stroke={COL.line}
-              strokeWidth={2.5}
-              strokeDasharray="3 15"
-              strokeDashoffset={-frame * 1.5}
-              strokeLinecap="round"
-            />
-          ))}
-          {Array.from({length: 6}, (_, i) => {
-            const t = ((frame * 0.012 + i * 0.167) % 1 + 1) % 1;
-            const side = i % 2 === 0 ? -150 : 150;
-            const pos = bezier(
-              t,
-              {x: 960, y: PATH_TOP},
-              {x: 960 + side, y: (PATH_BOTTOM + PATH_TOP) / 2},
-              {x: 960, y: PATH_BOTTOM}
-            );
-            const op = Math.sin(t * Math.PI);
-            return (
-              <circle key={i} cx={pos.x} cy={pos.y} r={4} fill={COL.amber1} opacity={op * 0.7} filter="url(#dotGlow)" />
-            );
-          })}
+          <path
+            d={`M ${G0.x} ${G0.y} Q ${G1.x} ${G1.y} ${G2.x} ${G2.y}`}
+            fill="none"
+            stroke={COL.line}
+            strokeWidth={2.5}
+            strokeDasharray="3 15"
+            strokeDashoffset={-frame * 1.5}
+            strokeLinecap="round"
+          />
+          {reqT > 0.01 && reqT < 0.99 ? (
+            <circle cx={reqPos.x} cy={reqPos.y} r={7} fill={COL.amber1} filter="url(#dotGlow)" />
+          ) : null}
         </svg>
 
-        {/* ---------- folder BACK layer (behind documents) ---------- */}
+        {/* ---------- login panel ---------- */}
         <div
           style={{
             position: 'absolute',
-            left: 960 - 170,
-            top: 660,
-            transform: `scale(${inFolder * (1 + absorbPulse * 0.05 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.04 : 0))}) translateY(${breathe * -4}px)`,
-            transformOrigin: '50% 90%',
+            left: PANEL.x - PANEL.w / 2,
+            top: PANEL.y - PANEL.h / 2,
+            transform: `scale(${inPanel * (1 + keyPulse * 0.006 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.03 : 0))}) translateY(${breathe * -3}px)`,
+            transformOrigin: '50% 80%',
           }}
         >
-          <Folder
-            id="fSb"
-            layer="back"
-            flap={activity * (0.45 + absorbPulse * 0.55)}
-            paperLift={Math.min(1, progress * 0.6 + absorbPulse * 0.4)}
-          />
-        </div>
-
-        {/* ---------- descending documents (with ghost trail) ---------- */}
-        {Array.from({length: DOC_COUNT}, (_, i) => {
-          const emit = T_START + i * DOC_STAGGER;
-          const local = (frame - emit) / DOC_TRAVEL;
-          if (local <= 0 || local >= 1) return null;
-          const side = i % 2 === 0 ? -150 : 150;
-          const p0 = {x: 960, y: PATH_TOP};
-          const p1 = {x: 960 + side, y: (PATH_BOTTOM + PATH_TOP) / 2};
-          const p2 = {x: 960, y: PATH_BOTTOM};
-          const renderAt = (tRaw: number, opMul: number, key: string) => {
-            if (tRaw <= 0 || tRaw >= 1) return null;
-            const t = easeFlight(tRaw);
-            const pos = bezier(t, p0, p1, p2);
-            const op =
-              interpolate(tRaw, [0, 0.12, 0.82, 1], [0, 1, 1, 0], {
-                extrapolateLeft: 'clamp',
-                extrapolateRight: 'clamp',
-              }) * opMul;
-            const sc = interpolate(tRaw, [0, 0.22, 0.8, 1], [0.38, 0.88, 0.9, 0.62], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-            });
-            const rot = Math.sin(tRaw * Math.PI * 2 + i) * 6;
-            return (
-              <div
-                key={key}
-                style={{
-                  position: 'absolute',
-                  left: pos.x - 46,
-                  top: pos.y - 56,
-                  opacity: op,
-                  transform: `scale(${sc}) rotate(${rot}deg)`,
-                }}
-              >
-                <Doc glow={opMul === 1} />
-              </div>
-            );
-          };
-          return (
-            <React.Fragment key={i}>
-              {renderAt(local - 0.1, 0.1, `g2-${i}`)}
-              {renderAt(local - 0.05, 0.22, `g1-${i}`)}
-              {renderAt(local, 1, `m-${i}`)}
-            </React.Fragment>
-          );
-        })}
-
-        {/* ---------- folder FRONT layer (covers documents inside pocket) ---------- */}
-        <div
-          style={{
-            position: 'absolute',
-            left: 960 - 170,
-            top: 660,
-            transform: `scale(${inFolder * (1 + absorbPulse * 0.05 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.04 : 0))}) translateY(${breathe * -4}px)`,
-            transformOrigin: '50% 90%',
-          }}
-        >
-          <Folder
-            id="fSf"
-            layer="front"
-            flap={activity * (0.45 + absorbPulse * 0.55)}
-            paperLift={Math.min(1, progress * 0.6 + absorbPulse * 0.4)}
-          />
-        </div>
-
-        {/* ---------- cloud (destination, top center) ---------- */}
-        <div
-          style={{
-            position: 'absolute',
-            left: CLOUD.x - 230,
-            top: CLOUD.y - 140 + cloudBob,
-            transform: `scale(${inCloud * (1 - emitPulse * 0.03 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.05 : 0))})`,
-            transformOrigin: '50% 60%',
-          }}
-        >
-          <svg width={460} height={300} viewBox="0 0 460 300">
+          <svg width={PANEL.w} height={PANEL.h} viewBox={`0 0 ${PANEL.w} ${PANEL.h}`}>
             <defs>
-              <linearGradient id="cloudFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor={COL.cloudHi} />
-                <stop offset="1" stopColor={COL.cloudLo} />
+              <linearGradient id="btnGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={COL.amber1} />
+                <stop offset="1" stopColor={COL.amber2} />
               </linearGradient>
-              <linearGradient id="cloudRim" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="rgba(255,255,255,0.9)" />
-                <stop offset="0.5" stopColor="rgba(255,255,255,0)" />
+              <linearGradient id="btnGreen" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={COL.green1} />
+                <stop offset="1" stopColor={COL.green2} />
               </linearGradient>
-              <filter id="cloudGlow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="14" result="b1" />
-                <feGaussianBlur in="b1" stdDeviation="20" result="b2" />
-                <feMerge>
-                  <feMergeNode in="b2" />
-                  <feMergeNode in="b1" />
-                </feMerge>
+              <filter id="cardSoft" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="12" />
               </filter>
-              <filter id="checkGlow" x="-80%" y="-80%" width="260%" height="260%">
-                <feGaussianBlur stdDeviation="5" result="b1" />
+            </defs>
+
+            {/* drop shadow + card */}
+            <rect x="26" y="34" width="408" height="386" rx="26" fill="rgba(0,0,0,0.45)" filter="url(#cardSoft)" />
+            <rect x="20" y="20" width="420" height="400" rx="24" fill={COL.card} stroke={panelStroke} strokeWidth="2.5" />
+
+            {/* avatar */}
+            <circle cx="230" cy="82" r="30" fill="none" stroke={COL.amber1} strokeWidth="5" />
+            <circle cx="230" cy="74" r="10" fill={COL.amber1} />
+            <path d="M212 96 a18 12 0 0 1 36 0" fill={COL.amber1} />
+
+            {/* username field (static) */}
+            <rect x="56" y="134" width="348" height="46" rx="12" fill="rgba(12,18,36,0.6)" stroke={COL.faint} strokeWidth="2" />
+            <circle cx="82" cy="157" r="8" fill="none" stroke={COL.dim} strokeWidth="3" />
+            <line x1="102" y1="157" x2="240" y2="157" stroke={COL.dim} strokeWidth="6" strokeLinecap="round" opacity="0.5" />
+
+            {/* password field */}
+            <rect
+              x="56"
+              y="196"
+              width="348"
+              height="46"
+              rx="12"
+              fill="rgba(12,18,36,0.6)"
+              stroke={typingActive ? COL.amber1 : COL.faint}
+              strokeWidth="2"
+              opacity={typingActive ? 0.9 : 1}
+            />
+            {/* lock glyph in field */}
+            <rect x="72" y="214" width="14" height="11" rx="3" fill="none" stroke={COL.dim} strokeWidth="2.5" />
+            <path d="M75 214 v-4 a4 4 0 0 1 8 0 v4" fill="none" stroke={COL.dim} strokeWidth="2.5" />
+            {/* typed dots */}
+            {dots.map((s, i) => (
+              <circle
+                key={i}
+                cx={106 + i * 26}
+                cy={219}
+                r={6.5 * Math.min(1, s)}
+                fill={COL.ink}
+                opacity={s > 0.02 ? 0.95 : 0}
+              />
+            ))}
+            {/* caret */}
+            {typingActive && caretOn ? (
+              <rect
+                x={106 + Math.min(DOT_COUNT, Math.max(0, Math.floor((frame - T_TYPE) / DOT_STAGGER) + 1)) * 26 - 8}
+                y={206}
+                width={3}
+                height={26}
+                fill={COL.amber1}
+              />
+            ) : null}
+
+            {/* OTP boxes */}
+            {Array.from({length: OTP_COUNT}, (_, i) => {
+              const arrived = frame >= arriveAt(i);
+              const pop = spring({frame: frame - arriveAt(i), fps, config: {damping: 10, mass: 0.6}});
+              const stroke = done
+                ? `rgba(74,222,128,${0.5 + greenIn * 0.5})`
+                : arrived
+                ? COL.amber1
+                : COL.faint;
+              return (
+                <g key={i}>
+                  <rect
+                    x={otpBoxX(i) - 26}
+                    y={OTP_BOX_Y - 30}
+                    width={52}
+                    height={60}
+                    rx={10}
+                    fill="rgba(12,18,36,0.6)"
+                    stroke={stroke}
+                    strokeWidth="2.5"
+                  />
+                  {arrived ? (
+                    <text
+                      x={otpBoxX(i)}
+                      y={OTP_BOX_Y + 12}
+                      textAnchor="middle"
+                      fontSize={34 * Math.min(1.15, pop)}
+                      fontWeight="700"
+                      fontFamily="Consolas, Menlo, monospace"
+                      fill={done ? COL.green1 : COL.ink}
+                    >
+                      {OTP[i]}
+                    </text>
+                  ) : null}
+                </g>
+              );
+            })}
+
+            {/* action button */}
+            <rect x="56" y="356" width="348" height="44" rx="12" fill="url(#btnGrad)" />
+            <rect x="56" y="356" width="348" height="44" rx="12" fill="url(#btnGreen)" opacity={greenIn} />
+            {/* padlock / check on button */}
+            <g opacity={1 - greenIn}>
+              <rect x="219" y="374" width="22" height="16" rx="4" fill={COL.slate} />
+              <path d="M224 374 v-6 a6 6 0 0 1 12 0 v6" fill="none" stroke={COL.slate} strokeWidth="3.5" />
+            </g>
+            <path
+              d="M218 378 l8 8 l16 -18"
+              fill="none"
+              stroke={COL.slate}
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={greenIn}
+            />
+          </svg>
+        </div>
+
+        {/* ---------- generic phone ---------- */}
+        <div
+          style={{
+            position: 'absolute',
+            left: PHONE.x - PHONE.w / 2,
+            top: PHONE.y - PHONE.h / 2,
+            transform: `rotate(-5deg) scale(${inPhone * (1 + phoneBump * 0.03)}) translateY(${(1 - breathe) * -4}px)`,
+            transformOrigin: '50% 85%',
+          }}
+        >
+          <svg width={PHONE.w} height={PHONE.h} viewBox={`0 0 ${PHONE.w} ${PHONE.h}`}>
+            <defs>
+              <linearGradient id="phoneBody" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#2A3550" />
+                <stop offset="1" stopColor="#151E33" />
+              </linearGradient>
+              <linearGradient id="phoneScreen" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#0E1730" />
+                <stop offset="1" stopColor="#0A1122" />
+              </linearGradient>
+              <filter id="phoneSoft" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="12" />
+              </filter>
+              <filter id="cardGlow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="6" result="b1" />
                 <feGaussianBlur in="b1" stdDeviation="8" result="b2" />
                 <feMerge>
                   <feMergeNode in="b2" />
@@ -464,74 +427,133 @@ export const Motion: React.FC = () => {
               </filter>
             </defs>
 
-            {/* halo behind cloud — warms up as data is absorbed */}
-            <path
-              d="M120 242 A 24 24 0 0 1 96 218 A 62 62 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 218 A 24 24 0 0 1 344 242 Z"
-              fill={COL.amber1}
-              opacity={0.12 + emitPulse * 0.22 + ringFlash * 0.25 + breathe * 0.04}
-              filter="url(#cloudGlow)"
-            />
+            {/* shadow + body + screen */}
+            <rect x="26" y="30" width="204" height="450" rx="38" fill="rgba(0,0,0,0.45)" filter="url(#phoneSoft)" />
+            <rect x="20" y="16" width="210" height="456" rx="36" fill="url(#phoneBody)" stroke="rgba(234,240,250,0.2)" strokeWidth="2.5" />
+            <rect x="32" y="28" width="186" height="432" rx="26" fill="url(#phoneScreen)" />
+            {/* screen wake tint */}
+            <rect x="32" y="28" width="186" height="432" rx="26" fill={COL.amber1} opacity={0.05 * phoneWake + 0.04 * phoneBump} />
+            {/* notch */}
+            <rect x="103" y="38" width="44" height="9" rx="4.5" fill="#0A0F1E" />
 
-            {/* cloud body */}
-            <path
-              d="M120 242 A 24 24 0 0 1 96 218 A 62 62 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 218 A 24 24 0 0 1 344 242 Z"
-              fill="url(#cloudFill)"
-            />
-            <path
-              d="M120 242 A 24 24 0 0 1 96 218 A 62 62 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 218 A 24 24 0 0 1 344 242 Z"
-              fill="none"
-              stroke="url(#cloudRim)"
-              strokeWidth="3"
-            />
+            {/* idle clock lines */}
+            <g opacity={1 - phoneWake * 0.85}>
+              <line x1="90" y1="120" x2="160" y2="120" stroke={COL.faint} strokeWidth="8" strokeLinecap="round" />
+              <line x1="105" y1="142" x2="145" y2="142" stroke={COL.faint} strokeWidth="5" strokeLinecap="round" />
+            </g>
 
-            {/* percentage inside cloud */}
-            <text
-              x="232"
-              y="196"
-              textAnchor="middle"
-              fontSize="64"
-              fontWeight="600"
-              fill={COL.slate}
-              opacity={inRing * numberOut}
-              style={{fontVariantNumeric: 'tabular-nums'}}
+            {/* OTP code card slides up */}
+            <g
+              opacity={phoneWake}
+              style={{
+                transform: `translateY(${(1 - phoneWake) * 46}px)`,
+              }}
             >
-              {pct}
-              <tspan fontSize="36" fontWeight="500" fill="rgba(51,65,92,0.6)">
-                %
-              </tspan>
-            </text>
-
-            {/* sync checkmark */}
-            <path
-              d="M 192 178 l 30 30 l 52 -60"
-              fill="none"
-              stroke={COL.amber2}
-              strokeWidth="13"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={180}
-              strokeDashoffset={180 * (1 - checkDraw)}
-              opacity={done ? 1 : 0}
-              filter="url(#checkGlow)"
-            />
+              <rect x="44" y="180" width="162" height="128" rx="16" fill="rgba(38,52,90,0.95)" stroke={COL.amber1} strokeWidth="2" filter="url(#cardGlow)" />
+              {/* mini lock */}
+              <rect x="115" y="200" width="20" height="15" rx="4" fill="none" stroke={COL.amber1} strokeWidth="3" />
+              <path d="M119.5 200 v-5.5 a5.5 5.5 0 0 1 11 0 V200" fill="none" stroke={COL.amber1} strokeWidth="3" />
+              {/* digits */}
+              {Array.from({length: OTP_COUNT}, (_, i) => {
+                const launched = frame >= flyLaunch(i);
+                const s = digitIn[i];
+                return (
+                  <text
+                    key={i}
+                    x={64 + i * 25}
+                    y={262}
+                    textAnchor="middle"
+                    fontSize={26 * Math.min(1.15, s)}
+                    fontWeight="700"
+                    fontFamily="Consolas, Menlo, monospace"
+                    fill={COL.ink}
+                    opacity={launched ? 0.18 : s > 0.02 ? 1 : 0}
+                  >
+                    {OTP[i]}
+                  </text>
+                );
+              })}
+              {/* hint bar */}
+              <line x1="70" y1="288" x2="180" y2="288" stroke={COL.faint} strokeWidth="5" strokeLinecap="round" />
+            </g>
           </svg>
         </div>
 
-        {/* ---------- orbit progress ring around cloud ---------- */}
+        {/* ---------- flying OTP digit chips ---------- */}
+        {Array.from({length: OTP_COUNT}, (_, i) => {
+          const local = (frame - flyLaunch(i)) / FLY_TRAVEL;
+          if (local <= 0 || local >= 1) return null;
+          // phone card digit position (approx, in world space)
+          const p0 = {x: PHONE.x - 60 + i * 22, y: PHONE.y - 8};
+          const p1 = {x: (PHONE.x + PANEL.x) / 2, y: 330};
+          const p2 = boxWorld(i);
+          const renderAt = (tRaw: number, opMul: number, key: string) => {
+            if (tRaw <= 0 || tRaw >= 1) return null;
+            const t = easeFlight(tRaw);
+            const pos = bezier(t, p0, p1, p2);
+            const op =
+              interpolate(tRaw, [0, 0.12, 0.9, 1], [0, 1, 1, 0], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              }) * opMul;
+            const sc = interpolate(tRaw, [0, 0.2, 0.85, 1], [0.5, 1, 0.95, 0.55], {
+              extrapolateLeft: 'clamp',
+              extrapolateRight: 'clamp',
+            });
+            return (
+              <div
+                key={key}
+                style={{
+                  position: 'absolute',
+                  left: pos.x - 25,
+                  top: pos.y - 30,
+                  width: 50,
+                  height: 60,
+                  borderRadius: 12,
+                  background: `linear-gradient(180deg, ${COL.amber1}, ${COL.amber2})`,
+                  boxShadow: '0 0 22px rgba(255,178,58,0.55), 0 6px 18px rgba(0,0,0,0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 32,
+                  fontWeight: 800,
+                  fontFamily: 'Consolas, Menlo, monospace',
+                  color: COL.slate,
+                  opacity: op,
+                  transform: `scale(${sc}) rotate(${Math.sin(tRaw * Math.PI * 2 + i) * 7}deg)`,
+                }}
+              >
+                {OTP[i]}
+              </div>
+            );
+          };
+          return (
+            <React.Fragment key={i}>
+              {renderAt(local - 0.08, 0.18, `g-${i}`)}
+              {renderAt(local, 1, `m-${i}`)}
+            </React.Fragment>
+          );
+        })}
+
+        {/* ---------- progress ring -> green shield check ---------- */}
         <svg
           width={W}
           height={H}
           style={{
             position: 'absolute',
             opacity: inRing,
-            transform: `scale(${0.92 + inRing * 0.08})`,
-            transformOrigin: `${CLOUD.x}px ${CLOUD.y}px`,
+            transform: `scale(${0.9 + inRing * 0.1})`,
+            transformOrigin: `${RING.x}px ${RING.y}px`,
           }}
         >
           <defs>
             <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor={COL.amber1} />
               <stop offset="1" stopColor={COL.amber2} />
+            </linearGradient>
+            <linearGradient id="ringGreen" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor={COL.green1} />
+              <stop offset="1" stopColor={COL.green2} />
             </linearGradient>
             <filter id="ringGlow" x="-80%" y="-80%" width="260%" height="260%">
               <feGaussianBlur stdDeviation="6" result="b1" />
@@ -543,51 +565,100 @@ export const Motion: React.FC = () => {
             </filter>
           </defs>
 
-          <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
-            fill="none"
-            stroke="rgba(234,240,250,0.09)"
-            strokeWidth={7}
-            strokeDasharray="1 14"
-            strokeLinecap="round"
-          />
+          <circle cx={RING.x} cy={RING.y} r={RING.r} fill="none" stroke="rgba(234,240,250,0.1)" strokeWidth={10} />
 
-          {/* mirrored horizontally so the arc sweeps counter-clockwise */}
-          <g transform={`translate(${2 * CLOUD.x} 0) scale(-1 1)`}>
+          {/* amber progress arc, crossfades to green when verified */}
           <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
+            cx={RING.x}
+            cy={RING.y}
+            r={RING.r}
             fill="none"
             stroke="url(#ringGrad)"
-            strokeWidth={8}
+            strokeWidth={10}
             strokeLinecap="round"
             strokeDasharray={RING_C}
             strokeDashoffset={RING_C * (1 - progress)}
-            transform={`rotate(-90 ${CLOUD.x} ${CLOUD.y + cloudBob * 0.3})`}
+            transform={`rotate(-90 ${RING.x} ${RING.y})`}
             filter="url(#ringGlow)"
+            opacity={1 - greenIn}
           />
-          </g>
-
-          {/* glowing tip satellite */}
-          {progress > 0.002 && !done ? (
-            <circle cx={tip.x} cy={tip.y} r={9} fill={COL.amber1} filter="url(#ringGlow)" />
-          ) : null}
+          <circle
+            cx={RING.x}
+            cy={RING.y}
+            r={RING.r}
+            fill="none"
+            stroke="url(#ringGreen)"
+            strokeWidth={10}
+            strokeLinecap="round"
+            strokeDasharray={RING_C}
+            strokeDashoffset={RING_C * (1 - progress)}
+            transform={`rotate(-90 ${RING.x} ${RING.y})`}
+            filter="url(#ringGlow)"
+            opacity={greenIn}
+          />
 
           {/* completion flash */}
           <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
+            cx={RING.x}
+            cy={RING.y}
+            r={RING.r}
             fill="none"
-            stroke={COL.amber1}
-            strokeWidth={13}
-            opacity={ringFlash * 0.55}
+            stroke={COL.green1}
+            strokeWidth={14}
+            opacity={ringFlash * 0.5}
             filter="url(#ringGlow)"
           />
+
+          {/* green shield + drawn check */}
+          {done ? (
+            <g
+              filter="url(#ringGlow)"
+              style={{
+                transformOrigin: `${RING.x}px ${RING.y}px`,
+                transform: `scale(${Math.min(1.08, shieldIn)})`,
+              }}
+            >
+              <path
+                d={`M ${RING.x} ${RING.y - 58} L ${RING.x + 46} ${RING.y - 40} V ${RING.y + 2} c 0 34 -26 50 -46 57 c -20 -7 -46 -23 -46 -57 V ${RING.y - 40} Z`}
+                fill="rgba(16,42,36,0.85)"
+                stroke="url(#ringGreen)"
+                strokeWidth={6}
+                strokeLinejoin="round"
+                opacity={shieldIn}
+              />
+              <path
+                d={`M ${RING.x - 20} ${RING.y - 2} l 15 15 l 27 -30`}
+                fill="none"
+                stroke={COL.green1}
+                strokeWidth={9}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={100}
+                strokeDashoffset={100 * (1 - checkDraw)}
+              />
+            </g>
+          ) : null}
         </svg>
+
+        {/* ---------- percentage counter ---------- */}
+        <div
+          style={{
+            position: 'absolute',
+            left: RING.x - 150,
+            top: RING.y - 40,
+            width: 300,
+            textAlign: 'center',
+            fontSize: 64,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            color: COL.ink,
+            fontVariantNumeric: 'tabular-nums',
+            opacity: inRing * numberOut,
+          }}
+        >
+          {pct}
+          <span style={{fontSize: 36, fontWeight: 500, color: COL.dim, marginLeft: 6}}>%</span>
+        </div>
 
         {/* ---------- subtle vignette ---------- */}
         <AbsoluteFill
