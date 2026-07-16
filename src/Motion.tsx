@@ -1,742 +1,702 @@
 import React from 'react';
 import {
   AbsoluteFill,
+  Easing,
+  interpolate,
   useCurrentFrame,
   useVideoConfig,
-  interpolate,
-  Easing,
-  random,
 } from 'remotion';
 
-/**
- * LATTICE — RAG Knowledge Pipeline
- * Direction: PREMIUM. A dark, glassmorphic retrieval-augmented-generation console
- * on a floating perspective plane, flown over by a slow cinematic parallax camera.
- * Centerpiece is a live vector index: a field of latent embeddings where a query
- * point retrieves its top-k nearest neighbours. Supported by an ingestion pipeline
- * (docs → chunk → embed → index), a retrieved-chunks / similarity panel, a grounded
- * answer stream, a query-embedding strip and ingest-throughput.
- * Deterministic; loops seamlessly except where a metric is intentionally monotonic.
- */
-
-const TAU = Math.PI * 2;
-
 const C = {
-  ink: '#eaf2ff',
-  sub: 'rgba(196,214,248,0.66)',
-  faint: 'rgba(150,182,238,0.34)',
-  cyan: '#37e7ff',
-  teal: '#2af0c2',
-  blue: '#4f8bff',
-  violet: '#9a74ff',
-  magenta: '#ff5fd0',
-  amber: '#ffcf6b',
-  grid: 'rgba(120,170,255,0.07)',
-  gridHi: 'rgba(120,180,255,0.16)',
+  pearl: '#eef2ed',
+  paper: '#f8faf6',
+  sage: '#dce7df',
+  ink: '#10181a',
+  graphite: '#172123',
+  graphite2: '#0e1618',
+  muted: '#687476',
+  line: '#cbd5ce',
+  emerald: '#2f9f78',
+  mint: '#62d4a7',
+  blue: '#3878d8',
+  sky: '#69b9ee',
+  amber: '#d99836',
+  coral: '#e66d58',
+  white: '#ffffff',
 };
 
-// ---------- helpers ----------
-const hexA = (hex: string, a: number) => {
-  const h = hex.replace('#', '');
-  const s = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-  const n = parseInt(s, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+const FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const clamp = (value: number) => Math.max(0, Math.min(1, value));
+const ease = Easing.bezier(0.22, 1, 0.36, 1);
+const soft = Easing.bezier(0.4, 0, 0.2, 1);
+const p = (frame: number, from: number, to: number, easing = ease) =>
+  clamp(
+    interpolate(frame, [from, to], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing,
+    }),
+  );
+const life = (frame: number, from: number, to: number, exitFrom = 846, exitTo = 900) =>
+  p(frame, from, to) * (1 - p(frame, exitFrom, exitTo));
+
+const rgba = (hex: string, alpha: number) => {
+  const value = hex.replace('#', '');
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red},${green},${blue},${alpha})`;
 };
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-const nf = (v: number, d = 0) =>
-  v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
-
-// linear blend of two rgb triplets → css rgb()
-const ramp = (v: number) => {
-  const lo: [number, number, number] = [26, 52, 100];
-  const mid: [number, number, number] = [55, 231, 255];
-  const hi: [number, number, number] = [200, 236, 255];
-  const mixc = (a: [number, number, number], b: [number, number, number], f: number) =>
-    [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
-  const c = v < 0.5 ? mixc(lo, mid, v / 0.5) : mixc(mid, hi, (v - 0.5) / 0.5);
-  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
-};
-
-type Comp = {f: number; h: number; a: number; p: number};
-
-const waveVal = (fx: number, comps: Comp[], base: number, t: number) => {
-  let v = base;
-  for (const c of comps) v += c.a * Math.sin(TAU * (c.f * fx + c.h * t + c.p));
-  return clamp(v, 0.05, 0.95);
-};
-
-const wavePts = (
-  n: number,
-  x0: number,
-  x1: number,
-  yTop: number,
-  yBot: number,
-  comps: Comp[],
-  base: number,
-  t: number
-): [number, number][] => {
-  const pts: [number, number][] = [];
-  for (let i = 0; i < n; i++) {
-    const fx = i / (n - 1);
-    const v = waveVal(fx, comps, base, t);
-    pts.push([x0 + fx * (x1 - x0), yBot - v * (yBot - yTop)]);
-  }
-  return pts;
-};
-
-const smooth = (pts: [number, number][]) => {
-  if (pts.length < 2) return '';
-  let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
-  }
-  return d;
-};
-
-const FONT =
-  '"Inter","SF Pro Display","Helvetica Neue",Arial,system-ui,sans-serif';
-const MONO =
-  '"SF Mono","JetBrains Mono","Roboto Mono",ui-monospace,Menlo,monospace';
-
-const Glow: React.FC<{id: string; b1?: number; b2?: number}> = ({id, b1 = 2.4, b2 = 7}) => (
-  <filter id={id} x="-60%" y="-60%" width="220%" height="220%" colorInterpolationFilters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation={b2} result="g2" />
-    <feGaussianBlur in="SourceGraphic" stdDeviation={b1} result="g1" />
-    <feMerge>
-      <feMergeNode in="g2" />
-      <feMergeNode in="g1" />
-      <feMergeNode in="SourceGraphic" />
-    </feMerge>
-  </filter>
-);
-
-const PulseDot: React.FC<{color: string; t: number; size?: number}> = ({color, t, size = 7}) => {
-  const p = 0.5 + 0.5 * Math.sin(TAU * (2 * t));
-  return (
-    <span
+const LightPanel: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  reveal: number;
+  children: React.ReactNode;
+  radius?: number;
+  style?: React.CSSProperties;
+}> = ({x, y, width, height, reveal, children, radius = 24, style}) => (
+  <div
+    data-safe-object="true"
+    style={{
+      position: 'absolute',
+      left: x,
+      top: y,
+      width,
+      height,
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      borderRadius: radius,
+      border: '1px solid rgba(35,66,57,.12)',
+      background: 'linear-gradient(145deg, rgba(255,255,255,.91), rgba(245,249,244,.83))',
+      boxShadow: '0 24px 72px rgba(32,55,45,.11), inset 0 1px 0 rgba(255,255,255,.9)',
+      opacity: reveal,
+      transform: `translate3d(0, ${(1 - reveal) * 18}px, 0) scale(${0.987 + reveal * 0.013})`,
+      transformOrigin: '50% 50%',
+      willChange: 'transform, opacity',
+      ...style,
+    }}
+  >
+    <div
       style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: color,
-        boxShadow: `0 0 ${6 + p * 8}px ${hexA(color, 0.7 + p * 0.3)}, 0 0 2px ${color}`,
-        opacity: 0.65 + p * 0.35,
-        display: 'inline-block',
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        background: 'linear-gradient(122deg, rgba(255,255,255,.5), transparent 29%, transparent 72%, rgba(74,145,114,.035))',
       }}
     />
-  );
-};
+    {children}
+  </div>
+);
 
-const Brackets: React.FC<{accent: string}> = ({accent}) => {
-  const col = hexA(accent, 0.55);
-  const s: React.CSSProperties = {position: 'absolute', width: 15, height: 15, pointerEvents: 'none'};
+const Ambient: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const exit = 1 - p(timeline, 850, 900);
+  const dots = Array.from({length: 48}, (_, index) => ({
+    x: 35 + ((index * 179 + 53) % 1850),
+    y: 28 + ((index * 109 + 71) % 1020),
+    size: 1 + (index % 4) * 0.5,
+  }));
   return (
     <>
-      <span style={{...s, left: 12, top: 12, borderLeft: `1.5px solid ${col}`, borderTop: `1.5px solid ${col}`, borderTopLeftRadius: 4}} />
-      <span style={{...s, right: 12, bottom: 12, borderRight: `1.5px solid ${col}`, borderBottom: `1.5px solid ${col}`, borderBottomRightRadius: 4}} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: `radial-gradient(circle at ${18 + Math.sin(phase) * 2}% ${21 + Math.cos(phase) * 2}%, rgba(255,255,255,.96), transparent 30%), radial-gradient(circle at ${82 + Math.cos(phase) * 2}% ${24 + Math.sin(phase) * 2}%, ${rgba(C.sky, 0.15)}, transparent 34%), radial-gradient(circle at 48% 94%, ${rgba(C.mint, 0.17)}, transparent 37%), linear-gradient(145deg, ${C.pearl}, ${C.sage} 58%, #e8eee8)`,
+        }}
+      />
+      <svg width="1920" height="1080" viewBox="0 0 1920 1080" style={{position: 'absolute', inset: 0, opacity: 0.46 * exit}}>
+        <defs>
+          <linearGradient id="ambient-contour" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor={C.emerald} stopOpacity=".2" />
+            <stop offset=".5" stopColor={C.blue} stopOpacity=".11" />
+            <stop offset="1" stopColor={C.amber} stopOpacity=".16" />
+          </linearGradient>
+          <filter id="ambient-soft" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="18" />
+          </filter>
+        </defs>
+        {Array.from({length: 11}, (_, index) => {
+          const y = 110 + index * 83 + Math.sin(phase + index * 0.62) * 8;
+          return (
+            <path
+              key={index}
+              d={`M-120 ${y} C260 ${y - 106} 490 ${y + 112} 870 ${y - 18} S1490 ${y - 80} 2050 ${y + 36}`}
+              fill="none"
+              stroke="url(#ambient-contour)"
+              strokeWidth={index % 3 === 0 ? 1.1 : 0.7}
+              strokeDasharray={index % 2 === 0 ? '3 14' : undefined}
+              strokeDashoffset={-timeline * (0.07 + index * 0.003)}
+              opacity={0.16 + (index % 4) * 0.045}
+            />
+          );
+        })}
+        <ellipse cx={1460 + Math.sin(phase) * 12} cy={515 + Math.cos(phase) * 8} rx="390" ry="250" fill={C.sky} opacity=".035" filter="url(#ambient-soft)" />
+        <ellipse cx={430 + Math.cos(phase) * 10} cy={780 + Math.sin(phase) * 8} rx="330" ry="210" fill={C.mint} opacity=".04" filter="url(#ambient-soft)" />
+      </svg>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.032,
+          backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(18,41,34,.38) 0, rgba(18,41,34,.38) 1px, transparent 1px, transparent 5px)',
+          mixBlendMode: 'multiply',
+        }}
+      />
+      {dots.map((dot, index) => (
+        <div
+          key={index}
+          style={{
+            position: 'absolute',
+            left: dot.x + Math.sin(phase * (0.7 + (index % 3) * 0.12) + index) * 5,
+            top: dot.y + Math.cos(phase * (0.9 + (index % 4) * 0.09) + index) * 4,
+            width: dot.size,
+            height: dot.size,
+            borderRadius: 8,
+            background: index % 10 === 0 ? C.blue : index % 8 === 0 ? C.emerald : C.ink,
+            opacity: (0.04 + (index % 5) * 0.01) * exit,
+          }}
+        />
+      ))}
+      <div style={{position: 'absolute', inset: 0, boxShadow: 'inset 0 0 120px rgba(48,77,63,.08)', pointerEvents: 'none'}} />
     </>
   );
 };
 
-const cardStyle = (accent: string): React.CSSProperties => ({
-  position: 'absolute',
-  inset: 0,
-  borderRadius: 20,
-  overflow: 'hidden',
-  background:
-    'linear-gradient(155deg, rgba(28,44,80,0.60) 0%, rgba(13,22,44,0.66) 52%, rgba(9,15,32,0.74) 100%)',
-  boxShadow: `inset 0 1px 0 rgba(196,222,255,0.16), inset 0 0 70px rgba(24,46,92,0.30), 0 36px 74px -32px rgba(0,0,0,0.82), 0 0 0 1px rgba(122,170,255,0.16), 0 0 48px ${hexA(accent, 0.14)}`,
-});
-
-const Frame: React.FC<{
-  x: number; y: number; w: number; h: number; z: number;
-  accent: string; title: string; tag?: string; t: number;
-  children: (cw: number, ch: number) => React.ReactNode;
-}> = ({x, y, w, h, z, accent, title, tag = 'LIVE', t, children}) => {
-  const PADX = 22, HEADER = 52, PADB = 20;
-  const cw = w - PADX * 2, ch = h - HEADER - PADB;
+const Header: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 8, 68, 850, 900);
+  const complete = p(timeline, 730, 790);
   return (
-    <div style={{position: 'absolute', left: x, top: y, width: w, height: h, transform: `translateZ(${z}px)`, backfaceVisibility: 'hidden'}}>
-      <div style={cardStyle(accent)}>
-        <div style={{position: 'absolute', left: PADX, right: PADX, top: 0, height: HEADER, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <span style={{fontFamily: FONT, fontSize: 12.5, letterSpacing: 2.4, fontWeight: 600, color: C.ink, textTransform: 'uppercase', opacity: 0.92}}>{title}</span>
-          <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
-            <PulseDot color={accent} t={t} />
-            <span style={{fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.6, color: C.faint, fontWeight: 500}}>{tag}</span>
-          </span>
+    <div
+      style={{
+        position: 'absolute',
+        left: 72,
+        right: 72,
+        top: 45,
+        height: 83,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * -12}px)`,
+        fontFamily: FONT,
+      }}
+    >
+      <div style={{position: 'absolute', left: 0, top: 0, display: 'flex', alignItems: 'center', gap: 15}}>
+        <div
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 20,
+            display: 'grid',
+            placeItems: 'center',
+            border: `1px solid ${rgba(C.emerald, 0.26)}`,
+            background: 'linear-gradient(145deg, rgba(255,255,255,.95), rgba(219,235,224,.75))',
+            boxShadow: '0 12px 32px rgba(37,82,62,.12), inset 0 1px 0 white',
+          }}
+        >
+          <svg width="36" height="36" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="13" fill="none" stroke={C.emerald} strokeWidth="1.5" />
+            <path d="M9 23 L14 18 L19 20 L27 10" fill="none" stroke={C.blue} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="27" cy="10" r="3" fill={C.amber} />
+            <circle cx="18" cy="18" r="16" fill="none" stroke={rgba(C.blue, 0.32)} strokeWidth=".8" strokeDasharray="3 5" strokeDashoffset={-timeline * 0.1} />
+          </svg>
         </div>
-        <div style={{position: 'absolute', left: PADX, right: PADX, top: HEADER - 1, height: 1, background: `linear-gradient(90deg, ${hexA(accent, 0.42)}, rgba(120,170,255,0.05))`}} />
-        <Brackets accent={accent} />
-        <div style={{position: 'absolute', left: PADX, top: HEADER, width: cw, height: ch}}>
-          {children(cw, ch)}
+        <div>
+          <div style={{fontSize: 27, color: C.ink, fontWeight: 900, letterSpacing: 0.9}}>AI INVESTMENT COPILOT</div>
+          <div style={{marginTop: 7, fontSize: 12.5, color: C.muted, fontWeight: 730, letterSpacing: 0.72}}>PORTFOLIO SCENARIO LAB · ILLUSTRATIVE DATA</div>
         </div>
       </div>
-    </div>
-  );
-};
-
-// ---------- HERO: vector index + top-k retrieval ----------
-type Pt = {bx: number; by: number; hue: string; amp: number; phx: number; phy: number; tw: number};
-
-const CLUSTERS: {cx: number; cy: number; sp: number; hue: string; n: number}[] = [
-  {cx: 700, cy: 300, sp: 78, hue: C.cyan, n: 22},   // query cluster (centre, visible)
-  {cx: 930, cy: 196, sp: 104, hue: C.teal, n: 26},
-  {cx: 1000, cy: 470, sp: 116, hue: C.violet, n: 26},
-  {cx: 520, cy: 396, sp: 122, hue: C.blue, n: 24},
-  {cx: 820, cy: 520, sp: 96, hue: C.magenta, n: 20},
-  {cx: 330, cy: 250, sp: 132, hue: C.cyan, n: 22},  // ambient (bleeds left)
-  {cx: 1130, cy: 336, sp: 92, hue: C.teal, n: 18},
-];
-
-const VectorSpace: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const radius = 220; // retrieval neighbourhood radius
-  // the query flies a seamless elliptical path through the embedding space,
-  // continuously retrieving whichever neighbours are currently nearest
-  const qx = 800 + 185 * Math.sin(TAU * t) + 40 * Math.sin(TAU * 2 * t + 0.6);
-  const qy = 320 + 128 * Math.sin(TAU * t + 1.9) + 24 * Math.cos(TAU * 3 * t);
-  const q = {x: qx, y: qy};
-  const spin = 360 * t;
-
-  // build point field (deterministic)
-  const pts: Pt[] = [];
-  CLUSTERS.forEach((cl, ci) => {
-    for (let i = 0; i < cl.n; i++) {
-      const ang = random(`a${ci}-${i}`) * TAU;
-      const rad = cl.sp * Math.sqrt(random(`r${ci}-${i}`)) * 0.9;
-      pts.push({
-        bx: cl.cx + Math.cos(ang) * rad,
-        by: cl.cy + Math.sin(ang) * rad,
-        hue: cl.hue,
-        amp: 7 + random(`m${ci}-${i}`) * 11,
-        phx: random(`px${ci}-${i}`),
-        phy: random(`py${ci}-${i}`),
-        tw: random(`tw${ci}-${i}`),
-      });
-    }
-  });
-
-  // live positions + smooth proximity activation against the moving query
-  const P = pts.map((p) => {
-    const x = p.bx + p.amp * Math.sin(TAU * (t + p.phx)) + p.amp * 0.45 * Math.sin(TAU * (2 * t + p.phy));
-    const y = p.by + p.amp * Math.cos(TAU * (t + p.phy)) + p.amp * 0.45 * Math.cos(TAU * (2 * t + p.phx));
-    const d = Math.hypot(x - qx, y - qy);
-    const a = clamp(1 - d / radius, 0, 1);
-    return {x, y, d, a: a * a, hue: p.hue, tw: p.tw};
-  });
-  const nearest = P.reduce((m, p) => Math.min(m, p.d), 1e9);
-  const nMatch = P.filter((p) => p.a > 0.5).length;
-  const topSim = clamp(0.995 - nearest / 1200, 0.62, 0.995);
-
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
-        <defs>
-          <Glow id="vs_pt" b1={1.6} b2={5} />
-          <Glow id="vs_q" b1={2.6} b2={9} />
-        </defs>
-
-        {/* cluster density glows (gentle breathing) */}
-        {CLUSTERS.map((cl, i) => {
-          const br = 1.1 + 0.08 * Math.sin(TAU * (t + i * 0.2));
-          return <circle key={'cg' + i} cx={cl.cx} cy={cl.cy} r={cl.sp * br} fill={hexA(cl.hue, 0.05)} />;
-        })}
-
-        {/* expanding search pulses from the moving query */}
-        {[0, 1].map((j) => {
-          const f = (t * 3 + j / 2) % 1;
-          const op = 0.55 * Math.pow(1 - f, 1.4);
-          return <circle key={'sr' + j} cx={q.x} cy={q.y} r={30 + f * (radius - 30)} fill="none" stroke={hexA(C.cyan, op)} strokeWidth={1.6} />;
-        })}
-
-        {/* retrieval links to the current nearest neighbours */}
-        {P.map((p, i) => {
-          if (p.a < 0.28) return null;
-          const s = (t * 2.4 + p.tw) % 1;
-          const env = Math.sin(Math.PI * s);
-          const px = q.x + (p.x - q.x) * s;
-          const py = q.y + (p.y - q.y) * s;
-          return (
-            <g key={'lk' + i}>
-              <line x1={q.x} y1={q.y} x2={p.x} y2={p.y} stroke={hexA(C.cyan, 0.1 + 0.34 * p.a)} strokeWidth={0.8 + p.a} />
-              <circle cx={px} cy={py} r={1.8 + env * 1.6} fill={C.ink} opacity={(0.4 + 0.6 * env) * p.a} filter="url(#vs_pt)" />
-            </g>
-          );
-        })}
-
-        {/* embedding points — brighten by proximity to the query */}
-        {P.map((p, i) => {
-          const tw = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(TAU * (2 * t + p.tw)));
-          const r = 2.4 + tw * 1.1 + p.a * 4.5;
-          return (
-            <g key={'pt' + i}>
-              {p.a > 0.35 && <circle cx={p.x} cy={p.y} r={7 + p.a * 6} fill="none" stroke={hexA(p.hue, 0.4 * p.a)} strokeWidth={1.1} />}
-              <circle cx={p.x} cy={p.y} r={r} fill={hexA(p.hue, 0.3 + tw * 0.35 + p.a * 0.35)} filter={p.a > 0.45 ? 'url(#vs_pt)' : undefined} />
-              {p.a > 0.5 && <circle cx={p.x} cy={p.y} r={2 * p.a} fill="#ffffff" opacity={p.a} />}
-            </g>
-          );
-        })}
-
-        {/* query point (moving, spinning reticle) */}
-        <g>
-          <g transform={`rotate(${spin} ${q.x} ${q.y})`}>
-            <circle cx={q.x} cy={q.y} r={18} fill="none" stroke={hexA(C.amber, 0.35)} strokeWidth={1.4} strokeDasharray="4 6" />
-          </g>
-          <circle cx={q.x} cy={q.y} r={9} fill={C.amber} filter="url(#vs_q)" />
-          <circle cx={q.x} cy={q.y} r={3.6} fill="#fff" />
-          <line x1={q.x - 24} y1={q.y} x2={q.x - 13} y2={q.y} stroke={hexA(C.amber, 0.75)} strokeWidth={1.4} />
-          <line x1={q.x + 13} y1={q.y} x2={q.x + 24} y2={q.y} stroke={hexA(C.amber, 0.75)} strokeWidth={1.4} />
-          <line x1={q.x} y1={q.y - 24} x2={q.x} y2={q.y - 13} stroke={hexA(C.amber, 0.75)} strokeWidth={1.4} />
-          <line x1={q.x} y1={q.y + 13} x2={q.x} y2={q.y + 24} stroke={hexA(C.amber, 0.75)} strokeWidth={1.4} />
-        </g>
-      </svg>
-
-      {/* readouts (kept inside the on-screen safe band) */}
-      <div style={{position: 'absolute', left: 500, top: -2}}>
-        <div style={{fontFamily: MONO, fontSize: 12.5, letterSpacing: 1.4, color: C.sub, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>VECTOR INDEX</div>
-        <div style={{fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, marginTop: 3, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>768-D · 2.43M vectors</div>
-      </div>
-      <div style={{position: 'absolute', right: 0, top: -2, textAlign: 'right'}}>
-        <div style={{display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'flex-end'}}>
-          <span style={{fontFamily: MONO, fontSize: 30, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 24px ${hexA(C.cyan, 0.5)}, 0 0 12px rgba(5,10,25,0.9)`}}>{topSim.toFixed(3)}</span>
-          <span style={{fontFamily: FONT, fontSize: 12, color: C.sub}}>cos sim</span>
+      <div style={{position: 'absolute', right: 0, top: 8, display: 'flex', alignItems: 'center', gap: 11}}>
+        <div style={{height: 41, padding: '0 15px', borderRadius: 13, display: 'flex', alignItems: 'center', border: `1px solid ${rgba(C.ink, 0.1)}`, background: 'rgba(255,255,255,.62)', color: C.muted, fontSize: 11.5, fontWeight: 790, letterSpacing: 0.56}}>SIMULATION MODE</div>
+        <div
+          style={{
+            height: 41,
+            minWidth: 178,
+            padding: '0 16px',
+            borderRadius: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 9,
+            border: `1px solid ${rgba(complete > 0.9 ? C.emerald : C.blue, 0.25)}`,
+            background: rgba(complete > 0.9 ? C.emerald : C.blue, 0.06),
+            color: complete > 0.9 ? C.emerald : C.blue,
+            fontSize: 11.5,
+            fontWeight: 850,
+            letterSpacing: 0.6,
+          }}
+        >
+          <span style={{width: 7, height: 7, borderRadius: 7, background: complete > 0.9 ? C.emerald : C.blue, boxShadow: `0 0 ${7 + Math.sin(phase * 4) * 2}px ${complete > 0.9 ? C.emerald : C.blue}`}} />
+          {complete > 0.9 ? 'PLAN READY' : 'COPILOT ONLINE'}
         </div>
-        <div style={{fontFamily: MONO, fontSize: 11, letterSpacing: 1.4, color: C.amber, marginTop: 2, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>{nMatch} NEIGHBOURS · kNN</div>
       </div>
-      <div style={{position: 'absolute', left: 500, bottom: -2, fontFamily: FONT, fontSize: 10.5, letterSpacing: 2, color: C.faint, textTransform: 'uppercase', textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>nearest-neighbour semantic search · live query</div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, background: `linear-gradient(90deg, ${rgba(C.emerald, 0.28)}, ${rgba(C.blue, 0.16)}, transparent 78%)`}} />
     </div>
   );
 };
 
-// ---------- retrieved chunks / similarity (fully-safe panel) ----------
-const CHUNKS = [
-  {id: 'chunk_04a1', src: 'doc_18 · p3', s: 0.94},
-  {id: 'chunk_11c7', src: 'doc_02 · p7', s: 0.89},
-  {id: 'chunk_0e33', src: 'doc_45 · p1', s: 0.85},
-  {id: 'chunk_2b90', src: 'doc_18 · p4', s: 0.81},
-  {id: 'chunk_7fa2', src: 'doc_31 · p2', s: 0.78},
-  {id: 'chunk_1d58', src: 'doc_09 · p6', s: 0.74},
-];
-
-const RetrievedChunks: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const n = CHUNKS.length;
-  const rowH = ch / n;
-  const barX = 150, barW = cw - barX - 58;
-  const scanY = t * ch;
-  const scanOp = 0.12 * Math.sin(Math.PI * t);
+const PromptChip: React.FC<{label: string; color: string; index: number; timeline: number}> = ({label, color, index, timeline}) => {
+  const reveal = life(timeline, 126 + index * 15, 168 + index * 15, 840, 900);
   return (
-    <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{overflow: 'visible'}}>
-      <defs>
-        <linearGradient id="rc_bar" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={hexA(C.blue, 0.5)} />
-          <stop offset="1" stopColor={C.cyan} />
-        </linearGradient>
-        <linearGradient id="rc_hot" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={hexA(C.violet, 0.55)} />
-          <stop offset="1" stopColor={C.magenta} />
-        </linearGradient>
-        <Glow id="rc_glow" b1={1.8} b2={5} />
-      </defs>
-      <rect x={0} y={scanY - 18} width={cw} height={36} fill={hexA(C.cyan, scanOp)} />
-      {CHUNKS.map((ck, i) => {
-        const cy = i * rowH + rowH / 2;
-        const val = clamp(ck.s + 0.03 * Math.sin(TAU * (t + i * 0.25)) + 0.012 * Math.sin(TAU * 2 * t + i), 0, 1);
-        const hot = i === 0;
-        const bw = Math.max(6, val * barW);
-        return (
-          <g key={i}>
-            {i > 0 && <line x1={0} y1={i * rowH} x2={cw} y2={i * rowH} stroke={C.grid} strokeWidth={1} />}
-            <text x={0} y={cy - 4} fill={hot ? C.magenta : C.faint} fontFamily={MONO} fontSize={12} fontWeight={600}>{String(i + 1).padStart(2, '0')}</text>
-            <text x={26} y={cy - 4} fill={hot ? C.ink : C.sub} fontFamily={MONO} fontSize={13} fontWeight={hot ? 600 : 400}>{ck.id}</text>
-            <text x={26} y={cy + 13} fill={C.faint} fontFamily={MONO} fontSize={10.5}>{ck.src}</text>
-            <rect x={barX} y={cy - 4} width={barW} height={9} rx={4.5} fill="rgba(120,160,230,0.12)" />
-            <rect x={barX} y={cy - 4} width={bw} height={9} rx={4.5} fill={hot ? 'url(#rc_hot)' : 'url(#rc_bar)'} filter={hot ? 'url(#rc_glow)' : undefined} />
-            <text x={cw} y={cy + 2} fill={hot ? C.magenta : C.sub} fontFamily={MONO} fontSize={13} fontWeight={600} textAnchor="end" style={{fontVariantNumeric: 'tabular-nums'}}>{val.toFixed(2)}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-};
-
-// ---------- ingestion pipeline (fully-safe panel) ----------
-const IngestionPipeline: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const stages = [
-    {label: 'DOCS', accent: C.blue},
-    {label: 'CHUNK', accent: C.cyan},
-    {label: 'EMBED', accent: C.teal},
-    {label: 'INDEX', accent: C.violet},
-  ];
-  const bw = 96, bh = 54;
-  const cy = ch * 0.42;
-  const xs = stages.map((_, i) => 44 + (i / (stages.length - 1)) * (cw - 88));
-
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
-        <defs>
-          <Glow id="ip_glow" b1={1.6} b2={5} />
-        </defs>
-        {/* connectors + flowing items */}
-        {xs.slice(0, -1).map((x, i) => {
-          const x0 = x + bw / 2, x1 = xs[i + 1] - bw / 2;
-          const acc = stages[i + 1].accent;
-          return (
-            <g key={'cn' + i}>
-              <line x1={x0} y1={cy} x2={x1} y2={cy} stroke={hexA(acc, 0.28)} strokeWidth={1.4} />
-              {[0, 1, 2, 3, 4].map((j) => {
-                const s = (t * 2.4 + j / 5 + i * 0.13) % 1;
-                const ix = x0 + (x1 - x0) * s;
-                const env = Math.sin(Math.PI * s);
-                return <rect key={j} x={ix - 3} y={cy - 3} width={6} height={6} rx={1.4} fill={acc} opacity={0.3 + 0.7 * env} filter="url(#ip_glow)" />;
-              })}
-            </g>
-          );
-        })}
-        {/* stage boxes */}
-        {stages.map((st, i) => {
-          const x = xs[i] - bw / 2, y = cy - bh / 2;
-          const act = Math.pow(0.5 + 0.5 * Math.sin(TAU * (t - i * 0.22)), 2);
-          return (
-            <g key={'st' + i}>
-              <rect x={x} y={y} width={bw} height={bh} rx={11} fill={hexA(st.accent, 0.1 + 0.1 * act)} stroke={hexA(st.accent, 0.45 + 0.35 * act)} strokeWidth={1.2} filter={act > 0.7 ? 'url(#ip_glow)' : undefined} />
-              <circle cx={x + 14} cy={y + 15} r={3.4} fill={st.accent} />
-              <text x={x + bw / 2} y={cy + 4} fill={C.ink} fontFamily={MONO} fontSize={12.5} fontWeight={600} letterSpacing={0.8} textAnchor="middle">{st.label}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{position: 'absolute', left: 2, top: -2, fontFamily: MONO, fontSize: 11, letterSpacing: 1.4, color: C.faint}}>2.43M chunks · 768-D</div>
-      <div style={{position: 'absolute', left: 0, right: 0, bottom: 6, textAlign: 'center', fontFamily: FONT, fontSize: 10.5, letterSpacing: 2, color: C.faint, textTransform: 'uppercase'}}>parse → chunk → embed → upsert</div>
+    <div
+      style={{
+        height: 31,
+        padding: '0 11px',
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        border: `1px solid ${rgba(color, 0.17)}`,
+        background: rgba(color, 0.045),
+        color: C.ink,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 7}px)`,
+        fontFamily: FONT,
+        fontSize: 10.5,
+        fontWeight: 820,
+        letterSpacing: 0.54,
+      }}
+    >
+      <span style={{width: 6, height: 6, borderRadius: 7, background: color}} />
+      {label}
     </div>
   );
 };
 
-// ---------- grounded answer stream (anchored to safe-left) ----------
-const ANSWER_TOKENS = 'Based on the retrieved context , the model grounds each statement [1] in ranked source passages [2] , weighting evidence by cosine similarity [3] before composing a cited , verifiable response [4] .'.split(' ');
-
-const GroundedAnswer: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const total = ANSWER_TOKENS.length;
-  const typeP = clamp((t - 0.05) / 0.8, 0, 1);
-  const shown = Math.floor(total * typeP);
-  const op = interpolate(t, [0, 0.05], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}) *
-    interpolate(t, [0.9, 1], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const cursor = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(TAU * (t * 6)));
-  const citeCol = [C.cyan, C.teal, C.violet, C.magenta];
-
+const GenerateButton: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const hover = p(timeline, 246, 275);
+  const pressIn = p(timeline, 276, 288, soft);
+  const pressOut = p(timeline, 288, 310, ease);
+  const press = pressIn * (1 - pressOut);
+  const ripple = p(timeline, 288, 346, soft);
+  const processing = timeline >= 307 && timeline < 365;
+  const done = p(timeline, 360, 390);
+  const cursorMove = p(timeline, 232, 274);
+  const scale = 1 + hover * 0.03 - press * 0.12 + pressOut * 0.018;
   return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <div style={{position: 'absolute', left: 0, top: 0, display: 'flex', alignItems: 'center', gap: 8}}>
-        <PulseDot color={C.teal} t={t} size={7} />
-        <span style={{fontFamily: MONO, fontSize: 11, letterSpacing: 1.6, color: C.faint}}>STREAMING · GROUNDED</span>
+    <div style={{position: 'absolute', right: 18, top: 17, width: 92, height: 92}}>
+      {[0, 1].map((index) => (
+        <div
+          key={index}
+          style={{
+            position: 'absolute',
+            left: 46,
+            top: 46,
+            width: 82,
+            height: 82,
+            marginLeft: -41,
+            marginTop: -41,
+            borderRadius: 50,
+            border: `1.5px solid ${rgba(index ? C.sky : C.emerald, (1 - ripple) * 0.62)}`,
+            opacity: ripple,
+            transform: `scale(${0.76 + ripple * (1.28 + index * 0.42)})`,
+          }}
+        />
+      ))}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 30,
+          display: 'grid',
+          placeItems: 'center',
+          background: `linear-gradient(145deg, ${done > 0.9 ? C.emerald : C.graphite}, ${done > 0.9 ? '#257f63' : C.graphite2})`,
+          border: `1px solid ${rgba(done > 0.9 ? C.emerald : C.blue, 0.42 + hover * 0.18)}`,
+          boxShadow: `0 16px 34px rgba(18,44,37,.2), 0 0 ${14 + hover * 18}px ${rgba(done > 0.9 ? C.emerald : C.blue, 0.13)}, inset 0 1px 0 rgba(255,255,255,.12)`,
+          transform: `scale(${scale})`,
+        }}
+      >
+        {!processing && done < 0.82 ? (
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <path d="M8 19 H28 M21 11 L29 19 L21 27" fill="none" stroke={C.white} strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : null}
+        {processing ? (
+          <svg width="42" height="42" viewBox="0 0 42 42" style={{transform: `rotate(${timeline * 3}deg)`}}>
+            <circle cx="21" cy="21" r="14" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="3" />
+            <path d="M21 7 A14 14 0 0 1 35 21" fill="none" stroke={C.mint} strokeWidth="3" strokeLinecap="round" />
+          </svg>
+        ) : null}
+        {done >= 0.82 ? (
+          <svg width="36" height="36" viewBox="0 0 36 36">
+            <path d="M8 18 L15 25 L28 11" fill="none" stroke={C.white} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : null}
       </div>
-      <div style={{position: 'absolute', left: 4, top: 40, width: 400, opacity: op}}>
-        <span style={{fontFamily: FONT, fontSize: 16.5, lineHeight: 1.66, color: C.ink}}>
-          {ANSWER_TOKENS.slice(0, shown).map((w, i) => {
-            const m = /^\[(\d)\]$/.exec(w);
-            if (m) {
-              const ci = (parseInt(m[1], 10) - 1) % citeCol.length;
-              return (
-                <span key={i} style={{display: 'inline-block', transform: 'translateY(-1px)', margin: '0 3px', padding: '1px 6px', borderRadius: 6, fontFamily: MONO, fontSize: 11.5, fontWeight: 600, color: citeCol[ci], background: hexA(citeCol[ci], 0.14), border: `1px solid ${hexA(citeCol[ci], 0.4)}`}}>{m[1]}</span>
-              );
-            }
-            return <span key={i}>{w + ' '}</span>;
-          })}
-          {typeP < 1 && <span style={{display: 'inline-block', width: 8, height: 17, background: C.cyan, opacity: cursor, transform: 'translateY(2px)', boxShadow: `0 0 8px ${hexA(C.cyan, 0.8)}`}} />}
-        </span>
-      </div>
-    </div>
-  );
-};
-
-// ---------- query embedding strip (narrow safe-left) ----------
-const QueryEmbedding: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const rows = 40;
-  const colW = 84;
-  const x0 = 8;
-  const gap = 1.5;
-  const cellH = (ch - 26 - gap * (rows - 1)) / rows;
-  const scan = ((t * 2) % 1) * rows;
-  return (
-    <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{overflow: 'visible'}}>
-      <text x={x0} y={12} fill={C.faint} fontFamily={MONO} fontSize={10.5} letterSpacing={1}>QUERY VEC</text>
-      <text x={x0 + colW} y={12} fill={C.faint} fontFamily={MONO} fontSize={10} letterSpacing={1} textAnchor="end">768-D</text>
-      {Array.from({length: rows}).map((_, i) => {
-        let v = 0.5 + 0.42 * Math.sin(i * 0.9 + 1.3 * random('qe' + i));
-        v += 0.16 * Math.sin(TAU * (t * 3 + i * 0.05));
-        const sd = Math.exp(-Math.pow(Math.min(Math.abs(i - scan), rows - Math.abs(i - scan)), 2) / 6);
-        v = clamp(v + sd * 0.25, 0, 1);
-        const y = 22 + i * (cellH + gap);
-        return <rect key={i} x={x0} y={y} width={colW} height={cellH} rx={1.5} fill={ramp(v)} opacity={0.35 + v * 0.6} />;
-      })}
-      <rect x={x0 - 2} y={20} width={colW + 4} height={ch - 24} rx={3} fill="none" stroke="rgba(120,170,255,0.18)" strokeWidth={1} />
-    </svg>
-  );
-};
-
-// ---------- ingest throughput (safe-right readout) ----------
-const ING: Comp[] = [
-  {f: 1.1, h: 1, a: 0.15, p: 0.3},
-  {f: 2.4, h: 2, a: 0.08, p: 1.1},
-  {f: 3.9, h: 1, a: 0.04, p: 2.0},
-];
-
-const IngestThroughput: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const gx0 = 6, gx1 = cw - 6, gTop = 58, gBot = ch - 26;
-  const gw = gx1 - gx0;
-  const pts = wavePts(96, gx0, gx1, gTop, gBot, ING, 0.5, t);
-  const area = `${smooth(pts)} L ${gx1} ${gBot} L ${gx0} ${gBot} Z`;
-  const fx = t;
-  const dv = waveVal(fx, ING, 0.5, t);
-  const dx = gx0 + fx * gw;
-  const dy = gBot - dv * (gBot - gTop);
-  const edge = interpolate(Math.min(fx, 1 - fx), [0, 0.06], [0, 1], {extrapolateRight: 'clamp'});
-  const val = 3120 + 180 * Math.sin(TAU * t) + 48 * Math.sin(TAU * 3 * t + 1);
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
-        <defs>
-          <linearGradient id="it_area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={C.teal} stopOpacity="0.4" />
-            <stop offset="0.6" stopColor={C.cyan} stopOpacity="0.12" />
-            <stop offset="1" stopColor={C.cyan} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="it_line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={C.teal} />
-            <stop offset="1" stopColor={C.cyan} />
-          </linearGradient>
-          <Glow id="it_glow" b1={2.2} b2={7} />
-        </defs>
-        {[0.33, 0.66, 1].map((r) => (
-          <line key={r} x1={gx0} y1={gBot - r * (gBot - gTop)} x2={gx1} y2={gBot - r * (gBot - gTop)} stroke={C.grid} strokeWidth={1} />
-        ))}
-        <path d={area} fill="url(#it_area)" />
-        <path d={smooth(pts)} fill="none" stroke="url(#it_line)" strokeWidth={2.6} strokeLinecap="round" filter="url(#it_glow)" />
-        {edge > 0.02 && (
-          <>
-            <circle cx={dx} cy={dy} r={8} fill={hexA(C.cyan, 0.16 * edge)} />
-            <circle cx={dx} cy={dy} r={3.6} fill={C.ink} opacity={edge} filter="url(#it_glow)" />
-          </>
-        )}
-      </svg>
-      {/* readout anchored right (safe side of this panel) */}
-      <div style={{position: 'absolute', right: 2, top: 0, textAlign: 'right'}}>
-        <div style={{display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'flex-end'}}>
-          <span style={{fontFamily: MONO, fontSize: 34, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 22px ${hexA(C.cyan, 0.4)}`}}>{nf(val, 0)}</span>
-          <span style={{fontFamily: FONT, fontSize: 13, color: C.sub, letterSpacing: 0.5}}>chunks/s</span>
-        </div>
-        <div style={{fontFamily: FONT, fontSize: 10.5, letterSpacing: 2, color: C.faint, textTransform: 'uppercase', marginTop: 2}}>ingest rate · 60s</div>
-      </div>
-    </div>
-  );
-};
-
-// ---------- KPI cards ----------
-type Kpi = {label: string; val: number; unit: string; dec: number; delta: string; accent: string; amp: number; seed: string};
-const KPIS: Kpi[] = [
-  {label: 'CHUNKS INDEXED', val: 2.43, unit: 'M', dec: 2, delta: '▲ 12k', accent: C.cyan, amp: 0.01, seed: 'k1'},
-  {label: 'QUERIES / SEC', val: 184, unit: '', dec: 0, delta: '▲ 3.6%', accent: C.teal, amp: 7, seed: 'k2'},
-  {label: 'RECALL @8', val: 96.4, unit: '%', dec: 1, delta: '▲ 0.4%', accent: C.violet, amp: 0.3, seed: 'k3'},
-];
-
-const KpiChart: React.FC<{cw: number; ch: number; t: number; d: Kpi}> = ({cw, ch, t, d}) => {
-  const ph = random(d.seed) * 3;
-  const comps: Comp[] = [
-    {f: 1.5, h: 1, a: 0.18, p: ph},
-    {f: 3.0, h: 2, a: 0.09, p: ph * 1.7},
-  ];
-  const spTop = ch * 0.5, spBot = ch - 4;
-  const pts = wavePts(30, 2, cw - 2, spTop, spBot, comps, 0.5, t);
-  const area = `${smooth(pts)} L ${cw - 2} ${spBot} L 2 ${spBot} Z`;
-  const val = d.val + d.amp * Math.sin(TAU * (t + ph * 0.1));
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <div style={{display: 'flex', alignItems: 'baseline', gap: 8}}>
-        <span style={{fontFamily: MONO, fontSize: 34, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 22px ${hexA(d.accent, 0.4)}`}}>{nf(val, d.dec)}</span>
-        {d.unit && <span style={{fontFamily: FONT, fontSize: 13, color: C.sub}}>{d.unit}</span>}
-      </div>
-      <span style={{fontFamily: MONO, fontSize: 12.5, color: C.teal, letterSpacing: 0.5}}>{d.delta}</span>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', left: 0, bottom: 0, overflow: 'visible'}}>
-        <defs>
-          <linearGradient id={`ksp_${d.seed}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={d.accent} stopOpacity="0.4" />
-            <stop offset="1" stopColor={d.accent} stopOpacity="0" />
-          </linearGradient>
-          <Glow id={`kspg_${d.seed}`} b1={1.4} b2={4} />
-        </defs>
-        <path d={area} fill={`url(#ksp_${d.seed})`} />
-        <path d={smooth(pts)} fill="none" stroke={d.accent} strokeWidth={2} strokeLinecap="round" filter={`url(#kspg_${d.seed})`} />
-      </svg>
-    </div>
-  );
-};
-
-// ---------- world plane ----------
-const World: React.FC<{t: number}> = ({t}) => {
-  const W = 2600, H = 1500;
-  const rotX = 15 + 3 * Math.sin(TAU * t + 0.2);
-  const rotY = 12 * Math.sin(TAU * t + 0.7);
-  const rotZ = 1.0 * Math.sin(TAU * t + 1.9);
-  const tx = 120 * Math.sin(TAU * t + 0.15);
-  const ty = 26 * Math.sin(TAU * t + 1.25);
-  const tz = 215 + 70 * Math.sin(TAU * t + 2.1);
-
-  const GW = 3400, GH = 2100, gStep = 92;
-  const vlines = Math.ceil(GW / gStep), hlines = Math.ceil(GH / gStep);
-
-  return (
-    <div style={{position: 'absolute', width: W, height: H, transformStyle: 'preserve-3d', transform: `rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${rotZ}deg) translate3d(${tx}px,${ty}px,${tz}px)`, transformOrigin: '50% 50%', backfaceVisibility: 'hidden'}}>
-      {/* holographic floor grid */}
-      <div style={{position: 'absolute', left: '50%', top: '50%', width: GW, height: GH, transform: 'translate(-50%,-50%) translateZ(-175px)'}}>
-        <svg width={GW} height={GH} viewBox={`0 0 ${GW} ${GH}`}>
-          <defs>
-            <radialGradient id="wg_fade" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stopColor="#fff" stopOpacity="1" />
-              <stop offset="0.55" stopColor="#fff" stopOpacity="0.6" />
-              <stop offset="1" stopColor="#fff" stopOpacity="0" />
-            </radialGradient>
-            <mask id="wg_mask"><rect width={GW} height={GH} fill="url(#wg_fade)" /></mask>
-          </defs>
-          <g mask="url(#wg_mask)">
-            {Array.from({length: vlines + 1}).map((_, i) => (
-              <line key={'v' + i} x1={i * gStep} y1={0} x2={i * gStep} y2={GH} stroke={i % 5 === 0 ? C.gridHi : C.grid} strokeWidth={i % 5 === 0 ? 1.4 : 1} />
-            ))}
-            {Array.from({length: hlines + 1}).map((_, i) => (
-              <line key={'h' + i} x1={0} y1={i * gStep} x2={GW} y2={i * gStep} stroke={i % 5 === 0 ? C.gridHi : C.grid} strokeWidth={i % 5 === 0 ? 1.4 : 1} />
-            ))}
-          </g>
+      <div
+        style={{
+          position: 'absolute',
+          left: interpolate(cursorMove, [0, 1], [-236, 34]),
+          top: interpolate(cursorMove, [0, 1], [128, 57]),
+          width: 34,
+          height: 42,
+          opacity: life(timeline, 224, 244, 306, 330),
+          transform: `translate(${press * 3}px, ${press * 3}px) scale(${0.96 - press * 0.08})`,
+          filter: 'drop-shadow(0 5px 7px rgba(18,34,29,.32))',
+        }}
+      >
+        <svg width="34" height="42" viewBox="0 0 34 42">
+          <path d="M4 3 L29 24 L18 26 L12 38 Z" fill={C.white} stroke={C.ink} strokeWidth="1.4" strokeLinejoin="round" />
         </svg>
       </div>
-
-      {/* header strip */}
-      <div style={{position: 'absolute', left: 110, top: 128, width: 2400, height: 60, transform: 'translateZ(12px)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backfaceVisibility: 'hidden'}}>
-        <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
-          <span style={{width: 16, height: 16, transform: 'rotate(45deg)', border: `2px solid ${C.cyan}`, boxShadow: `0 0 16px ${hexA(C.cyan, 0.7)}`, borderRadius: 3, display: 'inline-block'}} />
-          <span style={{fontFamily: FONT, fontSize: 22, fontWeight: 600, letterSpacing: 5, color: C.ink, textTransform: 'uppercase'}}>RAG Knowledge Pipeline</span>
-          <span style={{fontFamily: MONO, fontSize: 13, letterSpacing: 2, color: C.faint, marginLeft: 6}}>/ RETRIEVAL</span>
-        </div>
-        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-          <PulseDot color={C.teal} t={t} size={8} />
-          <span style={{fontFamily: MONO, fontSize: 13, letterSpacing: 2.5, color: C.sub}}>INDEX · SYNCED</span>
-        </div>
-      </div>
-      <div style={{position: 'absolute', left: 110, top: 190, width: 2400, height: 1, transform: 'translateZ(12px)', background: 'linear-gradient(90deg, rgba(120,180,255,0.35), rgba(120,180,255,0.03))'}} />
-
-      {/* panels */}
-      <Frame x={110} y={250} w={1250} h={690} z={0} accent={C.cyan} title="Vector Index" tag="kNN" t={t}>
-        {(cw, ch) => <VectorSpace cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      {KPIS.map((d, i) => (
-        <Frame key={d.seed} x={1420 + i * 397} y={250} w={i === 2 ? 300 : 380} h={205} z={80 - i * 22} accent={d.accent} title={d.label} tag="LIVE" t={t}>
-          {(cw, ch) => <KpiChart cw={cw} ch={ch} t={t} d={d} />}
-        </Frame>
-      ))}
-
-      <Frame x={1420} y={485} w={455} h={455} z={120} accent={C.magenta} title="Retrieved Chunks" tag="TOP-6" t={t}>
-        {(cw, ch) => <RetrievedChunks cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={1905} y={485} w={460} h={455} z={35} accent={C.violet} title="Query Embedding" tag="768-D" t={t}>
-        {(cw, ch) => <QueryEmbedding cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={110} y={980} w={780} h={430} z={62} accent={C.teal} title="Ingest Rate" tag="chunks/s" t={t}>
-        {(cw, ch) => <IngestThroughput cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={915} y={980} w={560} h={430} z={-32} accent={C.blue} title="Ingestion Pipeline" tag="STREAM" t={t}>
-        {(cw, ch) => <IngestionPipeline cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={1500} y={980} w={1010} h={430} z={86} accent={C.cyan} title="Grounded Answer" tag="CITED" t={t}>
-        {(cw, ch) => <GroundedAnswer cw={cw} ch={ch} t={t} />}
-      </Frame>
     </div>
   );
 };
 
-// ---------- atmosphere ----------
-const Bokeh: React.FC<{t: number; count: number; seedp: string; front?: boolean}> = ({t, count, seedp, front}) => (
-  <AbsoluteFill style={{overflow: 'hidden'}}>
-    {Array.from({length: count}).map((_, i) => {
-      const s = seedp + i;
-      const bx = random('bx' + s) * 100;
-      const by = random('by' + s) * 100;
-      const sz = (front ? 90 : 44) + random('bs' + s) * (front ? 200 : 150);
-      const k = random('bk' + s) > 0.5 ? 1 : 2;
-      const dx = (random('bdx' + s) - 0.5) * (front ? 3 : 6);
-      const dy = (random('bdy' + s) - 0.5) * (front ? 3 : 6);
-      const px = bx + dx * Math.sin(TAU * (k * t + random('bp' + s)));
-      const py = by + dy * Math.cos(TAU * (k * t + random('bq' + s)));
-      const pulse = 0.5 + 0.5 * Math.sin(TAU * (t + random('bo' + s)));
-      const col = random('bc' + s) > 0.5 ? C.cyan : random('bc2' + s) > 0.5 ? C.violet : C.teal;
-      const op = (front ? 0.05 : 0.12) + pulse * (front ? 0.05 : 0.1);
-      return (
-        <div key={i} style={{position: 'absolute', left: `${px}%`, top: `${py}%`, width: sz, height: sz, marginLeft: -sz / 2, marginTop: -sz / 2, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(col, 0.9)} 0%, ${hexA(col, 0)} 70%)`, opacity: op, filter: `blur(${front ? 14 : 8}px)`}} />
-      );
-    })}
-  </AbsoluteFill>
-);
+const PromptBar: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 28, 92, 842, 900);
+  const typing = p(timeline, 70, 230);
+  const prompt = 'Build a resilient 5-year investment strategy';
+  const typed = prompt.slice(0, Math.floor(prompt.length * typing));
+  const cursor = typing < 0.995 && Math.floor(timeline / 18) % 2 === 0;
+  const submitted = p(timeline, 292, 340);
+  const scenariosReady = p(timeline, 492, 552);
+  return (
+    <LightPanel x={72} y={147} width={1776} height={128} reveal={reveal} radius={27}>
+      <div style={{position: 'absolute', left: 24, top: 23, width: 64, height: 64, borderRadius: 21, display: 'grid', placeItems: 'center', border: `1px solid ${rgba(C.emerald, 0.18)}`, background: `radial-gradient(circle at 35% 30%, ${C.white}, ${rgba(C.mint, 0.16)})`}}>
+        <svg width="36" height="36" viewBox="0 0 36 36">
+          <path d="M18 4 L21 14 L31 18 L21 21 L18 31 L15 21 L5 18 L15 14Z" fill={C.emerald} opacity=".9" />
+          <circle cx="27" cy="9" r="3" fill={C.blue} />
+        </svg>
+      </div>
+      <div style={{position: 'absolute', left: 109, top: 18, right: 132, height: 50, display: 'flex', alignItems: 'center', fontFamily: FONT}}>
+        <span style={{fontSize: 29, color: C.ink, fontWeight: 670, letterSpacing: -0.25}}>{typed}</span>
+        <span style={{display: 'inline-block', marginLeft: 5, width: 2, height: 31, borderRadius: 3, background: C.emerald, opacity: cursor ? 1 : typing < 0.995 ? 0.18 : 0}} />
+      </div>
+      <div style={{position: 'absolute', left: 109, top: 77, display: 'flex', gap: 9}}>
+        <PromptChip label="HORIZON 5 YEARS" color={C.blue} index={0} timeline={timeline} />
+        <PromptChip label="RISK MODERATE" color={C.amber} index={1} timeline={timeline} />
+        <PromptChip label="LIQUIDITY HIGH" color={C.emerald} index={2} timeline={timeline} />
+      </div>
+      <div style={{position: 'absolute', right: 128, top: 86, color: submitted > 0.9 ? C.emerald : C.muted, fontFamily: FONT, fontSize: 10.5, fontWeight: 820, letterSpacing: 0.64}}>
+        {scenariosReady > 0.9 ? 'SCENARIOS READY' : submitted > 0.9 ? 'MODELING 3 SCENARIOS' : 'GENERATE SCENARIOS'}
+      </div>
+      <GenerateButton timeline={timeline} phase={phase} />
+      <div style={{position: 'absolute', top: 0, bottom: 0, width: 110, left: `${-150 + ((timeline * 0.34) % 2050)}px`, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.42), transparent)', transform: 'skewX(-16deg)', opacity: reveal * 0.45}} />
+    </LightPanel>
+  );
+};
+
+type Scenario = {
+  title: string;
+  returnValue: number;
+  volatility: number;
+  liquidity: number;
+  color: string;
+};
+
+const SCENARIOS: Scenario[] = [
+  {title: 'CAPITAL PRESERVATION', returnValue: 4.2, volatility: 5.8, liquidity: 92, color: C.sky},
+  {title: 'BALANCED GROWTH', returnValue: 7.6, volatility: 10.9, liquidity: 84, color: C.emerald},
+  {title: 'ACCELERATED GROWTH', returnValue: 10.8, volatility: 17.4, liquidity: 72, color: C.amber},
+];
+
+const ForecastChart: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 304, 370, 832, 900);
+  const draw = [p(timeline, 330, 470), p(timeline, 352, 492), p(timeline, 374, 514)];
+  const select = p(timeline, 492, 552);
+  const scan = p(timeline, 430, 555);
+  const scanX = 92 + scan * 906;
+  const lines = [
+    {d: 'M92 305 C250 289 396 269 555 246 S838 213 1000 184', band: 'M92 318 C250 302 396 282 555 259 S838 226 1000 197 L1000 170 C838 199 713 214 555 233 S250 276 92 292 Z', color: C.sky},
+    {d: 'M92 305 C248 276 392 236 553 203 S836 142 1000 112', band: 'M92 321 C248 292 392 252 553 219 S836 158 1000 128 L1000 94 C836 124 713 148 553 187 S248 260 92 289 Z', color: C.emerald},
+    {d: 'M92 305 C247 264 390 207 552 161 S834 88 1000 59', band: 'M92 325 C247 284 390 227 552 181 S834 108 1000 79 L1000 38 C834 67 710 98 552 141 S247 244 92 285 Z', color: C.amber},
+  ];
+  return (
+    <svg width="1138" height="458" viewBox="0 0 1138 458" style={{position: 'absolute', inset: 0, opacity: reveal}}>
+      <defs>
+        <linearGradient id="chart-panel" x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor={C.graphite} />
+          <stop offset="1" stopColor={C.graphite2} />
+        </linearGradient>
+        <linearGradient id="band-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor={C.sky} stopOpacity=".18" /><stop offset="1" stopColor={C.sky} stopOpacity=".015" /></linearGradient>
+        <linearGradient id="band-emerald" x1="0" y1="0" x2="0" y2="1"><stop stopColor={C.mint} stopOpacity={0.2 + select * 0.13} /><stop offset="1" stopColor={C.emerald} stopOpacity=".02" /></linearGradient>
+        <linearGradient id="band-amber" x1="0" y1="0" x2="0" y2="1"><stop stopColor={C.amber} stopOpacity=".17" /><stop offset="1" stopColor={C.amber} stopOpacity=".015" /></linearGradient>
+        <filter id="chart-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+        <clipPath id="chart-clip"><rect x="62" y="34" width="976" height="302" rx="10" /></clipPath>
+      </defs>
+      <rect x="0" y="0" width="1138" height="458" rx="25" fill="url(#chart-panel)" />
+      <rect x="1" y="1" width="1136" height="456" rx="24" fill="none" stroke="rgba(255,255,255,.08)" />
+      <text x="34" y="41" fill={C.white} fontFamily={FONT} fontSize="17" fontWeight="850" letterSpacing=".65">PROJECTED PORTFOLIO RANGE</text>
+      <text x="34" y="62" fill="rgba(225,237,231,.52)" fontFamily={FONT} fontSize="10.5" fontWeight="720" letterSpacing=".62">FIVE-YEAR SIMULATED OUTLOOK</text>
+      <g fontFamily={FONT} fontSize="10.5" fontWeight="760">
+        {SCENARIOS.map((scenario, index) => (
+          <g key={scenario.title} transform={`translate(${708 + index * 133}, 30)`} opacity={0.72 + (index === 1 ? select * 0.28 : 0)}>
+            <circle cx="0" cy="0" r="4" fill={scenario.color} />
+            <text x="10" y="4" fill={index === 1 && select > 0.6 ? C.white : 'rgba(225,237,231,.68)'}>{['PRESERVE', 'BALANCED', 'GROWTH'][index]}</text>
+          </g>
+        ))}
+      </g>
+      <g clipPath="url(#chart-clip)">
+        {[105, 167, 229, 291].map((y) => <line key={y} x1="68" y1={y} x2="1030" y2={y} stroke="rgba(207,229,216,.09)" strokeDasharray="3 8" />)}
+        {[92, 274, 456, 638, 820, 1000].map((x) => <line key={x} x1={x} y1="82" x2={x} y2="324" stroke="rgba(207,229,216,.065)" />)}
+        {lines.map((line, index) => (
+          <g key={line.d} opacity={draw[index]}>
+            <path d={line.band} fill={`url(#${['band-sky', 'band-emerald', 'band-amber'][index]})`} />
+            <path d={line.d} fill="none" stroke={line.color} strokeWidth={index === 1 ? 2.8 + select * 0.9 : 2.2} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - draw[index]} filter={index === 1 && select > 0.4 ? 'url(#chart-glow)' : undefined} opacity={index === 1 ? 0.82 + select * 0.18 : 0.72 - select * 0.14} />
+            <circle cx="1000" cy={[184, 112, 59][index]} r={4 + (index === 1 ? select * 2 : 0)} fill={C.white} stroke={line.color} strokeWidth="2" filter="url(#chart-glow)" />
+          </g>
+        ))}
+        <rect x={scanX} y="78" width="2" height="250" fill={C.white} opacity={(1 - Math.abs(scan - 0.5) * 1.5) * 0.38} />
+        <rect x={scanX - 28} y="78" width="58" height="250" fill="url(#band-emerald)" opacity={0.12} />
+      </g>
+      <line x1="68" y1="336" x2="1030" y2="336" stroke="rgba(225,237,231,.22)" />
+      {['2026', '2027', '2028', '2029', '2030', '2031'].map((year, index) => (
+        <text key={year} x={92 + index * 181.6} y="361" textAnchor="middle" fill="rgba(225,237,231,.48)" fontFamily={FONT} fontSize="10.5" fontWeight="720">{year}</text>
+      ))}
+      <g transform="translate(34 390)" fontFamily={FONT}>
+        <text x="0" y="0" fill="rgba(225,237,231,.46)" fontSize="10.5" fontWeight="750" letterSpacing=".62">AI MODEL FIT</text>
+        <text x="0" y="27" fill={C.mint} fontSize="25" fontWeight="900">{Math.round(91 * select)}%</text>
+        <text x="118" y="27" fill={C.white} fontSize="14" fontWeight="820">BALANCED GROWTH</text>
+        <text x="118" y="46" fill="rgba(225,237,231,.5)" fontSize="10.5" fontWeight="700">RISK · RETURN · LIQUIDITY ALIGNMENT</text>
+      </g>
+      <g transform="translate(900 396)" fontFamily={FONT}>
+        <text x="0" y="0" fill="rgba(225,237,231,.46)" fontSize="10.5" fontWeight="750" letterSpacing=".58">SELECTED OUTLOOK</text>
+        <text x="0" y="31" fill={C.white} fontSize="28" fontWeight="900">{(7.6 * select).toFixed(1)}%</text>
+        <text x="91" y="29" fill={C.mint} fontSize="11" fontWeight="800">EST. / YEAR</text>
+      </g>
+      <circle cx={1030} cy={112} r={9 + Math.sin(phase * 3) * 1.2} fill="none" stroke={C.mint} strokeWidth="1" opacity={select * 0.48} />
+    </svg>
+  );
+};
+
+const ForecastPanel: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 295, 360, 834, 900);
+  return (
+    <div
+      data-safe-object="true"
+      style={{
+        position: 'absolute',
+        left: 72,
+        top: 304,
+        width: 1138,
+        height: 458,
+        borderRadius: 25,
+        overflow: 'hidden',
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 18}px) scale(${0.988 + reveal * 0.012})`,
+        boxShadow: '0 32px 86px rgba(28,48,40,.2)',
+      }}
+    >
+      <ForecastChart timeline={timeline} phase={phase} />
+    </div>
+  );
+};
+
+const ScenarioCard: React.FC<{scenario: Scenario; index: number; timeline: number}> = ({scenario, index, timeline}) => {
+  const reveal = life(timeline, 325 + index * 24, 385 + index * 24, 832, 900);
+  const select = index === 1 ? p(timeline, 492, 552) : 0;
+  const count = p(timeline, 342 + index * 24, 470 + index * 24);
+  const y = 78 + index * 116;
+  const selectedInk = select > 0.58 ? C.white : C.ink;
+  const selectedMuted = select > 0.58 ? 'rgba(255,255,255,.68)' : C.muted;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 22,
+        right: 22,
+        top: y,
+        height: 98,
+        borderRadius: 18,
+        overflow: 'hidden',
+        border: `1px solid ${rgba(scenario.color, 0.18 + select * 0.42)}`,
+        background: `linear-gradient(135deg, ${rgba(index === 1 ? C.emerald : C.white, index === 1 ? select : 0.82)}, ${rgba(index === 1 ? '#24795e' : scenario.color, index === 1 ? select : 0.035)})`,
+        boxShadow: select > 0.2 ? `0 17px 34px ${rgba(C.emerald, 0.18 * select)}` : '0 8px 22px rgba(34,64,52,.055)',
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * 24}px) scale(${1 + select * 0.018})`,
+        transformOrigin: '50% 50%',
+        fontFamily: FONT,
+      }}
+    >
+      <div style={{position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: scenario.color}} />
+      <div style={{position: 'absolute', left: 20, top: 15, right: 176}}>
+        <div style={{fontSize: 14.5, color: selectedInk, fontWeight: 860, letterSpacing: 0.38}}>{scenario.title}</div>
+        <div style={{marginTop: 8, display: 'flex', gap: 20}}>
+          <div><span style={{fontSize: 20, color: selectedInk, fontWeight: 900}}>{(scenario.returnValue * count).toFixed(1)}%</span><span style={{marginLeft: 6, fontSize: 9.5, color: selectedMuted, fontWeight: 760}}>RETURN</span></div>
+          <div><span style={{fontSize: 15, color: selectedInk, fontWeight: 850}}>{(scenario.volatility * count).toFixed(1)}%</span><span style={{marginLeft: 6, fontSize: 9.5, color: selectedMuted, fontWeight: 760}}>VOLATILITY</span></div>
+        </div>
+      </div>
+      <div style={{position: 'absolute', right: 16, top: 15, width: 142, textAlign: 'right'}}>
+        {index === 1 ? (
+          <div style={{display: 'inline-flex', height: 24, padding: '0 8px', borderRadius: 8, alignItems: 'center', gap: 6, border: `1px solid ${select > 0.58 ? 'rgba(255,255,255,.24)' : rgba(C.emerald, 0.2)}`, color: select > 0.58 ? C.white : C.emerald, fontSize: 8.4, fontWeight: 880, letterSpacing: 0.42, whiteSpace: 'nowrap'}}>
+            <span style={{width: 6, height: 6, borderRadius: 6, background: select > 0.58 ? C.white : C.emerald}} />
+            AI RECOMMENDED
+          </div>
+        ) : (
+          <div style={{display: 'inline-flex', height: 24, padding: '0 8px', borderRadius: 8, alignItems: 'center', border: `1px solid ${rgba(scenario.color, 0.18)}`, color: scenario.color, fontSize: 9, fontWeight: 840, letterSpacing: 0.52}}>SCENARIO {index + 1}</div>
+        )}
+        <div style={{marginTop: 12, fontSize: 10, color: selectedMuted, fontWeight: 760}}>LIQUIDITY</div>
+        <div style={{marginTop: 3, fontSize: 15, color: selectedInk, fontWeight: 880}}>{Math.round(scenario.liquidity * count)}%</div>
+      </div>
+      <div style={{position: 'absolute', left: 20, right: 20, bottom: 9, height: 3, borderRadius: 3, background: select > 0.58 ? 'rgba(255,255,255,.16)' : rgba(scenario.color, 0.08), overflow: 'hidden'}}>
+        <div style={{height: '100%', width: `${count * 100}%`, background: select > 0.58 ? C.white : scenario.color, opacity: 0.68}} />
+      </div>
+    </div>
+  );
+};
+
+const ScenarioRail: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 300, 365, 834, 900);
+  const selected = p(timeline, 492, 552);
+  return (
+    <LightPanel x={1234} y={304} width={614} height={458} reveal={reveal} radius={25}>
+      <div style={{position: 'absolute', left: 22, right: 22, top: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT}}>
+        <div>
+          <div style={{fontSize: 16.5, color: C.ink, fontWeight: 880, letterSpacing: 0.58}}>SCENARIO COMPARISON</div>
+          <div style={{marginTop: 5, fontSize: 10.5, color: C.muted, fontWeight: 720, letterSpacing: 0.55}}>RETURN · VOLATILITY · LIQUIDITY</div>
+        </div>
+        <div style={{height: 29, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 7, border: `1px solid ${rgba(selected > 0.9 ? C.emerald : C.blue, 0.19)}`, background: rgba(selected > 0.9 ? C.emerald : C.blue, 0.04), color: selected > 0.9 ? C.emerald : C.blue, fontSize: 9.5, fontWeight: 850, letterSpacing: 0.53}}>
+          <span style={{width: 6, height: 6, borderRadius: 6, background: selected > 0.9 ? C.emerald : C.blue, boxShadow: `0 0 ${6 + Math.sin(phase * 4) * 2}px ${selected > 0.9 ? C.emerald : C.blue}`}} />
+          {selected > 0.9 ? 'BEST FIT FOUND' : 'COMPARING'}
+        </div>
+      </div>
+      {SCENARIOS.map((scenario, index) => <ScenarioCard key={scenario.title} scenario={scenario} index={index} timeline={timeline} />)}
+      <div style={{position: 'absolute', left: 22, right: 22, bottom: 17, height: 1, background: `linear-gradient(90deg, ${rgba(C.emerald, 0.24)}, ${rgba(C.blue, 0.13)}, transparent)`}} />
+    </LightPanel>
+  );
+};
+
+type Recommendation = {
+  title: string;
+  body: string;
+  timing: string;
+  color: string;
+};
+
+const RECOMMENDATIONS: Recommendation[] = [
+  {title: 'ESTABLISH RESERVE', body: 'Set aside a 12% liquidity buffer.', timing: 'MONTH 0–3', color: C.sky},
+  {title: 'BUILD THE CORE', body: 'Deploy 48% into a diversified core.', timing: 'MONTH 1–6', color: C.emerald},
+  {title: 'ADD GROWTH', body: 'Allocate 30% across growth opportunities.', timing: 'MONTH 4–12', color: C.amber},
+  {title: 'REVIEW & REBALANCE', body: 'Review quarterly when allocation drift exceeds 5%.', timing: 'ONGOING', color: C.coral},
+];
+
+const RecommendationCard: React.FC<{item: Recommendation; index: number; timeline: number; phase: number}> = ({item, index, timeline, phase}) => {
+  const start = 545 + index * 61;
+  const reveal = life(timeline, start, start + 58, 824, 900);
+  const verified = p(timeline, start + 35, start + 92);
+  const x = 24 + index * 436;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x,
+        top: 71,
+        width: 420,
+        height: 124,
+        borderRadius: 18,
+        overflow: 'hidden',
+        border: `1px solid ${rgba(item.color, 0.2)}`,
+        background: 'linear-gradient(145deg, rgba(255,255,255,.94), rgba(244,248,243,.86))',
+        boxShadow: `0 12px 30px rgba(38,72,57,.07), 0 0 26px ${rgba(item.color, 0.025)}`,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 18}px) scale(${0.985 + reveal * 0.015})`,
+        fontFamily: FONT,
+      }}
+    >
+      <div style={{position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: item.color}} />
+      <div style={{position: 'absolute', left: 19, top: 16, width: 42, height: 42, borderRadius: 14, display: 'grid', placeItems: 'center', border: `1px solid ${rgba(item.color, 0.23)}`, background: rgba(item.color, 0.055), color: item.color, fontSize: 14, fontWeight: 900}}>{String(index + 1).padStart(2, '0')}</div>
+      <div style={{position: 'absolute', left: 75, top: 15, right: 18}}>
+        <div style={{fontSize: 16.5, color: C.ink, fontWeight: 880, letterSpacing: 0.28}}>{item.title}</div>
+        <div style={{marginTop: 7, minHeight: 36, fontSize: 14.2, lineHeight: 1.28, color: C.muted, fontWeight: 570}}>{item.body}</div>
+      </div>
+      <div style={{position: 'absolute', left: 19, right: 18, bottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+        <div style={{fontSize: 9.5, color: item.color, fontWeight: 850, letterSpacing: 0.63}}>{item.timing}</div>
+        <div style={{display: 'flex', alignItems: 'center', gap: 6, color: verified > 0.9 ? C.emerald : C.muted, fontSize: 9.5, fontWeight: 830, letterSpacing: 0.52}}>
+          <span style={{width: 6, height: 6, borderRadius: 6, background: verified > 0.9 ? C.emerald : C.line, boxShadow: verified > 0.9 ? `0 0 ${6 + Math.sin(phase * 4 + index) * 1.5}px ${C.emerald}` : undefined}} />
+          {verified > 0.9 ? 'VERIFIED' : 'ANALYZING'}
+        </div>
+      </div>
+      <div style={{position: 'absolute', left: 19, right: 18, bottom: 0, height: 3, background: rgba(item.color, 0.07)}}>
+        <div style={{height: '100%', width: `${verified * 100}%`, background: item.color}} />
+      </div>
+    </div>
+  );
+};
+
+const RecommendationStrip: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 510, 570, 828, 900);
+  const complete = p(timeline, 735, 795);
+  return (
+    <LightPanel x={72} y={788} width={1776} height={218} reveal={reveal} radius={25}>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 17, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+          <span style={{width: 9, height: 9, borderRadius: 9, background: C.emerald, boxShadow: `0 0 ${8 + Math.sin(phase * 4) * 2}px ${C.emerald}`}} />
+          <span style={{fontSize: 16.5, color: C.ink, fontWeight: 890, letterSpacing: 0.54}}>AI RECOMMENDATION PATH</span>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+          <span style={{fontSize: 10.5, color: C.muted, fontWeight: 760, letterSpacing: 0.55}}>BALANCED GROWTH SELECTED</span>
+          <span style={{height: 29, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', border: `1px solid ${rgba(C.emerald, 0.2)}`, background: rgba(C.emerald, 0.045), color: C.emerald, fontSize: 9.8, fontWeight: 860, letterSpacing: 0.56}}>{complete > 0.9 ? '4 STEPS READY' : 'GENERATING'}</span>
+        </div>
+      </div>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 57, height: 1, background: `linear-gradient(90deg, ${rgba(C.emerald, 0.24)}, ${rgba(C.blue, 0.13)}, ${rgba(C.amber, 0.14)}, transparent)`}} />
+      {RECOMMENDATIONS.map((item, index) => <RecommendationCard key={item.title} item={item} index={index} timeline={timeline} phase={phase} />)}
+    </LightPanel>
+  );
+};
+
+const DataPulse: React.FC<{timeline: number}> = ({timeline}) => {
+  const reveal = life(timeline, 305, 370, 830, 900);
+  const first = p(timeline, 512, 560);
+  const second = p(timeline, 630, 678);
+  const y = 775;
+  return (
+    <svg width="1920" height="1080" viewBox="0 0 1920 1080" style={{position: 'absolute', inset: 0, pointerEvents: 'none', opacity: reveal}}>
+      <defs>
+        <filter id="pulse-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      <path d={`M938 762 C938 ${y} 980 ${y} 980 788`} fill="none" stroke={C.emerald} strokeWidth="1.2" strokeDasharray="3 8" strokeDashoffset={-timeline * 0.16} opacity={first * 0.45} />
+      <circle cx={938 + ((timeline * 0.8) % 42)} cy={y} r="3.6" fill={C.white} stroke={C.emerald} strokeWidth="1" opacity={first} filter="url(#pulse-glow)" />
+      <path d="M1210 534 C1222 534 1228 534 1234 534" fill="none" stroke={C.blue} strokeWidth="1.2" strokeDasharray="2 6" strokeDashoffset={-timeline * 0.18} opacity={second * 0.36} />
+    </svg>
+  );
+};
+
+const Disclaimer: React.FC<{timeline: number}> = ({timeline}) => {
+  const reveal = life(timeline, 680, 748, 815, 900);
+  return (
+    <div style={{position: 'absolute', left: 72, right: 72, bottom: 31, display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: reveal, fontFamily: FONT}}>
+      <div style={{fontSize: 10.5, color: C.muted, fontWeight: 760, letterSpacing: 0.68}}>ILLUSTRATIVE DATA ONLY · NOT FINANCIAL ADVICE · RETURNS ARE NOT GUARANTEED</div>
+      <div style={{fontSize: 10.5, color: C.emerald, fontWeight: 850, letterSpacing: 0.67}}>SIMULATION COMPLETE · 2026–2031</div>
+    </div>
+  );
+};
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const t = (frame % durationInFrames) / durationInFrames;
-
-  const g1x = 26 + 6 * Math.sin(TAU * t);
-  const g1y = 22 + 5 * Math.cos(TAU * t + 1);
-  const g2x = 74 + 6 * Math.sin(TAU * t + 2);
-  const g2y = 78 + 5 * Math.cos(TAU * t);
-
-  const scanY = t;
-  const scanEdge = interpolate(Math.min(scanY, 1 - scanY), [0, 0.08], [0, 1], {
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.ease),
-  });
-
+  const timeline = (frame / durationInFrames) * 900;
+  const phase = (frame / durationInFrames) * Math.PI * 2;
+  const master = life(timeline, 0, 48, 850, 900);
+  const clickPush = p(timeline, 270, 302) * (1 - p(timeline, 302, 382));
+  const cameraX = Math.sin(phase) * 2.8 + clickPush * 2.2;
+  const cameraY = Math.cos(phase * 1.25) * 2;
+  const rotateX = Math.sin(phase + 0.4) * 0.06;
+  const rotateY = Math.cos(phase * 0.9) * 0.09;
+  const scale = 0.976 + p(timeline, 0, 820) * 0.011 + clickPush * 0.004;
   return (
-    <AbsoluteFill style={{background: 'radial-gradient(130% 100% at 50% 28%, #0c1834 0%, #081124 42%, #050a17 72%, #03060f 100%)', fontFamily: FONT}}>
-      <AbsoluteFill style={{mixBlendMode: 'screen'}}>
-        <div style={{position: 'absolute', left: `${g1x}%`, top: `${g1y}%`, width: 1100, height: 1100, marginLeft: -550, marginTop: -550, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(C.cyan, 0.16)} 0%, ${hexA(C.cyan, 0)} 66%)`}} />
-        <div style={{position: 'absolute', left: `${g2x}%`, top: `${g2y}%`, width: 1200, height: 1200, marginLeft: -600, marginTop: -600, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(C.violet, 0.14)} 0%, ${hexA(C.violet, 0)} 66%)`}} />
-        <div style={{position: 'absolute', left: '50%', top: '46%', width: 1500, height: 900, marginLeft: -750, marginTop: -450, borderRadius: '50%', background: `radial-gradient(ellipse, ${hexA(C.blue, 0.10)} 0%, ${hexA(C.blue, 0)} 70%)`}} />
-      </AbsoluteFill>
-
-      <Bokeh t={t} count={26} seedp="bg" />
-
-      <AbsoluteFill style={{perspective: '1400px', perspectiveOrigin: '50% 42%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-        <World t={t} />
-      </AbsoluteFill>
-
-      <Bokeh t={t} count={7} seedp="fg" front />
-
-      <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.5 * scanEdge}}>
-        <div style={{position: 'absolute', left: 0, right: 0, top: `${scanY * 100}%`, height: 140, marginTop: -70, background: `linear-gradient(180deg, transparent, ${hexA(C.cyan, 0.10)} 50%, transparent)`}} />
-      </AbsoluteFill>
-
-      <AbsoluteFill style={{pointerEvents: 'none', background: 'radial-gradient(120% 120% at 50% 44%, transparent 52%, rgba(2,4,10,0.55) 82%, rgba(1,3,8,0.9) 100%)'}} />
-
-      <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'overlay', opacity: 0.05}}>
-        <svg width="100%" height="100%" viewBox="0 0 960 540" preserveAspectRatio="none">
-          <filter id="mn_noise" x="0" y="0" width="100%" height="100%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" stitchTiles="stitch" />
-            <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0" />
-          </filter>
-          <rect width="960" height="540" filter="url(#mn_noise)" />
-        </svg>
-      </AbsoluteFill>
+    <AbsoluteFill style={{overflow: 'hidden', backgroundColor: C.pearl}}>
+      <Ambient timeline={timeline} phase={phase} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: master,
+          transform: `perspective(4600px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${scale})`,
+          transformOrigin: '50% 50%',
+          transformStyle: 'preserve-3d',
+          willChange: 'transform, opacity',
+        }}
+      >
+        <Header timeline={timeline} phase={phase} />
+        <PromptBar timeline={timeline} phase={phase} />
+        <ForecastPanel timeline={timeline} phase={phase} />
+        <ScenarioRail timeline={timeline} phase={phase} />
+        <DataPulse timeline={timeline} />
+        <RecommendationStrip timeline={timeline} phase={phase} />
+        <Disclaimer timeline={timeline} />
+      </div>
     </AbsoluteFill>
   );
 };
-
-export default Motion;
