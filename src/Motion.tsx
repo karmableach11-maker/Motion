@@ -1,338 +1,277 @@
-import React from "react";
+// ============================================================================
+//  PREMIUM NEON — "AI NEURAL NETWORK PULSE"
+//  Original, IP-safe abstract motion graphic for microstock.
+//  1920x1080 · 60fps · 15s (900 frames) · perfectly seamless loop.
+//
+//  A layered neural network (input → hidden → hidden → output) rendered in
+//  neon line-art. Every forward pass (180 frames, 5 per loop) sends a wave
+//  of glowing signals sweeping layer by layer along the connections; nodes
+//  ignite sequentially with a flash ring as the wave arrives, and each
+//  connection's weight breathes thicker and thinner on its own phase.
+//  A large blurred ghost copy of the network drifts slowly behind for
+//  depth, over the same bokeh / dust / grain atmosphere as the series.
+//
+//  Fully deterministic: every pixel is a pure function of the frame and
+//  Remotion's seeded random(). All motion periods divide 900 frames.
+// ============================================================================
+
+import React from 'react';
 import {
   AbsoluteFill,
   useCurrentFrame,
-  useVideoConfig,
   interpolate,
   Easing,
   random,
-} from "remotion";
+} from 'remotion';
 
-/**
- * NEON OTP CODE ENTRY
- * Six one-time-passcode boxes fill with digits one by one while a circular
- * countdown ticks down; a verification sweep runs across the code, the timer
- * morphs into a green checkmark with confirmation rings, then the scene
- * gracefully resets — a seamless narrative loop.
- * Original, generic, IP-safe motion-graphics loop for microstock.
- * 1920x1080 · 60fps · seamless loop over the full duration.
- * Fully deterministic (frame / fps / seeded random only).
- */
+// ----------------------------------------------------------------------------
+// Constants
+// ----------------------------------------------------------------------------
+const W = 1920;
+const H = 1080;
+const DUR = 900; // 15 s @ 60 fps
 
-/* ------------------------------------------------------------------ *
- *  Palette & layout
- * ------------------------------------------------------------------ */
+const CX = W / 2;
+const CY = H / 2 + 8;
 
-const CYAN: [number, number, number] = [86, 214, 255];
-const GOLD: [number, number, number] = [255, 196, 92];
-const EMER: [number, number, number] = [92, 255, 168];
-const STEEL: [number, number, number] = [120, 168, 214];
+// Network topology: input -> hidden -> hidden -> output
+const LAYERS = [4, 6, 6, 3];
+const LAYER_X = [430, 812, 1124, 1500];
+const SPACING = [168, 138, 138, 190];
+const NODE_R = [17, 15, 15, 21];
 
-const N_BOX = 6;
-const BOX = { w: 112, h: 138, r: 20, gap: 40 };
-const BOX_STEP = BOX.w + BOX.gap;
-const BOX_Y = 610;
-const CX = 960;
-const TIMER = { x: 960, y: 286, r: 88 };
-const TIMER_CIRC = 2 * Math.PI * TIMER.r;
+// Loop-safe periods (every one divides 900)
+const PASS = 180;        // one forward pass (5 per loop)
+const LAYER_DELAY = 40;  // frames between layer activations
+const FIRST_AT = 12;
+const FLASH_LEN = 52;
+const W_BREATHE = 300;   // weight-thickness breathing
 
-/* ------------------------------------------------------------------ *
- *  Timeline (fractions of total duration)
- * ------------------------------------------------------------------ */
+// Palette (same family as the series)
+const VIOLET = '#7b34ff';
+const VIOLET_HI = '#c8a6ff';
+const MAGENTA = '#e83be0';
+const WHITE = '#f6eeff';
 
-const T_DIGIT0 = 0.06;
-const T_DIGIT_STEP = 0.055; // last digit lands at 0.335
-const T_SWEEP = [0.4, 0.46] as const; // verification sweep across the code
-const T_VERIFY = [0.46, 0.56] as const; // timer -> green check
-const T_RESET = [0.84, 0.95] as const;
+// ----------------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------------
+const TAU = Math.PI * 2;
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const p2 = (n: number) => Math.round(n * 100) / 100;
+const ss = (e0: number, e1: number, x: number) => {
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const rnd = (s: number) => random(`nnpulse-${s}`);
 
-/* ------------------------------------------------------------------ *
- *  Helpers
- * ------------------------------------------------------------------ */
-
-const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-const rgb = (c: [number, number, number], a = 1) =>
-  `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
-const mixC = (
-  a: [number, number, number],
-  b: [number, number, number],
-  t: number
-): [number, number, number] => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
-
-const seg = (
-  t: number,
-  a: number,
-  b: number,
-  easing: (v: number) => number = Easing.inOut(Easing.cubic)
-) =>
-  interpolate(t, [a, b], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing,
-  });
-
-type Layer = {
-  stroke: string;
-  strokeWidth: number;
-  filter?: string;
-  opacity: number;
-  fill: string;
+// ----------------------------------------------------------------------------
+// Layout + edge list (static, derived from seeded random)
+// ----------------------------------------------------------------------------
+const nodeXY = (li: number, ni: number) => {
+  const n = LAYERS[li];
+  const y0 = CY - ((n - 1) * SPACING[li]) / 2;
+  return {x: LAYER_X[li], y: y0 + ni * SPACING[li]};
 };
 
-const NeonShape: React.FC<{
-  color: [number, number, number];
-  coreW: number;
-  glowW: number;
-  opacity?: number;
-  render: (p: Layer) => React.ReactNode;
-}> = ({ color, coreW, glowW, opacity = 1, render }) => (
-  <g opacity={opacity}>
-    {render({ stroke: rgb(color, 0.9), strokeWidth: glowW, filter: "url(#blurBig)", opacity: 0.55, fill: "none" })}
-    {render({ stroke: rgb(color, 1), strokeWidth: coreW * 2, filter: "url(#blurSmall)", opacity: 0.85, fill: "none" })}
-    {render({ stroke: "rgba(255,255,255,0.96)", strokeWidth: coreW, opacity: 0.96, fill: "none" })}
-  </g>
-);
+type Edge = {li: number; a: number; b: number; wBase: number; ph: number; stag: number};
+const EDGES: Edge[] = [];
+for (let li = 0; li < LAYERS.length - 1; li++) {
+  for (let a = 0; a < LAYERS[li]; a++) {
+    for (let b = 0; b < LAYERS[li + 1]; b++) {
+      const seed = li * 1000 + a * 50 + b;
+      EDGES.push({
+        li,
+        a,
+        b,
+        wBase: 1.0 + rnd(seed) * 2.2,
+        ph: rnd(seed + 1) * TAU,
+        stag: rnd(seed + 2) * 6,
+      });
+    }
+  }
+}
 
-// neon text: three stacked passes (halo, glow, white core)
-const NeonText: React.FC<{
-  color: [number, number, number];
-  size: number;
-  children: string;
-}> = ({ color, size, children }) => {
-  const common = {
-    textAnchor: "middle" as const,
-    dominantBaseline: "central" as const,
-    fontFamily: "'Courier New', monospace",
-    fontWeight: 700 as const,
-    fontSize: size,
-  };
-  return (
-    <g>
-      <text {...common} fill={rgb(color, 0.85)} filter="url(#blurBig)" opacity={0.6}>{children}</text>
-      <text {...common} fill={rgb(color, 1)} filter="url(#blurSmall)" opacity={0.9}>{children}</text>
-      <text {...common} fill="rgba(255,255,255,0.96)">{children}</text>
+const activationAt = (li: number) => FIRST_AT + li * LAYER_DELAY;
+const sinceAct = (frame: number, li: number) =>
+  ((frame % PASS) - activationAt(li) + PASS) % PASS;
+
+// ----------------------------------------------------------------------------
+// Defs (gradients, glow filters, grain)
+// ----------------------------------------------------------------------------
+const defs = (frame: number) => {
+  const grainSeed = frame % 60;
+  return `<defs>
+    <radialGradient id="bgGlow" cx="0.5" cy="0.5" r="0.72">
+      <stop offset="0" stop-color="#18092e"/>
+      <stop offset="0.5" stop-color="#0b0518"/>
+      <stop offset="1" stop-color="#04020b"/>
+    </radialGradient>
+    <radialGradient id="coreGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="${MAGENTA}" stop-opacity="0.36"/>
+      <stop offset="0.55" stop-color="${VIOLET}" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="${VIOLET}" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="nodeFill" cx="0.4" cy="0.35" r="0.9">
+      <stop offset="0" stop-color="#2a1150"/>
+      <stop offset="1" stop-color="#120728"/>
+    </radialGradient>
+    <filter id="gSm" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="2.4"/></filter>
+    <filter id="gMd" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="gLg" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="gXl" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="34"/></filter>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="${grainSeed}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.5  0 0 0 0 0.65  0 0 0 0.9 0"/></filter>
+  </defs>`;
+};
+
+// ----------------------------------------------------------------------------
+// Background: vignette + drifting bokeh + twinkling dust (loop-periodic)
+// ----------------------------------------------------------------------------
+const background = (frame: number) => {
+  const L = (frame / DUR) * TAU; // integer multiples of L stay seamless
+  let bokeh = '';
+  for (let i = 0; i < 9; i++) {
+    const ph = rnd(i + 11) * TAU;
+    const nx = 1 + Math.floor(rnd(i + 12) * 2);
+    const ny = 1 + Math.floor(rnd(i + 13) * 2);
+    const on = 1 + Math.floor(rnd(i + 14) * 2);
+    const bx = rnd(i) * W + Math.sin(L * nx + ph) * 26;
+    const by = rnd(i + 1) * H + Math.cos(L * ny + ph) * 20;
+    const br = 46 + rnd(i + 2) * 72;
+    const op = 0.05 + 0.05 * (0.5 + 0.5 * Math.sin(L * on + i));
+    const col = i % 2 ? MAGENTA : VIOLET;
+    bokeh += `<circle cx="${p2(bx)}" cy="${p2(by)}" r="${p2(br)}" fill="${col}" opacity="${p2(op)}" filter="url(#gXl)"/>`;
+  }
+  let dust = '';
+  for (let i = 0; i < 46; i++) {
+    const ph = rnd(i + 30) * TAU;
+    const twN = 4 + Math.floor(rnd(i + 15) * 7);
+    const dx = rnd(i + 20) * W + Math.sin(L + ph) * 12;
+    const dy = rnd(i + 40) * H + Math.cos(L + ph) * 10;
+    const tw = 0.14 + 0.34 * (0.5 + 0.5 * Math.sin(L * twN + rnd(i + 9) * TAU));
+    const dr = 0.8 + rnd(i + 5) * 1.4;
+    const col = rnd(i + 7) > 0.6 ? MAGENTA : WHITE;
+    dust += `<circle cx="${p2(dx)}" cy="${p2(dy)}" r="${p2(dr)}" fill="${col}" opacity="${p2(tw)}"/>`;
+  }
+  return `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#bgGlow)"/>
+    ${bokeh}
+    <ellipse cx="${CX}" cy="${CY}" rx="700" ry="360" fill="url(#coreGlow)" filter="url(#gLg)"/>
+    ${dust}`;
+};
+
+// ----------------------------------------------------------------------------
+// Edges: breathing weights + travelling signal wave
+// ----------------------------------------------------------------------------
+const edgesGroup = (frame: number, ghost: boolean) => {
+  const c = frame % PASS;
+  let base = '';
+  let pulses = '';
+  for (const e of EDGES) {
+    const A = nodeXY(e.li, e.a);
+    const B = nodeXY(e.li + 1, e.b);
+    const wAnim =
+      e.wBase * (0.72 + 0.28 * Math.sin((frame / W_BREATHE) * TAU + e.ph));
+    const baseOp = ghost ? 0.5 : 0.13 + ((e.wBase - 1.0) / 2.2) * 0.24;
+    base += `<line x1="${p2(A.x)}" y1="${p2(A.y)}" x2="${p2(B.x)}" y2="${p2(B.y)}" stroke="${VIOLET}" stroke-width="${p2(wAnim)}" opacity="${p2(baseOp)}"/>`;
+    if (ghost) continue;
+
+    // signal travelling A -> B inside this layer's window (staggered per edge)
+    const t0 = activationAt(e.li) + e.stag;
+    const p = clamp((c - t0) / LAYER_DELAY, 0, 1);
+    if (p <= 0 || p >= 1) continue;
+    const fadeIn = interpolate(p, [0, 0.12], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.quad),
+    });
+    const fadeOut = interpolate(p, [0.88, 1], [1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.quad),
+    });
+    const env = fadeIn * fadeOut;
+    if (env < 0.02) continue;
+    const px = A.x + (B.x - A.x) * p;
+    const py = A.y + (B.y - A.y) * p;
+    const tp = Math.max(0, p - 0.1);
+    const tx = A.x + (B.x - A.x) * tp;
+    const ty = A.y + (B.y - A.y) * tp;
+    const rr = 2.4 + e.wBase * 1.1;
+    pulses += `<line x1="${p2(tx)}" y1="${p2(ty)}" x2="${p2(px)}" y2="${p2(py)}" stroke="${MAGENTA}" stroke-width="${p2(wAnim + 1.2)}" opacity="${p2(env * 0.7)}" stroke-linecap="round" filter="url(#gSm)"/>`;
+    pulses += `<circle cx="${p2(px)}" cy="${p2(py)}" r="${p2(rr + 2.4)}" fill="${MAGENTA}" opacity="${p2(env * 0.5)}" filter="url(#gMd)"/>`;
+    pulses += `<circle cx="${p2(px)}" cy="${p2(py)}" r="${p2(rr)}" fill="${MAGENTA}" opacity="${p2(env * 0.95)}" filter="url(#gSm)"/>`;
+    pulses += `<circle cx="${p2(px)}" cy="${p2(py)}" r="${p2(rr * 0.45)}" fill="${WHITE}" opacity="${p2(env)}"/>`;
+  }
+  return `<g fill="none">${base}</g><g>${pulses}</g>`;
+};
+
+// ----------------------------------------------------------------------------
+// Nodes: sequential ignition with flash ring
+// ----------------------------------------------------------------------------
+const nodesGroup = (frame: number, ghost: boolean) => {
+  let s = '';
+  for (let li = 0; li < LAYERS.length; li++) {
+    const el = sinceAct(frame, li);
+    for (let ni = 0; ni < LAYERS[li]; ni++) {
+      const {x, y} = nodeXY(li, ni);
+      const r = NODE_R[li];
+      if (ghost) {
+        s += `<circle cx="${p2(x)}" cy="${p2(y)}" r="${r}" fill="none" stroke="${VIOLET}" stroke-width="2" opacity="0.6"/>`;
+        continue;
+      }
+      const jit = rnd(li * 37 + ni) * 8; // organic per-node ignition offset
+      const e2 = (el - jit + PASS) % PASS;
+      const flash = Math.pow(Math.max(0, 1 - e2 / FLASH_LEN), 2.2);
+      const isOut = li === LAYERS.length - 1;
+      const edgeCol = isOut ? MAGENTA : VIOLET;
+      const ringSc = 1 + flash * 0.9;
+      const ringOp = flash * 0.55;
+      s += `<g transform="translate(${p2(x)} ${p2(y)})">
+        <circle r="${p2(r * 2.1)}" fill="${edgeCol}" opacity="${p2(0.06 + flash * 0.22)}" filter="url(#gLg)"/>
+        <circle r="${p2(r * ringSc + 6)}" fill="none" stroke="${MAGENTA}" stroke-width="1.6" opacity="${p2(ringOp)}" filter="url(#gSm)"/>
+        <circle r="${r}" fill="url(#nodeFill)"/>
+        <circle r="${r}" fill="none" stroke="${edgeCol}" stroke-width="5" opacity="${p2(0.4 + flash * 0.4)}" filter="url(#gMd)"/>
+        <circle r="${r}" fill="none" stroke="${isOut ? MAGENTA : VIOLET_HI}" stroke-width="2.2" opacity="${p2(0.85 + flash * 0.15)}"/>
+        <circle r="${p2(r * 0.42 + flash * r * 0.2)}" fill="${WHITE}" opacity="${p2(0.28 + flash * 0.72)}" filter="url(#gSm)"/>
+        <circle r="${p2(r * 0.2)}" fill="${WHITE}" opacity="${p2(0.5 + flash * 0.5)}"/>
+      </g>`;
+    }
+  }
+  return s;
+};
+
+// ----------------------------------------------------------------------------
+// Scene assembly (ghost depth copy behind the live network)
+// ----------------------------------------------------------------------------
+const buildScene = (frame: number) => {
+  const L = (frame / DUR) * TAU;
+  const gx = Math.sin(L) * 14;
+  const gy = Math.cos(L) * 10;
+  return `<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    ${defs(frame)}
+    ${background(frame)}
+    <g transform="translate(${p2(CX + gx)} ${p2(CY + gy)}) scale(1.22) translate(${-CX} ${-CY})" opacity="0.09" filter="url(#gMd)">
+      ${edgesGroup(frame, true)}
+      ${nodesGroup(frame, true)}
     </g>
-  );
+    ${edgesGroup(frame, false)}
+    ${nodesGroup(frame, false)}
+    <rect x="0" y="0" width="${W}" height="${H}" filter="url(#grain)" opacity="0.05" style="mix-blend-mode:soft-light"/>
+  </svg>`;
 };
 
-const CHECK_D = "M -34 4 L -10 28 L 38 -24";
-const CHECK_LEN = 105;
-
-/* ------------------------------------------------------------------ *
- *  Main composition
- * ------------------------------------------------------------------ */
-
+// ----------------------------------------------------------------------------
+// Composition
+// ----------------------------------------------------------------------------
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const { width, height, durationInFrames } = useVideoConfig();
-  const D = durationInFrames;
-  const t = frame / D;
-  const tau = Math.PI * 2;
-  const cyc = (target: number) => Math.max(1, Math.round(D / target));
-  const TICK_C = cyc(60); // one tick per second at 60fps
-  const AMB_DY_C = cyc(300);
-  const AMB_TW_C = cyc(180);
-  const BREATH_C = cyc(420);
-  const HALO_C = cyc(150);
-
-  const breath = Math.sin(((frame * BREATH_C) / D) * tau);
-
-  /* ---------------- state curves ---------------- */
-
-  // digits: pop in one by one, pop out during reset
-  const digits = Array.from({ length: N_BOX }).map((_, i) => {
-    const tin = T_DIGIT0 + i * T_DIGIT_STEP;
-    const pin = seg(t, tin, tin + 0.03, Easing.out(Easing.back(1.9)));
-    const pout = 1 - seg(t, T_RESET[0] + 0.01 + i * 0.008, T_RESET[0] + 0.05 + i * 0.008);
-    const vis = pin * pout;
-    const value = Math.floor(random(`dg${i}`) * 10).toString();
-    return { vis, value, tin };
-  });
-
-  // success level: rises at verify, falls at reset
-  const success =
-    seg(t, T_VERIFY[0], T_VERIFY[0] + 0.05) * (1 - seg(t, T_RESET[0], T_RESET[0] + 0.05));
-
-  // verification sweep position (gated)
-  const sweepT = seg(t, T_SWEEP[0], T_SWEEP[1], Easing.inOut(Easing.cubic));
-  const sweepOn = t > T_SWEEP[0] && t < T_SWEEP[1] + 0.005 ? 1 : 0;
-  const sweepX = mix(CX - 500, CX + 500, sweepT);
-
-  // countdown arc: depletes while entering, freezes at verify, refills at reset
-  const depl = seg(t, 0.0, T_VERIFY[0], Easing.linear); // linear countdown (cyclic-appropriate)
-  const refill = seg(t, T_RESET[0], T_RESET[1], Easing.inOut(Easing.cubic));
-  const arcProgress = mix(mix(1, 0.3, depl), 1, refill); // 1 -> 0.3 -> back to 1
-  // urgency color: cyan -> gold as it depletes; green when verified
-  const arcCol = mixC(mixC(CYAN, GOLD, 1 - (arcProgress - 0.3) / 0.7), EMER, success);
-
-  // per-second tick pulse, only while counting
-  const counting = (1 - seg(t, T_VERIFY[0] - 0.01, T_VERIFY[0])) + seg(t, T_RESET[1] - 0.015, T_RESET[1]);
-  const countGate = Math.min(1, counting);
-  const tickPhase = Math.pow(Math.max(0, Math.sin(((frame * TICK_C) / D) * tau)), 6);
-  const tick = tickPhase * countGate;
-
-  // timer -> check morph
-  const morph = seg(t, T_VERIFY[0], T_VERIFY[1]) * (1 - seg(t, T_RESET[0], T_RESET[0] + 0.045));
-  const checkDraw = seg(t, T_VERIFY[0] + 0.02, T_VERIFY[1] + 0.02, Easing.inOut(Easing.cubic));
-  const checkScale = seg(t, T_VERIFY[0], T_VERIFY[1], Easing.out(Easing.back(1.6)));
-
-  // confirmation rings from the timer at verify
-  const rings = [0, 1, 2].map((i) => {
-    const s = seg(t, T_VERIFY[0] + 0.015 + i * 0.03, T_VERIFY[0] + 0.16 + i * 0.03, Easing.out(Easing.cubic));
-    return s > 0 && s < 1 ? s : null;
-  });
-
-  const halo = success * (0.75 + 0.25 * Math.sin(((frame * HALO_C) / D) * tau));
-
-  /* ---------------- render ---------------- */
+  const svg = buildScene(frame % DUR);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000000" }}>
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(120% 85% at 50% 44%, rgba(24,44,62,0.22) 0%, rgba(8,14,24,0.1) 42%, rgba(0,0,0,0) 72%)",
-        }}
-      />
-
-      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>
-        <defs>
-          <filter id="blurSmall" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="3" />
-          </filter>
-          <filter id="blurBig" x="-140%" y="-140%" width="380%" height="380%">
-            <feGaussianBlur stdDeviation="9" />
-          </filter>
-          <filter id="blurHuge" x="-200%" y="-200%" width="500%" height="500%">
-            <feGaussianBlur stdDeviation="34" />
-          </filter>
-          <clipPath id="boxRowClip">
-            <rect x={CX - (N_BOX * BOX_STEP - BOX.gap) / 2 - 10} y={BOX_Y - BOX.h / 2 - 10}
-              width={N_BOX * BOX_STEP - BOX.gap + 20} height={BOX.h + 20} rx={BOX.r} />
-          </clipPath>
-        </defs>
-
-        {/* ambient dust */}
-        {Array.from({ length: 42 }).map((_, i) => {
-          const bx = random(`ax${i}`) * width;
-          const by = 110 + random(`ay${i}`) * (height - 200);
-          const dy = 14 * Math.sin(((frame * AMB_DY_C) / D) * tau + i);
-          const tw = 0.05 + 0.12 * (0.5 + 0.5 * Math.sin(((frame * AMB_TW_C) / D) * tau + i * 1.3));
-          return (
-            <circle key={i} cx={bx} cy={by + dy} r={0.8 + random(`ar${i}`) * 1.5}
-              fill={rgb(STEEL, tw)} filter="url(#blurSmall)" />
-          );
-        })}
-
-        {/* halos */}
-        <circle cx={TIMER.x} cy={TIMER.y} r={210} fill={rgb(EMER, 0.28 * halo)} filter="url(#blurHuge)" />
-        <ellipse cx={CX} cy={BOX_Y} rx={560} ry={200}
-          fill={rgb(mixC(STEEL, EMER, success), 0.09 + 0.09 * success)} filter="url(#blurHuge)" />
-
-        {/* confirmation rings */}
-        {rings.map((s, i) =>
-          s === null ? null : (
-            <circle key={i} cx={TIMER.x} cy={TIMER.y} r={TIMER.r + 10 + s * 280} fill="none"
-              stroke={rgb(EMER, 0.55 * (1 - s))} strokeWidth={3 * (1 - s) + 0.6} filter="url(#blurSmall)" />
-          )
-        )}
-
-        {/* ------- CIRCULAR COUNTDOWN / CHECK ------- */}
-        <g transform={`translate(${TIMER.x} ${TIMER.y}) scale(${1 + 0.012 * breath + 0.05 * tick})`}>
-          {/* base track */}
-          <circle r={TIMER.r} fill="none" stroke={rgb(STEEL, 0.18)} strokeWidth={5} filter="url(#blurSmall)" />
-          {/* tick marks */}
-          <g opacity={0.5 + 0.3 * tick}>
-            {Array.from({ length: 12 }).map((_, i) => {
-              const a = (tau / 12) * i - Math.PI / 2;
-              return (
-                <line key={i}
-                  x1={(TIMER.r + 12) * Math.cos(a)} y1={(TIMER.r + 12) * Math.sin(a)}
-                  x2={(TIMER.r + 20) * Math.cos(a)} y2={(TIMER.r + 20) * Math.sin(a)}
-                  stroke={rgb(arcCol, 0.8)} strokeWidth={2.2} strokeLinecap="round" filter="url(#blurSmall)" />
-              );
-            })}
-          </g>
-          {/* depleting arc (rotated so it drains from 12 o'clock, clockwise) */}
-          <g transform="rotate(-90)" opacity={1 - 0.35 * morph}>
-            <NeonShape color={arcCol} coreW={3} glowW={11}
-              render={(p) => (
-                <circle r={TIMER.r} strokeDasharray={TIMER_CIRC}
-                  strokeDashoffset={TIMER_CIRC * (1 - arcProgress)} strokeLinecap="round" {...p} />
-              )} />
-          </g>
-          {/* center: hourglass-style dot pulse while counting, check when verified */}
-          <circle r={7 + 3 * tick} fill={rgb(arcCol, 0.9)} filter="url(#blurSmall)" opacity={(1 - morph) * countGate} />
-          {morph > 0.01 ? (
-            <g transform={`scale(${0.6 + 0.4 * checkScale})`} opacity={morph}>
-              <circle r={TIMER.r - 22} fill={rgb(EMER, 0.1 + 0.08 * halo)} />
-              <NeonShape color={EMER} coreW={3.2} glowW={11}
-                render={(p) => (
-                  <path d={CHECK_D} strokeLinejoin="round" strokeLinecap="round"
-                    strokeDasharray={CHECK_LEN} strokeDashoffset={CHECK_LEN * (1 - checkDraw)} {...p} />
-                )} />
-            </g>
-          ) : null}
-        </g>
-
-        {/* ------- OTP BOXES ------- */}
-        {digits.map((d, i) => {
-          const x = CX + (i - (N_BOX - 1) / 2) * BOX_STEP;
-          const filled = d.vis > 0.02 ? 1 : 0;
-          const boxCol = mixC(mixC(STEEL, CYAN, 0.55 * filled), EMER, success);
-          // small pop of the box itself when its digit lands
-          const boxPop = 1 + 0.05 * seg(t, d.tin, d.tin + 0.025, Easing.out(Easing.cubic)) *
-            (1 - seg(t, d.tin + 0.025, d.tin + 0.08, Easing.inOut(Easing.cubic)));
-          return (
-            <g key={i} transform={`translate(${x} ${BOX_Y}) scale(${boxPop})`}>
-              <rect x={-BOX.w / 2} y={-BOX.h / 2} width={BOX.w} height={BOX.h} rx={BOX.r}
-                fill={rgb(boxCol, 0.05 + 0.04 * success)} />
-              <NeonShape color={boxCol} coreW={2.2} glowW={8} opacity={0.9}
-                render={(p) => (
-                  <rect x={-BOX.w / 2} y={-BOX.h / 2} width={BOX.w} height={BOX.h} rx={BOX.r} {...p} />
-                )} />
-              {/* underline placeholder when empty */}
-              <rect x={-26} y={34} width={52} height={4} rx={2}
-                fill={rgb(boxCol, 0.5 * (1 - d.vis))} filter="url(#blurSmall)" />
-              {/* digit */}
-              {d.vis > 0.01 ? (
-                <g transform={`scale(${d.vis})`} opacity={Math.min(1, d.vis)}>
-                  <NeonText color={mixC(CYAN, EMER, success)} size={72}>{d.value}</NeonText>
-                </g>
-              ) : null}
-            </g>
-          );
-        })}
-
-        {/* verification sweep band across the boxes */}
-        {sweepOn ? (
-          <g clipPath="url(#boxRowClip)">
-            <rect x={sweepX - 34} y={BOX_Y - BOX.h / 2 - 10} width={68} height={BOX.h + 20}
-              fill={rgb(CYAN, 0.28)} filter="url(#blurBig)" />
-            <rect x={sweepX - 4} y={BOX_Y - BOX.h / 2 - 10} width={8} height={BOX.h + 20}
-              fill="rgba(255,255,255,0.75)" filter="url(#blurSmall)" />
-          </g>
-        ) : null}
-      </svg>
-
-      {/* grain against banding */}
-      <svg width="100%" height="100%"
-        style={{ position: "absolute", inset: 0, mixBlendMode: "screen", opacity: 0.05, pointerEvents: "none" }}>
-        <filter id="grain">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" seed="17" />
-          <feColorMatrix type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.5  0 0 0 0 0.62  0 0 0 1 0" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#grain)" />
-      </svg>
-
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(130% 90% at 50% 50%, rgba(0,0,0,0) 58%, rgba(0,0,0,0.45) 100%)",
-          pointerEvents: "none",
-        }}
-      />
-    </AbsoluteFill>
+    <AbsoluteFill
+      style={{backgroundColor: '#04020b'}}
+      dangerouslySetInnerHTML={{__html: svg}}
+    />
   );
 };
 
