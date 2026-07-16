@@ -10,9 +10,11 @@ import {
 } from 'remotion';
 
 // ============================================================
-// CLOUD UPLOAD / SYNC — CLEAN / PREMIUM-GRADE
-// Folder below, glowing cloud above, documents rising,
-// progress ring resolving into a sync checkmark.
+// SECURE FILE ENCRYPTION — CLEAN / PREMIUM-GRADE
+// Plain documents leave the source folder, pass through a
+// glowing security shield, and emerge encrypted (binary +
+// lock badge) into the destination folder. Progress ring
+// resolves into a locked padlock.
 // 15s • 60fps • 1920x1080 • deterministic
 // ============================================================
 
@@ -23,8 +25,9 @@ const H = 1080;
 const T_START = 90;
 const T_END = 780;
 const DOC_COUNT = 12;
-const DOC_TRAVEL = 104;
-const DOC_STAGGER = 52;
+const DOC_STAGGER = 50;
+const LEG = 52; // frames per flight leg (in / out)
+const PROCESS = 16; // frames inside the shield
 
 // ---- Palette -----------------------------------------------
 const COL = {
@@ -37,16 +40,22 @@ const COL = {
   ink: '#EAF0FA',
   dim: 'rgba(234,240,250,0.55)',
   line: 'rgba(234,240,250,0.14)',
-  cloudHi: '#F2F6FD',
-  cloudLo: '#C3CEE2',
-  slate: '#33415C',
+  encHi: '#26345A',
+  encLo: '#131D38',
 };
 
 // ---- Geometry ----------------------------------------------
-const CLOUD = {x: 960, y: 352};
-const RING_R = 232;
-const PATH_TOP = 452; // docs absorbed here
-const PATH_BOTTOM = 822; // inside the folder pocket (hidden by front panel)
+const SHIELD = {x: 960, y: 588};
+const RING = {x: 960, y: 288, r: 114};
+
+// left pocket -> shield
+const A0 = {x: 430, y: 662};
+const A1 = {x: 640, y: 462};
+const A2 = {x: SHIELD.x, y: SHIELD.y};
+// shield -> right pocket
+const B0 = {x: SHIELD.x, y: SHIELD.y};
+const B1 = {x: 1280, y: 462};
+const B2 = {x: 1490, y: 662};
 
 const bezier = (
   t: number,
@@ -63,12 +72,12 @@ const bezier = (
 
 const easeFlight = Easing.inOut(Easing.cubic);
 
+const SHIELD_PATH =
+  'M130 14 L238 56 V148 c0 82 -62 122 -108 138 C84 270 22 230 22 148 V56 Z';
+
 // ============================================================
-// Folder — layered SVG with gradient body, inner lip, papers
+// Folder — two layers so documents pass through the pocket
 // ============================================================
-// Rendered in two layers so flying documents can pass BETWEEN
-// the folder's back panel and its front pocket — documents rise
-// out of the folder opening instead of appearing behind it.
 const Folder: React.FC<{
   id: string;
   flap: number;
@@ -106,12 +115,10 @@ const Folder: React.FC<{
             fill="rgba(0,0,0,0.5)"
             filter={`url(#${id}-soft)`}
           />
-
           <path
             d="M36 70 q0 -12 12 -12 h74 l24 -20 q5 -4 12 -4 h62 q12 0 12 12 v24 h60 q12 0 12 12 v140 q0 12 -12 12 H48 q-12 0 -12 -12 Z"
             fill={`url(#${id}-back)`}
           />
-
           <g transform={`translate(0 ${-lift})`}>
             <rect x="82" y="86" width="104" height="120" rx="8" fill="#F4F7FC" transform="rotate(-5 134 146)" />
             <rect x="150" y="80" width="110" height="126" rx="8" fill="#FFFFFF" transform="rotate(4 205 143)" />
@@ -125,7 +132,6 @@ const Folder: React.FC<{
       ) : (
         <>
           <rect x="36" y="118" width="268" height="16" rx="8" fill={COL.lip} />
-
           <g
             style={{
               transformOrigin: '170px 234px',
@@ -148,7 +154,7 @@ const Folder: React.FC<{
 };
 
 // ============================================================
-// Document icon — glassy sheet with folded corner
+// Plain document — glassy white sheet
 // ============================================================
 const Doc: React.FC<{glow?: boolean}> = ({glow = true}) => (
   <svg width={92} height={112} viewBox="0 0 92 112">
@@ -186,6 +192,56 @@ const Doc: React.FC<{glow?: boolean}> = ({glow = true}) => (
 );
 
 // ============================================================
+// Encrypted document — dark sheet, binary rows, lock badge
+// ============================================================
+const EncDoc: React.FC = () => (
+  <svg width={92} height={112} viewBox="0 0 92 112">
+    <defs>
+      <linearGradient id="encFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={COL.encHi} />
+        <stop offset="1" stopColor={COL.encLo} />
+      </linearGradient>
+      <linearGradient id="encBadge" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={COL.amber1} />
+        <stop offset="1" stopColor={COL.amber2} />
+      </linearGradient>
+      <filter id="encGlow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="5" result="b1" />
+        <feGaussianBlur in="b1" stdDeviation="6" result="b2" />
+        <feMerge>
+          <feMergeNode in="b2" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+    <g filter="url(#encGlow)">
+      <path
+        d="M16 8 h40 l20 20 v76 a8 8 0 0 1 -8 8 H16 a8 8 0 0 1 -8 -8 V16 a8 8 0 0 1 8 -8 Z"
+        fill="url(#encFill)"
+        stroke={COL.amber1}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <path d="M56 8 v14 a6 6 0 0 0 6 6 h14" fill="none" stroke={COL.amber1} strokeWidth="4" strokeLinejoin="round" />
+      {/* binary rows */}
+      <text x="20" y="46" fontFamily="Consolas, Menlo, monospace" fontSize="13" fontWeight="700" fill={COL.amber1} opacity="0.9">
+        101101
+      </text>
+      <text x="20" y="63" fontFamily="Consolas, Menlo, monospace" fontSize="13" fontWeight="700" fill={COL.dim} opacity="0.8">
+        011010
+      </text>
+      <text x="20" y="80" fontFamily="Consolas, Menlo, monospace" fontSize="13" fontWeight="700" fill={COL.amber1} opacity="0.65">
+        110011
+      </text>
+      {/* lock badge */}
+      <circle cx="66" cy="90" r="14" fill="url(#encBadge)" />
+      <rect x="60" y="88" width="12" height="9" rx="2.5" fill={COL.encLo} />
+      <path d="M62.5 88 v-3.5 a3.5 3.5 0 0 1 7 0 V88" fill="none" stroke={COL.encLo} strokeWidth="2.5" />
+    </g>
+  </svg>
+);
+
+// ============================================================
 // Main composition
 // ============================================================
 export const Motion: React.FC = () => {
@@ -202,9 +258,10 @@ export const Motion: React.FC = () => {
   const done = frame > T_END;
 
   // ---------------- entrances ----------------
-  const inFolder = spring({frame: frame - 8, fps, config: {damping: 14, mass: 0.9}});
-  const inCloud = spring({frame: frame - 24, fps, config: {damping: 13, mass: 0.9}});
-  const inRing = interpolate(frame, [50, 84], [0, 1], {
+  const inL = spring({frame: frame - 8, fps, config: {damping: 14, mass: 0.9}});
+  const inR = spring({frame: frame - 20, fps, config: {damping: 14, mass: 0.9}});
+  const inShield = spring({frame: frame - 32, fps, config: {damping: 12, mass: 0.9}});
+  const inRing = interpolate(frame, [52, 86], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
@@ -218,38 +275,53 @@ export const Motion: React.FC = () => {
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.quad)}
   );
   const breathe = Math.sin((frame / fps) * Math.PI * 0.8) * 0.5 + 0.5;
-  const cloudBob = Math.sin((frame / fps) * Math.PI * 0.66) * 7;
 
-  // ---------------- emit / absorb pulses ----------------
+  // ---------------- pulses ----------------
   let emitPulse = 0;
-  let absorbPulse = 0;
+  let processPulse = 0;
+  let arrivePulse = 0;
+  let scanT = -1; // 0..1 within the most recent process window
   for (let i = 0; i < DOC_COUNT; i++) {
     const emit = T_START + i * DOC_STAGGER;
-    const arrive = emit + DOC_TRAVEL;
+    const absorb = emit + LEG;
+    const arrive = absorb + PROCESS + LEG;
     emitPulse += interpolate(frame - emit, [0, 5, 26], [0, 1, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
-    absorbPulse += interpolate(frame - arrive, [0, 5, 30], [0, 1, 0], {
+    processPulse += interpolate(frame - absorb, [0, 4, PROCESS + 10], [0, 1, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
+    arrivePulse += interpolate(frame - arrive, [0, 5, 28], [0, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    if (frame >= absorb && frame <= absorb + PROCESS) {
+      scanT = (frame - absorb) / PROCESS;
+    }
   }
   emitPulse = Math.min(1, emitPulse);
-  absorbPulse = Math.min(1, absorbPulse);
+  processPulse = Math.min(1, processPulse);
+  arrivePulse = Math.min(1, arrivePulse);
 
   // ---------------- completion ----------------
-  const doneSpring = spring({frame: frame - (T_END + 8), fps, config: {damping: 11, mass: 0.8}});
-  const checkDraw = interpolate(frame, [T_END + 6, T_END + 34], [0, 1], {
+  const doneSpring = spring({frame: frame - (T_END + 10), fps, config: {damping: 10, mass: 0.8}});
+  const lockDraw = interpolate(frame, [T_END + 6, T_END + 32], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
   });
+  const shackleClose = spring({frame: frame - (T_END + 34), fps, config: {damping: 13, mass: 0.7}});
   const numberOut = interpolate(frame, [T_END + 2, T_END + 16], [1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
   const ringFlash = interpolate(frame - T_END, [0, 6, 44], [0, 1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const clickFlash = interpolate(frame - (T_END + 38), [0, 4, 26], [0, 1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
@@ -261,15 +333,10 @@ export const Motion: React.FC = () => {
   });
 
   // ---------------- ring geometry ----------------
-  const RING_C = 2 * Math.PI * RING_R;
-  const tipAngle = -Math.PI / 2 + progress * Math.PI * 2;
-  const tip = {
-    x: CLOUD.x + Math.cos(tipAngle) * RING_R,
-    y: CLOUD.y + cloudBob * 0.3 + Math.sin(tipAngle) * RING_R,
-  };
+  const RING_C = 2 * Math.PI * RING.r;
 
-  // ---------------- ambient particles ----------------
-  const particles = Array.from({length: 26}, (_, i) => {
+  // ---------------- ambient particles + binary drift ----------------
+  const particles = Array.from({length: 24}, (_, i) => {
     const px = random(`px${i}`) * W;
     const py = random(`py${i}`) * H;
     const pr = 1.5 + random(`pr${i}`) * 3;
@@ -280,10 +347,21 @@ export const Motion: React.FC = () => {
     const op = 0.04 + random(`po${i}`) * 0.1;
     return {x: px + dx, y: py + dy, r: pr, op};
   });
+  const binics = Array.from({length: 14}, (_, i) => {
+    const bx = 120 + random(`bx${i}`) * (W - 240);
+    const by = 100 + random(`by${i}`) * (H - 200);
+    const ph = random(`bh${i}`) * Math.PI * 2;
+    const dy = Math.sin((frame / fps) * 0.5 + ph) * 30;
+    const op = (0.03 + random(`bo${i}`) * 0.05) * (0.6 + 0.4 * Math.sin((frame / fps) * 0.9 + ph));
+    const glyph = random(`bg${i}`) > 0.5 ? '1' : '0';
+    return {x: bx, y: by + dy, op: Math.max(0, op), glyph, size: 20 + random(`bs${i}`) * 16};
+  });
 
-  // Two mirrored guide curves (docs alternate between them)
-  const guideL = `M ${960} ${PATH_BOTTOM} Q ${850} ${(PATH_BOTTOM + PATH_TOP) / 2} ${960} ${PATH_TOP}`;
-  const guideR = `M ${960} ${PATH_BOTTOM} Q ${1070} ${(PATH_BOTTOM + PATH_TOP) / 2} ${960} ${PATH_TOP}`;
+  const folderLTransform = `scale(${inL * (1 - emitPulse * 0.035)}) translateY(${breathe * -4}px)`;
+  const folderRTransform = `scale(${inR * (1 + arrivePulse * 0.05 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.04 : 0))}) translateY(${(1 - breathe) * -4}px)`;
+
+  const guideA = `M ${A0.x} ${A0.y - 60} Q ${A1.x} ${A1.y} ${A2.x} ${A2.y}`;
+  const guideB = `M ${B0.x} ${B0.y} Q ${B1.x} ${B1.y} ${B2.x} ${B2.y - 60}`;
 
   return (
     <AbsoluteFill
@@ -293,27 +371,30 @@ export const Motion: React.FC = () => {
       }}
     >
       <AbsoluteFill style={{opacity: fadeOut}}>
-        {/* ---------- ambient dust ---------- */}
+        {/* ---------- ambient dust + drifting binary ---------- */}
         <svg width={W} height={H} style={{position: 'absolute'}}>
           {particles.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={p.r} fill={COL.ink} opacity={p.op} />
           ))}
-          <line x1={480} y1={922} x2={1440} y2={922} stroke={COL.line} strokeWidth={2} strokeLinecap="round" />
+          {binics.map((b, i) => (
+            <text
+              key={`b${i}`}
+              x={b.x}
+              y={b.y}
+              fontFamily="Consolas, Menlo, monospace"
+              fontSize={b.size}
+              fill={COL.ink}
+              opacity={b.op}
+            >
+              {b.glyph}
+            </text>
+          ))}
+          <line x1={300} y1={912} x2={1620} y2={912} stroke={COL.line} strokeWidth={2} strokeLinecap="round" />
         </svg>
 
-        {/* ---------- guide curves + rising data dots ---------- */}
+        {/* ---------- guide curves ---------- */}
         <svg width={W} height={H} style={{position: 'absolute', opacity: activity}}>
-          <defs>
-            <filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
-              <feGaussianBlur stdDeviation="4" result="b1" />
-              <feGaussianBlur in="b1" stdDeviation="5" result="b2" />
-              <feMerge>
-                <feMergeNode in="b2" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          {[guideL, guideR].map((d, i) => (
+          {[guideA, guideB].map((d, i) => (
             <path
               key={i}
               d={d}
@@ -321,63 +402,55 @@ export const Motion: React.FC = () => {
               stroke={COL.line}
               strokeWidth={2.5}
               strokeDasharray="3 15"
-              strokeDashoffset={frame * 1.5}
+              strokeDashoffset={-frame * 1.5}
               strokeLinecap="round"
             />
           ))}
-          {Array.from({length: 6}, (_, i) => {
-            const t = ((frame * 0.012 + i * 0.167) % 1 + 1) % 1;
-            const side = i % 2 === 0 ? -150 : 150;
-            const pos = bezier(
-              t,
-              {x: 960, y: PATH_BOTTOM},
-              {x: 960 + side, y: (PATH_BOTTOM + PATH_TOP) / 2},
-              {x: 960, y: PATH_TOP}
-            );
-            const op = Math.sin(t * Math.PI);
-            return (
-              <circle key={i} cx={pos.x} cy={pos.y} r={4} fill={COL.amber1} opacity={op * 0.7} filter="url(#dotGlow)" />
-            );
-          })}
         </svg>
 
-        {/* ---------- folder BACK layer (behind documents) ---------- */}
+        {/* ---------- folders BACK layers ---------- */}
         <div
           style={{
             position: 'absolute',
-            left: 960 - 170,
-            top: 660,
-            transform: `scale(${inFolder * (1 - emitPulse * 0.035)}) translateY(${breathe * -4}px)`,
+            left: 430 - 170,
+            top: 620 - 140,
+            transform: folderLTransform,
             transformOrigin: '50% 90%',
           }}
         >
-          <Folder
-            id="fSb"
-            layer="back"
-            flap={activity * (0.55 + emitPulse * 0.45)}
-            paperLift={activity * (0.4 + breathe * 0.3)}
-          />
+          <Folder id="fLb" layer="back" flap={activity * (0.55 + emitPulse * 0.45)} paperLift={activity * (0.4 + breathe * 0.3)} />
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: 1490 - 170,
+            top: 620 - 140,
+            transform: folderRTransform,
+            transformOrigin: '50% 90%',
+          }}
+        >
+          <Folder id="fRb" layer="back" flap={activity * (0.4 + arrivePulse * 0.6)} paperLift={Math.min(1, progress * 0.5 + arrivePulse * 0.5)} />
         </div>
 
-        {/* ---------- rising documents (with ghost trail) ---------- */}
+        {/* ---------- flying documents ---------- */}
         {Array.from({length: DOC_COUNT}, (_, i) => {
           const emit = T_START + i * DOC_STAGGER;
-          const local = (frame - emit) / DOC_TRAVEL;
-          if (local <= 0 || local >= 1) return null;
-          const side = i % 2 === 0 ? -150 : 150;
-          const p0 = {x: 960, y: PATH_BOTTOM};
-          const p1 = {x: 960 + side, y: (PATH_BOTTOM + PATH_TOP) / 2};
-          const p2 = {x: 960, y: PATH_TOP};
-          const renderAt = (tRaw: number, opMul: number, key: string) => {
+          const absorb = emit + LEG;
+          const exit = absorb + PROCESS;
+
+          const nodes: React.ReactNode[] = [];
+
+          // leg A: plain doc, folder pocket -> shield
+          const renderPlain = (tRaw: number, opMul: number, key: string) => {
             if (tRaw <= 0 || tRaw >= 1) return null;
             const t = easeFlight(tRaw);
-            const pos = bezier(t, p0, p1, p2);
+            const pos = bezier(t, A0, A1, A2);
             const op =
-              interpolate(tRaw, [0, 0.12, 0.82, 1], [0, 1, 1, 0], {
+              interpolate(tRaw, [0, 0.1, 0.8, 1], [0, 1, 1, 0], {
                 extrapolateLeft: 'clamp',
                 extrapolateRight: 'clamp',
               }) * opMul;
-            const sc = interpolate(tRaw, [0, 0.16, 0.72, 1], [0.5, 0.88, 0.8, 0.38], {
+            const sc = interpolate(tRaw, [0, 0.16, 0.75, 1], [0.55, 0.95, 0.9, 0.4], {
               extrapolateLeft: 'clamp',
               extrapolateRight: 'clamp',
             });
@@ -397,133 +470,161 @@ export const Motion: React.FC = () => {
               </div>
             );
           };
-          return (
-            <React.Fragment key={i}>
-              {renderAt(local - 0.1, 0.1, `g2-${i}`)}
-              {renderAt(local - 0.05, 0.22, `g1-${i}`)}
-              {renderAt(local, 1, `m-${i}`)}
-            </React.Fragment>
-          );
+
+          // leg B: encrypted doc, shield -> folder pocket
+          const renderEnc = (tRaw: number, opMul: number, key: string) => {
+            if (tRaw <= 0 || tRaw >= 1) return null;
+            const t = easeFlight(tRaw);
+            const pos = bezier(t, B0, B1, B2);
+            const op =
+              interpolate(tRaw, [0, 0.14, 0.9, 1], [0, 1, 1, 0], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              }) * opMul;
+            const sc = interpolate(tRaw, [0, 0.22, 0.8, 1], [0.4, 0.95, 0.9, 0.6], {
+              extrapolateLeft: 'clamp',
+              extrapolateRight: 'clamp',
+            });
+            const rot = Math.sin(tRaw * Math.PI * 2 + i + 2) * 6;
+            return (
+              <div
+                key={key}
+                style={{
+                  position: 'absolute',
+                  left: pos.x - 46,
+                  top: pos.y - 56,
+                  opacity: op,
+                  transform: `scale(${sc}) rotate(${rot}deg)`,
+                }}
+              >
+                <EncDoc />
+              </div>
+            );
+          };
+
+          const localA = (frame - emit) / LEG;
+          nodes.push(renderPlain(localA - 0.1, 0.1, `pa2-${i}`));
+          nodes.push(renderPlain(localA - 0.05, 0.22, `pa1-${i}`));
+          nodes.push(renderPlain(localA, 1, `pa-${i}`));
+
+          const localB = (frame - exit) / LEG;
+          nodes.push(renderEnc(localB - 0.1, 0.1, `pb2-${i}`));
+          nodes.push(renderEnc(localB - 0.05, 0.22, `pb1-${i}`));
+          nodes.push(renderEnc(localB, 1, `pb-${i}`));
+
+          return <React.Fragment key={i}>{nodes}</React.Fragment>;
         })}
 
-        {/* ---------- folder FRONT layer (covers documents inside pocket) ---------- */}
+        {/* ---------- security shield (center) ---------- */}
         <div
           style={{
             position: 'absolute',
-            left: 960 - 170,
-            top: 660,
-            transform: `scale(${inFolder * (1 - emitPulse * 0.035)}) translateY(${breathe * -4}px)`,
-            transformOrigin: '50% 90%',
+            left: SHIELD.x - 130,
+            top: SHIELD.y - 150,
+            transform: `scale(${inShield * (1 + processPulse * 0.05)}) translateY(${breathe * -5}px)`,
+            transformOrigin: '50% 50%',
           }}
         >
-          <Folder
-            id="fSf"
-            layer="front"
-            flap={activity * (0.55 + emitPulse * 0.45)}
-            paperLift={activity * (0.4 + breathe * 0.3)}
-          />
-        </div>
-
-        {/* ---------- cloud (destination, top center) ---------- */}
-        <div
-          style={{
-            position: 'absolute',
-            left: CLOUD.x - 230,
-            top: CLOUD.y - 140 + cloudBob,
-            transform: `scale(${inCloud * (1 + absorbPulse * 0.04 + (done ? (1 - Math.abs(1 - doneSpring)) * 0.05 : 0))})`,
-            transformOrigin: '50% 60%',
-          }}
-        >
-          <svg width={460} height={300} viewBox="0 0 460 300">
+          <svg width={260} height={300} viewBox="0 0 260 300">
             <defs>
-              <linearGradient id="cloudFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor={COL.cloudHi} />
-                <stop offset="1" stopColor={COL.cloudLo} />
+              <linearGradient id="shieldFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="rgba(38,52,90,0.92)" />
+                <stop offset="1" stopColor="rgba(16,24,46,0.92)" />
               </linearGradient>
-              <linearGradient id="cloudRim" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="rgba(255,255,255,0.9)" />
-                <stop offset="0.5" stopColor="rgba(255,255,255,0)" />
+              <linearGradient id="shieldRim" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={COL.amber1} />
+                <stop offset="1" stopColor={COL.amber2} />
               </linearGradient>
-              <filter id="cloudGlow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="14" result="b1" />
-                <feGaussianBlur in="b1" stdDeviation="20" result="b2" />
+              <filter id="shieldGlow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="8" result="b1" />
+                <feGaussianBlur in="b1" stdDeviation="14" result="b2" />
                 <feMerge>
                   <feMergeNode in="b2" />
                   <feMergeNode in="b1" />
                 </feMerge>
               </filter>
-              <filter id="checkGlow" x="-80%" y="-80%" width="260%" height="260%">
-                <feGaussianBlur stdDeviation="5" result="b1" />
-                <feGaussianBlur in="b1" stdDeviation="8" result="b2" />
-                <feMerge>
-                  <feMergeNode in="b2" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
+              <clipPath id="shieldClip">
+                <path d={SHIELD_PATH} />
+              </clipPath>
             </defs>
 
-            {/* halo behind cloud — warms up as data is absorbed */}
+            {/* halo — intensifies while processing */}
             <path
-              d="M96 242 A 66 66 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 242 Z"
+              d={SHIELD_PATH}
+              fill={COL.amber2}
+              opacity={0.14 + processPulse * 0.3 + breathe * 0.04}
+              filter="url(#shieldGlow)"
+            />
+
+            {/* body */}
+            <path d={SHIELD_PATH} fill="url(#shieldFill)" />
+            <path d={SHIELD_PATH} fill="none" stroke="url(#shieldRim)" strokeWidth="5" strokeLinejoin="round" />
+
+            {/* keyhole glyph */}
+            <circle cx="130" cy="128" r="26" fill="none" stroke={COL.amber1} strokeWidth="9" opacity={0.9 + processPulse * 0.1} />
+            <path
+              d="M130 146 l-11 46 h22 Z"
               fill={COL.amber1}
-              opacity={0.12 + absorbPulse * 0.22 + ringFlash * 0.25 + breathe * 0.04}
-              filter="url(#cloudGlow)"
+              opacity={0.9 + processPulse * 0.1}
             />
 
-            {/* cloud body */}
-            <path
-              d="M96 242 A 66 66 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 242 Z"
-              fill="url(#cloudFill)"
-            />
-            <path
-              d="M96 242 A 66 66 0 0 1 100 112 A 92 92 0 0 1 272 76 A 74 74 0 0 1 368 242 Z"
-              fill="none"
-              stroke="url(#cloudRim)"
-              strokeWidth="3"
-            />
-
-            {/* percentage inside cloud */}
-            <text
-              x="232"
-              y="196"
-              textAnchor="middle"
-              fontSize="64"
-              fontWeight="600"
-              fill={COL.slate}
-              opacity={inRing * numberOut}
-              style={{fontVariantNumeric: 'tabular-nums'}}
-            >
-              {pct}
-              <tspan fontSize="36" fontWeight="500" fill="rgba(51,65,92,0.6)">
-                %
-              </tspan>
-            </text>
-
-            {/* sync checkmark */}
-            <path
-              d="M 192 178 l 30 30 l 52 -60"
-              fill="none"
-              stroke={COL.amber2}
-              strokeWidth="13"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={180}
-              strokeDashoffset={180 * (1 - checkDraw)}
-              opacity={done ? 1 : 0}
-              filter="url(#checkGlow)"
-            />
+            {/* scanline sweep while a document is being encrypted */}
+            {scanT >= 0 ? (
+              <g clipPath="url(#shieldClip)">
+                <rect
+                  x="0"
+                  y={20 + scanT * 240 - 14}
+                  width="260"
+                  height="28"
+                  fill={COL.amber1}
+                  opacity={0.3 * Math.sin(scanT * Math.PI)}
+                />
+                <rect
+                  x="0"
+                  y={20 + scanT * 240 - 2}
+                  width="260"
+                  height="4"
+                  fill="#FFFFFF"
+                  opacity={0.8 * Math.sin(scanT * Math.PI)}
+                />
+              </g>
+            ) : null}
           </svg>
         </div>
 
-        {/* ---------- orbit progress ring around cloud ---------- */}
+        {/* ---------- folders FRONT layers ---------- */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 430 - 170,
+            top: 620 - 140,
+            transform: folderLTransform,
+            transformOrigin: '50% 90%',
+          }}
+        >
+          <Folder id="fLf" layer="front" flap={activity * (0.55 + emitPulse * 0.45)} paperLift={activity * (0.4 + breathe * 0.3)} />
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: 1490 - 170,
+            top: 620 - 140,
+            transform: folderRTransform,
+            transformOrigin: '50% 90%',
+          }}
+        >
+          <Folder id="fRf" layer="front" flap={activity * (0.4 + arrivePulse * 0.6)} paperLift={Math.min(1, progress * 0.5 + arrivePulse * 0.5)} />
+        </div>
+
+        {/* ---------- progress ring -> locked padlock ---------- */}
         <svg
           width={W}
           height={H}
           style={{
             position: 'absolute',
             opacity: inRing,
-            transform: `scale(${0.92 + inRing * 0.08})`,
-            transformOrigin: `${CLOUD.x}px ${CLOUD.y}px`,
+            transform: `scale(${0.9 + inRing * 0.1})`,
+            transformOrigin: `${RING.x}px ${RING.y}px`,
           }}
         >
           <defs>
@@ -541,48 +642,88 @@ export const Motion: React.FC = () => {
             </filter>
           </defs>
 
-          <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
-            fill="none"
-            stroke="rgba(234,240,250,0.09)"
-            strokeWidth={7}
-            strokeDasharray="1 14"
-            strokeLinecap="round"
-          />
+          <circle cx={RING.x} cy={RING.y} r={RING.r} fill="none" stroke="rgba(234,240,250,0.1)" strokeWidth={10} />
 
           <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
+            cx={RING.x}
+            cy={RING.y}
+            r={RING.r}
             fill="none"
             stroke="url(#ringGrad)"
-            strokeWidth={8}
+            strokeWidth={10}
             strokeLinecap="round"
             strokeDasharray={RING_C}
             strokeDashoffset={RING_C * (1 - progress)}
-            transform={`rotate(-90 ${CLOUD.x} ${CLOUD.y + cloudBob * 0.3})`}
+            transform={`rotate(-90 ${RING.x} ${RING.y})`}
             filter="url(#ringGlow)"
           />
 
-          {/* glowing tip satellite */}
-          {progress > 0.002 && !done ? (
-            <circle cx={tip.x} cy={tip.y} r={9} fill={COL.amber1} filter="url(#ringGlow)" />
-          ) : null}
-
-          {/* completion flash */}
           <circle
-            cx={CLOUD.x}
-            cy={CLOUD.y + cloudBob * 0.3}
-            r={RING_R}
+            cx={RING.x}
+            cy={RING.y}
+            r={RING.r}
             fill="none"
             stroke={COL.amber1}
-            strokeWidth={13}
-            opacity={ringFlash * 0.55}
+            strokeWidth={14}
+            opacity={ringFlash * 0.55 + clickFlash * 0.4}
             filter="url(#ringGlow)"
           />
+
+          {/* locked padlock (drawn after 100%) */}
+          {done ? (
+            <g
+              filter="url(#ringGlow)"
+              style={{
+                transformOrigin: `${RING.x}px ${RING.y}px`,
+                transform: `scale(${0.9 + (1 - Math.abs(1 - doneSpring)) * 0.1 + clickFlash * 0.04})`,
+              }}
+            >
+              {/* shackle — closes with a click */}
+              <path
+                d={`M ${RING.x - 26} ${RING.y - 6} v -20 a 26 26 0 0 1 52 0 v 20`}
+                fill="none"
+                stroke={COL.amber1}
+                strokeWidth={12}
+                strokeLinecap="round"
+                strokeDasharray={130}
+                strokeDashoffset={130 * (1 - lockDraw)}
+                transform={`translate(0 ${-14 + shackleClose * 14})`}
+              />
+              {/* body */}
+              <rect
+                x={RING.x - 42}
+                y={RING.y - 6}
+                width={84}
+                height={64}
+                rx={12}
+                fill="url(#ringGrad)"
+                opacity={lockDraw}
+              />
+              <circle cx={RING.x} cy={RING.y + 20} r={9} fill={COL.encLo} opacity={lockDraw} />
+              <rect x={RING.x - 3.5} y={RING.y + 22} width={7} height={16} rx={3.5} fill={COL.encLo} opacity={lockDraw} />
+            </g>
+          ) : null}
         </svg>
+
+        {/* ---------- percentage counter ---------- */}
+        <div
+          style={{
+            position: 'absolute',
+            left: RING.x - 150,
+            top: RING.y - 44,
+            width: 300,
+            textAlign: 'center',
+            fontSize: 72,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            color: COL.ink,
+            fontVariantNumeric: 'tabular-nums',
+            opacity: inRing * numberOut,
+          }}
+        >
+          {pct}
+          <span style={{fontSize: 40, fontWeight: 500, color: COL.dim, marginLeft: 6}}>%</span>
+        </div>
 
         {/* ---------- subtle vignette ---------- */}
         <AbsoluteFill
