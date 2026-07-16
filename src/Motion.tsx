@@ -1,752 +1,545 @@
 import React from 'react';
 import {
   AbsoluteFill,
+  Easing,
+  interpolate,
   useCurrentFrame,
   useVideoConfig,
-  interpolate,
-  Easing,
-  random,
 } from 'remotion';
 
-/**
- * HELIX — Genomics / Bioinformatics Sequencer
- * Direction: PREMIUM. A dark, glassmorphic sequencing console on a floating
- * perspective plane, flown over by a slow cinematic parallax camera. Centerpiece
- * is a rotating DNA double helix with a flowing base-pair sequence track,
- * supported by variant calling, a coverage-depth histogram, an alignment pileup,
- * a Phred-quality strip and a sequencing-rate panel.
- * Deterministic; loops seamlessly (all motion periodic in t∈[0,1)).
- */
-
-const TAU = Math.PI * 2;
-
 const C = {
-  ink: '#eaf2ff',
-  sub: 'rgba(196,214,248,0.66)',
-  faint: 'rgba(150,182,238,0.34)',
-  cyan: '#37e7ff',
-  teal: '#2af0c2',
-  blue: '#4f8bff',
-  violet: '#9a74ff',
-  magenta: '#ff5fd0',
-  amber: '#ffcf6b',
-  rose: '#ff6f8b',
-  grid: 'rgba(120,170,255,0.07)',
-  gridHi: 'rgba(120,180,255,0.16)',
+  bg: '#050b1b',
+  bg2: '#09182d',
+  panel: '#0d2038',
+  panel2: '#102943',
+  text: '#f4faff',
+  muted: '#9eb5cc',
+  dim: '#5f7892',
+  line: '#244760',
+  cyan: '#45e6ff',
+  blue: '#4b7cff',
+  violet: '#9a72ff',
+  mint: '#4ff2b8',
+  gold: '#ffd166',
+  coral: '#ff7186',
 };
 
-// nucleotide palette (A-T and G-C complementary pairs)
-const BASES = ['A', 'T', 'G', 'C'];
-const BASE_COL: Record<string, string> = {A: C.teal, T: C.magenta, G: C.cyan, C: C.violet};
-const COMP: Record<string, string> = {A: 'T', T: 'A', G: 'C', C: 'G'};
-const SEQ_PERIOD = 48;
-const seqBase = (m: number) => BASES[Math.floor(random('seq' + (((m % SEQ_PERIOD) + SEQ_PERIOD) % SEQ_PERIOD)) * 4)];
+const FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const clamp = (value: number) => Math.max(0, Math.min(1, value));
+const ease = Easing.bezier(0.22, 1, 0.36, 1);
+const soft = Easing.bezier(0.4, 0, 0.2, 1);
+const p = (frame: number, from: number, to: number, easing = ease) =>
+  clamp(
+    interpolate(frame, [from, to], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing,
+    }),
+  );
+const life = (frame: number, from: number, to: number, exitFrom = 848, exitTo = 900) =>
+  p(frame, from, to) * (1 - p(frame, exitFrom, exitTo));
 
-// ---------- helpers ----------
-const hexA = (hex: string, a: number) => {
-  const h = hex.replace('#', '');
-  const s = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-  const n = parseInt(s, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+const rgba = (hex: string, alpha: number) => {
+  const value = hex.replace('#', '');
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red},${green},${blue},${alpha})`;
 };
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-const nf = (v: number, d = 0) =>
-  v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
-
-const ramp = (v: number) => {
-  const lo: [number, number, number] = [26, 52, 100];
-  const mid: [number, number, number] = [55, 231, 255];
-  const hi: [number, number, number] = [200, 236, 255];
-  const mixc = (a: [number, number, number], b: [number, number, number], f: number) =>
-    [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
-  const c = v < 0.5 ? mixc(lo, mid, v / 0.5) : mixc(mid, hi, (v - 0.5) / 0.5);
-  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
-};
-
-// phred-quality colour ramp (low = rose/amber, high = teal/cyan)
-const qcol = (v: number) => {
-  const a: [number, number, number] = [255, 111, 139];
-  const b: [number, number, number] = [255, 207, 107];
-  const c: [number, number, number] = [42, 240, 194];
-  const mixc = (p: [number, number, number], q: [number, number, number], f: number) =>
-    [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f];
-  const r = v < 0.55 ? mixc(a, b, v / 0.55) : mixc(b, c, (v - 0.55) / 0.45);
-  return `rgb(${r[0] | 0},${r[1] | 0},${r[2] | 0})`;
-};
-
-type Comp = {f: number; h: number; a: number; p: number};
-
-const waveVal = (fx: number, comps: Comp[], base: number, t: number) => {
-  let v = base;
-  for (const c of comps) v += c.a * Math.sin(TAU * (c.f * fx + c.h * t + c.p));
-  return clamp(v, 0.05, 0.95);
-};
-
-const wavePts = (
-  n: number,
-  x0: number,
-  x1: number,
-  yTop: number,
-  yBot: number,
-  comps: Comp[],
-  base: number,
-  t: number
-): [number, number][] => {
-  const pts: [number, number][] = [];
-  for (let i = 0; i < n; i++) {
-    const fx = i / (n - 1);
-    const v = waveVal(fx, comps, base, t);
-    pts.push([x0 + fx * (x1 - x0), yBot - v * (yBot - yTop)]);
-  }
-  return pts;
-};
-
-const smooth = (pts: [number, number][]) => {
-  if (pts.length < 2) return '';
-  let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
-  }
-  return d;
-};
-
-const FONT =
-  '"Inter","SF Pro Display","Helvetica Neue",Arial,system-ui,sans-serif';
-const MONO =
-  '"SF Mono","JetBrains Mono","Roboto Mono",ui-monospace,Menlo,monospace';
-
-const Glow: React.FC<{id: string; b1?: number; b2?: number}> = ({id, b1 = 2.4, b2 = 7}) => (
-  <filter id={id} x="-60%" y="-60%" width="220%" height="220%" colorInterpolationFilters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation={b2} result="g2" />
-    <feGaussianBlur in="SourceGraphic" stdDeviation={b1} result="g1" />
-    <feMerge>
-      <feMergeNode in="g2" />
-      <feMergeNode in="g1" />
-      <feMergeNode in="SourceGraphic" />
-    </feMerge>
-  </filter>
-);
-
-const PulseDot: React.FC<{color: string; t: number; size?: number}> = ({color, t, size = 7}) => {
-  const p = 0.5 + 0.5 * Math.sin(TAU * (2 * t));
-  return (
-    <span
+const Glass: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  reveal: number;
+  children: React.ReactNode;
+  radius?: number;
+  accent?: string;
+  style?: React.CSSProperties;
+}> = ({x, y, width, height, reveal, children, radius = 28, accent = C.cyan, style}) => (
+  <div
+    data-safe-object="true"
+    style={{
+      position: 'absolute',
+      left: x,
+      top: y,
+      width,
+      height,
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      borderRadius: radius,
+      border: `1px solid ${rgba(accent, 0.18)}`,
+      background: 'linear-gradient(145deg, rgba(15,40,65,.88), rgba(5,18,34,.95) 58%, rgba(4,12,25,.98))',
+      boxShadow: '0 34px 92px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.055), inset 0 -1px 0 rgba(255,255,255,.016)',
+      backdropFilter: 'blur(16px)',
+      opacity: reveal,
+      transform: `translate3d(0, ${(1 - reveal) * 20}px, 0) scale(${0.985 + reveal * 0.015})`,
+      transformOrigin: '50% 50%',
+      willChange: 'transform, opacity',
+      ...style,
+    }}
+  >
+    <div
       style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: color,
-        boxShadow: `0 0 ${6 + p * 8}px ${hexA(color, 0.7 + p * 0.3)}, 0 0 2px ${color}`,
-        opacity: 0.65 + p * 0.35,
-        display: 'inline-block',
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        background: `linear-gradient(123deg, ${rgba(C.text, 0.045)}, transparent 28%, transparent 72%, ${rgba(accent, 0.03)})`,
       }}
     />
-  );
-};
+    {children}
+  </div>
+);
 
-const Brackets: React.FC<{accent: string}> = ({accent}) => {
-  const col = hexA(accent, 0.55);
-  const s: React.CSSProperties = {position: 'absolute', width: 15, height: 15, pointerEvents: 'none'};
+const Ambient: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const exit = 1 - p(timeline, 850, 900);
+  const particles = Array.from({length: 62}, (_, index) => ({
+    x: 28 + ((index * 181 + 47) % 1865),
+    y: 25 + ((index * 113 + 61) % 1030),
+    size: 0.8 + (index % 4) * 0.48,
+  }));
   return (
     <>
-      <span style={{...s, left: 12, top: 12, borderLeft: `1.5px solid ${col}`, borderTop: `1.5px solid ${col}`, borderTopLeftRadius: 4}} />
-      <span style={{...s, right: 12, bottom: 12, borderRight: `1.5px solid ${col}`, borderBottom: `1.5px solid ${col}`, borderBottomRightRadius: 4}} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: `radial-gradient(circle at ${37 + Math.sin(phase) * 2}% ${38 + Math.cos(phase) * 2}%, ${rgba(C.cyan, 0.13)}, transparent 34%), radial-gradient(circle at ${78 + Math.cos(phase) * 2}% ${34 + Math.sin(phase) * 2}%, ${rgba(C.violet, 0.11)}, transparent 31%), radial-gradient(circle at 61% 88%, ${rgba(C.blue, 0.1)}, transparent 33%), linear-gradient(145deg, ${C.bg}, ${C.bg2} 58%, #030714)`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.11,
+          backgroundImage:
+            'linear-gradient(rgba(71,145,176,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(71,145,176,.18) 1px, transparent 1px)',
+          backgroundSize: '76px 76px',
+          transform: `translate(${Math.sin(phase) * 7}px, ${Math.cos(phase) * 5}px)`,
+        }}
+      />
+      <svg width="1920" height="1080" viewBox="0 0 1920 1080" style={{position: 'absolute', inset: 0, opacity: 0.28 * exit}}>
+        <defs>
+          <linearGradient id="ambient-route" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor={C.cyan} stopOpacity=".2" />
+            <stop offset=".5" stopColor={C.violet} stopOpacity=".08" />
+            <stop offset="1" stopColor={C.blue} stopOpacity=".16" />
+          </linearGradient>
+          <filter id="ambient-haze" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22" /></filter>
+        </defs>
+        {Array.from({length: 9}, (_, index) => {
+          const y = 130 + index * 101 + Math.sin(phase + index * 0.72) * 7;
+          return (
+            <path
+              key={index}
+              d={`M-100 ${y} C300 ${y - 94} 535 ${y + 89} 900 ${y - 12} S1510 ${y - 73} 2020 ${y + 28}`}
+              fill="none"
+              stroke="url(#ambient-route)"
+              strokeWidth={index % 3 === 0 ? 1 : 0.65}
+              strokeDasharray={index % 2 === 0 ? '3 15' : undefined}
+              strokeDashoffset={-timeline * (0.07 + index * 0.004)}
+              opacity={0.15 + (index % 4) * 0.04}
+            />
+          );
+        })}
+        <ellipse cx={720 + Math.sin(phase) * 11} cy={540 + Math.cos(phase) * 8} rx="470" ry="350" fill={C.cyan} opacity=".028" filter="url(#ambient-haze)" />
+      </svg>
+      <div style={{position: 'absolute', inset: 0, opacity: 0.032, backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,.2) 0, rgba(255,255,255,.2) 1px, transparent 1px, transparent 5px)', mixBlendMode: 'soft-light'}} />
+      {particles.map((particle, index) => {
+        const color = index % 11 === 0 ? C.mint : index % 9 === 0 ? C.violet : C.text;
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: particle.x + Math.sin(phase * (0.7 + (index % 3) * 0.13) + index) * 7,
+              top: particle.y + Math.cos(phase * (0.82 + (index % 4) * 0.1) + index) * 6,
+              width: particle.size,
+              height: particle.size,
+              borderRadius: 8,
+              background: color,
+              opacity: (0.038 + (index % 5) * 0.013) * exit,
+              boxShadow: index % 11 === 0 ? `0 0 9px ${color}` : undefined,
+            }}
+          />
+        );
+      })}
+      <div style={{position: 'absolute', inset: 0, boxShadow: 'inset 0 0 170px rgba(0,0,0,.6)', pointerEvents: 'none'}} />
     </>
   );
 };
 
-const cardStyle = (accent: string): React.CSSProperties => ({
-  position: 'absolute',
-  inset: 0,
-  borderRadius: 20,
-  overflow: 'hidden',
-  background:
-    'linear-gradient(155deg, rgba(28,44,80,0.60) 0%, rgba(13,22,44,0.66) 52%, rgba(9,15,32,0.74) 100%)',
-  boxShadow: `inset 0 1px 0 rgba(196,222,255,0.16), inset 0 0 70px rgba(24,46,92,0.30), 0 36px 74px -32px rgba(0,0,0,0.82), 0 0 0 1px rgba(122,170,255,0.16), 0 0 48px ${hexA(accent, 0.14)}`,
-});
-
-const Frame: React.FC<{
-  x: number; y: number; w: number; h: number; z: number;
-  accent: string; title: string; tag?: string; t: number;
-  children: (cw: number, ch: number) => React.ReactNode;
-}> = ({x, y, w, h, z, accent, title, tag = 'LIVE', t, children}) => {
-  const PADX = 22, HEADER = 52, PADB = 20;
-  const cw = w - PADX * 2, ch = h - HEADER - PADB;
+const Header: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 8, 70, 850, 900);
+  const success = p(timeline, 780, 825);
   return (
-    <div style={{position: 'absolute', left: x, top: y, width: w, height: h, transform: `translateZ(${z}px)`, backfaceVisibility: 'hidden'}}>
-      <div style={cardStyle(accent)}>
-        <div style={{position: 'absolute', left: PADX, right: PADX, top: 0, height: HEADER, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <span style={{fontFamily: FONT, fontSize: 12.5, letterSpacing: 2.4, fontWeight: 600, color: C.ink, textTransform: 'uppercase', opacity: 0.92}}>{title}</span>
-          <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
-            <PulseDot color={accent} t={t} />
-            <span style={{fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.6, color: C.faint, fontWeight: 500}}>{tag}</span>
-          </span>
+    <div style={{position: 'absolute', left: 110, right: 110, top: 53, height: 92, opacity: reveal, transform: `translateY(${(1 - reveal) * -12}px)`, fontFamily: FONT}}>
+      <div style={{position: 'absolute', left: 0, top: 0, display: 'flex', alignItems: 'center', gap: 16}}>
+        <div style={{width: 60, height: 60, borderRadius: 20, display: 'grid', placeItems: 'center', border: `1px solid ${rgba(C.cyan, 0.33)}`, background: `radial-gradient(circle at 36% 30%, ${rgba(C.text, 0.13)}, ${rgba(C.cyan, 0.08)} 42%, rgba(7,22,40,.82))`, boxShadow: `0 0 ${17 + Math.sin(phase * 2) * 3}px ${rgba(C.cyan, 0.11)}`}}>
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <path d="M8 24 C4 24 3 18 7 16 C7 10 13 6 18 9 C23 4 32 8 31 15 C36 17 35 24 30 24Z" fill="none" stroke={C.cyan} strokeWidth="1.5" />
+            <path d="M13 26 L19 32 L27 22" fill="none" stroke={success > 0.8 ? C.mint : C.violet} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.45 + success * 0.55} />
+            <circle cx="19" cy="19" r="16" fill="none" stroke={rgba(C.violet, 0.45)} strokeWidth=".8" strokeDasharray="3 5" strokeDashoffset={-timeline * 0.12} />
+          </svg>
         </div>
-        <div style={{position: 'absolute', left: PADX, right: PADX, top: HEADER - 1, height: 1, background: `linear-gradient(90deg, ${hexA(accent, 0.42)}, rgba(120,170,255,0.05))`}} />
-        <Brackets accent={accent} />
-        <div style={{position: 'absolute', left: PADX, top: HEADER, width: cw, height: ch}}>
-          {children(cw, ch)}
+        <div>
+          <div style={{fontSize: 29, color: C.text, fontWeight: 900, letterSpacing: 0.95}}>SECURE CLOUD CONTINUITY</div>
+          <div style={{marginTop: 7, fontSize: 12.5, color: C.muted, fontWeight: 730, letterSpacing: 0.76}}>ENCRYPTED TRANSFER ORCHESTRATION · ILLUSTRATIVE SYSTEM</div>
         </div>
       </div>
+      <div style={{position: 'absolute', right: 0, top: 8, display: 'flex', alignItems: 'center', gap: 11}}>
+        <div style={{height: 42, padding: '0 15px', borderRadius: 13, display: 'flex', alignItems: 'center', border: `1px solid ${rgba(C.text, 0.1)}`, background: 'rgba(9,27,48,.66)', color: C.muted, fontSize: 11.5, fontWeight: 780, letterSpacing: 0.56}}>24 ASSETS</div>
+        <div style={{height: 42, minWidth: 178, padding: '0 16px', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: `1px solid ${rgba(success > 0.9 ? C.mint : C.cyan, 0.27)}`, background: rgba(success > 0.9 ? C.mint : C.cyan, 0.055), color: success > 0.9 ? C.mint : C.cyan, fontSize: 11.5, fontWeight: 850, letterSpacing: 0.62}}>
+          <span style={{width: 7, height: 7, borderRadius: 7, background: success > 0.9 ? C.mint : C.cyan, boxShadow: `0 0 ${8 + Math.sin(phase * 4) * 2}px ${success > 0.9 ? C.mint : C.cyan}`}} />
+          {success > 0.9 ? 'SYNC COMPLETE' : 'SECURE SESSION'}
+        </div>
+      </div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, background: `linear-gradient(90deg, ${rgba(C.cyan, 0.28)}, ${rgba(C.violet, 0.16)}, transparent 76%)`}} />
     </div>
   );
 };
 
-// ---------- HERO: DNA double helix + sequence track ----------
-const DnaHelix: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const hcy = 236, amp = 88, lambda = 158;
-  const k = TAU / lambda;
-  const scrollWaves = 2;                 // integer → seamless
-  const phase = TAU * t * scrollWaves;
-  const scrollPx = t * scrollWaves * lambda;
-
-  // strand polylines
-  const N = 150;
-  let sa = '', sb = '';
-  for (let i = 0; i <= N; i++) {
-    const x = (i / N) * cw;
-    const s = Math.sin(k * x - phase);
-    sa += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + (hcy + amp * s).toFixed(1) + ' ';
-    sb += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + (hcy - amp * s).toFixed(1) + ' ';
-  }
-
-  // base-pair rungs
-  const rungStep = lambda / 7;
-  const startR = Math.floor(scrollPx / rungStep) - 1;
-  const nR = Math.ceil(cw / rungStep) + 3;
-  const rungs: {x: number; yA: number; yB: number; mag: number; bc: string; cc: string}[] = [];
-  for (let j = 0; j < nR; j++) {
-    const r = startR + j;
-    const x = r * rungStep - scrollPx;
-    if (x < -4 || x > cw + 4) continue;
-    const s = Math.sin(k * x - phase);
-    const mag = Math.abs(s);
-    if (mag < 0.06) continue;
-    const base = BASES[Math.floor(random('rb' + (((r % 14) + 14) % 14)) * 4)];
-    rungs.push({x, yA: hcy + amp * s, yB: hcy - amp * s, mag, bc: BASE_COL[base], cc: BASE_COL[COMP[base]]});
-  }
-
-  // sequence track (flowing base cells)
-  const trackY = 470, cellW = 30, cellH = 44;
-  const off = t * SEQ_PERIOD;
-  const start = Math.floor(off) - 1;
-  const nCells = Math.ceil(cw / cellW) + 3;
-  const caretX = cw * 0.5;
-  const cells = [];
-  for (let s = 0; s < nCells; s++) {
-    const m = start + s;
-    const x = (m - off) * cellW;
-    if (x < -cellW || x > cw) continue;
-    const base = seqBase(m);
-    const col = BASE_COL[base];
-    const prox = Math.max(0, 1 - Math.abs(x + cellW / 2 - caretX) / (cellW * 1.2));
-    cells.push(
-      <g key={'c' + m}>
-        <rect x={x + 2} y={trackY} width={cellW - 4} height={cellH} rx={6} fill={hexA(col, 0.12 + 0.22 * prox)} stroke={hexA(col, 0.4 + 0.4 * prox)} strokeWidth={1} />
-        <text x={x + cellW / 2} y={trackY + cellH / 2 + 6} fill={prox > 0.4 ? C.ink : col} fontFamily={MONO} fontSize={18} fontWeight={700} textAnchor="middle">{base}</text>
-      </g>
-    );
-  }
-
+const CloudCore: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 32, 132, 838, 900);
+  const active = p(timeline, 145, 240);
+  const success = p(timeline, 770, 825);
+  const pulse = 0.5 + Math.sin(timeline * 0.08) * 0.12;
+  const labelOpacity = 1 - p(timeline, 150, 220) * (1 - p(timeline, 735, 800));
   return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
+    <div style={{position: 'absolute', left: 304, top: 46, width: 600, height: 308, opacity: reveal, transform: `translateY(${(1 - reveal) * -18}px) scale(${0.92 + reveal * 0.08 + success * 0.02})`}}>
+      <svg width="600" height="308" viewBox="0 0 600 308" style={{overflow: 'visible'}}>
         <defs>
-          <Glow id="dh_glow" b1={2} b2={7} />
-          <linearGradient id="dh_sa" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={C.cyan} />
-            <stop offset="1" stopColor={C.teal} />
+          <linearGradient id="cloud-shell" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor={success > 0.85 ? C.mint : C.cyan} stopOpacity=".18" />
+            <stop offset=".48" stopColor={C.blue} stopOpacity=".09" />
+            <stop offset="1" stopColor={C.violet} stopOpacity=".16" />
           </linearGradient>
-          <linearGradient id="dh_sb" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={C.violet} />
-            <stop offset="1" stopColor={C.blue} />
+          <linearGradient id="cloud-ring" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor={success > 0.85 ? C.mint : C.cyan} />
+            <stop offset=".52" stopColor={C.blue} />
+            <stop offset="1" stopColor={C.violet} />
           </linearGradient>
+          <radialGradient id="cloud-core-glow">
+            <stop stopColor={C.text} stopOpacity=".95" />
+            <stop offset=".16" stopColor={success > 0.85 ? C.mint : C.cyan} stopOpacity=".76" />
+            <stop offset=".56" stopColor={C.violet} stopOpacity=".12" />
+            <stop offset="1" stopColor={C.violet} stopOpacity="0" />
+          </radialGradient>
+          <filter id="cloud-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          <filter id="cloud-wide" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="24" /></filter>
         </defs>
-
-        {/* base-pair rungs */}
-        {rungs.map((rg, i) => {
-          const op = 0.22 + rg.mag * 0.55;
-          const w = 1.4 + rg.mag * 2.2;
+        <ellipse cx="300" cy="160" rx={218 + Math.sin(phase) * 3} ry={101 + Math.cos(phase) * 2} fill={success > 0.8 ? C.mint : C.cyan} opacity={0.025 + active * 0.025 + success * 0.025} filter="url(#cloud-wide)" />
+        <path d="M154 211 C104 211 83 181 98 149 C108 127 130 116 154 119 C158 78 192 54 228 63 C257 28 319 31 344 72 C387 54 433 82 437 125 C478 125 506 153 496 185 C489 205 471 211 445 211 Z" fill="url(#cloud-shell)" stroke="url(#cloud-ring)" strokeWidth="1.7" filter="url(#cloud-glow)" />
+        <path d="M172 194 C135 194 119 174 130 153 C139 136 158 132 178 137 C185 105 213 91 239 100 C267 75 314 78 333 108 C366 94 401 114 405 146 C439 143 461 163 451 186" fill="none" stroke={success > 0.85 ? C.mint : C.cyan} strokeWidth="1" strokeDasharray="5 9" strokeDashoffset={-timeline * 0.15} opacity={0.32 + active * 0.28} />
+        <ellipse cx="300" cy="157" rx="82" ry="57" fill="url(#cloud-core-glow)" opacity={0.54 + active * 0.22 + success * 0.18} filter="url(#cloud-wide)" />
+        <circle cx="300" cy="157" r={55 + pulse * 3} fill={rgba(C.bg, 0.76)} stroke="url(#cloud-ring)" strokeWidth="1.5" filter="url(#cloud-glow)" />
+        <path d="M300 116 L336 137 L336 178 L300 199 L264 178 L264 137Z" fill={rgba(success > 0.85 ? C.mint : C.cyan, 0.075)} stroke="url(#cloud-ring)" strokeWidth="1.2" />
+        {success < 0.82 ? (
+          <>
+            <path d="M300 178 V139 M286 153 L300 139 L314 153" fill="none" stroke={C.text} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <line x1="281" y1="181" x2="319" y2="181" stroke={C.cyan} strokeWidth="2" strokeLinecap="round" />
+          </>
+        ) : (
+          <path d="M278 158 L294 174 L324 140" fill="none" stroke={C.mint} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {Array.from({length: 12}, (_, index) => {
+          const angle = index / 12 * Math.PI * 2 + phase * 0.45;
+          const radiusX = 126 + (index % 2) * 31;
+          const radiusY = 72 + (index % 2) * 18;
+          const color = [C.cyan, C.violet, C.mint][index % 3];
           return (
-            <g key={'rg' + i}>
-              <line x1={rg.x} y1={rg.yA} x2={rg.x} y2={hcy} stroke={hexA(rg.bc, op)} strokeWidth={w} />
-              <line x1={rg.x} y1={hcy} x2={rg.x} y2={rg.yB} stroke={hexA(rg.cc, op)} strokeWidth={w} />
-              <circle cx={rg.x} cy={rg.yA} r={2.4 + rg.mag * 2.2} fill={rg.bc} filter={rg.mag > 0.7 ? 'url(#dh_glow)' : undefined} />
-              <circle cx={rg.x} cy={rg.yB} r={2.4 + rg.mag * 2.2} fill={rg.cc} filter={rg.mag > 0.7 ? 'url(#dh_glow)' : undefined} />
+            <g key={index} opacity={0.22 + active * 0.42 + success * 0.12}>
+              <line x1={300 + Math.cos(angle) * 61} y1={157 + Math.sin(angle) * 38} x2={300 + Math.cos(angle) * radiusX} y2={157 + Math.sin(angle) * radiusY} stroke={color} strokeWidth=".6" opacity=".3" />
+              <circle cx={300 + Math.cos(angle) * radiusX} cy={157 + Math.sin(angle) * radiusY} r={2.2 + (index % 3) * 0.5} fill={color} filter={index % 4 === 0 ? 'url(#cloud-glow)' : undefined} />
             </g>
           );
         })}
-
-        {/* backbones */}
-        <path d={sa} fill="none" stroke="url(#dh_sa)" strokeWidth={3.4} strokeLinecap="round" filter="url(#dh_glow)" />
-        <path d={sb} fill="none" stroke="url(#dh_sb)" strokeWidth={3.4} strokeLinecap="round" filter="url(#dh_glow)" />
-
-        {/* sequence track */}
-        {cells}
-        <line x1={0} y1={trackY + cellH + 12} x2={cw} y2={trackY + cellH + 12} stroke="rgba(120,170,255,0.16)" strokeWidth={1} />
-        {(() => {
-          const tk = [];
-          for (let s = 0; s < nCells; s++) {
-            const m = start + s;
-            if ((((m % 8) + 8) % 8) !== 0) continue;
-            const x = (m - off) * cellW;
-            if (x < 0 || x > cw) continue;
-            tk.push(<line key={'tk' + m} x1={x} y1={trackY + cellH + 12} x2={x} y2={trackY + cellH + 18} stroke={C.faint} strokeWidth={1} />);
-          }
-          return tk;
-        })()}
-        {/* caret */}
-        <line x1={caretX} y1={trackY - 8} x2={caretX} y2={trackY + cellH + 8} stroke={hexA(C.amber, 0.5)} strokeWidth={1.4} strokeDasharray="3 4" />
+        <text x="300" y="267" textAnchor="middle" fill={success > 0.85 ? C.mint : C.text} fontFamily={FONT} fontSize="14" fontWeight="850" letterSpacing="1.2" opacity={labelOpacity}>{success > 0.85 ? 'CLOUD CORE VERIFIED' : 'CLOUD CORE'}</text>
+        <text x="300" y="286" textAnchor="middle" fill={C.muted} fontFamily={FONT} fontSize="10.5" fontWeight="720" letterSpacing=".65" opacity={labelOpacity}>ENCRYPTED DESTINATION VAULT</text>
       </svg>
-
-      {/* readouts (inside the on-screen safe band) */}
-      <div style={{position: 'absolute', left: 500, top: -2}}>
-        <div style={{fontFamily: MONO, fontSize: 12.5, letterSpacing: 1.4, color: C.sub, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>chr7 · GRCh38</div>
-        <div style={{fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, marginTop: 3, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>double-strand · phred Q37</div>
-      </div>
-      <div style={{position: 'absolute', right: 0, top: -2, textAlign: 'right'}}>
-        <div style={{fontFamily: MONO, fontSize: 26, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 22px ${hexA(C.cyan, 0.45)}, 0 0 12px rgba(5,10,25,0.9)`}}>5,432,101</div>
-        <div style={{fontFamily: MONO, fontSize: 11, letterSpacing: 1.4, color: C.teal, marginTop: 2, textShadow: '0 0 12px rgba(5,10,25,0.9)'}}>LOCUS · READ DEPTH 38×</div>
-      </div>
     </div>
   );
 };
 
-// ---------- variant calling (fully-safe panel) ----------
-const VARIANTS = [
-  {pos: 'chr7:5432101', ref: 'A', alt: 'G', type: 'SNV', q: 0.96, tc: C.cyan},
-  {pos: 'chr7:5432140', ref: 'C', alt: 'T', type: 'SNV', q: 0.9, tc: C.cyan},
-  {pos: 'chr7:5432188', ref: 'G', alt: '-', type: 'DEL', q: 0.82, tc: C.magenta},
-  {pos: 'chr7:5432233', ref: '-', alt: 'AT', type: 'INS', q: 0.78, tc: C.teal},
-  {pos: 'chr7:5432291', ref: 'T', alt: 'C', type: 'SNV', q: 0.88, tc: C.cyan},
-  {pos: 'chr7:5432340', ref: 'A', alt: 'C', type: 'SNV', q: 0.72, tc: C.cyan},
-];
-
-const VariantCalling: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const n = VARIANTS.length;
-  const rowH = ch / n;
-  const scanY = t * ch;
-  const scanOp = 0.12 * Math.sin(Math.PI * t);
-  const barX = cw - 96, barW = 62;
+const Vault: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 72, 164, 836, 900);
+  const open = p(timeline, 112, 185);
+  const success = p(timeline, 770, 825);
+  const remaining = Math.max(0, 24 - Math.round(24 * p(timeline, 150, 735, soft)));
   return (
-    <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{overflow: 'visible'}}>
-      <defs>
-        <Glow id="vc_glow" b1={1.6} b2={4} />
-      </defs>
-      <rect x={0} y={scanY - 18} width={cw} height={36} fill={hexA(C.teal, scanOp)} />
-      {VARIANTS.map((v, i) => {
-        const cy = i * rowH + rowH / 2;
-        const q = clamp(v.q + 0.02 * Math.sin(TAU * (t + i * 0.24)), 0, 1);
-        const hot = i === 0;
-        return (
-          <g key={i}>
-            {i > 0 && <line x1={0} y1={i * rowH} x2={cw} y2={i * rowH} stroke={C.grid} strokeWidth={1} />}
-            <text x={0} y={cy - 3} fill={hot ? C.ink : C.sub} fontFamily={MONO} fontSize={12.5} fontWeight={hot ? 600 : 400}>{v.pos}</text>
-            <text x={0} y={cy + 14} fill={C.faint} fontFamily={MONO} fontSize={11}>
-              <tspan fill={C.sub}>{v.ref}</tspan>
-              <tspan fill={C.faint}> → </tspan>
-              <tspan fill={v.tc}>{v.alt}</tspan>
-            </text>
-            <rect x={barX - 74} y={cy - 8} width={40} height={16} rx={4} fill={hexA(v.tc, 0.14)} stroke={hexA(v.tc, 0.5)} strokeWidth={1} />
-            <text x={barX - 54} y={cy + 4} fill={v.tc} fontFamily={MONO} fontSize={10.5} fontWeight={600} textAnchor="middle">{v.type}</text>
-            <rect x={barX} y={cy - 3} width={barW} height={6} rx={3} fill="rgba(120,160,230,0.12)" />
-            <rect x={barX} y={cy - 3} width={Math.max(4, q * barW)} height={6} rx={3} fill={hot ? C.teal : C.cyan} filter={hot ? 'url(#vc_glow)' : undefined} />
-            <text x={cw} y={cy - 5} fill={hot ? C.teal : C.sub} fontFamily={MONO} fontSize={11} fontWeight={600} textAnchor="end" style={{fontVariantNumeric: 'tabular-nums'}}>{'Q' + Math.round(q * 50)}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-};
-
-// ---------- coverage depth histogram (fully-safe panel) ----------
-const covDepth = (m: number) => {
-  const mm = ((m % 52) + 52) % 52;
-  return clamp(0.5 + 0.28 * Math.sin(mm * 0.6) + 0.16 * Math.sin(mm * 1.7 + 1) + 0.12 * (random('cov' + mm) - 0.5) * 2, 0.12, 0.98);
-};
-
-const CoverageDepth: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const P = 52;
-  const bw = cw / 40;
-  const gTop = 44, gBot = ch - 22;
-  const off = t * P;
-  const start = Math.floor(off) - 1;
-  const nBars = Math.ceil(cw / bw) + 3;
-  const meanY = gBot - 0.55 * (gBot - gTop);
-  const threshY = gBot - 0.3 * (gBot - gTop);
-  const bars = [];
-  for (let s = 0; s < nBars; s++) {
-    const m = start + s;
-    const x = (m - off) * bw;
-    if (x < -bw || x > cw) continue;
-    const d = covDepth(m);
-    const h = d * (gBot - gTop);
-    bars.push(<rect key={m} x={x + 1} y={gBot - h} width={bw - 2} height={h} rx={1.5} fill={ramp(d)} opacity={0.55 + d * 0.4} />);
-  }
-  const cur = covDepth(Math.round(off + 20));
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
-        {bars}
-        <line x1={0} y1={threshY} x2={cw} y2={threshY} stroke={hexA(C.rose, 0.5)} strokeWidth={1} strokeDasharray="4 5" />
-        <line x1={0} y1={meanY} x2={cw} y2={meanY} stroke={hexA(C.cyan, 0.6)} strokeWidth={1.2} />
-        <text x={cw} y={meanY - 4} fill={C.cyan} fontFamily={MONO} fontSize={10} textAnchor="end">mean 38×</text>
-        <text x={cw} y={threshY - 4} fill={C.rose} fontFamily={MONO} fontSize={10} textAnchor="end">min 10×</text>
-      </svg>
-      <div style={{position: 'absolute', left: 2, top: -2, display: 'flex', alignItems: 'baseline', gap: 8}}>
-        <span style={{fontFamily: MONO, fontSize: 30, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 20px ${hexA(C.cyan, 0.4)}`}}>{Math.round(cur * 64)}</span>
-        <span style={{fontFamily: FONT, fontSize: 13, color: C.sub}}>× depth</span>
-      </div>
-    </div>
-  );
-};
-
-// ---------- alignment / pileup map (anchored safe-left) ----------
-type Read = {row: number; bx: number; w: number; fwd: boolean; mm: number[]};
-const AlignmentMap: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const rows = 9;
-  const refY = 4;
-  const top = 22;
-  const rowH = (ch - top) / rows;
-  const wrap = cw + 420;
-  const off = (t * wrap) % wrap;
-
-  const reads: Read[] = [];
-  for (let r = 0; r < rows; r++) {
-    const cnt = 2 + Math.floor(random('rc' + r) * 2);
-    for (let i = 0; i < cnt; i++) {
-      const bx = random('bx' + r + '-' + i) * wrap;
-      const w = 140 + random('rw' + r + '-' + i) * 150;
-      const nmm = Math.floor(random('nm' + r + '-' + i) * 3);
-      const mm: number[] = [];
-      for (let m = 0; m < nmm; m++) mm.push(0.15 + random('mp' + r + '-' + i + '-' + m) * 0.7);
-      reads.push({row: r, bx, w, fwd: random('fw' + r + '-' + i) > 0.5, mm});
-    }
-  }
-
-  return (
-    <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{overflow: 'hidden'}}>
-      <defs>
-        <Glow id="am_glow" b1={1.2} b2={3.5} />
-      </defs>
-      {/* reference */}
-      <rect x={0} y={refY} width={cw} height={5} rx={2.5} fill={hexA(C.cyan, 0.32)} />
-      {Array.from({length: Math.ceil(cw / 46) + 1}).map((_, i) => (
-        <line key={'rt' + i} x1={i * 46} y1={refY} x2={i * 46} y2={refY + 5} stroke="rgba(10,18,40,0.8)" strokeWidth={1} />
-      ))}
-      {/* reads */}
-      {reads.map((rd, i) => {
-        let x = rd.bx - off;
-        if (x < -rd.w) x += wrap;
-        if (x > cw) return null;
-        const y = top + rd.row * rowH + rowH * 0.18;
-        const bh = rowH * 0.6;
-        const col = rd.fwd ? C.cyan : C.violet;
-        return (
-          <g key={'rd' + i}>
-            <rect x={x} y={y} width={rd.w} height={bh} rx={bh / 2} fill={hexA(col, 0.26)} stroke={hexA(col, 0.5)} strokeWidth={0.8} />
-            {rd.mm.map((mp, j) => {
-              const mx = x + mp * rd.w;
-              if (mx < 0 || mx > cw) return null;
-              const bcol = BASE_COL[BASES[Math.floor(random('mb' + i + '-' + j) * 4)]];
-              return <rect key={j} x={mx - 1.5} y={y} width={3} height={bh} rx={1} fill={bcol} filter="url(#am_glow)" />;
-            })}
-          </g>
-        );
-      })}
-    </svg>
-  );
-};
-
-// ---------- phred quality strip (narrow safe-left) ----------
-const BaseQuality: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const rows = 44;
-  const colW = 86;
-  const x0 = 8;
-  const gap = 1.5;
-  const cellH = (ch - 26 - gap * (rows - 1)) / rows;
-  const scan = ((t * 2) % 1) * rows;
-  return (
-    <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{overflow: 'visible'}}>
-      <text x={x0} y={12} fill={C.faint} fontFamily={MONO} fontSize={10.5} letterSpacing={1}>PHRED Q</text>
-      <text x={x0 + colW} y={12} fill={C.faint} fontFamily={MONO} fontSize={10} letterSpacing={0.5} textAnchor="end">Q37</text>
-      {Array.from({length: rows}).map((_, i) => {
-        let v = 0.82 + 0.14 * Math.sin(i * 0.5 + 1) - (random('q' + i) > 0.86 ? 0.4 : 0);
-        v += 0.1 * Math.sin(TAU * (t * 3 + i * 0.06));
-        const sd = Math.exp(-Math.pow(Math.min(Math.abs(i - scan), rows - Math.abs(i - scan)), 2) / 5);
-        v = clamp(v + sd * 0.1, 0.05, 1);
-        const y = 22 + i * (cellH + gap);
-        const bw = colW * (0.3 + 0.7 * v);
-        return <rect key={i} x={x0} y={y} width={bw} height={cellH} rx={1.5} fill={qcol(v)} opacity={0.45 + v * 0.5} />;
-      })}
-      <rect x={x0 - 2} y={20} width={colW + 4} height={ch - 24} rx={3} fill="none" stroke="rgba(120,170,255,0.16)" strokeWidth={1} />
-    </svg>
-  );
-};
-
-// ---------- sequencing rate (safe-right readout) ----------
-const RATE: Comp[] = [
-  {f: 1.1, h: 1, a: 0.15, p: 0.3},
-  {f: 2.4, h: 2, a: 0.08, p: 1.1},
-  {f: 3.9, h: 1, a: 0.04, p: 2.0},
-];
-
-const SeqRate: React.FC<{cw: number; ch: number; t: number}> = ({cw, ch, t}) => {
-  const gx0 = 6, gx1 = cw - 6, gTop = 58, gBot = ch - 26;
-  const gw = gx1 - gx0;
-  const pts = wavePts(96, gx0, gx1, gTop, gBot, RATE, 0.5, t);
-  const area = `${smooth(pts)} L ${gx1} ${gBot} L ${gx0} ${gBot} Z`;
-  const fx = t;
-  const dv = waveVal(fx, RATE, 0.5, t);
-  const dx = gx0 + fx * gw;
-  const dy = gBot - dv * (gBot - gTop);
-  const edge = interpolate(Math.min(fx, 1 - fx), [0, 0.06], [0, 1], {extrapolateRight: 'clamp'});
-  const val = 8420 + 460 * Math.sin(TAU * t) + 120 * Math.sin(TAU * 3 * t + 1);
-  return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', inset: 0, overflow: 'visible'}}>
+    <div style={{position: 'absolute', left: 378, top: 570, width: 450, height: 178, opacity: reveal, transform: `translateY(${(1 - reveal) * 24}px) scale(${0.94 + reveal * 0.06})`, fontFamily: FONT}}>
+      <svg width="450" height="142" viewBox="0 0 450 142" style={{overflow: 'visible'}}>
         <defs>
-          <linearGradient id="sr_area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={C.teal} stopOpacity="0.4" />
-            <stop offset="0.6" stopColor={C.cyan} stopOpacity="0.12" />
-            <stop offset="1" stopColor={C.cyan} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="sr_line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={C.teal} />
-            <stop offset="1" stopColor={C.cyan} />
-          </linearGradient>
-          <Glow id="sr_glow" b1={2.2} b2={7} />
+          <linearGradient id="vault-top" x1="0" y1="0" x2="1" y2="1"><stop stopColor={C.cyan} stopOpacity=".16" /><stop offset="1" stopColor={C.violet} stopOpacity=".08" /></linearGradient>
+          <linearGradient id="vault-front" x1="0" y1="0" x2="0" y2="1"><stop stopColor={C.panel2} /><stop offset="1" stopColor={C.bg} /></linearGradient>
+          <filter id="vault-glow" x="-40%" y="-70%" width="180%" height="240%"><feGaussianBlur stdDeviation="4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
-        {[0.33, 0.66, 1].map((r) => (
-          <line key={r} x1={gx0} y1={gBot - r * (gBot - gTop)} x2={gx1} y2={gBot - r * (gBot - gTop)} stroke={C.grid} strokeWidth={1} />
-        ))}
-        <path d={area} fill="url(#sr_area)" />
-        <path d={smooth(pts)} fill="none" stroke="url(#sr_line)" strokeWidth={2.6} strokeLinecap="round" filter="url(#sr_glow)" />
-        {edge > 0.02 && (
-          <>
-            <circle cx={dx} cy={dy} r={8} fill={hexA(C.cyan, 0.16 * edge)} />
-            <circle cx={dx} cy={dy} r={3.6} fill={C.ink} opacity={edge} filter="url(#sr_glow)" />
-          </>
-        )}
+        <ellipse cx="225" cy="118" rx="176" ry="25" fill={C.cyan} opacity=".035" filter="url(#vault-glow)" />
+        <path d={`M72 ${52 - open * 15} L378 ${52 - open * 15} L418 ${78 - open * 9} L32 ${78 - open * 9}Z`} fill="url(#vault-top)" stroke={success > 0.85 ? C.mint : C.cyan} strokeOpacity={0.28 + open * 0.28} strokeWidth="1.3" filter="url(#vault-glow)" />
+        <path d="M32 78 L418 78 L390 128 L60 128Z" fill="url(#vault-front)" stroke={success > 0.85 ? C.mint : C.line} strokeWidth="1.3" />
+        <path d="M74 90 L376 90 L361 115 L89 115Z" fill={rgba(C.bg, 0.72)} stroke={rgba(C.cyan, 0.18)} />
+        {Array.from({length: 8}, (_, index) => {
+          const color = [C.cyan, C.blue, C.violet, C.mint][index % 4];
+          const lit = index >= Math.ceil(remaining / 3);
+          return <g key={index}><rect x={96 + index * 34} y="98" width="22" height="8" rx="3" fill={lit ? color : rgba(C.dim, 0.22)} opacity={lit ? 0.82 : 0.46} /><circle cx={107 + index * 34} cy="102" r="2" fill={lit ? C.text : C.dim} opacity={lit ? 0.9 : 0.28} /></g>;
+        })}
+        <path d="M180 129 L270 129 L258 138 L192 138Z" fill={success > 0.85 ? rgba(C.mint, 0.22) : rgba(C.cyan, 0.14)} stroke={success > 0.85 ? C.mint : C.cyan} strokeOpacity=".5" />
+        {success > 0.82 ? <path d="M211 103 L222 114 L242 91" fill="none" stroke={C.mint} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" filter="url(#vault-glow)" /> : null}
       </svg>
-      <div style={{position: 'absolute', right: 2, top: 0, textAlign: 'right'}}>
-        <div style={{display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'flex-end'}}>
-          <span style={{fontFamily: MONO, fontSize: 34, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 22px ${hexA(C.cyan, 0.4)}`}}>{nf(val, 0)}</span>
-          <span style={{fontFamily: FONT, fontSize: 13, color: C.sub, letterSpacing: 0.5}}>reads/s</span>
-        </div>
-        <div style={{fontFamily: FONT, fontSize: 10.5, letterSpacing: 2, color: C.faint, textTransform: 'uppercase', marginTop: 2}}>throughput · 60s</div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, textAlign: 'center'}}>
+        <div style={{fontSize: 14, color: success > 0.85 ? C.mint : C.text, fontWeight: 850, letterSpacing: 1.15}}>{success > 0.85 ? 'DATA VAULT SECURED' : 'DATA VAULT'}</div>
+        <div style={{marginTop: 6, fontSize: 10.5, color: C.muted, fontWeight: 720, letterSpacing: 0.6}}>{remaining > 0 ? `${remaining} PACKETS QUEUED` : 'LOCAL QUEUE CLEARED'}</div>
       </div>
+      <div style={{position: 'absolute', left: 210, top: 12 + Math.sin(phase * 2) * 2, width: 30, height: 2, borderRadius: 4, background: success > 0.85 ? C.mint : C.cyan, boxShadow: `0 0 12px ${success > 0.85 ? C.mint : C.cyan}`, opacity: open}} />
     </div>
   );
 };
 
-// ---------- KPI cards ----------
-type Kpi = {label: string; val: number; unit: string; dec: number; delta: string; accent: string; amp: number; seed: string};
-const KPIS: Kpi[] = [
-  {label: 'READS ALIGNED', val: 48.2, unit: 'M', dec: 1, delta: '▲ 1.2M', accent: C.cyan, amp: 0.2, seed: 'k1'},
-  {label: 'MEAN DEPTH', val: 38, unit: '×', dec: 0, delta: '▲ 2×', accent: C.teal, amp: 1.2, seed: 'k2'},
-  {label: 'Q30', val: 94.6, unit: '%', dec: 1, delta: '▲ 0.3%', accent: C.violet, amp: 0.3, seed: 'k3'},
+type PacketInfo = {label: string; color: string; icon: 'image' | 'doc' | 'data' | 'media'};
+const PACKETS: PacketInfo[] = [
+  {label: 'IMAGE', color: C.cyan, icon: 'image'},
+  {label: 'REPORT', color: C.violet, icon: 'doc'},
+  {label: 'DATA', color: C.mint, icon: 'data'},
+  {label: 'MEDIA', color: C.blue, icon: 'media'},
+  {label: 'REPORT', color: C.gold, icon: 'doc'},
+  {label: 'IMAGE', color: C.cyan, icon: 'image'},
+  {label: 'DATA', color: C.mint, icon: 'data'},
+  {label: 'MEDIA', color: C.violet, icon: 'media'},
+  {label: 'IMAGE', color: C.blue, icon: 'image'},
+  {label: 'REPORT', color: C.coral, icon: 'doc'},
+  {label: 'DATA', color: C.mint, icon: 'data'},
+  {label: 'MEDIA', color: C.cyan, icon: 'media'},
 ];
 
-const KpiChart: React.FC<{cw: number; ch: number; t: number; d: Kpi}> = ({cw, ch, t, d}) => {
-  const ph = random(d.seed) * 3;
-  const comps: Comp[] = [
-    {f: 1.5, h: 1, a: 0.18, p: ph},
-    {f: 3.0, h: 2, a: 0.09, p: ph * 1.7},
-  ];
-  const spTop = ch * 0.5, spBot = ch - 4;
-  const pts = wavePts(30, 2, cw - 2, spTop, spBot, comps, 0.5, t);
-  const area = `${smooth(pts)} L ${cw - 2} ${spBot} L 2 ${spBot} Z`;
-  const val = d.val + d.amp * Math.sin(TAU * (t + ph * 0.1));
+const PacketIcon: React.FC<{kind: PacketInfo['icon']; color: string}> = ({kind, color}) => {
+  if (kind === 'image') {
+    return <svg width="32" height="26" viewBox="0 0 32 26"><rect x="2" y="2" width="28" height="22" rx="5" fill={rgba(color, 0.08)} stroke={color} strokeWidth="1.2" /><circle cx="22" cy="8" r="3" fill={color} /><path d="M5 20 L12 13 L17 17 L21 13 L28 20" fill="none" stroke={C.text} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  }
+  if (kind === 'doc') {
+    return <svg width="30" height="28" viewBox="0 0 30 28"><path d="M6 2 H20 L25 7 V26 H6Z" fill={rgba(color, 0.08)} stroke={color} strokeWidth="1.2" /><path d="M20 2 V8 H25" fill="none" stroke={color} /><line x1="10" y1="13" x2="21" y2="13" stroke={C.text} strokeWidth="1.2" /><line x1="10" y1="18" x2="21" y2="18" stroke={C.text} strokeWidth="1.2" /></svg>;
+  }
+  if (kind === 'data') {
+    return <svg width="30" height="28" viewBox="0 0 30 28"><ellipse cx="15" cy="6" rx="10" ry="4" fill={rgba(color, 0.08)} stroke={color} strokeWidth="1.2" /><path d="M5 6 V21 C5 26 25 26 25 21 V6" fill="none" stroke={color} strokeWidth="1.2" /><path d="M5 13 C5 18 25 18 25 13 M5 19 C5 24 25 24 25 19" fill="none" stroke={C.text} strokeOpacity=".75" /></svg>;
+  }
+  return <svg width="30" height="28" viewBox="0 0 30 28"><rect x="3" y="3" width="24" height="22" rx="6" fill={rgba(color, 0.08)} stroke={color} strokeWidth="1.2" /><path d="M12 9 L21 14 L12 19Z" fill={C.text} /></svg>;
+};
+
+const DataPacket: React.FC<{packet: PacketInfo; index: number; timeline: number}> = ({packet, index, timeline}) => {
+  const start = 152 + index * 46;
+  const travel = p(timeline, start, start + 132, soft);
+  const show = p(timeline, start, start + 17) * (1 - p(timeline, start + 112, start + 136));
+  const envelope = Math.sin(Math.PI * travel);
+  const twist = travel * Math.PI * 4 + (index % 2) * Math.PI;
+  const x = 603 + Math.sin(twist) * 150 * envelope;
+  const y = 608 - travel * 348;
+  const scale = 0.78 + envelope * 0.22 - travel * 0.06;
+  const rotateY = Math.sin(twist) * 17;
+  const rotateZ = Math.sin(twist * 0.5) * 4;
   return (
-    <div style={{position: 'relative', width: cw, height: ch}}>
-      <div style={{display: 'flex', alignItems: 'baseline', gap: 8}}>
-        <span style={{fontFamily: MONO, fontSize: 34, fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 22px ${hexA(d.accent, 0.4)}`}}>{nf(val, d.dec)}</span>
-        {d.unit && <span style={{fontFamily: FONT, fontSize: 13, color: C.sub}}>{d.unit}</span>}
+    <div
+      style={{
+        position: 'absolute',
+        left: x - 49,
+        top: y - 36,
+        width: 98,
+        height: 72,
+        zIndex: Math.round(y),
+        opacity: show,
+        transform: `perspective(850px) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${scale})`,
+        transformOrigin: '50% 50%',
+        filter: `drop-shadow(0 13px 16px rgba(0,0,0,.35)) drop-shadow(0 0 9px ${rgba(packet.color, 0.18)})`,
+        fontFamily: FONT,
+      }}
+    >
+      <div style={{position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden', border: `1px solid ${rgba(packet.color, 0.48)}`, background: 'linear-gradient(145deg, rgba(22,53,79,.94), rgba(6,20,38,.96))', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08)'}}>
+        <div style={{position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: packet.color, boxShadow: `0 0 10px ${packet.color}`}} />
+        <div style={{position: 'absolute', left: 11, top: 9}}><PacketIcon kind={packet.icon} color={packet.color} /></div>
+        <div style={{position: 'absolute', left: 48, top: 13, color: C.text, fontSize: 10.5, fontWeight: 850, letterSpacing: 0.55}}>{packet.label}</div>
+        <div style={{position: 'absolute', left: 48, top: 31, color: packet.color, fontSize: 8.5, fontWeight: 780, letterSpacing: 0.45}}>ENCRYPTED</div>
+        <div style={{position: 'absolute', left: 11, right: 10, bottom: 8, height: 3, borderRadius: 3, background: rgba(packet.color, 0.1), overflow: 'hidden'}}><div style={{height: '100%', width: `${Math.min(1, travel * 1.3) * 100}%`, background: packet.color, boxShadow: `0 0 7px ${packet.color}`}} /></div>
       </div>
-      <span style={{fontFamily: MONO, fontSize: 12.5, color: C.teal, letterSpacing: 0.5}}>{d.delta}</span>
-      <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} style={{position: 'absolute', left: 0, bottom: 0, overflow: 'visible'}}>
+    </div>
+  );
+};
+
+const TransferHelix: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 120, 190, 830, 900);
+  const active = p(timeline, 145, 260);
+  const success = p(timeline, 770, 825);
+  return (
+    <>
+      <svg width="1210" height="768" viewBox="0 0 1210 768" style={{position: 'absolute', inset: 0, pointerEvents: 'none', opacity: reveal}}>
         <defs>
-          <linearGradient id={`ksp_${d.seed}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={d.accent} stopOpacity="0.4" />
-            <stop offset="1" stopColor={d.accent} stopOpacity="0" />
-          </linearGradient>
-          <Glow id={`kspg_${d.seed}`} b1={1.4} b2={4} />
+          <linearGradient id="helix-a" x1="0" y1="1" x2="0" y2="0"><stop stopColor={C.cyan} stopOpacity=".18" /><stop offset=".5" stopColor={C.cyan} stopOpacity=".62" /><stop offset="1" stopColor={success > 0.8 ? C.mint : C.violet} stopOpacity=".2" /></linearGradient>
+          <linearGradient id="helix-b" x1="0" y1="1" x2="0" y2="0"><stop stopColor={C.violet} stopOpacity=".18" /><stop offset=".5" stopColor={C.violet} stopOpacity=".55" /><stop offset="1" stopColor={success > 0.8 ? C.mint : C.blue} stopOpacity=".2" /></linearGradient>
+          <filter id="helix-glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
-        <path d={area} fill={`url(#ksp_${d.seed})`} />
-        <path d={smooth(pts)} fill="none" stroke={d.accent} strokeWidth={2} strokeLinecap="round" filter={`url(#kspg_${d.seed})`} />
+        <path d="M603 618 C418 573 786 520 603 474 C420 428 786 374 603 323 C478 288 726 249 603 225" fill="none" stroke="url(#helix-a)" strokeWidth="1.6" strokeDasharray="5 10" strokeDashoffset={-timeline * 0.19} opacity={0.35 + active * 0.38} filter="url(#helix-glow)" />
+        <path d="M603 618 C788 573 420 520 603 474 C786 428 420 374 603 323 C728 288 480 249 603 225" fill="none" stroke="url(#helix-b)" strokeWidth="1.6" strokeDasharray="4 11" strokeDashoffset={timeline * 0.18} opacity={0.32 + active * 0.34} filter="url(#helix-glow)" />
+        <path d="M603 618 V225" stroke={success > 0.85 ? C.mint : C.cyan} strokeWidth="10" opacity={0.018 + active * 0.02} filter="url(#helix-glow)" />
+        {Array.from({length: 34}, (_, index) => {
+          const t = (index / 34 + timeline * 0.00052) % 1;
+          const envelope = Math.sin(Math.PI * t);
+          const angle = t * Math.PI * 4 + index * 0.27;
+          const x = 603 + Math.sin(angle) * 154 * envelope;
+          const y = 618 - t * 393;
+          const color = index % 3 === 0 ? C.violet : index % 5 === 0 ? C.mint : C.cyan;
+          return <g key={index} opacity={0.13 + active * 0.35}><circle cx={x} cy={y} r={1.7 + (index % 3) * 0.5} fill={color} /><circle cx={x} cy={y} r="6" fill="none" stroke={color} strokeWidth=".5" opacity=".18" /></g>;
+        })}
       </svg>
-    </div>
+      {PACKETS.map((packet, index) => <DataPacket key={`${packet.label}-${index}`} packet={packet} index={index} timeline={timeline} />)}
+    </>
   );
 };
 
-// ---------- world plane ----------
-const World: React.FC<{t: number}> = ({t}) => {
-  const W = 2600, H = 1500;
-  const rotX = 15 + 3 * Math.sin(TAU * t + 0.2);
-  const rotY = 12 * Math.sin(TAU * t + 0.7);
-  const rotZ = 1.0 * Math.sin(TAU * t + 1.9);
-  const tx = 120 * Math.sin(TAU * t + 0.15);
-  const ty = 26 * Math.sin(TAU * t + 1.25);
-  const tz = 215 + 70 * Math.sin(TAU * t + 2.1);
-
-  const GW = 3400, GH = 2100, gStep = 92;
-  const vlines = Math.ceil(GW / gStep), hlines = Math.ceil(GH / gStep);
-
+const Stage: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 22, 88, 840, 900);
+  const success = p(timeline, 770, 825);
   return (
-    <div style={{position: 'absolute', width: W, height: H, transformStyle: 'preserve-3d', transform: `rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${rotZ}deg) translate3d(${tx}px,${ty}px,${tz}px)`, transformOrigin: '50% 50%', backfaceVisibility: 'hidden'}}>
-      {/* holographic floor grid */}
-      <div style={{position: 'absolute', left: '50%', top: '50%', width: GW, height: GH, transform: 'translate(-50%,-50%) translateZ(-175px)'}}>
-        <svg width={GW} height={GH} viewBox={`0 0 ${GW} ${GH}`}>
-          <defs>
-            <radialGradient id="wg_fade" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stopColor="#fff" stopOpacity="1" />
-              <stop offset="0.55" stopColor="#fff" stopOpacity="0.6" />
-              <stop offset="1" stopColor="#fff" stopOpacity="0" />
-            </radialGradient>
-            <mask id="wg_mask"><rect width={GW} height={GH} fill="url(#wg_fade)" /></mask>
-          </defs>
-          <g mask="url(#wg_mask)">
-            {Array.from({length: vlines + 1}).map((_, i) => (
-              <line key={'v' + i} x1={i * gStep} y1={0} x2={i * gStep} y2={GH} stroke={i % 5 === 0 ? C.gridHi : C.grid} strokeWidth={i % 5 === 0 ? 1.4 : 1} />
-            ))}
-            {Array.from({length: hlines + 1}).map((_, i) => (
-              <line key={'h' + i} x1={0} y1={i * gStep} x2={GW} y2={i * gStep} stroke={i % 5 === 0 ? C.gridHi : C.grid} strokeWidth={i % 5 === 0 ? 1.4 : 1} />
-            ))}
-          </g>
-        </svg>
-      </div>
-
-      {/* header strip */}
-      <div style={{position: 'absolute', left: 110, top: 128, width: 2400, height: 60, transform: 'translateZ(12px)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backfaceVisibility: 'hidden'}}>
-        <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
-          <span style={{width: 16, height: 16, transform: 'rotate(45deg)', border: `2px solid ${C.cyan}`, boxShadow: `0 0 16px ${hexA(C.cyan, 0.7)}`, borderRadius: 3, display: 'inline-block'}} />
-          <span style={{fontFamily: FONT, fontSize: 22, fontWeight: 600, letterSpacing: 5, color: C.ink, textTransform: 'uppercase'}}>Genomic Sequencer</span>
-          <span style={{fontFamily: MONO, fontSize: 13, letterSpacing: 2, color: C.faint, marginLeft: 6}}>/ ALIGNMENT</span>
-        </div>
-        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-          <PulseDot color={C.teal} t={t} size={8} />
-          <span style={{fontFamily: MONO, fontSize: 13, letterSpacing: 2.5, color: C.sub}}>PIPELINE · RUNNING</span>
+    <Glass x={110} y={174} width={1210} height={768} reveal={reveal} radius={31} accent={success > 0.8 ? C.mint : C.cyan}>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 19, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT, zIndex: 1000}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}><span style={{width: 8, height: 8, borderRadius: 8, background: success > 0.8 ? C.mint : C.cyan, boxShadow: `0 0 ${8 + Math.sin(phase * 4) * 2}px ${success > 0.8 ? C.mint : C.cyan}`}} /><span style={{fontSize: 13.5, color: C.text, fontWeight: 850, letterSpacing: 0.72}}>CLOUD MIGRATION PIPELINE</span></div>
+        <div style={{display: 'flex', gap: 9}}>
+          <span style={{padding: '7px 10px', borderRadius: 9, border: `1px solid ${rgba(C.cyan, 0.17)}`, color: C.cyan, background: rgba(C.cyan, 0.04), fontSize: 9.5, fontWeight: 840, letterSpacing: 0.52}}>ENCRYPTED</span>
+          <span style={{padding: '7px 10px', borderRadius: 9, border: `1px solid ${rgba(C.violet, 0.17)}`, color: C.violet, background: rgba(C.violet, 0.04), fontSize: 9.5, fontWeight: 840, letterSpacing: 0.52}}>LIVE SYNC</span>
         </div>
       </div>
-      <div style={{position: 'absolute', left: 110, top: 190, width: 2400, height: 1, transform: 'translateZ(12px)', background: 'linear-gradient(90deg, rgba(120,180,255,0.35), rgba(120,180,255,0.03))'}} />
-
-      {/* panels */}
-      <Frame x={110} y={250} w={1250} h={690} z={0} accent={C.cyan} title="Sequence Track" tag="chr7" t={t}>
-        {(cw, ch) => <DnaHelix cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      {KPIS.map((d, i) => (
-        <Frame key={d.seed} x={1420 + i * 397} y={250} w={i === 2 ? 300 : 380} h={205} z={80 - i * 22} accent={d.accent} title={d.label} tag="LIVE" t={t}>
-          {(cw, ch) => <KpiChart cw={cw} ch={ch} t={t} d={d} />}
-        </Frame>
-      ))}
-
-      <Frame x={1420} y={485} w={455} h={455} z={120} accent={C.teal} title="Variant Calling" tag="VCF" t={t}>
-        {(cw, ch) => <VariantCalling cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={1905} y={485} w={460} h={455} z={35} accent={C.violet} title="Base Quality" tag="PHRED" t={t}>
-        {(cw, ch) => <BaseQuality cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={110} y={980} w={780} h={430} z={62} accent={C.teal} title="Seq Rate" tag="reads/s" t={t}>
-        {(cw, ch) => <SeqRate cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={915} y={980} w={560} h={430} z={-32} accent={C.cyan} title="Coverage Depth" tag="×" t={t}>
-        {(cw, ch) => <CoverageDepth cw={cw} ch={ch} t={t} />}
-      </Frame>
-
-      <Frame x={1500} y={980} w={1010} h={430} z={86} accent={C.blue} title="Alignment Map" tag="PILEUP" t={t}>
-        {(cw, ch) => <AlignmentMap cw={cw} ch={ch} t={t} />}
-      </Frame>
-    </div>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 61, height: 1, background: `linear-gradient(90deg, ${rgba(C.cyan, 0.24)}, ${rgba(C.violet, 0.14)}, transparent)`}} />
+      <TransferHelix timeline={timeline} phase={phase} />
+      <CloudCore timeline={timeline} phase={phase} />
+      <Vault timeline={timeline} phase={phase} />
+      <div style={{position: 'absolute', left: 24, right: 24, bottom: 19, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT, zIndex: 1000}}>
+        <span style={{fontSize: 10.5, color: C.muted, fontWeight: 740, letterSpacing: 0.59}}>SOURCE → ENCRYPTION TUNNEL → DESTINATION</span>
+        <span style={{fontSize: 10.5, color: success > 0.9 ? C.mint : C.cyan, fontWeight: 830, letterSpacing: 0.58}}>{success > 0.9 ? 'ALL CHANNELS VERIFIED' : 'TRANSFER CHANNEL ACTIVE'}</span>
+      </div>
+      <div style={{position: 'absolute', top: 0, bottom: 0, width: 120, left: `${-160 + ((timeline * 0.27) % 1500)}px`, background: `linear-gradient(90deg, transparent, ${rgba(C.text, 0.038)}, transparent)`, transform: 'skewX(-15deg)', opacity: reveal}} />
+    </Glass>
   );
 };
 
-// ---------- atmosphere ----------
-const Bokeh: React.FC<{t: number; count: number; seedp: string; front?: boolean}> = ({t, count, seedp, front}) => (
-  <AbsoluteFill style={{overflow: 'hidden'}}>
-    {Array.from({length: count}).map((_, i) => {
-      const s = seedp + i;
-      const bx = random('bx' + s) * 100;
-      const by = random('by' + s) * 100;
-      const sz = (front ? 90 : 44) + random('bs' + s) * (front ? 200 : 150);
-      const k = random('bk' + s) > 0.5 ? 1 : 2;
-      const dx = (random('bdx' + s) - 0.5) * (front ? 3 : 6);
-      const dy = (random('bdy' + s) - 0.5) * (front ? 3 : 6);
-      const px = bx + dx * Math.sin(TAU * (k * t + random('bp' + s)));
-      const py = by + dy * Math.cos(TAU * (k * t + random('bq' + s)));
-      const pulse = 0.5 + 0.5 * Math.sin(TAU * (t + random('bo' + s)));
-      const col = random('bc' + s) > 0.5 ? C.cyan : random('bc2' + s) > 0.5 ? C.violet : C.teal;
-      const op = (front ? 0.05 : 0.12) + pulse * (front ? 0.05 : 0.1);
-      return (
-        <div key={i} style={{position: 'absolute', left: `${px}%`, top: `${py}%`, width: sz, height: sz, marginLeft: -sz / 2, marginTop: -sz / 2, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(col, 0.9)} 0%, ${hexA(col, 0)} 70%)`, opacity: op, filter: `blur(${front ? 14 : 8}px)`}} />
-      );
-    })}
-  </AbsoluteFill>
+const ProgressRing: React.FC<{progress: number; success: number; phase: number; timeline: number}> = ({progress, success, phase, timeline}) => {
+  const radius = 98;
+  const circumference = 2 * Math.PI * radius;
+  const color = success > 0.75 ? C.mint : progress > 0.58 ? C.violet : C.cyan;
+  return (
+    <svg width="270" height="270" viewBox="0 0 270 270">
+      <defs>
+        <linearGradient id="progress-gradient" x1="0" y1="0" x2="1" y2="1"><stop stopColor={C.cyan} /><stop offset=".5" stopColor={C.blue} /><stop offset=".8" stopColor={C.violet} /><stop offset="1" stopColor={C.mint} /></linearGradient>
+        <filter id="progress-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      <circle cx="135" cy="135" r="113" fill={rgba(color, 0.025)} stroke={rgba(color, 0.11)} strokeWidth="1" />
+      <circle cx="135" cy="135" r={107 + Math.sin(phase * 2) * 1.5} fill="none" stroke={rgba(C.text, 0.06)} strokeWidth="2" strokeDasharray="3 9" strokeDashoffset={-timeline * 0.12} />
+      <circle cx="135" cy="135" r={radius} fill="none" stroke="rgba(80,119,145,.17)" strokeWidth="12" />
+      <circle cx="135" cy="135" r={radius} fill="none" stroke="url(#progress-gradient)" strokeWidth="12" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress)} transform="rotate(-90 135 135)" filter="url(#progress-glow)" />
+      {Array.from({length: 16}, (_, index) => {
+        const angle = index / 16 * Math.PI * 2 + phase * 0.32;
+        return <circle key={index} cx={135 + Math.cos(angle) * 77} cy={135 + Math.sin(angle) * 77} r={1.5 + (index % 3) * 0.35} fill={index % 2 ? C.cyan : C.violet} opacity={0.26 + progress * 0.36} />;
+      })}
+      {success < 0.72 ? (
+        <>
+          <text x="135" y="135" textAnchor="middle" fill={C.text} fontFamily={FONT} fontSize="57" fontWeight="900" fontVariant="tabular-nums">{Math.round(progress * 100)}%</text>
+          <text x="135" y="165" textAnchor="middle" fill={C.muted} fontFamily={FONT} fontSize="11" fontWeight="760" letterSpacing=".8">TRANSFER</text>
+        </>
+      ) : (
+        <>
+          <circle cx="135" cy="135" r={53 + Math.sin(phase * 3) * 2} fill={rgba(C.mint, 0.08)} stroke={C.mint} strokeWidth="1.4" filter="url(#progress-glow)" />
+          <path d="M105 135 L127 157 L166 113" fill="none" stroke={C.mint} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" filter="url(#progress-glow)" />
+        </>
+      )}
+    </svg>
+  );
+};
+
+const StatusRow: React.FC<{label: string; value: string; color: string; reveal: number; verified: boolean}> = ({label, value, color, reveal, verified}) => (
+  <div style={{height: 66, borderRadius: 15, border: `1px solid ${rgba(color, 0.14)}`, background: rgba(color, 0.028), opacity: reveal, transform: `translateY(${(1 - reveal) * 8}px)`, fontFamily: FONT, position: 'relative'}}>
+    <div style={{position: 'absolute', left: 14, top: 15}}>
+      <div style={{fontSize: 9.5, color: C.dim, fontWeight: 800, letterSpacing: 0.64}}>{label}</div>
+      <div style={{marginTop: 7, fontSize: 13, color: C.text, fontWeight: 850, letterSpacing: 0.42}}>{value}</div>
+    </div>
+    <div style={{position: 'absolute', right: 14, top: 21, width: 24, height: 24, borderRadius: 9, display: 'grid', placeItems: 'center', border: `1px solid ${rgba(verified ? C.mint : color, 0.28)}`, background: rgba(verified ? C.mint : color, 0.05)}}>
+      {verified ? <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7 L5.5 10.5 L12 3.5" fill="none" stroke={C.mint} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg> : <span style={{width: 6, height: 6, borderRadius: 6, background: color, boxShadow: `0 0 6px ${color}`}} />}
+    </div>
+  </div>
 );
+
+const ProgressPanel: React.FC<{timeline: number; phase: number}> = ({timeline, phase}) => {
+  const reveal = life(timeline, 48, 118, 840, 900);
+  const transfer = p(timeline, 135, 745, soft) * 0.92;
+  const verify = p(timeline, 725, 805, soft);
+  const progress = Math.min(1, transfer + verify * 0.08);
+  const success = p(timeline, 770, 825);
+  const packetCount = Math.min(24, Math.round(progress * 24));
+  const phaseLabel = timeline < 250 ? 'SCANNING FILES' : timeline < 470 ? 'ENCRYPTING DATA' : timeline < 700 ? 'UPLOADING ASSETS' : timeline < 790 ? 'VERIFYING INTEGRITY' : 'TRANSFER COMPLETE';
+  return (
+    <Glass x={1350} y={174} width={460} height={768} reveal={reveal} radius={31} accent={success > 0.8 ? C.mint : C.violet}>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT}}>
+        <div>
+          <div style={{fontSize: 16.5, color: C.text, fontWeight: 880, letterSpacing: 0.68}}>TRANSFER PROGRESS</div>
+          <div style={{marginTop: 6, fontSize: 10.5, color: C.muted, fontWeight: 720, letterSpacing: 0.57}}>REAL-TIME CONTINUITY STATUS</div>
+        </div>
+        <div style={{padding: '8px 10px', borderRadius: 10, border: `1px solid ${rgba(success > 0.85 ? C.mint : C.violet, 0.19)}`, background: rgba(success > 0.85 ? C.mint : C.violet, 0.045), color: success > 0.85 ? C.mint : C.violet, fontSize: 9.5, fontWeight: 850, letterSpacing: 0.52}}>{success > 0.85 ? 'VERIFIED' : 'LIVE'}</div>
+      </div>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 72, height: 1, background: `linear-gradient(90deg, ${rgba(C.violet, 0.25)}, ${rgba(C.cyan, 0.14)}, transparent)`}} />
+      <div style={{position: 'absolute', left: 95, top: 91}}><ProgressRing progress={progress} success={success} phase={phase} timeline={timeline} /></div>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 372, textAlign: 'center', fontFamily: FONT}}>
+        <div style={{fontSize: 12, color: success > 0.85 ? C.mint : C.cyan, fontWeight: 860, letterSpacing: 0.95}}>{phaseLabel}</div>
+        <div style={{marginTop: 8, fontSize: 13, color: C.text, fontWeight: 760}}>{packetCount} / 24 PACKETS</div>
+      </div>
+      <div style={{position: 'absolute', left: 24, right: 24, top: 432, display: 'grid', gap: 10}}>
+        <StatusRow label="TRANSFER LAYER" value="END-TO-END ENCRYPTED" color={C.cyan} reveal={life(timeline, 160, 215, 830, 900)} verified={timeline > 330} />
+        <StatusRow label="PACKET INTEGRITY" value="CHECKSUM MONITORED" color={C.violet} reveal={life(timeline, 265, 320, 830, 900)} verified={timeline > 730} />
+        <StatusRow label="CLOUD MIRROR" value="DESTINATION PROTECTED" color={C.mint} reveal={life(timeline, 430, 485, 830, 900)} verified={timeline > 790} />
+      </div>
+      <div style={{position: 'absolute', left: 24, right: 24, bottom: 27, height: 60, borderRadius: 15, border: `1px solid ${rgba(success > 0.8 ? C.mint : C.cyan, 0.17)}`, background: rgba(success > 0.8 ? C.mint : C.cyan, 0.035), display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: FONT}}>
+        <span style={{width: 8, height: 8, borderRadius: 8, background: success > 0.8 ? C.mint : C.cyan, boxShadow: `0 0 ${8 + Math.sin(phase * 4) * 2}px ${success > 0.8 ? C.mint : C.cyan}`}} />
+        <span style={{fontSize: 11, color: success > 0.8 ? C.mint : C.muted, fontWeight: 830, letterSpacing: 0.6}}>{success > 0.8 ? 'ALL DATA VERIFIED AND PROTECTED' : 'SECURE CHANNELS OPERATING'}</span>
+      </div>
+    </Glass>
+  );
+};
+
+const Footer: React.FC<{timeline: number}> = ({timeline}) => {
+  const reveal = life(timeline, 690, 755, 818, 900);
+  return (
+    <div style={{position: 'absolute', left: 110, right: 110, bottom: 42, height: 34, opacity: reveal, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT}}>
+      <span style={{fontSize: 10.5, color: C.muted, fontWeight: 740, letterSpacing: 0.61}}>ILLUSTRATIVE CLOUD MIGRATION · GENERIC SECURE WORKFLOW</span>
+      <span style={{fontSize: 10.5, color: C.mint, fontWeight: 840, letterSpacing: 0.61}}>24 FILES SECURED · 100% VERIFIED</span>
+    </div>
+  );
+};
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const t = (frame % durationInFrames) / durationInFrames;
-
-  const g1x = 26 + 6 * Math.sin(TAU * t);
-  const g1y = 22 + 5 * Math.cos(TAU * t + 1);
-  const g2x = 74 + 6 * Math.sin(TAU * t + 2);
-  const g2y = 78 + 5 * Math.cos(TAU * t);
-
-  const scanY = t;
-  const scanEdge = interpolate(Math.min(scanY, 1 - scanY), [0, 0.08], [0, 1], {
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.ease),
-  });
-
+  const timeline = (frame / durationInFrames) * 900;
+  const phase = (frame / durationInFrames) * Math.PI * 2;
+  const master = life(timeline, 0, 48, 850, 900);
+  const successPush = p(timeline, 760, 810) * (1 - p(timeline, 810, 850));
+  const cameraX = Math.sin(phase) * 3.6 + Math.sin(phase * 2 + 0.4) * 1.1;
+  const cameraY = Math.cos(phase * 1.35) * 2.5 - successPush * 2;
+  const rotateX = Math.sin(phase + 0.5) * 0.09;
+  const rotateY = Math.cos(phase * 0.88) * 0.16;
+  const scale = 0.977 + p(timeline, 0, 820) * 0.011 + successPush * 0.005;
   return (
-    <AbsoluteFill style={{background: 'radial-gradient(130% 100% at 50% 28%, #0c1834 0%, #081124 42%, #050a17 72%, #03060f 100%)', fontFamily: FONT}}>
-      <AbsoluteFill style={{mixBlendMode: 'screen'}}>
-        <div style={{position: 'absolute', left: `${g1x}%`, top: `${g1y}%`, width: 1100, height: 1100, marginLeft: -550, marginTop: -550, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(C.cyan, 0.16)} 0%, ${hexA(C.cyan, 0)} 66%)`}} />
-        <div style={{position: 'absolute', left: `${g2x}%`, top: `${g2y}%`, width: 1200, height: 1200, marginLeft: -600, marginTop: -600, borderRadius: '50%', background: `radial-gradient(circle, ${hexA(C.violet, 0.14)} 0%, ${hexA(C.violet, 0)} 66%)`}} />
-        <div style={{position: 'absolute', left: '50%', top: '46%', width: 1500, height: 900, marginLeft: -750, marginTop: -450, borderRadius: '50%', background: `radial-gradient(ellipse, ${hexA(C.blue, 0.10)} 0%, ${hexA(C.blue, 0)} 70%)`}} />
-      </AbsoluteFill>
-
-      <Bokeh t={t} count={26} seedp="bg" />
-
-      <AbsoluteFill style={{perspective: '1400px', perspectiveOrigin: '50% 42%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-        <World t={t} />
-      </AbsoluteFill>
-
-      <Bokeh t={t} count={7} seedp="fg" front />
-
-      <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.5 * scanEdge}}>
-        <div style={{position: 'absolute', left: 0, right: 0, top: `${scanY * 100}%`, height: 140, marginTop: -70, background: `linear-gradient(180deg, transparent, ${hexA(C.cyan, 0.10)} 50%, transparent)`}} />
-      </AbsoluteFill>
-
-      <AbsoluteFill style={{pointerEvents: 'none', background: 'radial-gradient(120% 120% at 50% 44%, transparent 52%, rgba(2,4,10,0.55) 82%, rgba(1,3,8,0.9) 100%)'}} />
-
-      <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'overlay', opacity: 0.05}}>
-        <svg width="100%" height="100%" viewBox="0 0 960 540" preserveAspectRatio="none">
-          <filter id="mn_noise" x="0" y="0" width="100%" height="100%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" stitchTiles="stitch" />
-            <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0" />
-          </filter>
-          <rect width="960" height="540" filter="url(#mn_noise)" />
-        </svg>
-      </AbsoluteFill>
+    <AbsoluteFill style={{overflow: 'hidden', backgroundColor: C.bg}}>
+      <Ambient timeline={timeline} phase={phase} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: master,
+          transform: `perspective(4400px) translate3d(${cameraX}px, ${cameraY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${scale})`,
+          transformOrigin: '50% 50%',
+          transformStyle: 'preserve-3d',
+          willChange: 'transform, opacity',
+        }}
+      >
+        <Header timeline={timeline} phase={phase} />
+        <Stage timeline={timeline} phase={phase} />
+        <ProgressPanel timeline={timeline} phase={phase} />
+        <Footer timeline={timeline} />
+      </div>
     </AbsoluteFill>
   );
 };
-
-export default Motion;
