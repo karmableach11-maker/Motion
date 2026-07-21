@@ -1,1246 +1,317 @@
-import React from "react";
+import React from 'react';
 import {
   AbsoluteFill,
-  Easing,
-  interpolate,
-  random,
-  spring,
   useCurrentFrame,
   useVideoConfig,
-} from "remotion";
+  random,
+} from 'remotion';
 
-const BASE_WIDTH = 1920;
-const BASE_HEIGHT = 1080;
+/**
+ * HOLOGRAPHIC RING HUD — DATA CORE (PREMIUM)
+ * A sci-fi holographic core: a tumbling gyroscope of rings around a hot pulsing
+ * center, wrapped by radial waveform + radial-bar rings, rotating tick / dashed /
+ * segmented HUD rings, orbiting numeric data nodes, a sweeping radar wedge, data
+ * streams, and a corner-bracket HUD frame with live readouts. Cyan→violet glow.
+ * SEAMLESS LOOP: every motion is periodic in t = frame / durationInFrames, so the
+ * last frame matches the first exactly. Deterministic. IP-safe. 1920x1080.
+ */
 
-const COLORS = {
-  ink: "#02050d",
-  cyan: "#2fe7ff",
-  blue: "#1677ff",
-  violet: "#7c3cff",
-  magenta: "#ff28a8",
+const BG = '#04050d';
+const INK = '#eaf6ff';
+const SUB = '#7fa8d4';
+const CYAN = '#22d3ee';
+const TEAL = '#2dd4bf';
+const BLUE = '#3b82f6';
+const VIOLET = '#8b5cf6';
+const PURPLE = '#a855f7';
+const HUD = 'rgba(120,200,255,0.85)';
+const TAU = Math.PI * 2;
+const CXP = 960;
+const CYP = 540;
+
+const lsin = (t: number, k: number, ph = 0) => Math.sin(TAU * k * t + ph);
+const pol = (r: number, a: number): number[] => [CXP + r * Math.cos(a), CYP + r * Math.sin(a)];
+const arc = (cx: number, cy: number, r: number, a0: number, a1: number): string => {
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const [x0, y0] = [cx + r * Math.cos(a0), cy + r * Math.sin(a0)];
+  const [x1, y1] = [cx + r * Math.cos(a1), cy + r * Math.sin(a1)];
+  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
 };
 
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.min(max, Math.max(min, value));
-
-const lerp = (from: number, to: number, progress: number) =>
-  from + (to - from) * progress;
-
-const smoothstep = (value: number) => {
-  const t = clamp(value);
-  return t * t * (3 - 2 * t);
-};
-
-type FolderProps = {
-  id: string;
-  x: number;
-  y: number;
-  stacked?: boolean;
-  floatY: number;
-  reaction: number;
-  glow: number;
-  open?: number;
-};
-
-const backPanelPath =
-  "M34 104 C31 82 47 66 70 66 H157 L183 31 C190 21 201 16 215 17 L325 22 C342 23 352 33 355 48 L359 66 H424 C448 66 462 83 459 105 L433 270 C430 291 415 303 394 303 H66 C44 303 31 289 31 267 Z";
-
-const frontPanelPath =
-  "M25 122 C22 98 39 84 64 87 L430 105 C453 106 465 123 461 146 L436 286 C432 307 417 319 395 319 H65 C41 319 28 305 27 283 Z";
-
-const FolderBack: React.FC<FolderProps> = ({
-  id,
-  x,
-  y,
-  stacked = false,
-  floatY,
-  reaction,
-  glow,
-}) => {
-  const layers = stacked
-    ? [
-        { dx: 31, dy: -38, a: "#ff2aa6", b: "#9c22e8", opacity: 0.94 },
-        { dx: 18, dy: -23, a: "#aa45ff", b: "#4048de", opacity: 0.92 },
-        { dx: 7, dy: -10, a: "#376fff", b: "#155db6", opacity: 0.96 },
-      ]
-    : [{ dx: 8, dy: -8, a: "#4653ec", b: "#164fb8", opacity: 0.96 }];
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: x - 250,
-        top: y - 190,
-        width: 500,
-        height: 360,
-        transform: `translate3d(0, ${floatY + reaction * 5}px, 0) rotateZ(${reaction * 0.8}deg)`,
-        transformOrigin: "50% 86%",
-      }}
-    >
-      <svg width="500" height="360" viewBox="0 0 500 360" overflow="visible">
-        <defs>
-          <radialGradient id={`${id}-halo`} cx="50%" cy="50%" r="50%">
-            <stop
-              offset="0"
-              stopColor={stacked ? COLORS.magenta : COLORS.cyan}
-              stopOpacity="0.72"
-            />
-            <stop
-              offset="0.42"
-              stopColor={stacked ? COLORS.violet : COLORS.blue}
-              stopOpacity="0.28"
-            />
-            <stop offset="1" stopColor="#000" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id={`${id}-main-back`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#1acbe9" />
-            <stop offset="0.5" stopColor="#1688cf" />
-            <stop offset="1" stopColor="#173d85" />
-          </linearGradient>
-          {layers.map((layer, index) => (
-            <linearGradient
-              key={`${id}-gradient-${index}`}
-              id={`${id}-layer-${index}`}
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="1"
-            >
-              <stop offset="0" stopColor={layer.a} />
-              <stop offset="1" stopColor={layer.b} />
-            </linearGradient>
-          ))}
-          <filter
-            id={`${id}-blur-strong`}
-            x="-80%"
-            y="-200%"
-            width="260%"
-            height="500%"
-          >
-            <feGaussianBlur stdDeviation="25" />
-          </filter>
-          <filter
-            id={`${id}-blur-soft`}
-            x="-30%"
-            y="-30%"
-            width="160%"
-            height="160%"
-          >
-            <feGaussianBlur stdDeviation="7" />
-          </filter>
-        </defs>
-
-        <ellipse
-          cx="250"
-          cy="310"
-          rx={210 + glow * 35}
-          ry={34 + glow * 8}
-          fill={`url(#${id}-halo)`}
-          opacity={0.5 + glow * 0.34}
-          filter={`url(#${id}-blur-strong)`}
-        />
-
-        {layers.map((layer, index) => (
-          <g
-            key={`${id}-layer-shape-${index}`}
-            transform={`translate(${layer.dx} ${layer.dy})`}
-          >
-            <path
-              d={backPanelPath}
-              fill={`url(#${id}-layer-${index})`}
-              opacity={layer.opacity}
-              stroke={index === 0 && stacked ? "#ff5fc2" : "#66ddff"}
-              strokeOpacity="0.24"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M60 78 H157 L183 43 H323"
-              fill="none"
-              stroke="#fff"
-              strokeOpacity="0.17"
-              strokeWidth="2"
-            />
-          </g>
-        ))}
-
-        <path
-          d={backPanelPath}
-          fill={`url(#${id}-main-back)`}
-          stroke="#6beeff"
-          strokeOpacity="0.28"
-          strokeWidth="1.4"
-          transform="translate(0 3)"
-        />
-        <path
-          d="M45 109 C124 92 350 95 448 112"
-          fill="none"
-          stroke="#7df2ff"
-          strokeOpacity="0.35"
-          strokeWidth="2"
-          filter={`url(#${id}-blur-soft)`}
-        />
-      </svg>
-    </div>
-  );
-};
-
-const FolderFront: React.FC<FolderProps> = ({
-  id,
-  x,
-  y,
-  floatY,
-  reaction,
-  glow,
-  open = 0,
-}) => {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: x - 250,
-        top: y - 190,
-        width: 500,
-        height: 360,
-        transform: `perspective(1100px) translate3d(0, ${floatY - reaction * 6 + open * 17}px, 0) rotateX(${open * 8.5}deg) rotateZ(${-reaction * 1.15}deg) scaleX(${1 + Math.abs(reaction) * 0.008}) scaleY(${1 - Math.abs(reaction) * 0.012 - open * 0.025})`,
-        transformOrigin: "50% 90%",
-        filter: `brightness(${1 - open * 0.13}) saturate(${1 - open * 0.08})`,
-      }}
-    >
-      <svg width="500" height="360" viewBox="0 0 500 360" overflow="visible">
-        <defs>
-          <linearGradient id={`${id}-front`} x1="0.02" y1="0" x2="0.95" y2="1">
-            <stop offset="0" stopColor="#32def5" />
-            <stop offset="0.36" stopColor="#18a9df" />
-            <stop offset="0.72" stopColor="#1767b6" />
-            <stop offset="1" stopColor="#173873" />
-          </linearGradient>
-          <linearGradient id={`${id}-rim`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#d6fbff" stopOpacity="0.48" />
-            <stop offset="0.38" stopColor="#5df1ff" stopOpacity="0.13" />
-            <stop offset="1" stopColor="#1677ff" stopOpacity="0" />
-          </linearGradient>
-          <radialGradient id={`${id}-sheen`} cx="22%" cy="17%" r="85%">
-            <stop offset="0" stopColor="#9cffff" stopOpacity="0.25" />
-            <stop offset="0.48" stopColor="#4cd9ff" stopOpacity="0.05" />
-            <stop offset="1" stopColor="#071938" stopOpacity="0" />
-          </radialGradient>
-          <filter
-            id={`${id}-front-shadow`}
-            x="-40%"
-            y="-40%"
-            width="180%"
-            height="180%"
-          >
-            <feDropShadow
-              dx="0"
-              dy="13"
-              stdDeviation="16"
-              floodColor="#01030a"
-              floodOpacity="0.72"
-            />
-            <feDropShadow
-              dx="0"
-              dy="0"
-              stdDeviation={7 + glow * 7}
-              floodColor="#22d9ff"
-              floodOpacity={0.18 + glow * 0.18}
-            />
-          </filter>
-        </defs>
-
-        <path
-          d={frontPanelPath}
-          fill={`url(#${id}-front)`}
-          stroke="#4deaff"
-          strokeOpacity={0.28 + glow * 0.25}
-          strokeWidth="1.6"
-          filter={`url(#${id}-front-shadow)`}
-        />
-        <path d={frontPanelPath} fill={`url(#${id}-sheen)`} />
-        <path
-          d="M42 125 C140 107 344 111 447 128"
-          fill="none"
-          stroke={`url(#${id}-rim)`}
-          strokeWidth="2.4"
-          opacity={0.7 + glow * 0.2}
-        />
-        <path
-          d="M45 286 C153 300 330 300 420 285"
-          fill="none"
-          stroke="#081c44"
-          strokeOpacity="0.62"
-          strokeWidth="2"
-        />
-        <circle cx="69" cy="284" r="2.4" fill="#71f5ff" opacity="0.35" />
-      </svg>
-    </div>
-  );
-};
-
-const FolderReflection: React.FC<{
-  x: number;
-  y: number;
-  stacked?: boolean;
-  floatY: number;
-}> = ({ x, y, stacked = false, floatY }) => (
-  <div
-    style={{
-      position: "absolute",
-      left: x - 205,
-      top: y + 137 - floatY * 0.25,
-      width: 420,
-      height: 230,
-      opacity: 0.26,
-      transform: `scaleY(-0.62) skewX(${stacked ? -2 : 2}deg)`,
-      transformOrigin: "50% 50%",
-      filter: "blur(4px)",
-      WebkitMaskImage:
-        "linear-gradient(to top, rgba(0,0,0,.88), transparent 88%)",
-      maskImage: "linear-gradient(to top, rgba(0,0,0,.88), transparent 88%)",
-    }}
-  >
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        borderRadius: "24px 28px 42px 42px",
-        clipPath: "polygon(2% 14%, 98% 18%, 92% 92%, 9% 96%)",
-        background: stacked
-          ? "linear-gradient(110deg, #2de4ff 5%, #1475cb 50%, #eb28b6 100%)"
-          : "linear-gradient(110deg, #35e5ff, #1263ba 72%, #2733a0)",
-        boxShadow: `0 0 44px ${stacked ? "#ef28b9" : "#18bdf8"}`,
-      }}
-    />
-  </div>
-);
-
-const TinyLabel: React.FC<{
-  x: number;
-  y: number;
-  width: number;
-  color: string;
-}> = ({ x, y, width, color }) => (
-  <rect x={x} y={y} width={width} height="3" rx="1.5" fill={color} />
-);
-
-const DocumentSurface: React.FC<{ variant: number; uid: string }> = ({
-  variant,
-  uid,
-}) => {
-  const wave = Array.from({ length: 28 }, (_, index) => {
-    const x = 18 + index * 10.6;
-    const base = variant === 0 ? 124 : 142;
-    const y =
-      base +
-      Math.sin(index * 0.78 + random(`${uid}-wave-${index}`) * 1.6) *
-        (variant === 0 ? 17 : 21) +
-      (random(`${uid}-jitter-${index}`) - 0.5) * 9;
-    return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(" ");
-
-  if (variant === 0) {
-    return (
-      <svg width="100%" height="100%" viewBox="0 0 330 220">
-        <defs>
-          <linearGradient id={`${uid}-paper`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f9fdff" />
-            <stop offset="0.72" stopColor="#d9edf4" />
-            <stop offset="1" stopColor="#a9c9d6" />
-          </linearGradient>
-          <pattern
-            id={`${uid}-paper-grid`}
-            width="12"
-            height="12"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 12 0 L 0 0 0 12"
-              fill="none"
-              stroke="#4d7f91"
-              strokeOpacity="0.12"
-              strokeWidth="0.7"
-            />
-          </pattern>
-          <filter
-            id={`${uid}-paper-glow`}
-            x="-20%"
-            y="-40%"
-            width="140%"
-            height="180%"
-          >
-            <feGaussianBlur stdDeviation="2.4" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <rect width="330" height="220" rx="8" fill={`url(#${uid}-paper)`} />
-        <rect
-          width="330"
-          height="220"
-          rx="8"
-          fill={`url(#${uid}-paper-grid)`}
-        />
-        <rect
-          x="15"
-          y="14"
-          width="68"
-          height="8"
-          rx="4"
-          fill="#15384c"
-          opacity="0.77"
-        />
-        <rect
-          x="90"
-          y="16"
-          width="32"
-          height="4"
-          rx="2"
-          fill="#4c7180"
-          opacity="0.5"
-        />
-        <rect
-          x="265"
-          y="14"
-          width="49"
-          height="8"
-          rx="4"
-          fill="#1db6d1"
-          opacity="0.56"
-        />
-        <line
-          x1="15"
-          y1="34"
-          x2="315"
-          y2="34"
-          stroke="#2f6070"
-          strokeOpacity="0.34"
-        />
-        {Array.from({ length: 9 }, (_, index) => (
-          <g key={`${uid}-paper-row-${index}`}>
-            <rect
-              x="16"
-              y={46 + index * 7.3}
-              width={22 + random(`${uid}-a-${index}`) * 38}
-              height="2.2"
-              rx="1"
-              fill="#416879"
-              opacity="0.45"
-            />
-            <rect
-              x="85"
-              y={46 + index * 7.3}
-              width={15 + random(`${uid}-b-${index}`) * 28}
-              height="2.2"
-              rx="1"
-              fill="#8a5f83"
-              opacity="0.36"
-            />
-            <rect
-              x="133"
-              y={46 + index * 7.3}
-              width={18 + random(`${uid}-c-${index}`) * 37}
-              height="2.2"
-              rx="1"
-              fill="#348a9e"
-              opacity="0.44"
-            />
-          </g>
-        ))}
-        <rect
-          x="207"
-          y="44"
-          width="107"
-          height="68"
-          rx="4"
-          fill="#e7f2f5"
-          stroke="#4f8191"
-          strokeOpacity="0.35"
-        />
-        {Array.from({ length: 10 }, (_, index) => (
-          <rect
-            key={`${uid}-bar-${index}`}
-            x={216 + index * 9.2}
-            y={99 - random(`${uid}-bar-h-${index}`) * 40}
-            width="5.5"
-            height={8 + random(`${uid}-bar-h-${index}`) * 40}
-            rx="1"
-            fill={index % 3 === 0 ? "#d73586" : "#1ca8c6"}
-            opacity="0.58"
-          />
-        ))}
-        <rect
-          x="15"
-          y="118"
-          width="300"
-          height="82"
-          rx="4"
-          fill="#eaf5f7"
-          fillOpacity="0.62"
-          stroke="#3f7788"
-          strokeOpacity="0.28"
-        />
-        <path
-          d={wave}
-          fill="none"
-          stroke="#067f9b"
-          strokeWidth="2.2"
-          filter={`url(#${uid}-paper-glow)`}
-        />
-        <path
-          d={`${wave} L 315 195 L 18 195 Z`}
-          fill="#25bfd5"
-          opacity="0.08"
-        />
-        <line
-          x1="18"
-          y1="176"
-          x2="315"
-          y2="176"
-          stroke="#496f7c"
-          strokeOpacity="0.2"
-        />
-        <TinyLabel x={19} y={205} width={47} color="#335b6b" />
-        <TinyLabel x={72} y={205} width={26} color="#6d8a94" />
-        <TinyLabel x={277} y={205} width={36} color="#2694a9" />
-      </svg>
-    );
-  }
-
-  if (variant === 1) {
-    return (
-      <svg width="100%" height="100%" viewBox="0 0 330 220">
-        <defs>
-          <linearGradient id={`${uid}-aqua-bg`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#143d58" />
-            <stop offset="0.5" stopColor="#0d2e49" />
-            <stop offset="1" stopColor="#08192f" />
-          </linearGradient>
-          <pattern
-            id={`${uid}-aqua-grid`}
-            width="17"
-            height="17"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 17 0 L 0 0 0 17"
-              fill="none"
-              stroke="#65e9ff"
-              strokeOpacity="0.1"
-              strokeWidth="0.7"
-            />
-          </pattern>
-          <filter
-            id={`${uid}-cyan-glow`}
-            x="-80%"
-            y="-80%"
-            width="260%"
-            height="260%"
-          >
-            <feGaussianBlur stdDeviation="3.2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <rect width="330" height="220" rx="8" fill={`url(#${uid}-aqua-bg)`} />
-        <rect width="330" height="220" rx="8" fill={`url(#${uid}-aqua-grid)`} />
-        <rect
-          x="13"
-          y="13"
-          width="304"
-          height="20"
-          rx="4"
-          fill="#1e516b"
-          opacity="0.8"
-        />
-        <circle cx="25" cy="23" r="3" fill="#50efff" opacity="0.75" />
-        <circle cx="36" cy="23" r="3" fill="#6d70ff" opacity="0.7" />
-        <rect
-          x="51"
-          y="20"
-          width="70"
-          height="5"
-          rx="2.5"
-          fill="#9ceeff"
-          opacity="0.36"
-        />
-        <rect
-          x="254"
-          y="19"
-          width="51"
-          height="7"
-          rx="3.5"
-          fill="#2be7ff"
-          opacity="0.38"
-        />
-        {Array.from({ length: 18 }, (_, index) => {
-          const col = index % 6;
-          const row = Math.floor(index / 6);
-          const active = random(`${uid}-cell-${index}`) > 0.45;
-          return (
-            <rect
-              key={`${uid}-cell-${index}`}
-              x={18 + col * 31}
-              y={47 + row * 25}
-              width="23"
-              height="16"
-              rx="2"
-              fill={active ? "#28d9ec" : "#2f5770"}
-              opacity={
-                active ? 0.2 + random(`${uid}-cell-o-${index}`) * 0.38 : 0.24
-              }
-              stroke="#6df2ff"
-              strokeOpacity={active ? 0.38 : 0.09}
-            />
-          );
-        })}
-        <rect
-          x="211"
-          y="46"
-          width="103"
-          height="69"
-          rx="4"
-          fill="#081d31"
-          stroke="#46dbee"
-          strokeOpacity="0.38"
-        />
-        <circle
-          cx="262"
-          cy="80"
-          r="25"
-          fill="none"
-          stroke="#2a5e76"
-          strokeWidth="7"
-        />
-        <path
-          d="M262 55 A25 25 0 0 1 284 91"
-          fill="none"
-          stroke="#39e8f6"
-          strokeWidth="7"
-          strokeLinecap="round"
-          filter={`url(#${uid}-cyan-glow)`}
-        />
-        <circle
-          cx="262"
-          cy="80"
-          r="4"
-          fill="#9affff"
-          filter={`url(#${uid}-cyan-glow)`}
-        />
-        <rect
-          x="15"
-          y="130"
-          width="300"
-          height="72"
-          rx="4"
-          fill="#071b2e"
-          fillOpacity="0.78"
-          stroke="#3ed9ec"
-          strokeOpacity="0.28"
-        />
-        <path
-          d={wave}
-          fill="none"
-          stroke="#3eefff"
-          strokeWidth="1.8"
-          filter={`url(#${uid}-cyan-glow)`}
-        />
-        <path
-          d="M20 187 C55 180 70 194 103 181 S155 174 184 188 S242 190 267 177 S295 183 311 173"
-          fill="none"
-          stroke="#8366ff"
-          strokeWidth="1.5"
-          opacity="0.78"
-        />
-        <TinyLabel x={20} y={209} width={54} color="#50ddec" />
-        <TinyLabel x={80} y={209} width={25} color="#657f99" />
-        <TinyLabel x={260} y={209} width={48} color="#7663e8" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width="100%" height="100%" viewBox="0 0 330 220">
-      <defs>
-        <linearGradient id={`${uid}-dark-bg`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#101620" />
-          <stop offset="0.62" stopColor="#080d15" />
-          <stop offset="1" stopColor="#12101f" />
-        </linearGradient>
-        <filter
-          id={`${uid}-terminal-glow`}
-          x="-60%"
-          y="-60%"
-          width="220%"
-          height="220%"
-        >
-          <feGaussianBlur stdDeviation="2.4" result="g" />
-          <feMerge>
-            <feMergeNode in="g" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <rect width="330" height="220" rx="8" fill={`url(#${uid}-dark-bg)`} />
-      <rect x="10" y="10" width="310" height="20" rx="4" fill="#171f2c" />
-      <circle cx="22" cy="20" r="3" fill="#ff4baa" />
-      <circle cx="33" cy="20" r="3" fill="#7c65ff" />
-      <circle cx="44" cy="20" r="3" fill="#35e8ee" />
-      <rect
-        x="61"
-        y="17"
-        width="57"
-        height="5"
-        rx="2.5"
-        fill="#718398"
-        opacity="0.42"
-      />
-      <rect x="245" y="16" width="62" height="7" rx="3.5" fill="#204e61" />
-      <rect
-        x="11"
-        y="40"
-        width="72"
-        height="169"
-        rx="4"
-        fill="#0b111a"
-        stroke="#263343"
-      />
-      {Array.from({ length: 11 }, (_, index) => (
-        <g key={`${uid}-menu-${index}`}>
-          <circle
-            cx="21"
-            cy={54 + index * 13}
-            r="2"
-            fill={index % 4 === 1 ? "#40e6ef" : "#526174"}
-            opacity={index % 4 === 1 ? 0.9 : 0.48}
-          />
-          <rect
-            x="28"
-            y={52.5 + index * 13}
-            width={25 + random(`${uid}-menu-w-${index}`) * 20}
-            height="3"
-            rx="1.5"
-            fill={index % 4 === 1 ? "#30aebd" : "#4b5868"}
-            opacity="0.56"
-          />
-        </g>
-      ))}
-      <rect
-        x="91"
-        y="40"
-        width="228"
-        height="75"
-        rx="4"
-        fill="#0c141e"
-        stroke="#273749"
-      />
-      <path
-        d="M101 102 C121 83 134 97 151 73 S187 57 204 77 S233 96 249 67 S280 50 307 62"
-        fill="none"
-        stroke="#40e9ef"
-        strokeWidth="2"
-        filter={`url(#${uid}-terminal-glow)`}
-      />
-      <path
-        d="M101 95 C124 104 139 82 161 94 S199 107 218 88 S260 92 277 76 S298 83 308 73"
-        fill="none"
-        stroke="#ff45ae"
-        strokeWidth="1.5"
-        opacity="0.82"
-      />
-      {Array.from({ length: 9 }, (_, index) => (
-        <rect
-          key={`${uid}-dash-bar-${index}`}
-          x={105 + index * 21}
-          y={108 - random(`${uid}-dash-height-${index}`) * 34}
-          width="10"
-          height={5 + random(`${uid}-dash-height-${index}`) * 34}
-          rx="2"
-          fill={index % 3 === 0 ? "#ff3faa" : "#25cddc"}
-          opacity="0.36"
-        />
-      ))}
-      <rect
-        x="91"
-        y="123"
-        width="108"
-        height="86"
-        rx="4"
-        fill="#0b121c"
-        stroke="#273749"
-      />
-      <rect
-        x="207"
-        y="123"
-        width="112"
-        height="86"
-        rx="4"
-        fill="#0b121c"
-        stroke="#273749"
-      />
-      {Array.from({ length: 8 }, (_, index) => (
-        <g key={`${uid}-code-${index}`}>
-          <rect
-            x="101"
-            y={135 + index * 8.2}
-            width={10 + random(`${uid}-indent-${index}`) * 13}
-            height="2.6"
-            rx="1.3"
-            fill="#765eff"
-            opacity="0.55"
-          />
-          <rect
-            x={118 + random(`${uid}-indent-${index}`) * 12}
-            y={135 + index * 8.2}
-            width={28 + random(`${uid}-code-w-${index}`) * 40}
-            height="2.6"
-            rx="1.3"
-            fill="#5a7186"
-            opacity="0.6"
-          />
-        </g>
-      ))}
-      {Array.from({ length: 14 }, (_, index) => {
-        const col = index % 7;
-        const row = Math.floor(index / 7);
-        return (
-          <rect
-            key={`${uid}-matrix-${index}`}
-            x={218 + col * 13}
-            y={138 + row * 27}
-            width="8"
-            height={8 + random(`${uid}-matrix-h-${index}`) * 12}
-            rx="1.5"
-            fill={index % 5 === 0 ? "#f13da6" : "#2bdbe5"}
-            opacity={0.24 + random(`${uid}-matrix-o-${index}`) * 0.5}
-          />
-        );
-      })}
-    </svg>
-  );
-};
-
-type TransferSpec = {
-  uid: string;
-  start: number;
-  duration: number;
-  sourceX: number;
-  targetX: number;
-  direction: 1 | -1;
-  variant: number;
-};
-
-const TransferDocument: React.FC<{
-  spec: TransferSpec;
-  frame: number;
-  fps: number;
-}> = ({ spec, frame, fps }) => {
-  const localFrame = frame - spec.start;
-  if (localFrame < 0 || localFrame > spec.duration) {
-    return null;
-  }
-
-  const raw = clamp(localFrame / spec.duration);
-  const horizontalProgress = interpolate(
-    raw,
-    [0, 0.18, 0.76, 1],
-    [0, 0, 1, 1],
-    {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-      easing: Easing.inOut(Easing.cubic),
-    },
-  );
-  const liftProgress = smoothstep(raw / 0.19);
-  const dropProgress = smoothstep((raw - 0.75) / 0.25);
-  const air = smoothstep(raw / 0.12) * (1 - smoothstep((raw - 0.84) / 0.16));
-  const liftSpring = spring({
-    fps,
-    frame: Math.max(0, localFrame),
-    durationInFrames: Math.max(1, spec.duration * 0.32),
-    config: { damping: 16, mass: 0.7, stiffness: 145 },
-  });
-  const sourceY = 724;
-  const targetY = sourceY - spec.variant * 13;
-  const apexY = 278 + spec.variant * 12;
-  const x = lerp(spec.sourceX, spec.targetX, horizontalProgress);
-  const y =
-    lerp(sourceY, apexY, liftProgress) +
-    lerp(0, targetY - apexY, dropProgress) +
-    Math.sin(raw * Math.PI * 4 + spec.variant * 0.8) * air * 7;
-  const opacity = interpolate(raw, [0, 0.055, 0.9, 1], [0, 1, 1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.inOut(Easing.quad),
-  });
-  const scale = 0.63 + air * 0.31 + (liftSpring - 1) * 0.018;
-  const rotateZ =
-    spec.direction * interpolate(raw, [0, 0.42, 1], [-10, 3, 11]) +
-    (spec.variant - 1) * 1.5;
-  const rotateX = interpolate(raw, [0, 0.18, 0.62, 1], [57, 14, 4, 60], {
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const rotateY = spec.direction * air * (10 + spec.variant * 3);
-  const blur = interpolate(raw, [0, 0.09, 0.84, 1], [6, 0, 0, 7], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  return (
-    <>
-      {Array.from({ length: 5 }, (_, index) => {
-        const trailDistance = 20 + index * 21;
-        const trailOpacity = opacity * air * (0.3 - index * 0.045);
-        return (
-          <div
-            key={`${spec.uid}-trail-${index}`}
-            style={{
-              position: "absolute",
-              left: x - spec.direction * trailDistance,
-              top: y + Math.sin(index * 1.8 + raw * 7) * 12,
-              width: 4 + (index % 2) * 3,
-              height: 4 + (index % 2) * 3,
-              borderRadius: index % 2 === 0 ? 1 : 999,
-              background: index % 3 === 0 ? COLORS.magenta : COLORS.cyan,
-              opacity: trailOpacity,
-              boxShadow: `0 0 ${12 + index * 3}px ${index % 3 === 0 ? COLORS.magenta : COLORS.cyan}`,
-              transform: `rotate(${raw * 160 + index * 27}deg)`,
-            }}
-          />
-        );
-      })}
-
-      <div
-        style={{
-          position: "absolute",
-          left: x,
-          top: y,
-          width: 330,
-          height: 220,
-          opacity,
-          transform: `translate(-50%, -50%) perspective(1200px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${scale})`,
-          transformOrigin: "50% 58%",
-          filter: `blur(${blur}px) drop-shadow(0 24px 24px rgba(0,0,0,.62)) drop-shadow(0 0 ${22 + air * 20}px ${spec.variant === 2 ? "rgba(255,40,168,.24)" : "rgba(47,231,255,.25)"})`,
-          borderRadius: 8,
-          overflow: "hidden",
-          background: "#0c1722",
-          border: `1px solid ${spec.variant === 2 ? "rgba(255,92,187,.55)" : "rgba(137,246,255,.65)"}`,
-          boxShadow:
-            "inset 0 0 0 1px rgba(255,255,255,.12), inset 0 0 24px rgba(255,255,255,.04)",
-        }}
-      >
-        <DocumentSurface variant={spec.variant} uid={spec.uid} />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(112deg, rgba(255,255,255,.24) 0%, rgba(255,255,255,0) 25%, rgba(255,255,255,.08) 58%, rgba(255,255,255,0) 76%)",
-            mixBlendMode: "screen",
-            opacity: 0.48,
-          }}
-        />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: x - 120,
-          top: 865 + (865 - y) * 0.09,
-          width: 240,
-          height: 34,
-          borderRadius: "50%",
-          background:
-            spec.variant === 2
-              ? "radial-gradient(ellipse, rgba(255,38,168,.22), transparent 70%)"
-              : "radial-gradient(ellipse, rgba(39,220,255,.22), transparent 70%)",
-          opacity: opacity * (0.12 + (1 - air) * 0.38),
-          filter: "blur(11px)",
-          transform: `scaleX(${0.55 + scale * 0.45})`,
-        }}
-      />
-    </>
-  );
-};
-
-const DustField: React.FC<{ phase: number }> = ({ phase }) => (
-  <>
-    {Array.from({ length: 48 }, (_, index) => {
-      const x = random(`dust-x-${index}`) * BASE_WIDTH;
-      const y = 75 + random(`dust-y-${index}`) * 720;
-      const size = 0.8 + random(`dust-size-${index}`) * 2.4;
-      const wave = Math.sin(
-        phase * Math.PI * 2 + random(`dust-phase-${index}`) * Math.PI * 2,
-      );
-      const bright = random(`dust-bright-${index}`);
-      return (
-        <div
-          key={`dust-${index}`}
-          style={{
-            position: "absolute",
-            left: x,
-            top: y + wave * (4 + random(`dust-range-${index}`) * 12),
-            width: size,
-            height: size,
-            borderRadius: "50%",
-            background: index % 6 === 0 ? "#ff77c7" : "#8eeeff",
-            opacity: 0.06 + bright * 0.21 + wave * 0.04,
-            boxShadow:
-              bright > 0.78
-                ? `0 0 10px ${index % 6 === 0 ? "#ff37aa" : "#31dfff"}`
-                : "none",
-          }}
-        />
-      );
-    })}
-  </>
-);
-
-const reactionAt = (frame: number, events: number[], fps: number) =>
-  events.reduce((sum, event) => {
-    const delta = frame - event;
-    if (delta < 0 || delta > fps * 0.34) return sum;
-    const seconds = delta / fps;
-    return (
-      sum + Math.sin(seconds * Math.PI * 8.5) * Math.exp(-seconds * 8) * 1.05
-    );
-  }, 0);
-
-const glowAt = (frame: number, events: number[], fps: number) =>
-  clamp(
-    events.reduce((sum, event) => {
-      const delta = Math.abs(frame - event);
-      if (delta > fps * 0.32) return sum;
-      return sum + (1 - smoothstep(delta / (fps * 0.32)));
-    }, 0),
-  );
-
-const mouthOpenAt = (frame: number, events: number[], fps: number) =>
-  clamp(
-    events.reduce((maximum, event) => {
-      const opening = smoothstep((frame - (event - fps * 0.22)) / (fps * 0.11));
-      const closing =
-        1 - smoothstep((frame - (event + fps * 0.035)) / (fps * 0.12));
-      return Math.max(maximum, opening * closing);
-    }, 0),
-  );
+const NODE_LABELS = ['98.4', '1024', '0.72', '512', '64%', '2.4K', 'SYNC', 'A7F'];
+const READ_L = [
+  { l: 'CORE TEMP', u: '°K', b: 3120, a: 40, k: 2 },
+  { l: 'THROUGHPUT', u: 'GB/s', b: 84.2, a: 6, k: 3 },
+  { l: 'INTEGRITY', u: '%', b: 99.4, a: 0.5, k: 1 },
+];
+const READ_R = [
+  { l: 'LATENCY', u: 'ms', b: 3.4, a: 0.6, k: 3 },
+  { l: 'NODES', u: 'ACTIVE', b: 2048, a: 12, k: 2 },
+  { l: 'POWER', u: 'PF', b: 12.8, a: 0.7, k: 1 },
+];
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps, width, height, durationInFrames } = useVideoConfig();
-  const safeDuration = Math.max(1, durationInFrames || fps * 15);
-  const loopFrame = ((frame % safeDuration) + safeDuration) % safeDuration;
-  const phase = loopFrame / safeDuration;
-  const cycleDuration = safeDuration / 4;
-  const flightDuration = cycleDuration * 0.255;
-  const offsets = [0.085, 0.385, 0.64];
-  const leftX = 465;
-  const rightX = 1455;
-  const folderY = 718;
+  const { durationInFrames, width, height } = useVideoConfig();
+  const t = (((frame % durationInFrames) + durationInFrames) % durationInFrames) / durationInFrames;
 
-  const transfers: TransferSpec[] = [0, 1, 2, 3].flatMap((group) =>
-    offsets.map((offset, index) => {
-      const direction = -1 as const;
-      return {
-        uid: `transfer-${group}-${index}`,
-        start: group * cycleDuration + offset * cycleDuration,
-        duration: flightDuration,
-        sourceX: rightX,
-        targetX: leftX - 38 + index * 36,
-        direction,
-        variant: index,
-      };
-    }),
-  );
+  const corePulse = 0.5 + 0.5 * lsin(t, 2);
+  const haloPulse = 0.5 + 0.5 * lsin(t, 1);
 
-  const leftLandings = transfers
-    .filter((transfer) => transfer.direction === -1)
-    .map((transfer) => transfer.start + transfer.duration);
-  const rightLandings: number[] = [];
-  const leftLaunches: number[] = [];
-  const rightLaunches = transfers.map((transfer) => transfer.start);
+  /* gyroscope tumbling rings */
+  const gyro = [
+    { R: 176, freq: 1, ph: 0.0, tilt: 16, spd: 1, col: CYAN },
+    { R: 236, freq: 2, ph: 1.0, tilt: -26, spd: -2, col: TEAL },
+    { R: 300, freq: 1, ph: 2.1, tilt: 62, spd: 1, col: VIOLET },
+    { R: 300, freq: 2, ph: 0.6, tilt: -70, spd: -1, col: BLUE },
+  ];
 
-  const leftReaction = reactionAt(loopFrame, leftLandings, fps);
-  const rightReaction = reactionAt(loopFrame, rightLandings, fps);
-  const cyclePhase = (loopFrame % cycleDuration) / cycleDuration;
-  const sourceOpen =
-    smoothstep((cyclePhase - 0.015) / 0.055) *
-    (1 - smoothstep((cyclePhase - 0.885) / 0.08));
-  const targetOpen = mouthOpenAt(loopFrame, leftLandings, fps);
-  const leftGlow = glowAt(loopFrame, [...leftLandings, ...leftLaunches], fps);
-  const rightGlow = glowAt(
-    loopFrame,
-    [...rightLandings, ...rightLaunches],
-    fps,
-  );
-  const leftFloat = Math.sin(phase * Math.PI * 2) * 3.2;
-  const rightFloat = Math.sin(phase * Math.PI * 2 + 1.15) * 3.2;
-  const cameraScale = 1.006 + Math.sin(phase * Math.PI * 2 - 0.7) * 0.006;
-  const cameraX = Math.sin(phase * Math.PI * 2) * 5;
-  const cameraY = Math.cos(phase * Math.PI * 2) * 3;
-  const scaleX = width / BASE_WIDTH;
-  const scaleY = height / BASE_HEIGHT;
+  /* radial waveform ring */
+  let wave = '';
+  for (let i = 0; i <= 128; i++) {
+    const th = (i / 128) * TAU;
+    const r = 350 + 16 * Math.sin(6 * th + TAU * t * 2) + 10 * Math.sin(11 * th - TAU * t * 3) + 6 * Math.sin(3 * th + TAU * t);
+    const [x, y] = pol(r, th);
+    wave += (i ? ' L ' : 'M ') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  wave += ' Z';
+
+  /* radial bars */
+  const NB = 44;
+  const bars = [];
+  for (let i = 0; i < NB; i++) {
+    const th = (i / NB) * TAU;
+    const base = 396;
+    const len = 14 + (0.5 + 0.5 * random(`b${i}`)) * 26 * (0.55 + 0.45 * Math.abs(lsin(t, 2, i * 0.5)));
+    const [x0, y0] = pol(base, th);
+    const [x1, y1] = pol(base + len, th);
+    bars.push(<line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke={i % 3 === 0 ? VIOLET : CYAN} strokeWidth="3.4" strokeLinecap="round" opacity={0.55 + 0.4 * random(`bo${i}`)} />);
+  }
+
+  /* orbiting nodes */
+  const nodeR = 470;
+  const nodes = NODE_LABELS.map((lab, i) => {
+    const a = (i / NODE_LABELS.length) * TAU + TAU * t;
+    const [x, y] = pol(nodeR, a);
+    const [ix, iy] = pol(nodeR - 34, a);
+    const [ox, oy] = pol(nodeR + 4, a);
+    return { lab, x, y, ix, iy, ox, oy, i };
+  });
+
+  /* tick ring marks */
+  const ticks = [];
+  for (let i = 0; i < 72; i++) {
+    const th = (i / 72) * TAU;
+    const big = i % 6 === 0;
+    const [x0, y0] = pol(430, th);
+    const [x1, y1] = pol(430 + (big ? 16 : 8), th);
+    ticks.push(<line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke={HUD} strokeWidth={big ? 2.2 : 1.2} opacity={big ? 0.8 : 0.4} />);
+  }
+
+  /* particles / data streams */
+  const parts = [];
+  for (let i = 0; i < 40; i++) {
+    const a = random(`pa${i}`) * TAU + TAU * t * (random(`ps${i}`) > 0.5 ? 1 : -1);
+    const rr = 520 + random(`pr${i}`) * 340;
+    const [x, y] = pol(rr + 20 * lsin(t, 1 + (i % 2), i), a);
+    const s = 1.4 + random(`pz${i}`) * 3;
+    parts.push(<circle key={i} cx={x} cy={y} r={s} fill={random(`pc${i}`) > 0.5 ? CYAN : VIOLET} opacity={0.2 + random(`po${i}`) * 0.4} />);
+  }
+  const streams = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU + TAU * t * 0.5;
+    const prog = (t * 2 + i / 8) % 1;
+    const r0 = 560 - prog * 120;
+    const [x0, y0] = pol(r0, a);
+    const [x1, y1] = pol(r0 + 46, a);
+    streams.push(<line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke={CYAN} strokeWidth="2.4" strokeLinecap="round" opacity={0.5 * Math.sin(Math.PI * prog)} />);
+  }
+
+  const hexPts = Array.from({ length: 6 }, (_, i) => {
+    const a = -Math.PI / 2 + (i / 6) * TAU;
+    return `${(CXP + 34 * Math.cos(a)).toFixed(1)},${(CYP + 34 * Math.sin(a)).toFixed(1)}`;
+  }).join(' ');
+
+  const sweepA = TAU * t;
+  const [swx, swy] = pol(560, sweepA);
+  const [swx2, swy2] = pol(560, sweepA + 0.7);
 
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: COLORS.ink,
-        overflow: "hidden",
-        fontFamily: "Inter, ui-sans-serif, system-ui, Arial, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width: BASE_WIDTH,
-          height: BASE_HEIGHT,
-          transform: `scale(${scaleX}, ${scaleY})`,
-          transformOrigin: "0 0",
-          overflow: "hidden",
-          background:
-            "radial-gradient(circle at 20% 31%, rgba(18,76,112,.18), transparent 31%), radial-gradient(circle at 78% 39%, rgba(89,20,91,.12), transparent 30%), linear-gradient(135deg, #07111b 0%, #030710 47%, #090611 100%)",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: -30,
-            opacity: 0.18,
-            backgroundImage:
-              "linear-gradient(rgba(78,171,205,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(78,171,205,.04) 1px, transparent 1px)",
-            backgroundSize: "88px 88px",
-            transform: `perspective(900px) rotateX(64deg) translateY(${185 + Math.sin(phase * Math.PI * 2) * 4}px) scale(1.32)`,
-            transformOrigin: "50% 70%",
-            WebkitMaskImage:
-              "linear-gradient(to bottom, transparent 44%, black 72%, transparent 100%)",
-            maskImage:
-              "linear-gradient(to bottom, transparent 44%, black 72%, transparent 100%)",
-          }}
-        />
-        <DustField phase={phase} />
+    <AbsoluteFill style={{ backgroundColor: BG }}>
+      <svg width={width} height={height} viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+        <defs>
+          <radialGradient id="hbg" cx="50%" cy="50%" r="62%">
+            <stop offset="0" stopColor="#0d1630" />
+            <stop offset="0.5" stopColor="#080d1e" />
+            <stop offset="1" stopColor="#04050d" />
+          </radialGradient>
+          <radialGradient id="coreHalo" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor={CYAN} stopOpacity="0.55" />
+            <stop offset="0.4" stopColor={BLUE} stopOpacity="0.2" />
+            <stop offset="1" stopColor={VIOLET} stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="coreFill" cx="50%" cy="40%" r="60%">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.45" stopColor={CYAN} />
+            <stop offset="1" stopColor={VIOLET} />
+          </radialGradient>
+          <linearGradient id="sweepG" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor={CYAN} stopOpacity="0.32" />
+            <stop offset="1" stopColor={CYAN} stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="waveG" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor={CYAN} />
+            <stop offset="0.5" stopColor={BLUE} />
+            <stop offset="1" stopColor={PURPLE} />
+          </linearGradient>
+          <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.4" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="g2" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="5" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="gbig" x="-150%" y="-150%" width="400%" height="400%">
+            <feGaussianBlur stdDeviation="20" />
+          </filter>
+          <filter id="hgrain">
+            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" stitchTiles="stitch" result="n" />
+            <feColorMatrix in="n" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0" />
+          </filter>
+          <radialGradient id="hvig" cx="50%" cy="50%" r="72%">
+            <stop offset="0.52" stopColor="#000" stopOpacity="0" />
+            <stop offset="1" stopColor="#000" stopOpacity="0.62" />
+          </radialGradient>
+          <pattern id="hgrid" width="60" height="60" patternUnits="userSpaceOnUse">
+            <path d="M60 0H0V60" fill="none" stroke="rgba(90,140,210,0.06)" strokeWidth="1" />
+          </pattern>
+        </defs>
 
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 688,
-            height: 392,
-            background:
-              "linear-gradient(to bottom, rgba(12,20,32,.48), rgba(2,4,10,.95)), radial-gradient(ellipse at 25% 0%, rgba(255,35,178,.16), transparent 34%), radial-gradient(ellipse at 76% 0%, rgba(30,183,255,.13), transparent 34%)",
-            borderTop: "1px solid rgba(133,213,255,.08)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 684,
-            height: 12,
-            background:
-              "linear-gradient(90deg, transparent 0%, rgba(38,211,255,.1) 16%, rgba(255,49,179,.16) 49%, rgba(44,210,255,.1) 82%, transparent 100%)",
-            filter: "blur(7px)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: -100,
-            right: -100,
-            top: 766,
-            height: 2,
-            background:
-              "linear-gradient(90deg, transparent, rgba(93,214,255,.16) 20%, rgba(255,44,181,.24) 50%, rgba(76,206,255,.12) 80%, transparent)",
-            filter: "blur(1px)",
-            opacity: 0.62,
-          }}
-        />
+        <rect x="0" y="0" width="1920" height="1080" fill="url(#hbg)" />
+        <rect x="0" y="0" width="1920" height="1080" fill="url(#hgrid)" />
 
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            transform: `translate3d(${cameraX}px, ${cameraY}px, 0) scale(${cameraScale})`,
-            transformOrigin: "50% 58%",
-          }}
-        >
-          <FolderReflection x={leftX} y={folderY} stacked floatY={leftFloat} />
-          <FolderReflection x={rightX} y={folderY} floatY={rightFloat} />
+        {/* core halo */}
+        <circle cx={CXP} cy={CYP} r={260 + 30 * haloPulse} fill="url(#coreHalo)" opacity={0.7 + 0.3 * haloPulse} filter="url(#gbig)" />
 
-          <FolderBack
-            id="left-back"
-            x={leftX}
-            y={folderY}
-            stacked
-            floatY={leftFloat}
-            reaction={leftReaction}
-            glow={leftGlow}
-          />
-          <FolderBack
-            id="right-back"
-            x={rightX}
-            y={folderY}
-            floatY={rightFloat}
-            reaction={rightReaction}
-            glow={rightGlow}
-          />
+        {/* radar sweep */}
+        <path d={`M ${CXP} ${CYP} L ${swx.toFixed(1)} ${swy.toFixed(1)} A 560 560 0 0 1 ${swx2.toFixed(1)} ${swy2.toFixed(1)} Z`} fill="url(#sweepG)" opacity="0.5" filter="url(#g2)" />
 
-          {transfers.map((spec) => (
-            <TransferDocument
-              key={spec.uid}
-              spec={spec}
-              frame={loopFrame}
-              fps={fps}
-            />
+        {/* particles + streams */}
+        <g filter="url(#g1)">{parts}</g>
+        <g filter="url(#g1)">{streams}</g>
+
+        {/* outer HUD rings */}
+        <g transform={`rotate(${(360 * t).toFixed(2)} ${CXP} ${CYP})`}>
+          <circle cx={CXP} cy={CYP} r="524" fill="none" stroke={HUD} strokeWidth="1.4" strokeDasharray="2 14" opacity="0.5" />
+        </g>
+        <g transform={`rotate(${(-360 * t).toFixed(2)} ${CXP} ${CYP})`} filter="url(#g1)">
+          {[0, 1, 2, 3].map((i) => (
+            <path key={i} d={arc(CXP, CYP, 500, (i / 4) * TAU + 0.12, (i / 4) * TAU + TAU / 4 - 0.12)} fill="none" stroke={i % 2 ? VIOLET : CYAN} strokeWidth="3" opacity="0.7" />
           ))}
+        </g>
+        {/* cardinal brackets on outer ring */}
+        {[0, 1, 2, 3].map((i) => {
+          const a = i * (TAU / 4) - Math.PI / 2;
+          const [x, y] = pol(500, a);
+          return <g key={i} transform={`rotate(${(i * 90).toFixed(0)} ${x.toFixed(1)} ${y.toFixed(1)})`}><path d={`M ${(x - 14).toFixed(1)} ${(y - 10).toFixed(1)} L ${(x - 14).toFixed(1)} ${(y - 22).toFixed(1)} L ${(x + 14).toFixed(1)} ${(y - 22).toFixed(1)} L ${(x + 14).toFixed(1)} ${(y - 10).toFixed(1)}`} fill="none" stroke={CYAN} strokeWidth="2.4" filter="url(#g1)" /></g>;
+        })}
+        <g transform={`rotate(${(180 * t).toFixed(2)} ${CXP} ${CYP})`}>{ticks}</g>
 
-          <FolderFront
-            id="left-front"
-            x={leftX}
-            y={folderY}
-            floatY={leftFloat}
-            reaction={leftReaction}
-            glow={leftGlow}
-            open={targetOpen * 0.7}
-          />
-          <FolderFront
-            id="right-front"
-            x={rightX}
-            y={folderY}
-            floatY={rightFloat}
-            reaction={rightReaction}
-            glow={rightGlow}
-            open={sourceOpen}
-          />
-        </div>
+        {/* orbiting numeric nodes */}
+        <g filter="url(#g1)">
+          {nodes.map((n) => (
+            <g key={n.i}>
+              <line x1={n.ix} y1={n.iy} x2={n.ox} y2={n.oy} stroke={HUD} strokeWidth="1.4" opacity="0.5" />
+              <circle cx={n.x} cy={n.y} r="4.5" fill={n.i % 2 ? VIOLET : CYAN} />
+              <text x={n.x} y={n.y - 14} fontSize="17" fill={INK} fontWeight="700" textAnchor="middle" fontFamily="'DejaVu Sans Mono', ui-monospace, monospace" style={{ fontVariantNumeric: 'tabular-nums' }}>{n.lab}</text>
+            </g>
+          ))}
+        </g>
 
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            boxShadow:
-              "inset 0 0 150px rgba(0,0,0,.74), inset 0 -120px 180px rgba(0,0,0,.55)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            opacity: 0.11,
-            backgroundImage:
-              'url("data:image/svg+xml,%3Csvg viewBox=%270 0 180 180%27 xmlns=%27http://www.w3.org/2000/svg%27%3E%3Cfilter id=%27n%27%3E%3CfeTurbulence type=%27fractalNoise%27 baseFrequency=%27.92%27 numOctaves=%272%27 seed=%278%27 stitchTiles=%27stitch%27/%3E%3C/filter%3E%3Crect width=%27100%25%27 height=%27100%25%27 filter=%27url(%23n)%27 opacity=%27.36%27/%3E%3C/svg%3E")',
-            mixBlendMode: "soft-light",
-          }}
-        />
-      </div>
+        {/* radial waveform ring */}
+        <path d={wave} fill="none" stroke="url(#waveG)" strokeWidth="2.6" opacity="0.9" filter="url(#g2)" />
+
+        {/* radial bars */}
+        <g transform={`rotate(${(60 * t).toFixed(2)} ${CXP} ${CYP})`} filter="url(#g1)">{bars}</g>
+
+        {/* gyroscope tumbling rings */}
+        {gyro.map((g, k) => {
+          const ry = g.R * (0.14 + 0.86 * Math.abs(Math.cos(TAU * t * g.freq + g.ph)));
+          const da = TAU * t * g.spd;
+          const [dx, dy] = [CXP + g.R * Math.cos(da), CYP + ry * Math.sin(da)];
+          const [dx2, dy2] = [CXP + g.R * Math.cos(da + Math.PI), CYP + ry * Math.sin(da + Math.PI)];
+          return (
+            <g key={k} transform={`rotate(${g.tilt} ${CXP} ${CYP})`} filter="url(#g2)">
+              <ellipse cx={CXP} cy={CYP} rx={g.R} ry={ry.toFixed(1)} fill="none" stroke={g.col} strokeWidth="2.4" opacity="0.85" />
+              <circle cx={dx.toFixed(1)} cy={dy.toFixed(1)} r="5.5" fill="#ffffff" />
+              <circle cx={dx2.toFixed(1)} cy={dy2.toFixed(1)} r="4" fill={g.col} />
+            </g>
+          );
+        })}
+
+        {/* core */}
+        <g filter="url(#g2)">
+          <circle cx={CXP} cy={CYP} r={78 + 8 * corePulse} fill="none" stroke={CYAN} strokeWidth="1.6" strokeDasharray="3 9" opacity="0.55" />
+          <g transform={`rotate(${(-120 * t).toFixed(2)} ${CXP} ${CYP})`}>
+            <circle cx={CXP} cy={CYP} r="60" fill="none" stroke={VIOLET} strokeWidth="2" strokeDasharray="40 220" opacity="0.8" />
+          </g>
+          <polygon points={hexPts} fill="url(#coreFill)" opacity={0.9} transform={`rotate(${(90 * t).toFixed(2)} ${CXP} ${CYP})`} />
+          <circle cx={CXP} cy={CYP} r={14 + 4 * corePulse} fill="#ffffff" />
+        </g>
+
+        {/* ---- HUD frame overlay ---- */}
+        {/* corner brackets */}
+        {[[70, 70, 1, 1], [1850, 70, -1, 1], [70, 1010, 1, -1], [1850, 1010, -1, -1]].map((c, i) => (
+          <path key={i} d={`M ${c[0]} ${c[1] + 46 * c[3]} L ${c[0]} ${c[1]} L ${c[0] + 46 * c[2]} ${c[1]}`} fill="none" stroke={HUD} strokeWidth="2.4" opacity="0.7" filter="url(#g1)" />
+        ))}
+
+        {/* title */}
+        <text x={CXP} y="112" fontSize="30" fill={INK} fontWeight="800" textAnchor="middle" letterSpacing="10" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">DATA CORE</text>
+        <text x={CXP} y="140" fontSize="15" fill={SUB} fontWeight="600" textAnchor="middle" letterSpacing="5" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">NEURAL SYNC · ONLINE</text>
+        <line x1={CXP - 90} y1="122" x2={CXP - 60} y2="122" stroke={CYAN} strokeWidth="2" opacity="0.7" />
+        <line x1={CXP + 60} y1="122" x2={CXP + 90} y2="122" stroke={CYAN} strokeWidth="2" opacity="0.7" />
+
+        {/* left readouts */}
+        {READ_L.map((r, i) => {
+          const y = 400 + i * 96;
+          const val = r.b + r.a * lsin(t, r.k, i);
+          const barW = 150 * (0.55 + 0.45 * (0.5 + 0.5 * lsin(t, r.k, i)));
+          return (
+            <g key={i}>
+              <text x="96" y={y} fontSize="14" fill={SUB} fontWeight="700" letterSpacing="2" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">{r.l}</text>
+              <text x="96" y={y + 30} fontSize="28" fill={INK} fontWeight="800" fontFamily="'DejaVu Sans Mono', ui-monospace, monospace" style={{ fontVariantNumeric: 'tabular-nums' }}>{val.toFixed(r.a < 1 ? 1 : 0)}</text>
+              <text x={val >= 1000 ? 232 : 190} y={y + 30} fontSize="14" fill={SUB} fontWeight="600" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">{r.u}</text>
+              <rect x="96" y={y + 44} width="150" height="4" rx="2" fill="rgba(120,160,220,0.16)" />
+              <rect x="96" y={y + 44} width={barW} height="4" rx="2" fill={CYAN} filter="url(#g1)" />
+            </g>
+          );
+        })}
+        {/* right readouts */}
+        {READ_R.map((r, i) => {
+          const y = 400 + i * 96;
+          const val = r.b + r.a * lsin(t, r.k, i + 2);
+          const barW = 150 * (0.55 + 0.45 * (0.5 + 0.5 * lsin(t, r.k, i + 2)));
+          return (
+            <g key={i}>
+              <text x="1824" y={y} fontSize="14" fill={SUB} fontWeight="700" letterSpacing="2" textAnchor="end" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">{r.l}</text>
+              <text x="1824" y={y + 30} fontSize="28" fill={INK} fontWeight="800" textAnchor="end" fontFamily="'DejaVu Sans Mono', ui-monospace, monospace" style={{ fontVariantNumeric: 'tabular-nums' }}>{val.toFixed(r.a < 1 ? 1 : 0)}</text>
+              <text x="1824" y={y + 52} fontSize="14" fill={SUB} fontWeight="600" textAnchor="end" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">{r.u}</text>
+              <rect x="1674" y={y + 44} width="150" height="4" rx="2" fill="rgba(120,160,220,0.16)" />
+              <rect x={1824 - barW} y={y + 44} width={barW} height="4" rx="2" fill={VIOLET} filter="url(#g1)" />
+            </g>
+          );
+        })}
+
+        {/* bottom status */}
+        <text x={CXP} y="1000" fontSize="15" fill={SUB} fontWeight="600" textAnchor="middle" letterSpacing="4" fontFamily="'DejaVu Sans Mono', ui-monospace, monospace">
+          {`■ ENCRYPTED   ◆ ${Math.round(60 + 5 * lsin(t, 3)).toString()}fps   ▲ STABLE   ● ${(2048 + Math.round(16 * lsin(t, 2))).toString()} NODES`}
+        </text>
+
+        {/* grain + vignette */}
+        <rect x="0" y="0" width="1920" height="1080" filter="url(#hgrain)" opacity="0.04" style={{ mixBlendMode: 'overlay' }} />
+        <rect x="0" y="0" width="1920" height="1080" fill="url(#hvig)" />
+      </svg>
     </AbsoluteFill>
   );
 };
