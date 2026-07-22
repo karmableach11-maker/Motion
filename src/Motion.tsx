@@ -1,1062 +1,1026 @@
-import React from "react";
+import React from 'react';
 import {
   AbsoluteFill,
   Easing,
   interpolate,
-  spring,
   useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+} from 'remotion';
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const TOTAL_FRAMES = 900;
 
 const clamp = (value: number, min = 0, max = 1) =>
   Math.min(max, Math.max(min, value));
 
-const fade = (
+const range = (
   frame: number,
-  input: [number, number, number, number],
-  output: [number, number, number, number] = [0, 1, 1, 0],
+  start: number,
+  end: number,
+  easing: (value: number) => number = Easing.linear,
 ) =>
-  interpolate(frame, input, output, {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.bezier(0.22, 1, 0.36, 1),
+  interpolate(frame, [start, end], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing,
   });
 
-const palette = [
+const pulse = (frame: number, center: number, radius: number) => {
+  const distance = Math.abs(frame - center);
+  return distance >= radius ? 0 : Math.sin((1 - distance / radius) * Math.PI * 0.5);
+};
+
+const COLORS = {
+  navy: '#061525',
+  navyMid: '#0A2740',
+  teal: '#0D5661',
+  ivory: '#FFF3D5',
+  gold: '#FFC857',
+  goldLight: '#FFF0A8',
+  coral: '#ED655E',
+  coralLight: '#FF8A76',
+  burgundy: '#7F1D3E',
+  burgundyDark: '#3A102A',
+  mint: '#7DE2D1',
+};
+
+type CoinSpec = {
+  start: number;
+  hit: number;
+  deposit: number;
+  startX: number;
+  endX: number;
+  size: number;
+  direction: number;
+  primary?: boolean;
+};
+
+const COINS: CoinSpec[] = [
+  {start: 218, hit: 266, deposit: 276, startX: 150, endX: 180, size: 82, direction: 1},
+  {start: 312, hit: 356, deposit: 366, startX: 470, endX: 460, size: 84, direction: -1},
+  {start: 398, hit: 438, deposit: 448, startX: 235, endX: 260, size: 82, direction: 1},
+  {start: 475, hit: 512, deposit: 522, startX: 410, endX: 380, size: 86, direction: -1},
   {
-    label: "CORE MARKET",
-    value: 34,
-    color: "#64F4D2",
-    dark: "#13B9AC",
+    start: 544,
+    hit: 578,
+    deposit: 588,
+    startX: 320,
+    endX: 320,
+    size: 96,
+    direction: 1,
+    primary: true,
   },
-  {
-    label: "GROWTH",
-    value: 24,
-    color: "#59B8FF",
-    dark: "#2978EF",
-  },
-  {
-    label: "EMERGING",
-    value: 18,
-    color: "#A984FF",
-    dark: "#6D49E8",
-  },
-  {
-    label: "OPPORTUNITY",
-    value: 14,
-    color: "#FF7FA7",
-    dark: "#E84778",
-  },
-  {
-    label: "NEW SIGNALS",
-    value: 10,
-    color: "#FFD166",
-    dark: "#E69B35",
-  },
-] as const;
+];
 
-const gapAngle = 4;
-const usableAngle = 360 - gapAngle * palette.length;
-let accumulatedAngle = 0;
-const segments = palette.map((item) => {
-  const sweep = (item.value / 100) * usableAngle;
-  const segment = {
-    ...item,
-    start: accumulatedAngle,
-    sweep,
-    middle: accumulatedAngle + sweep / 2,
-  };
-  accumulatedAngle += sweep + gapAngle;
-  return segment;
-});
-
-const Background: React.FC<{frame: number}> = ({frame}) => {
-  const driftX = Math.sin(frame / 115) * 38;
-  const driftY = Math.cos(frame / 137) * 28;
-  const scanX = interpolate(frame, [0, 900], [-340, 2200], {
-    extrapolateLeft: "extend",
-    extrapolateRight: "extend",
-  });
-
-  return (
-    <AbsoluteFill style={{overflow: "hidden", backgroundColor: "#06101F"}}>
-      <AbsoluteFill
-        style={{
-          background:
-            "linear-gradient(125deg, #030A15 0%, #07172A 42%, #071522 68%, #020713 100%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          width: 1040,
-          height: 1040,
-          left: -330 + driftX,
-          top: -345 + driftY,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(34,223,194,0.17) 0%, rgba(23,137,151,0.08) 34%, rgba(5,14,27,0) 69%)",
-          filter: "blur(10px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          width: 860,
-          height: 860,
-          right: -240 - driftX * 0.45,
-          top: 2 + driftY * 0.6,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(113,77,239,0.18) 0%, rgba(28,75,150,0.07) 40%, rgba(5,14,27,0) 72%)",
-          filter: "blur(16px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          width: 720,
-          height: 720,
-          left: 520 + driftX * 0.3,
-          bottom: -470 - driftY * 0.2,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(255,91,145,0.14) 0%, rgba(112,39,118,0.06) 42%, transparent 72%)",
-          filter: "blur(12px)",
-        }}
-      />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0, opacity: 0.34}}
-      >
-        <defs>
-          <pattern
-            id="micro-grid"
-            width="48"
-            height="48"
-            patternUnits="userSpaceOnUse"
-            patternTransform={`translate(${(frame * 0.08) % 48} 0)`}
-          >
-            <path
-              d="M 48 0 L 0 0 0 48"
-              fill="none"
-              stroke="#78A6BF"
-              strokeOpacity="0.13"
-              strokeWidth="1"
-            />
-            <circle cx="0" cy="0" r="1.4" fill="#83D6DB" opacity="0.42" />
-          </pattern>
-          <linearGradient id="grid-fade" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="white" stopOpacity="0.1" />
-            <stop offset="0.47" stopColor="white" stopOpacity="0.9" />
-            <stop offset="1" stopColor="white" stopOpacity="0.08" />
-          </linearGradient>
-          <mask id="grid-mask">
-            <rect width={WIDTH} height={HEIGHT} fill="url(#grid-fade)" />
-          </mask>
-        </defs>
-        <rect
-          width={WIDTH}
-          height={HEIGHT}
-          fill="url(#micro-grid)"
-          mask="url(#grid-mask)"
-        />
-      </svg>
-
-      <div
-        style={{
-          position: "absolute",
-          left: scanX,
-          top: -200,
-          width: 260,
-          height: 1500,
-          transform: "rotate(14deg)",
-          background:
-            "linear-gradient(90deg, transparent, rgba(121,244,231,0.025), rgba(159,246,237,0.08), rgba(121,244,231,0.018), transparent)",
-          filter: "blur(8px)",
-          mixBlendMode: "screen",
-        }}
-      />
-
-      {Array.from({length: 34}).map((_, i) => {
-        const x = (i * 197 + 83) % WIDTH;
-        const y = (i * 113 + 57) % HEIGHT;
-        const pulse = 0.16 + 0.36 * ((Math.sin(frame / 34 + i * 1.71) + 1) / 2);
-        const size = i % 7 === 0 ? 2.2 : 1.1;
-        return (
-          <div
-            key={i}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width: size,
-              height: size,
-              borderRadius: "50%",
-              backgroundColor: i % 3 === 0 ? "#74F6DD" : "#A8C8D6",
-              boxShadow: i % 7 === 0 ? "0 0 8px rgba(100,244,210,.65)" : "none",
-              opacity: pulse,
-            }}
-          />
-        );
-      })}
-
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 42%, rgba(0,3,10,0.34) 78%, rgba(0,2,7,0.72) 100%)",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const IntroBands: React.FC<{frame: number}> = ({frame}) => {
-  const colors = palette.map((item) => item.color);
-  return (
-    <AbsoluteFill style={{overflow: "hidden", pointerEvents: "none"}}>
-      {colors.map((color, i) => {
-        const start = i * 8;
-        const entrance = interpolate(frame, [start, start + 34], [0, 1], {
-          extrapolateLeft: "clamp",
-          extrapolateRight: "clamp",
-          easing: Easing.out(Easing.cubic),
-        });
-        const leave = interpolate(frame, [72 + i * 7, 132 + i * 6], [0, 1], {
-          extrapolateLeft: "clamp",
-          extrapolateRight: "clamp",
-          easing: Easing.inOut(Easing.cubic),
-        });
-        const fromLeft = i % 2 === 0;
-        const x = (fromLeft ? -1 : 1) * (1 - entrance) * 1450 +
-          (fromLeft ? -1 : 1) * leave * 1750;
-        const y = (i - 2) * 148 + leave * (i - 2) * 90;
-        return (
-          <div
-            key={color}
-            style={{
-              position: "absolute",
-              width: 2050,
-              height: 300,
-              left: -65,
-              top: 290,
-              opacity: interpolate(leave, [0, 0.7, 1], [0.56, 0.28, 0]),
-              transform: `translate3d(${x}px, ${y}px, 0) rotate(-8deg) skewX(-20deg)`,
-              background: `linear-gradient(90deg, transparent 1%, ${color} 16%, ${color} 78%, transparent 98%)`,
-              boxShadow: `0 0 90px ${color}42`,
-              mixBlendMode: "screen",
-            }}
-          />
-        );
-      })}
-      <AbsoluteFill
-        style={{
-          background: "#07111F",
-          opacity: interpolate(frame, [0, 30, 90, 142], [0.8, 0.12, 0.03, 0], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          }),
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const TechnicalChrome: React.FC<{frame: number}> = ({frame}) => {
-  const reveal = fade(frame, [44, 104, 820, 882]);
-  const lineWidth = interpolate(frame, [58, 150], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const statusPulse = 0.5 + 0.5 * Math.sin(frame / 13);
-
-  const corner: React.CSSProperties = {
-    position: "absolute",
-    width: 24,
-    height: 24,
-    borderColor: "rgba(155,214,221,.44)",
-  };
-
-  return (
-    <AbsoluteFill style={{opacity: reveal, color: "#B7D4DD", fontFamily: "Arial, Helvetica, sans-serif"}}>
-      <div style={{...corner, left: 52, top: 44, borderLeft: "1px solid", borderTop: "1px solid"}} />
-      <div style={{...corner, right: 52, top: 44, borderRight: "1px solid", borderTop: "1px solid"}} />
-      <div style={{...corner, left: 52, bottom: 44, borderLeft: "1px solid", borderBottom: "1px solid"}} />
-      <div style={{...corner, right: 52, bottom: 44, borderRight: "1px solid", borderBottom: "1px solid"}} />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 84,
-          top: 60,
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          fontSize: 12,
-          letterSpacing: 4.2,
-          fontWeight: 700,
-        }}
-      >
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: "#64F4D2",
-            boxShadow: `0 0 ${8 + statusPulse * 8}px rgba(100,244,210,.9)`,
-          }}
-        />
-        LIVE ANALYTICS
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 82,
-          top: 60,
-          fontSize: 11,
-          letterSpacing: 3.4,
-          color: "rgba(178,211,220,.64)",
-        }}
-      >
-        MODEL / DS–05&nbsp;&nbsp;&nbsp; 15 SEC
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 84,
-          right: 84,
-          top: 94,
-          height: 1,
-          transformOrigin: "left center",
-          transform: `scaleX(${lineWidth})`,
-          background:
-            "linear-gradient(90deg, rgba(100,244,210,.72), rgba(118,168,191,.16) 34%, rgba(118,168,191,.04))",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 84,
-          bottom: 57,
-          display: "flex",
-          gap: 20,
-          alignItems: "center",
-          fontSize: 10,
-          letterSpacing: 2.8,
-          color: "rgba(169,204,214,.54)",
-        }}
-      >
-        <span>DATA / NORMALIZED</span>
-        <span style={{width: 58, height: 1, background: "rgba(100,244,210,.45)"}} />
-        <span>SIGNAL CONFIDENCE 96.2</span>
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 84,
-          bottom: 56,
-          fontSize: 10,
-          letterSpacing: 2.8,
-          color: "rgba(169,204,214,.46)",
-        }}
-      >
-        01&nbsp;&nbsp;/&nbsp;&nbsp;05
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-const RadialChart: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const cx = 440;
-  const cy = 440;
-  const radius = 225;
-  const circumference = Math.PI * 2 * radius;
-  const chartSpring = spring({
-    frame: frame - 78,
-    fps,
-    durationInFrames: 96,
-    config: {damping: 22, stiffness: 95, mass: 1.1},
-  });
-  const chartOpacity = interpolate(frame, [62, 118], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const focus = fade(frame, [410, 472, 668, 724]);
-  const countProgress = interpolate(frame, [190, 350], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const count = Math.round(34 * countProgress);
-  const scanRotation = frame * 0.28 - 90;
-  const ringRotation = frame * 0.035;
-  const pulse = (Math.sin(frame / 22) + 1) / 2;
-  const calloutReveal = interpolate(frame, [305, 410], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        width: 880,
-        height: 880,
-        left: 80,
-        top: 112,
-        opacity: chartOpacity,
-        transform: `translate3d(${interpolate(chartSpring, [0, 1], [-80, 0])}px, ${
-          Math.sin(frame / 80) * 3
-        }px, 0) scale(${interpolate(chartSpring, [0, 1], [0.78, 1])})`,
-        transformOrigin: "center center",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          width: 648,
-          height: 648,
-          left: 116,
-          top: 116,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(61,242,213,.11) 0%, rgba(31,103,128,.05) 44%, transparent 72%)",
-          filter: "blur(24px)",
-          transform: `scale(${0.95 + pulse * 0.04})`,
-        }}
-      />
-
-      <svg width="880" height="880" viewBox="0 0 880 880" style={{position: "absolute", inset: 0}}>
-        <defs>
-          {segments.map((segment, i) => (
-            <linearGradient
-              key={`grad-${segment.label}`}
-              id={`segment-gradient-${i}`}
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="1"
-            >
-              <stop offset="0" stopColor={segment.color} />
-              <stop offset="0.6" stopColor={segment.color} />
-              <stop offset="1" stopColor={segment.dark} />
-            </linearGradient>
-          ))}
-          <radialGradient id="inner-surface" cx="35%" cy="28%" r="78%">
-            <stop offset="0" stopColor="#15324A" stopOpacity="0.98" />
-            <stop offset="0.5" stopColor="#0A1A2D" stopOpacity="0.98" />
-            <stop offset="1" stopColor="#030A15" stopOpacity="1" />
-          </radialGradient>
-          <linearGradient id="inner-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#A8FFF1" stopOpacity="0.82" />
-            <stop offset="0.35" stopColor="#6097B4" stopOpacity="0.18" />
-            <stop offset="0.76" stopColor="#987CFF" stopOpacity="0.46" />
-            <stop offset="1" stopColor="#FF7FA7" stopOpacity="0.38" />
-          </linearGradient>
-          <filter id="segment-shadow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="12" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="soft-glow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="6" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <g transform={`rotate(${ringRotation} ${cx} ${cy})`} opacity="0.5">
-          <circle
-            cx={cx}
-            cy={cy}
-            r="336"
-            fill="none"
-            stroke="#76B1C5"
-            strokeOpacity="0.17"
-            strokeWidth="1"
-            strokeDasharray="2 11"
-          />
-          <circle
-            cx={cx}
-            cy={cy}
-            r="315"
-            fill="none"
-            stroke="#77DCCF"
-            strokeOpacity="0.14"
-            strokeWidth="1"
-            strokeDasharray="58 8 3 8"
-          />
-        </g>
-
-        {Array.from({length: 72}).map((_, i) => {
-          const angle = (i / 72) * Math.PI * 2 - Math.PI / 2;
-          const major = i % 6 === 0;
-          const inner = major ? 325 : 329;
-          const outer = major ? 340 : 335;
-          return (
-            <line
-              key={`tick-${i}`}
-              x1={cx + Math.cos(angle) * inner}
-              y1={cy + Math.sin(angle) * inner}
-              x2={cx + Math.cos(angle) * outer}
-              y2={cy + Math.sin(angle) * outer}
-              stroke={major ? "#B9F4EF" : "#7EA7B8"}
-              strokeOpacity={major ? 0.34 : 0.16}
-              strokeWidth={major ? 1.5 : 1}
-            />
-          );
-        })}
-
-        <g opacity={interpolate(frame, [105, 190], [0, 0.44], {extrapolateLeft: "clamp", extrapolateRight: "clamp"})}>
-          <line x1="84" y1={cy} x2="796" y2={cy} stroke="#70B1C1" strokeOpacity="0.13" />
-          <line x1={cx} y1="84" x2={cx} y2="796" stroke="#70B1C1" strokeOpacity="0.13" />
-          <circle cx={cx} cy={cy} r="286" fill="none" stroke="#76B8C8" strokeOpacity="0.1" />
-        </g>
-
-        {segments.map((segment, i) => {
-          const startFrame = 116 + i * 24;
-          const draw = interpolate(frame, [startFrame, startFrame + 118], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-            easing: Easing.bezier(0.2, 0.82, 0.22, 1),
-          });
-          const arcLength = (circumference * segment.sweep) / 360;
-          const mid = ((segment.middle - 90) * Math.PI) / 180;
-          const explode = i === 0 ? focus * 12 : 0;
-          const dx = Math.cos(mid) * explode;
-          const dy = Math.sin(mid) * explode;
-          return (
-            <g key={segment.label} transform={`translate(${dx} ${dy})`}>
-              <circle
-                cx={cx}
-                cy={cy}
-                r={radius}
-                fill="none"
-                stroke={segment.color}
-                strokeOpacity={0.16 + (i === 0 ? focus * 0.2 : 0)}
-                strokeWidth="124"
-                strokeLinecap="butt"
-                strokeDasharray={`${Math.max(0.001, arcLength * draw)} ${circumference}`}
-                transform={`rotate(${segment.start - 90} ${cx} ${cy})`}
-                filter="url(#segment-shadow)"
-              />
-              <circle
-                cx={cx}
-                cy={cy}
-                r={radius}
-                fill="none"
-                stroke={`url(#segment-gradient-${i})`}
-                strokeWidth="108"
-                strokeLinecap="butt"
-                strokeDasharray={`${Math.max(0.001, arcLength * draw)} ${circumference}`}
-                transform={`rotate(${segment.start - 90} ${cx} ${cy})`}
-              />
-              <circle
-                cx={cx}
-                cy={cy}
-                r={radius - 42}
-                fill="none"
-                stroke="#FFFFFF"
-                strokeOpacity={0.18}
-                strokeWidth="1.8"
-                strokeDasharray={`${Math.max(0.001, ((2 * Math.PI * (radius - 42)) * segment.sweep * draw) / 360)} ${2 * Math.PI * (radius - 42)}`}
-                transform={`rotate(${segment.start - 90} ${cx} ${cy})`}
-              />
-            </g>
-          );
-        })}
-
-        <g transform={`rotate(${scanRotation} ${cx} ${cy})`} opacity={0.12 + focus * 0.34}>
-          <circle
-            cx={cx}
-            cy={cy}
-            r={radius + 67}
-            fill="none"
-            stroke="#B8FFF2"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray="28 1806"
-            filter="url(#soft-glow)"
-          />
-          <line
-            x1={cx}
-            y1={cy - 143}
-            x2={cx}
-            y2={cy - 302}
-            stroke="#B8FFF2"
-            strokeWidth="1"
-            strokeOpacity="0.38"
-          />
-        </g>
-
-        <circle cx={cx} cy={cy} r="132" fill="url(#inner-surface)" stroke="#8CC8D1" strokeOpacity="0.2" />
-        <circle cx={cx} cy={cy} r="118" fill="none" stroke="url(#inner-ring)" strokeWidth="1.5" />
-        <circle cx={cx} cy={cy} r="96" fill="none" stroke="#8FB8C7" strokeOpacity="0.1" strokeDasharray="2 8" />
-        <circle cx={cx} cy={cy} r={3 + pulse * 1.5} fill="#B7FFF1" filter="url(#soft-glow)" />
-
-        {segments.map((segment, i) => {
-          const angle = ((segment.middle - 90) * Math.PI) / 180;
-          const startRadius = 288;
-          const elbowRadius = 316 + (i % 2) * 11;
-          const x1 = cx + Math.cos(angle) * startRadius;
-          const y1 = cy + Math.sin(angle) * startRadius;
-          const x2 = cx + Math.cos(angle) * elbowRadius;
-          const y2 = cy + Math.sin(angle) * elbowRadius;
-          const rightSide = Math.cos(angle) >= 0;
-          const lineEnd = x2 + (rightSide ? 42 : -42);
-          const localReveal = clamp((calloutReveal - i * 0.08) / 0.68);
-          return (
-            <g key={`callout-${segment.label}`} opacity={localReveal}>
-              <path
-                d={`M ${x1} ${y1} L ${x2} ${y2} L ${lineEnd} ${y2}`}
-                fill="none"
-                stroke={segment.color}
-                strokeOpacity="0.48"
-                strokeWidth="1.2"
-                pathLength="1"
-                strokeDasharray="1"
-                strokeDashoffset={1 - localReveal}
-              />
-              <circle cx={x1} cy={y1} r="2.5" fill={segment.color} />
-              <text
-                x={lineEnd + (rightSide ? 7 : -7)}
-                y={y2 - 7}
-                textAnchor={rightSide ? "start" : "end"}
-                fill="#DBF1F3"
-                fillOpacity="0.82"
-                fontFamily="Arial, Helvetica, sans-serif"
-                fontSize="13"
-                fontWeight="700"
-                letterSpacing="1.8"
-              >
-                {String(segment.value).padStart(2, "0")}%
-              </text>
-              <text
-                x={lineEnd + (rightSide ? 7 : -7)}
-                y={y2 + 11}
-                textAnchor={rightSide ? "start" : "end"}
-                fill="#91AFBC"
-                fillOpacity="0.62"
-                fontFamily="Arial, Helvetica, sans-serif"
-                fontSize="8.5"
-                letterSpacing="1.4"
-              >
-                {`S${String(i + 1).padStart(2, "0")}`}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 330,
-          top: 342,
-          width: 220,
-          height: 196,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "white",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          textAlign: "center",
-        }}
-      >
-        <div style={{fontSize: 11, letterSpacing: 3.3, color: "rgba(187,224,230,.72)", marginBottom: 10}}>
-          LEADING SHARE
-        </div>
-        <div style={{fontSize: 64, fontWeight: 300, letterSpacing: -3.5, lineHeight: 0.93}}>
-          {String(count).padStart(2, "0")}
-          <span style={{fontSize: 25, color: "#64F4D2", marginLeft: 4}}>%</span>
-        </div>
-        <div style={{width: 58, height: 1, marginTop: 16, background: "linear-gradient(90deg, transparent, #64F4D2, transparent)"}} />
-      </div>
-    </div>
-  );
-};
-
-const Sparkline: React.FC<{frame: number; color: string; delay: number}> = ({
-  frame,
-  color,
-  delay,
-}) => {
-  const reveal = interpolate(frame, [delay, delay + 82], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  return (
-    <svg width="96" height="35" viewBox="0 0 96 35" style={{overflow: "visible"}}>
-      <path d="M1 30 H95" stroke="#A5CAD5" strokeOpacity="0.12" />
-      <path
-        d="M2 28 C12 27 16 19 25 22 S39 28 48 16 S62 21 70 11 S83 13 94 3"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        pathLength="1"
-        strokeDasharray="1"
-        strokeDashoffset={1 - reveal}
-      />
-      <circle cx="94" cy="3" r="2.4" fill={color} opacity={reveal} />
-    </svg>
-  );
-};
-
-const InsightPanel: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const panelSpring = spring({
-    frame: frame - 155,
-    fps,
-    durationInFrames: 92,
-    config: {damping: 24, stiffness: 90, mass: 1},
-  });
-  const headerReveal = interpolate(frame, [168, 258], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const titleClip = interpolate(frame, [185, 280], [100, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.bezier(0.2, 0.9, 0.2, 1),
-  });
-  const cardReveal = spring({
-    frame: frame - 500,
-    fps,
-    durationInFrames: 76,
-    config: {damping: 23, stiffness: 100, mass: 0.9},
-  });
-  const coreFocus = fade(frame, [410, 472, 668, 724]);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        width: 690,
-        height: 800,
-        right: 105,
-        top: 135,
-        opacity: interpolate(panelSpring, [0, 1], [0, 1]),
-        transform: `translate3d(${interpolate(panelSpring, [0, 1], [90, 0])}px, 0, 0)`,
-        fontFamily: "Arial, Helvetica, sans-serif",
-        color: "#EAF8F8",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: "5px 0 5px 0",
-          borderRadius: 26,
-          border: "1px solid rgba(144,196,208,.13)",
-          background:
-            "linear-gradient(145deg, rgba(18,42,63,.48), rgba(6,18,33,.22) 56%, rgba(30,25,61,.2))",
-          boxShadow: "0 28px 90px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.035)",
-          backdropFilter: "blur(5px)",
-        }}
-      />
-
-      <div style={{position: "relative", padding: "54px 56px"}}>
-        <div
-          style={{
-            opacity: headerReveal,
-            transform: `translateY(${interpolate(headerReveal, [0, 1], [12, 0])}px)`,
-            fontSize: 11,
-            letterSpacing: 4.8,
-            color: "#64F4D2",
-            fontWeight: 700,
-            marginBottom: 18,
-          }}
-        >
-          MARKET INTELLIGENCE / 05
-        </div>
-
-        <div style={{overflow: "hidden", marginBottom: 14}}>
-          <div
-            style={{
-              fontSize: 56,
-              fontWeight: 300,
-              lineHeight: 0.98,
-              letterSpacing: -2.8,
-              clipPath: `inset(0 ${titleClip}% 0 0)`,
-            }}
-          >
-            DATA<br />
-            <span style={{fontWeight: 700}}>DISTRIBUTION</span>
-          </div>
-        </div>
-
-        <div
-          style={{
-            opacity: headerReveal,
-            maxWidth: 498,
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: "rgba(183,213,220,.61)",
-            letterSpacing: 0.7,
-          }}
-        >
-          Comparative signal weight across five normalized market segments.
-        </div>
-
-        <div style={{height: 34}} />
-
-        <div style={{display: "flex", flexDirection: "column", gap: 15}}>
-          {segments.map((segment, i) => {
-            const start = 280 + i * 32;
-            const row = spring({
-              frame: frame - start,
-              fps,
-              durationInFrames: 58,
-              config: {damping: 25, stiffness: 118, mass: 0.85},
-            });
-            const width = interpolate(frame, [start + 14, start + 96], [0, segment.value], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-              easing: Easing.out(Easing.cubic),
-            });
-            return (
-              <div
-                key={segment.label}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "28px 1fr 64px",
-                  alignItems: "center",
-                  columnGap: 14,
-                  height: 48,
-                  marginLeft: -10,
-                  marginRight: -10,
-                  paddingLeft: 10,
-                  paddingRight: 10,
-                  borderRadius: 9,
-                  border: `1px solid rgba(100,244,210,${i === 0 ? coreFocus * 0.2 : 0})`,
-                  background: `rgba(100,244,210,${i === 0 ? coreFocus * 0.045 : 0})`,
-                  opacity: row,
-                  transform: `translateX(${interpolate(row, [0, 1], [34, 0])}px)`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 22,
-                    height: 22,
-                    border: `1px solid ${segment.color}64`,
-                    borderRadius: 6,
-                    display: "grid",
-                    placeItems: "center",
-                    background: `${segment.color}10`,
-                  }}
-                >
-                  <div style={{width: 7, height: 7, borderRadius: 2, background: segment.color, boxShadow: `0 0 10px ${segment.color}AA`}} />
-                </div>
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 7,
-                    }}
-                  >
-                    <span style={{fontSize: 12.5, letterSpacing: 2.2, color: "rgba(232,248,248,.9)", fontWeight: 700}}>
-                      {segment.label}
-                    </span>
-                    <span style={{fontSize: 9, color: "rgba(149,184,196,.42)", letterSpacing: 1.5}}>
-                      {`S${String(i + 1).padStart(2, "0")}`}
-                    </span>
-                  </div>
-                  <div style={{height: 3, borderRadius: 4, background: "rgba(136,177,190,.09)", overflow: "hidden"}}>
-                    <div
-                      style={{
-                        width: `${Math.min(100, width)}%`,
-                        height: "100%",
-                        borderRadius: 4,
-                        background: `linear-gradient(90deg, ${segment.dark}, ${segment.color})`,
-                        boxShadow: `0 0 9px ${segment.color}58`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{textAlign: "right", fontSize: 22, fontWeight: 300, letterSpacing: -0.5}}>
-                  {String(Math.round(width)).padStart(2, "0")}
-                  <span style={{fontSize: 10, marginLeft: 4, color: segment.color}}>%</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 10,
-            marginTop: 28,
-            opacity: cardReveal,
-            transform: `translateY(${interpolate(cardReveal, [0, 1], [24, 0])}px)`,
-          }}
-        >
-          {[
-            {label: "VELOCITY", value: "+18.4", unit: "%", color: "#64F4D2"},
-            {label: "CONFIDENCE", value: "96.2", unit: "%", color: "#59B8FF"},
-            {label: "SEGMENTS", value: "05", unit: "LIVE", color: "#A984FF"},
-          ].map((item, i) => (
-            <div
-              key={item.label}
-              style={{
-                height: 102,
-                borderRadius: 12,
-                padding: "14px 14px 12px",
-                border: "1px solid rgba(145,197,207,.11)",
-                background: "linear-gradient(150deg, rgba(43,73,94,.22), rgba(8,22,38,.14))",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{fontSize: 10.5, letterSpacing: 1.8, color: "rgba(184,217,224,.67)", marginBottom: 10}}>{item.label}</div>
-              <div style={{display: "flex", alignItems: "flex-end", justifyContent: "space-between"}}>
-                <div style={{fontSize: 22, fontWeight: 400, lineHeight: 1, color: "rgba(235,250,250,.91)"}}>
-                  {item.value}
-                  <span style={{fontSize: 8, color: item.color, marginLeft: 4, letterSpacing: 1}}>{item.unit}</span>
-                </div>
-                <Sparkline frame={frame} color={item.color} delay={535 + i * 18} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const DataPulse: React.FC<{frame: number}> = ({frame}) => {
-  const reveal = fade(frame, [350, 425, 750, 830]);
-  return (
-    <svg
-      width={WIDTH}
-      height={HEIGHT}
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      style={{position: "absolute", inset: 0, opacity: reveal, pointerEvents: "none"}}
-    >
-      <defs>
-        <linearGradient id="data-route-gradient" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#64F4D2" stopOpacity="0" />
-          <stop offset="0.45" stopColor="#64F4D2" stopOpacity="0.28" />
-          <stop offset="1" stopColor="#59B8FF" stopOpacity="0" />
-        </linearGradient>
-        <filter id="route-glow" x="-50%" y="-200%" width="200%" height="500%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <path
-        d="M 850 545 C 980 545, 985 558, 1085 558"
-        fill="none"
-        stroke="url(#data-route-gradient)"
-        strokeWidth="1"
-        strokeDasharray="4 8"
-      />
-      {[0, 1, 2].map((i) => {
-        const rawT = (frame - 360) * 0.0062 + i / 3;
-        const t = ((rawT % 1) + 1) % 1;
-        const mt = 1 - t;
-        const x =
-          mt * mt * mt * 850 +
-          3 * mt * mt * t * 980 +
-          3 * mt * t * t * 985 +
-          t * t * t * 1085;
-        const y =
-          mt * mt * mt * 545 +
-          3 * mt * mt * t * 545 +
-          3 * mt * t * t * 558 +
-          t * t * t * 558;
-        return (
-          <circle
-            key={i}
-            cx={x}
-            cy={y}
-            r={i === 0 ? 3 : 1.8}
-            fill={i === 0 ? "#B9FFF3" : "#64F4D2"}
-            filter="url(#route-glow)"
-          />
-        );
-      })}
-    </svg>
-  );
-};
-
-export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps, durationInFrames} = useVideoConfig();
-
-  const opening = interpolate(frame, [0, 22], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const closing = interpolate(
-    frame,
-    [Math.max(0, durationInFrames - 42), Math.max(1, durationInFrames - 1)],
-    [1, 0],
-    {extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.in(Easing.cubic)},
-  );
-  const cameraScale = interpolate(frame, [0, 150, 620, 900], [1.075, 1, 1, 1.012], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const cameraX = interpolate(frame, [0, 170, 620, 900], [-30, 0, 0, -8], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.inOut(Easing.cubic),
+const Background: React.FC<{frame: number; cameraY: number}> = ({frame, cameraY}) => {
+  const loop = (frame / TOTAL_FRAMES) * Math.PI * 2;
+  const specks = Array.from({length: 24}, (_, index) => {
+    const side = index % 2 === 0 ? 1 : -1;
+    const column = index % 4;
+    const x = side > 0 ? 1460 + column * 92 : 460 - column * 92;
+    const y = 150 + ((index * 137) % 730);
+    const float = Math.sin(loop * (1 + (index % 3)) + index * 0.91) * (7 + (index % 4) * 2);
+    const size = 4 + (index % 3) * 2;
+    return {x, y, float, size, index};
   });
 
   return (
     <AbsoluteFill
       style={{
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-        backgroundColor: "#020713",
-        opacity: opening * closing,
+        overflow: 'hidden',
+        background:
+          'radial-gradient(circle at 50% 48%, #16445B 0%, #0A2B44 28%, #071B30 58%, #050F1D 100%)',
       }}
     >
-      <Background frame={frame} />
       <div
         style={{
-          position: "absolute",
+          position: 'absolute',
+          inset: -120,
+          transform: `translateY(${cameraY * 0.18}px)`,
+          backgroundImage:
+            'radial-gradient(circle at 50% 58%, rgba(125,226,209,0.12), transparent 34%), radial-gradient(circle at 17% 37%, rgba(255,200,87,0.07), transparent 22%), radial-gradient(circle at 83% 37%, rgba(237,101,94,0.08), transparent 23%)',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 410,
+          top: 232 + cameraY * 0.1,
+          width: 1100,
+          height: 690,
+          borderRadius: '50%',
+          border: '1px solid rgba(125,226,209,0.12)',
+          transform: `rotate(${Math.sin(loop) * 2.2}deg)`,
+          boxShadow:
+            '0 0 0 70px rgba(125,226,209,0.018), 0 0 0 150px rgba(255,255,255,0.012)',
+        }}
+      />
+
+      {[0, 1].map((side) => {
+        const left = side === 0 ? 92 : 1538;
+        const direction = side === 0 ? 1 : -1;
+        return (
+          <div
+            key={side}
+            style={{
+              position: 'absolute',
+              left,
+              top: 275 + Math.sin(loop + side * Math.PI) * 12,
+              width: 290,
+              height: 470,
+              opacity: 0.7,
+              transform: `rotate(${direction * (9 + Math.sin(loop * 2) * 2)}deg)`,
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '2px solid rgba(125,226,209,0.16)',
+                borderLeftColor: 'rgba(255,200,87,0.34)',
+                filter: 'drop-shadow(0 0 12px rgba(125,226,209,0.18))',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                inset: 44,
+                borderRadius: '50%',
+                border: '1px dashed rgba(255,243,213,0.14)',
+                transform: `rotate(${direction * frame * 0.12}deg)`,
+              }}
+            />
+          </div>
+        );
+      })}
+
+      {specks.map(({x, y, float, size, index}) => (
+        <div
+          key={index}
+          style={{
+            position: 'absolute',
+            left: x,
+            top: y + float + cameraY * 0.08,
+            width: size,
+            height: size,
+            borderRadius: index % 4 === 0 ? 1 : '50%',
+            background: index % 3 === 0 ? COLORS.gold : COLORS.mint,
+            opacity: 0.16 + (index % 5) * 0.045,
+            transform: `rotate(${loop * 90 + index * 23}deg)`,
+            boxShadow: `0 0 ${size * 2}px currentColor`,
+          }}
+        />
+      ))}
+
+      <div
+        style={{
+          position: 'absolute',
           inset: 0,
-          transformOrigin: "center center",
-          transform: `translate3d(${cameraX}px, 0, 0) scale(${cameraScale})`,
+          opacity: 0.16,
+          mixBlendMode: 'soft-light',
+          backgroundImage:
+            'repeating-radial-gradient(circle at 20% 30%, rgba(255,255,255,0.09) 0 0.6px, transparent 0.7px 4px)',
+          backgroundSize: '11px 13px',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            'linear-gradient(90deg, rgba(2,8,17,0.42), transparent 18%, transparent 82%, rgba(2,8,17,0.42)), linear-gradient(0deg, rgba(2,8,17,0.46), transparent 27%)',
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const LidSurface: React.FC<{
+  side: 'outer' | 'inner';
+  projected: number;
+  openProgress: number;
+  opacity: number;
+  frame: number;
+  snapPulse: number;
+}> = ({side, projected, openProgress, opacity, frame, snapPulse}) => {
+  const inner = side === 'inner';
+  const widthProjection = 1 - Math.sin(openProgress * Math.PI) * 0.045;
+  const lift = -Math.sin(openProgress * Math.PI) * 7;
+  const snapPress = pulse(frame, 57, 9) * 0.15 + pulse(frame, 787, 11) * 0.12;
+  const snapScale = 1 - snapPress + snapPulse * 0.05;
+  const prefix = `purse-lid-${side}`;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 190,
+        width: 640,
+        height: 205,
+        opacity,
+        transformOrigin: '50% 0%',
+        transform: `translateY(${lift}px) scaleX(${widthProjection}) scaleY(${projected})`,
+      }}
+    >
+      <svg width="640" height="205" viewBox="0 0 640 205" style={{overflow: 'visible'}}>
+        <defs>
+          <linearGradient id={`${prefix}-fill`} x1="0" y1="0" x2="0.86" y2="1">
+            {inner ? (
+              <>
+                <stop offset="0" stopColor="#4C1834" />
+                <stop offset="0.55" stopColor="#7F1D3E" />
+                <stop offset="1" stopColor="#3A102A" />
+              </>
+            ) : (
+              <>
+                <stop offset="0" stopColor={COLORS.coralLight} />
+                <stop offset="0.5" stopColor={COLORS.coral} />
+                <stop offset="1" stopColor="#B9364B" />
+              </>
+            )}
+          </linearGradient>
+          <linearGradient id={`${prefix}-metal`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#FFF8D9" />
+            <stop offset="0.35" stopColor="#FFD36B" />
+            <stop offset="0.72" stopColor="#A75A1B" />
+            <stop offset="1" stopColor="#FFE89B" />
+          </linearGradient>
+          <filter id={`${prefix}-shadow`} x="-25%" y="-25%" width="150%" height="170%">
+            <feDropShadow dx="0" dy="9" stdDeviation="9" floodColor="#050A13" floodOpacity="0.35" />
+          </filter>
+        </defs>
+
+        <path
+          d="M58 1 Q320 38 582 1 L563 98 Q548 174 320 190 Q92 174 77 98 Z"
+          fill={`url(#${prefix}-fill)`}
+          stroke={inner ? '#A13A58' : '#FF9984'}
+          strokeWidth="3"
+          filter={`url(#${prefix}-shadow)`}
+        />
+
+        {inner ? (
+          <>
+            <path
+              d="M82 10 Q320 42 558 10 L545 86 Q520 146 320 160 Q120 146 95 86 Z"
+              fill="none"
+              stroke="rgba(255,180,157,0.22)"
+              strokeWidth="3"
+            />
+            <path
+              d="M106 39 Q320 65 534 39"
+              fill="none"
+              stroke="rgba(255,243,213,0.10)"
+              strokeWidth="2"
+              strokeDasharray="8 12"
+              strokeLinecap="round"
+            />
+          </>
+        ) : (
+          <>
+            <path
+              d="M78 18 Q320 50 562 18"
+              fill="none"
+              stroke="rgba(255,255,255,0.25)"
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+            <path
+              d="M95 49 Q320 77 545 49 L534 89 Q507 141 320 156 Q133 141 106 89 Z"
+              fill="rgba(116,17,50,0.08)"
+            />
+            <path
+              d="M98 30 Q320 60 542 30 L528 92 Q504 140 320 153 Q136 140 112 92 Z"
+              fill="none"
+              stroke="rgba(255,224,185,0.58)"
+              strokeWidth="3"
+              strokeDasharray="7 10"
+              strokeLinecap="round"
+            />
+          </>
+        )}
+
+        <g transform={`translate(320 130) scale(${snapScale})`}>
+          <circle
+            r="32"
+            fill={inner ? '#42132D' : '#9B2D43'}
+            stroke={inner ? '#D8786F' : '#FFAC8E'}
+            strokeWidth="4"
+          />
+          <circle r="24" fill={`url(#${prefix}-metal)`} />
+          <circle r="13" fill={inner ? '#6A2C3D' : '#F8BB4D'} />
+          <path
+            d="M-11 -10 Q0 -18 11 -10"
+            fill="none"
+            stroke="rgba(255,255,255,0.72)"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+};
+
+const PurseBody: React.FC<{
+  openProgress: number;
+  impactPulse: number;
+  snapPulse: number;
+  frame: number;
+}> = ({openProgress, impactPulse, snapPulse, frame}) => {
+  const mouth = range(openProgress, 0.08, 0.82, Easing.inOut(Easing.cubic));
+  const bodySquashX = 1 + impactPulse * 0.012 + snapPulse * 0.009;
+  const bodySquashY = 1 - impactPulse * 0.012 - snapPulse * 0.012;
+  const bodyShift = impactPulse * 3 + snapPulse * 2;
+  const loop = (frame / TOTAL_FRAMES) * Math.PI * 2;
+
+  return (
+    <>
+      <div
+        style={{
+          position: 'absolute',
+          left: 40,
+          top: 452,
+          width: 560,
+          height: 58,
+          borderRadius: '50%',
+          background: 'rgba(0,5,12,0.52)',
+          filter: `blur(${20 + openProgress * 6}px)`,
+          transform: `scaleX(${0.86 + openProgress * 0.13 + impactPulse * 0.02}) translateY(${impactPulse * 2}px)`,
+        }}
+      />
+
+      <svg
+        width="640"
+        height="520"
+        viewBox="0 0 640 520"
+        style={{position: 'absolute', inset: 0, overflow: 'visible'}}
+      >
+        <defs>
+          <linearGradient id="purse-back-fill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#A72E4A" />
+            <stop offset="0.52" stopColor="#D84B55" />
+            <stop offset="1" stopColor="#7C1B3B" />
+          </linearGradient>
+          <linearGradient id="purse-body-fill" x1="0.12" y1="0" x2="0.86" y2="1">
+            <stop offset="0" stopColor="#FF8A76" />
+            <stop offset="0.32" stopColor="#ED655E" />
+            <stop offset="0.75" stopColor="#C33E51" />
+            <stop offset="1" stopColor="#8E2442" />
+          </linearGradient>
+          <radialGradient id="purse-socket-fill" cx="35%" cy="25%" r="75%">
+            <stop offset="0" stopColor="#FFF2BE" />
+            <stop offset="0.3" stopColor="#FFC857" />
+            <stop offset="0.72" stopColor="#A95B1B" />
+            <stop offset="1" stopColor="#FFE18A" />
+          </radialGradient>
+          <filter id="purse-body-shadow" x="-20%" y="-20%" width="140%" height="160%">
+            <feDropShadow dx="0" dy="17" stdDeviation="17" floodColor="#030A14" floodOpacity="0.46" />
+          </filter>
+          <clipPath id="purse-body-clip">
+            <path d="M62 205 Q320 241 578 205 L558 368 C548 455 456 498 320 502 C184 498 92 455 82 368 Z" />
+          </clipPath>
+        </defs>
+
+        <g
+          style={{
+            transformOrigin: '320px 330px',
+            transform: `translateY(${bodyShift}px) scale(${bodySquashX}, ${bodySquashY})`,
+          }}
+        >
+          <path
+            d="M68 211 Q320 159 572 211 L552 360 C536 439 448 474 320 480 C192 474 104 439 88 360 Z"
+            fill="url(#purse-back-fill)"
+            stroke="#FF8E75"
+            strokeWidth="3"
+            filter="url(#purse-body-shadow)"
+          />
+
+          <ellipse
+            cx="320"
+            cy="205"
+            rx={250 + mouth * 15}
+            ry={7 + mouth * 48}
+            fill="#240B22"
+            stroke="#FF917A"
+            strokeWidth={3 + mouth * 2}
+          />
+          <ellipse
+            cx="320"
+            cy={202 + mouth * 3}
+            rx={226 + mouth * 17}
+            ry={3 + mouth * 33}
+            fill="#100817"
+            opacity={0.55 + mouth * 0.45}
+          />
+          <path
+            d="M86 203 Q320 236 554 203"
+            fill="none"
+            stroke="rgba(255,212,185,0.42)"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+        </g>
+
+        <g
+          style={{
+            transformOrigin: '320px 330px',
+            transform: `translateY(${bodyShift}px) scale(${bodySquashX}, ${bodySquashY})`,
+          }}
+        >
+          <path
+            d="M62 205 Q320 241 578 205 L558 368 C548 455 456 498 320 502 C184 498 92 455 82 368 Z"
+            fill="url(#purse-body-fill)"
+            stroke="#FF9A80"
+            strokeWidth="4"
+            filter="url(#purse-body-shadow)"
+          />
+
+          <g clipPath="url(#purse-body-clip)">
+            <ellipse
+              cx={232 + Math.sin(loop) * 10}
+              cy="293"
+              rx="190"
+              ry="270"
+              fill="rgba(255,255,255,0.075)"
+              transform="rotate(18 232 293)"
+            />
+            <path
+              d="M418 199 Q527 244 548 382 Q536 460 390 486"
+              fill="none"
+              stroke="rgba(77,8,43,0.22)"
+              strokeWidth="46"
+              strokeLinecap="round"
+            />
+            <path
+              d="M97 323 Q320 371 543 323"
+              fill="none"
+              stroke="rgba(255,255,255,0.045)"
+              strokeWidth="3"
+            />
+          </g>
+
+          <path
+            d="M86 227 Q320 257 554 227 L541 362 C529 434 444 472 320 478 C196 472 111 434 99 362 Z"
+            fill="none"
+            stroke="rgba(255,226,192,0.64)"
+            strokeWidth="3"
+            strokeDasharray="7 11"
+            strokeLinecap="round"
+          />
+
+          <path
+            d="M83 205 Q320 239 557 205"
+            fill="none"
+            stroke="#FFB08F"
+            strokeWidth="7"
+            strokeLinecap="round"
+          />
+          <path
+            d="M94 210 Q320 240 546 210"
+            fill="none"
+            stroke="rgba(89,14,48,0.44)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+
+          <g transform="translate(320 320)">
+            <circle r="35" fill="#982C45" stroke="#FF9A7A" strokeWidth="4" />
+            <circle r="25" fill="url(#purse-socket-fill)" />
+            <circle r="13" fill="#6C2532" stroke="#F4B649" strokeWidth="3" />
+            <path
+              d="M-10 -11 Q0 -17 10 -11"
+              fill="none"
+              stroke="rgba(255,255,255,0.62)"
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+          </g>
+        </g>
+      </svg>
+    </>
+  );
+};
+
+const Coin: React.FC<{frame: number; spec: CoinSpec}> = ({frame, spec}) => {
+  const {start, hit, deposit, startX, endX, size, direction, primary} = spec;
+  if (frame < start - 7 || frame > deposit + 33) {
+    return null;
+  }
+
+  const fall = range(frame, start, hit, Easing.in(Easing.cubic));
+  const bounce = range(frame, hit, deposit, Easing.inOut(Easing.quad));
+  const sink = range(frame, deposit, deposit + 26, Easing.in(Easing.cubic));
+  const startY = primary ? -252 : -168;
+  let y = startY + (156 - startY) * fall;
+  if (frame >= hit) {
+    y = 156 - Math.sin(bounce * Math.PI) * (primary ? 13 : 10) + bounce * 66;
+  }
+  if (frame >= deposit) {
+    y = 222 + sink * 150;
+  }
+
+  const x = startX + (endX - startX) * fall + Math.sin(fall * Math.PI) * direction * 13;
+  const reveal = range(frame, start - 6, start + 6, Easing.out(Easing.cubic));
+  const vanish = range(frame, deposit + 18, deposit + 33, Easing.in(Easing.quad));
+  const hitPulse = pulse(frame, hit, 6);
+  const scaleX = 0.75 + reveal * 0.25 + hitPulse * 0.08;
+  const scaleY = 0.75 + reveal * 0.25 - hitPulse * 0.1;
+  const rotation = direction * (-18 + fall * 214 + bounce * 38 + sink * 24);
+  const velocityGlow = clamp((fall - 0.35) / 0.65) * (1 - bounce);
+  const prefix = `coin-${start}`;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x - size / 2,
+        top: y - size / 2,
+        width: size,
+        height: size,
+        opacity: reveal * (1 - vanish),
+        transform: `rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`,
+        filter: `drop-shadow(0 12px 10px rgba(3,7,12,0.32)) drop-shadow(0 0 ${8 + velocityGlow * 18}px rgba(255,200,87,${0.18 + velocityGlow * 0.18}))`,
+      }}
+    >
+      {velocityGlow > 0.02 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: size * 0.44,
+            top: -size * 0.7,
+            width: size * 0.12,
+            height: size * 0.62,
+            borderRadius: 999,
+            opacity: velocityGlow * 0.55,
+            transform: `rotate(${-rotation}deg)`,
+            background: 'linear-gradient(180deg, transparent, rgba(255,222,125,0.68))',
+            filter: 'blur(3px)',
+          }}
+        />
+      )}
+      <svg width={size} height={size} viewBox="0 0 100 100">
+        <defs>
+          <radialGradient id={`${prefix}-face`} cx="31%" cy="23%" r="78%">
+            <stop offset="0" stopColor="#FFF7BE" />
+            <stop offset="0.34" stopColor="#FFD86C" />
+            <stop offset="0.72" stopColor="#E89A28" />
+            <stop offset="1" stopColor="#8E4917" />
+          </radialGradient>
+          <linearGradient id={`${prefix}-rim`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#FFF8C8" />
+            <stop offset="0.5" stopColor="#E7A12C" />
+            <stop offset="1" stopColor="#7C3C13" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="47" fill={`url(#${prefix}-rim)`} />
+        <circle cx="50" cy="50" r="40" fill={`url(#${prefix}-face)`} stroke="#FFF0A0" strokeWidth="2" />
+        <circle
+          cx="50"
+          cy="50"
+          r="33"
+          fill="none"
+          stroke="rgba(143,74,23,0.35)"
+          strokeWidth="2.5"
+          strokeDasharray="3.2 4.2"
+        />
+        <path
+          d="M33 23 Q50 15 68 24"
+          fill="none"
+          stroke="rgba(255,255,255,0.72)"
+          strokeWidth="4"
+          strokeLinecap="round"
+        />
+        <text
+          x="50"
+          y="64"
+          textAnchor="middle"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="42"
+          fontWeight="900"
+          fill="#8F4B19"
+        >
+          $
+        </text>
+      </svg>
+    </div>
+  );
+};
+
+const DepositEffects: React.FC<{frame: number}> = ({frame}) => (
+  <>
+    {COINS.map((spec, coinIndex) => {
+      const age = frame - spec.deposit;
+      if (age < 0 || age > 34) {
+        return null;
+      }
+      const life = clamp(age / 34);
+      const pop = Easing.out(Easing.cubic)(clamp(age / 12));
+      const opacity = 1 - Easing.in(Easing.quad)(life);
+      const radius = 18 + pop * 55;
+      return (
+        <React.Fragment key={spec.deposit}>
+          <div
+            style={{
+              position: 'absolute',
+              left: spec.endX - radius,
+              top: 182 - radius * 0.28,
+              width: radius * 2,
+              height: radius * 0.62,
+              borderRadius: '50%',
+              border: `3px solid rgba(255,216,108,${opacity * 0.7})`,
+              transform: `scale(${0.65 + pop * 0.45})`,
+              filter: 'drop-shadow(0 0 8px rgba(255,200,87,0.35))',
+            }}
+          />
+          {Array.from({length: 7}, (_, particle) => {
+            const angle = (particle / 7) * Math.PI * 2 - Math.PI * 0.95;
+            const spread = pop * (32 + (particle % 3) * 11);
+            const px = spec.endX + Math.cos(angle) * spread;
+            const py = 187 + Math.sin(angle) * spread * 0.65;
+            const particleSize = 5 + ((particle + coinIndex) % 3) * 2;
+            return (
+              <div
+                key={particle}
+                style={{
+                  position: 'absolute',
+                  left: px - particleSize / 2,
+                  top: py - particleSize / 2,
+                  width: particleSize,
+                  height: particleSize,
+                  borderRadius: particle % 2 === 0 ? '50%' : 1,
+                  opacity,
+                  background: particle % 3 === 0 ? COLORS.ivory : COLORS.gold,
+                  transform: `rotate(${particle * 31 + age * 5}deg)`,
+                  boxShadow: '0 0 9px rgba(255,200,87,0.5)',
+                }}
+              />
+            );
+          })}
+          <div
+            style={{
+              position: 'absolute',
+              left: spec.endX - 48,
+              top: 145 - life * 34,
+              width: 96,
+              textAlign: 'center',
+              opacity,
+              transform: `scale(${0.74 + pop * 0.26})`,
+              color: COLORS.goldLight,
+              fontFamily: 'Arial, Helvetica, sans-serif',
+              fontSize: 24,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              textShadow: '0 4px 13px rgba(3,7,12,0.7)',
+            }}
+          >
+            +$20
+          </div>
+        </React.Fragment>
+      );
+    })}
+  </>
+);
+
+const Purse: React.FC<{
+  frame: number;
+  openProgress: number;
+  impactPulse: number;
+  snapPulse: number;
+}> = ({frame, openProgress, impactPulse, snapPulse}) => {
+  const projected = Math.cos(openProgress * Math.PI);
+  const outerOpacity = clamp((projected + 0.1) / 0.2);
+  const innerOpacity = clamp((-projected + 0.1) / 0.2);
+  const edgeGlow = 1 - clamp(Math.abs(projected) / 0.12);
+  const bodySquashX = 1 + impactPulse * 0.012 + snapPulse * 0.009;
+  const bodySquashY = 1 - impactPulse * 0.012 - snapPulse * 0.012;
+  const bodyShift = impactPulse * 3 + snapPulse * 2;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 640,
+        top: 390,
+        width: 640,
+        height: 520,
+        overflow: 'visible',
+      }}
+    >
+      <LidSurface
+        side="inner"
+        projected={projected}
+        openProgress={openProgress}
+        opacity={innerOpacity}
+        frame={frame}
+        snapPulse={snapPulse}
+      />
+
+      <PurseBody
+        openProgress={openProgress}
+        impactPulse={impactPulse}
+        snapPulse={snapPulse}
+        frame={frame}
+      />
+
+      <div style={{position: 'absolute', inset: 0, zIndex: 2}}>
+        {COINS.map((spec) => (
+          <Coin key={spec.deposit} frame={frame} spec={spec} />
+        ))}
+      </div>
+
+      <div style={{position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none'}}>
+        <svg
+          width="640"
+          height="520"
+          viewBox="0 0 640 520"
+          style={{
+            overflow: 'visible',
+            transformOrigin: '320px 330px',
+            transform: `translateY(${bodyShift}px) scale(${bodySquashX}, ${bodySquashY})`,
+          }}
+        >
+          <defs>
+            <linearGradient id="purse-front-overlay" x1="0.12" y1="0" x2="0.86" y2="1">
+              <stop offset="0" stopColor="#FF8A76" />
+              <stop offset="0.32" stopColor="#ED655E" />
+              <stop offset="0.75" stopColor="#C33E51" />
+              <stop offset="1" stopColor="#8E2442" />
+            </linearGradient>
+            <clipPath id="front-overlay-clip">
+              <path d="M62 205 Q320 241 578 205 L558 368 C548 455 456 498 320 502 C184 498 92 455 82 368 Z" />
+            </clipPath>
+            <radialGradient id="purse-front-socket-fill" cx="35%" cy="25%" r="75%">
+              <stop offset="0" stopColor="#FFF2BE" />
+              <stop offset="0.3" stopColor="#FFC857" />
+              <stop offset="0.72" stopColor="#A95B1B" />
+              <stop offset="1" stopColor="#FFE18A" />
+            </radialGradient>
+          </defs>
+          <path
+            d="M62 205 Q320 241 578 205 L558 368 C548 455 456 498 320 502 C184 498 92 455 82 368 Z"
+            fill="url(#purse-front-overlay)"
+            stroke="#FF9A80"
+            strokeWidth="4"
+          />
+          <g clipPath="url(#front-overlay-clip)">
+            <ellipse cx="220" cy="300" rx="180" ry="270" fill="rgba(255,255,255,0.07)" transform="rotate(18 220 300)" />
+            <path d="M420 201 Q533 249 552 390" fill="none" stroke="rgba(74,8,41,0.22)" strokeWidth="48" strokeLinecap="round" />
+          </g>
+          <path d="M83 205 Q320 239 557 205" fill="none" stroke="#FFB08F" strokeWidth="7" strokeLinecap="round" />
+          <path d="M94 210 Q320 240 546 210" fill="none" stroke="rgba(89,14,48,0.44)" strokeWidth="3" strokeLinecap="round" />
+          <path
+            d="M86 227 Q320 257 554 227 L541 362 C529 434 444 472 320 478 C196 472 111 434 99 362 Z"
+            fill="none"
+            stroke="rgba(255,226,192,0.64)"
+            strokeWidth="3"
+            strokeDasharray="7 11"
+            strokeLinecap="round"
+          />
+          <g transform="translate(320 320)">
+            <circle r="35" fill="#982C45" stroke="#FF9A7A" strokeWidth="4" />
+            <circle r="25" fill="url(#purse-front-socket-fill)" />
+            <circle r="13" fill="#6C2532" stroke="#F4B649" strokeWidth="3" />
+            <path d="M-10 -11 Q0 -17 10 -11" fill="none" stroke="rgba(255,255,255,0.62)" strokeWidth="4" strokeLinecap="round" />
+          </g>
+        </svg>
+      </div>
+
+      <div style={{position: 'absolute', inset: 0, zIndex: 4}}>
+        <LidSurface
+          side="outer"
+          projected={projected}
+          openProgress={openProgress}
+          opacity={outerOpacity}
+          frame={frame}
+          snapPulse={snapPulse}
+        />
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 62,
+          top: 186 - edgeGlow * 4,
+          width: 516,
+          height: 9 + edgeGlow * 3,
+          borderRadius: 999,
+          opacity: 0.42 + edgeGlow * 0.58,
+          zIndex: 5,
+          background: `linear-gradient(90deg, ${COLORS.burgundy}, ${COLORS.coralLight}, ${COLORS.burgundy})`,
+          boxShadow: edgeGlow > 0.02 ? '0 0 13px rgba(255,138,118,0.45)' : 'none',
+        }}
+      />
+
+      <div style={{position: 'absolute', inset: 0, zIndex: 6, pointerEvents: 'none'}}>
+        <DepositEffects frame={frame} />
+      </div>
+
+      {snapPulse > 0.001 && (
+        <>
+          {[0, 1].map((ring) => (
+            <div
+              key={ring}
+              style={{
+                position: 'absolute',
+                left: 320 - 41 - ring * 16,
+                top: 320 - 41 - ring * 16,
+                width: 82 + ring * 32,
+                height: 82 + ring * 32,
+                borderRadius: '50%',
+                border: `${ring === 0 ? 4 : 2}px solid rgba(255,225,137,${snapPulse * (0.7 - ring * 0.2)})`,
+                transform: `scale(${0.72 + snapPulse * (0.55 + ring * 0.16)})`,
+                zIndex: 7,
+                boxShadow: '0 0 18px rgba(255,200,87,0.22)',
+              }}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+};
+
+const Counter: React.FC<{frame: number}> = ({frame}) => {
+  const entrance = range(frame, 191, 211, Easing.out(Easing.back(1.35)));
+  const exit = range(frame, 661, 688, Easing.in(Easing.cubic));
+  const visible = entrance * (1 - exit);
+  const deposited = COINS.filter((coin) => frame >= coin.deposit).length;
+  const total = deposited * 20;
+  const lastImpact = [...COINS].reverse().find((coin) => frame >= coin.deposit)?.deposit ?? -100;
+  const age = frame - lastImpact;
+  const numberPulse = age >= 0 && age <= 18 ? Math.sin((age / 18) * Math.PI) : 0;
+  const glowPulse = Math.max(0, numberPulse);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 760,
+        top: 142,
+        width: 400,
+        height: 146,
+        opacity: visible,
+        transform: `translateY(${(1 - entrance) * 24 - exit * 14}px) scale(${0.88 + entrance * 0.12 + numberPulse * 0.035})`,
+        transformOrigin: '50% 50%',
+        borderRadius: 42,
+        background: 'linear-gradient(145deg, rgba(14,53,72,0.92), rgba(5,22,37,0.95))',
+        border: `2px solid rgba(125,226,209,${0.32 + glowPulse * 0.28})`,
+        boxShadow: `0 22px 44px rgba(0,5,12,0.34), inset 0 1px 0 rgba(255,255,255,0.11), 0 0 ${16 + glowPulse * 24}px rgba(125,226,209,${0.06 + glowPulse * 0.1})`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 26,
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 68,
+          borderRadius: 99,
+          background: `linear-gradient(180deg, ${COLORS.mint}, ${COLORS.gold})`,
+          boxShadow: '0 0 16px rgba(125,226,209,0.32)',
+        }}
+      />
+      <div>
+        <div
+          style={{
+            color: 'rgba(255,243,213,0.6)',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontSize: 17,
+            fontWeight: 800,
+            letterSpacing: 4.8,
+            marginBottom: 3,
+          }}
+        >
+          SAVED
+        </div>
+        <div
+          style={{
+            color: COLORS.ivory,
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontSize: 62,
+            lineHeight: 1,
+            fontWeight: 900,
+            letterSpacing: -1.5,
+            fontVariantNumeric: 'tabular-nums',
+            textShadow: `0 0 ${glowPulse * 22}px rgba(255,200,87,0.45)`,
+          }}
+        >
+          ${String(total).padStart(3, '0')}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+
+  const hingeEase = Easing.bezier(0.42, 0, 0.58, 1);
+  const openIn = range(frame, 68, 168, hingeEase);
+  const closeOut = range(frame, 690, 777, hingeEase);
+  const openProgress = clamp(openIn - closeOut);
+
+  const impacts = COINS.map((coin) => pulse(frame, coin.deposit, 14));
+  const impactPulse = Math.min(1, Math.max(0, ...impacts));
+  const snapRelease = pulse(frame, 61, 16);
+  const snapLock = pulse(frame, 787, 17);
+  const snapPulse = Math.max(snapRelease * 0.78, snapLock);
+
+  const minorTrack = COINS.slice(0, 4).reduce((sum, coin) => {
+    const local = range(frame, coin.start, coin.deposit, Easing.inOut(Easing.cubic));
+    const release = range(frame, coin.deposit, coin.deposit + 18, Easing.out(Easing.cubic));
+    return sum + (Math.sin(local * Math.PI) * 8 - release * 2) * (1 - release);
+  }, 0);
+
+  let primaryTrack = 0;
+  if (frame >= 528 && frame < 544) {
+    primaryTrack = interpolate(frame, [528, 544], [0, 38], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.cubic),
+    });
+  } else if (frame >= 544 && frame < 588) {
+    primaryTrack = interpolate(frame, [544, 588], [38, -10], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.cubic),
+    });
+  } else if (frame >= 588 && frame < 620) {
+    primaryTrack = interpolate(frame, [588, 620], [-10, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.out(Easing.cubic),
+    });
+  }
+
+  const cameraY = primaryTrack + minorTrack;
+  const zoomIn = range(frame, 218, 522, Easing.inOut(Easing.cubic)) * 0.025;
+  const zoomOut = range(frame, 620, 720, Easing.inOut(Easing.cubic));
+  const cameraScale = 1 + zoomIn * (1 - zoomOut) + impactPulse * 0.0025;
+  const cameraRecoil = pulse(frame, 588, 11) * -4;
+
+  // Keep the first and final hero poses visually identical for clean looping.
+  const finalSettle = range(frame, 796, 832, Easing.out(Easing.cubic));
+  const introHold = range(frame, 0, 36, Easing.inOut(Easing.cubic));
+  const heroBreath =
+    frame < 48
+      ? Math.sin((introHold * Math.PI) / 2) * 0.002
+      : frame > 832
+        ? Math.sin((1 - finalSettle) * Math.PI * 0.5) * 0.002
+        : 0;
+
+  return (
+    <AbsoluteFill
+      style={{
+        width: WIDTH,
+        height: HEIGHT,
+        overflow: 'hidden',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+      }}
+    >
+      <Background frame={frame} cameraY={cameraY} />
+
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          transformOrigin: '50% 62%',
+          transform: `translateY(${cameraY + cameraRecoil}px) scale(${cameraScale + heroBreath})`,
         }}
       >
-        <TechnicalChrome frame={frame} />
-        <RadialChart frame={frame} fps={fps} />
-        <DataPulse frame={frame} />
-        <InsightPanel frame={frame} fps={fps} />
+        <Purse
+          frame={frame}
+          openProgress={openProgress}
+          impactPulse={impactPulse}
+          snapPulse={snapPulse}
+        />
       </div>
-      <IntroBands frame={frame} />
-      <AbsoluteFill
+
+      <Counter frame={frame} />
+
+      <div
         style={{
-          pointerEvents: "none",
-          boxShadow: "inset 0 0 150px rgba(0,2,8,.42)",
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 180,
+          pointerEvents: 'none',
+          background: 'linear-gradient(0deg, rgba(1,7,14,0.33), transparent)',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          inset: 22,
+          border: '1px solid rgba(255,255,255,0.025)',
+          pointerEvents: 'none',
         }}
       />
     </AbsoluteFill>
