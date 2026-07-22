@@ -9,42 +9,74 @@ import {
 } from "remotion";
 
 type Point = {x: number; y: number};
-type GlyphKind =
-  | "card"
-  | "token"
-  | "device"
-  | "lock"
-  | "bank"
-  | "shield"
-  | "verify"
-  | "retry"
-  | "wallet";
+type IconKind =
+  | "keyword"
+  | "content"
+  | "technical"
+  | "performance"
+  | "authority"
+  | "analytics";
+
+type SignalModule = {
+  x: number;
+  y: number;
+  label: string;
+  descriptor: string;
+  detail: string;
+  icon: IconKind;
+  color: string;
+  appearAt: number;
+  connectorAt: number;
+  sendStart: number;
+  sendEnd: number;
+  curve: number;
+};
 
 const W = 1920;
 const H = 1080;
+const CENTER: Point = {x: 960, y: 530};
 
 const C = {
-  bg: "#02070d",
-  bg2: "#06121e",
-  panel: "#091a28",
-  panelDeep: "#040d16",
-  line: "#17374a",
-  lineSoft: "#0d2636",
-  white: "#f7fbff",
-  text: "#dbe9f2",
-  muted: "#7892a4",
-  cyan: "#35d8ff",
-  blue: "#3a8cff",
-  mint: "#4be0a5",
-  amber: "#ffb85c",
-  red: "#ff5864",
-  redDeep: "#a51f35",
+  bg: "#020a13",
+  bg2: "#061827",
+  bg3: "#09243a",
+  panel: "#071a29",
+  panelLight: "#0b2639",
+  white: "#f4fbff",
+  text: "#cce0eb",
+  muted: "#718b9d",
+  line: "#174158",
+  lineSoft: "#0c2b3d",
+  cyan: "#37dcff",
+  blue: "#6f9cff",
+  violet: "#a583ff",
+  mint: "#43e0b4",
+  green: "#64eca7",
+  amber: "#ffc46a",
 };
 
 const clamp = {
   extrapolateLeft: "clamp",
   extrapolateRight: "clamp",
 } as const;
+
+const easeSmooth = Easing.bezier(0.45, 0, 0.55, 1);
+const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
+
+const ramp = (time: number, start: number, end: number) =>
+  interpolate(time, [start, end], [0, 1], {
+    ...clamp,
+    easing: easeSmooth,
+  });
+
+const outRamp = (time: number, start: number, end: number) =>
+  interpolate(time, [start, end], [0, 1], {
+    ...clamp,
+    easing: easeOut,
+  });
+
+const activityWindow = (time: number, start: number, end: number, feather = 0.2) =>
+  Math.min(ramp(time, start, start + feather), 1 - ramp(time, end - feather, end));
 
 const colorChannels = (color: string) => {
   if (color.startsWith("#")) {
@@ -71,582 +103,1156 @@ const mix = (from: string, to: string, amount: number) => {
   return `rgb(${a.map((channel, index) => Math.round(channel + (b[index] - channel) * p)).join(", ")})`;
 };
 
-const ramp = (time: number, start: number, end: number) =>
-  interpolate(time, [start, end], [0, 1], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
+const MODULES: SignalModule[] = [
+  {
+    x: 392,
+    y: 298,
+    label: "KEYWORD RESEARCH",
+    descriptor: "SEARCH INTENT",
+    detail: "Query relevance",
+    icon: "keyword",
+    color: C.cyan,
+    appearAt: 2.72,
+    connectorAt: 3.46,
+    sendStart: 5.18,
+    sendEnd: 6.38,
+    curve: -70,
+  },
+  {
+    x: 300,
+    y: 612,
+    label: "CONTENT STRATEGY",
+    descriptor: "TOPIC QUALITY",
+    detail: "Helpful coverage",
+    icon: "content",
+    color: C.mint,
+    appearAt: 2.94,
+    connectorAt: 3.72,
+    sendStart: 6.02,
+    sendEnd: 7.12,
+    curve: 58,
+  },
+  {
+    x: 620,
+    y: 848,
+    label: "TECHNICAL SEO",
+    descriptor: "CRAWLABILITY",
+    detail: "Index pathways",
+    icon: "technical",
+    color: C.blue,
+    appearAt: 3.16,
+    connectorAt: 3.98,
+    sendStart: 6.77,
+    sendEnd: 7.76,
+    curve: 74,
+  },
+  {
+    x: 1300,
+    y: 848,
+    label: "SITE PERFORMANCE",
+    descriptor: "PAGE EXPERIENCE",
+    detail: "Speed signals",
+    icon: "performance",
+    color: C.amber,
+    appearAt: 3.38,
+    connectorAt: 4.24,
+    sendStart: 7.41,
+    sendEnd: 8.30,
+    curve: -74,
+  },
+  {
+    x: 1620,
+    y: 612,
+    label: "LINK AUTHORITY",
+    descriptor: "TRUST SIGNALS",
+    detail: "Relevant mentions",
+    icon: "authority",
+    color: C.violet,
+    appearAt: 3.60,
+    connectorAt: 4.50,
+    sendStart: 7.96,
+    sendEnd: 8.75,
+    curve: -58,
+  },
+  {
+    x: 1528,
+    y: 298,
+    label: "SEARCH ANALYTICS",
+    descriptor: "VISIBILITY",
+    detail: "Performance insight",
+    icon: "analytics",
+    color: C.green,
+    appearAt: 3.82,
+    connectorAt: 4.76,
+    sendStart: 8.43,
+    sendEnd: 9.16,
+    curve: 70,
+  },
+];
 
-const fastRamp = (time: number, start: number, end: number) =>
-  interpolate(time, [start, end], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-
-const activityWindow = (time: number, start: number, end: number, feather = 0.22) =>
-  Math.min(ramp(time, start, start + feather), 1 - ramp(time, end - feather, end));
-
-const routeLength = (points: Point[]) =>
-  points.slice(1).reduce((total, point, index) => {
-    const previous = points[index];
-    return total + Math.hypot(point.x - previous.x, point.y - previous.y);
-  }, 0);
-
-const pointOnRoute = (points: Point[], rawProgress: number) => {
-  const progress = Math.max(0, Math.min(1, rawProgress));
-  const total = routeLength(points);
-  let remaining = total * progress;
-
-  for (let index = 1; index < points.length; index++) {
-    const a = points[index - 1];
-    const b = points[index];
-    const segment = Math.hypot(b.x - a.x, b.y - a.y);
-    if (remaining <= segment || index === points.length - 1) {
-      const local = segment === 0 ? 0 : remaining / segment;
-      return {
-        x: a.x + (b.x - a.x) * local,
-        y: a.y + (b.y - a.y) * local,
-      };
-    }
-    remaining -= segment;
-  }
-
-  return points[points.length - 1];
+const quadraticPoint = (start: Point, control: Point, end: Point, progress: number): Point => {
+  const p = Math.max(0, Math.min(1, progress));
+  const inverse = 1 - p;
+  return {
+    x: inverse * inverse * start.x + 2 * inverse * p * control.x + p * p * end.x,
+    y: inverse * inverse * start.y + 2 * inverse * p * control.y + p * p * end.y,
+  };
 };
 
-const backgroundParticles = Array.from({length: 56}, (_, index) => ({
-  x: 54 + ((index * 263) % 1810),
-  y: 94 + ((index * 151) % 880),
-  radius: 0.7 + (index % 4) * 0.45,
-  opacity: 0.035 + (index % 5) * 0.012,
-  phase: (index * 0.61) % (Math.PI * 2),
+const makeRoute = (module: SignalModule) => {
+  const dx = module.x - CENTER.x;
+  const dy = module.y - CENTER.y;
+  const distance = Math.hypot(dx, dy);
+  const normalX = -dy / distance;
+  const normalY = dx / distance;
+  const start = {x: module.x, y: module.y};
+  const end = {
+    x: CENTER.x + (dx / distance) * 242,
+    y: CENTER.y + (dy / distance) * 242,
+  };
+  const control = {
+    x: (start.x + end.x) / 2 + normalX * module.curve,
+    y: (start.y + end.y) / 2 + normalY * module.curve,
+  };
+  let length = 0;
+  let previous = start;
+  for (let index = 1; index <= 40; index++) {
+    const point = quadraticPoint(start, control, end, index / 40);
+    length += Math.hypot(point.x - previous.x, point.y - previous.y);
+    previous = point;
+  }
+  return {start, control, end, length};
+};
+
+const ROUTES = MODULES.map(makeRoute);
+
+const meshNodes = Array.from({length: 72}, (_, index) => ({
+  x: 42 + ((index * 277 + (index % 7) * 41) % 1838),
+  y: 72 + ((index * 163 + (index % 5) * 67) % 930),
+  radius: 1 + (index % 4) * 0.55,
+  phase: (index * 0.73) % (Math.PI * 2),
 }));
 
-const Glyph: React.FC<{
-  kind: GlyphKind;
-  color: string;
-  size?: number;
-  strokeWidth?: number;
-}> = ({kind, color, size = 64, strokeWidth = 3}) => {
+const meshEdges = meshNodes.flatMap((node, index) => {
+  const candidates = [index + 1, index + 8, index + 13];
+  return candidates
+    .filter((target) => target < meshNodes.length)
+    .map((target) => ({from: node, to: meshNodes[target], seed: index + target}))
+    .filter((edge) => Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y) < 390);
+});
+
+const microTerms = [
+  {x: 86, y: 208, text: "QUERY SIGNALS"},
+  {x: 178, y: 882, text: "INDEX COVERAGE"},
+  {x: 768, y: 166, text: "RELEVANCE"},
+  {x: 1132, y: 168, text: "SEMANTIC CONTEXT"},
+  {x: 1572, y: 882, text: "ORGANIC REACH"},
+  {x: 1690, y: 204, text: "RANK INSIGHT"},
+];
+
+const SignalIcon: React.FC<{kind: IconKind; color: string; size?: number}> = ({
+  kind,
+  color,
+  size = 58,
+}) => {
   const shared = {
     fill: "none",
     stroke: color,
-    strokeWidth,
+    strokeWidth: 2.7,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
 
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} style={{display: "block"}}>
-      {kind === "card" && (
+    <svg width={size} height={size} viewBox="0 0 64 64" style={{display: "block"}}>
+      {kind === "keyword" && (
         <>
-          <rect x="8" y="14" width="48" height="36" rx="7" {...shared} />
-          <path d="M8 25h48" {...shared} />
-          <rect x="15" y="33" width="11" height="8" rx="2" {...shared} />
-          <path d="M36 40h12" {...shared} />
+          <circle cx="25" cy="25" r="14" {...shared} />
+          <path d="M35 35l14 14" {...shared} />
+          <path d="M17 27l5-5 5 3 7-8" {...shared} />
+          <path d="M44 20v13M51 15v18M58 9v24" {...shared} />
         </>
       )}
-      {kind === "token" && (
+      {kind === "content" && (
         <>
-          <path d="M32 6l21 12v28L32 58 11 46V18z" {...shared} />
-          <circle cx="32" cy="32" r="7" {...shared} />
-          <path d="M32 13v12M48 22l-10 6M48 42l-10-6M32 51V39M16 42l10-6M16 22l10 6" {...shared} />
+          <path d="M13 7h27l11 11v39H13z" {...shared} />
+          <path d="M40 7v12h11M21 29h22M21 37h22M21 45h14" {...shared} />
+          <path d="M10 15H7v42h34" {...shared} />
         </>
       )}
-      {kind === "device" && (
+      {kind === "technical" && (
         <>
-          <rect x="15" y="6" width="34" height="52" rx="8" {...shared} />
-          <path d="M25 13h14M28 51h8" {...shared} />
-          <path d="M24 33l6 6 12-15" {...shared} />
+          <rect x="25" y="7" width="14" height="12" rx="3" {...shared} />
+          <rect x="7" y="45" width="14" height="12" rx="3" {...shared} />
+          <rect x="25" y="45" width="14" height="12" rx="3" {...shared} />
+          <rect x="43" y="45" width="14" height="12" rx="3" {...shared} />
+          <path d="M32 19v12M14 39v-8h36v8M32 31v8" {...shared} />
+          <path d="M19 24l-6 6 6 6M45 24l6 6-6 6" {...shared} />
         </>
       )}
-      {kind === "lock" && (
+      {kind === "performance" && (
         <>
-          <rect x="12" y="27" width="40" height="29" rx="7" {...shared} />
-          <path d="M21 27v-8c0-7 4.5-12 11-12s11 5 11 12v8" {...shared} />
-          <circle cx="32" cy="40" r="3.5" fill={color} stroke="none" />
-          <path d="M32 43v6" {...shared} />
+          <path d="M10 47a23 23 0 1 1 44 0" {...shared} />
+          <path d="M17 42l-5-3M21 28l-4-5M32 24V16M43 28l4-5M47 42l5-3" {...shared} />
+          <path d="M32 43l13-13" {...shared} />
+          <circle cx="32" cy="43" r="4" fill={color} stroke="none" />
+          <path d="M19 53h26" {...shared} />
         </>
       )}
-      {kind === "bank" && (
+      {kind === "authority" && (
         <>
-          <path d="M7 24L32 8l25 16zM10 51h44M7 57h50" {...shared} />
-          <path d="M15 27v20M26 27v20M38 27v20M49 27v20" {...shared} />
+          <path d="M27 39l-5 5a10 10 0 0 1-14-14l9-9a10 10 0 0 1 14 0" {...shared} />
+          <path d="M37 25l5-5a10 10 0 0 1 14 14l-9 9a10 10 0 0 1-14 0" {...shared} />
+          <path d="M23 41l18-18" {...shared} />
+          <circle cx="12" cy="52" r="3" fill={color} stroke="none" />
+          <circle cx="52" cy="12" r="3" fill={color} stroke="none" />
         </>
       )}
-      {kind === "shield" && (
+      {kind === "analytics" && (
         <>
-          <path d="M32 6l20 8v15c0 13-8 23-20 29C20 52 12 42 12 29V14z" {...shared} />
-          <path d="M23 24l18 18M41 24L23 42" {...shared} />
-        </>
-      )}
-      {kind === "verify" && (
-        <>
-          <rect x="7" y="14" width="42" height="32" rx="7" {...shared} />
-          <path d="M7 24h42M14 34h12" {...shared} />
-          <circle cx="48" cy="45" r="11" fill={C.panelDeep} stroke={color} strokeWidth={strokeWidth} />
-          <path d="M43 45l4 4 7-9" {...shared} />
-        </>
-      )}
-      {kind === "retry" && (
-        <>
-          <path d="M49 21A21 21 0 1 0 52 39" {...shared} />
-          <path d="M49 10v11H38M52 39l-10-1 2 10" {...shared} />
-        </>
-      )}
-      {kind === "wallet" && (
-        <>
-          <path d="M10 17h37c5 0 8 3 8 8v25c0 4-3 7-7 7H15c-5 0-8-3-8-8V22c0-4 3-7 7-7h30" {...shared} />
-          <path d="M39 30h18v14H39c-4 0-7-3-7-7s3-7 7-7z" {...shared} />
-          <circle cx="42" cy="37" r="2.5" fill={color} stroke="none" />
+          <path d="M10 8v46h46" {...shared} />
+          <path d="M17 43l10-11 9 5 14-19" {...shared} />
+          <circle cx="17" cy="43" r="3" fill={C.panel} stroke={color} strokeWidth="2.5" />
+          <circle cx="27" cy="32" r="3" fill={C.panel} stroke={color} strokeWidth="2.5" />
+          <circle cx="36" cy="37" r="3" fill={C.panel} stroke={color} strokeWidth="2.5" />
+          <circle cx="50" cy="18" r="3" fill={color} stroke="none" />
+          <path d="M44 11h13v13" {...shared} />
         </>
       )}
     </svg>
   );
 };
 
-const PaymentCard: React.FC<{
+const Background: React.FC<{time: number}> = ({time}) => {
+  const driftX = Math.sin(time * 0.19) * 12;
+  const driftY = Math.cos(time * 0.16) * 8;
+  return (
+    <AbsoluteFill>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            `radial-gradient(circle at 50% 48%, ${alpha(C.bg3, 0.72)} 0%, ${alpha(C.bg2, 0.42)} 28%, transparent 58%), ` +
+            `linear-gradient(180deg, ${C.bg} 0%, #03101b 52%, ${C.bg} 100%)`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: -80,
+          opacity: 0.34,
+          transform: `translate(${driftX}px, ${driftY}px)`,
+          backgroundImage:
+            `linear-gradient(${alpha(C.cyan, 0.055)} 1px, transparent 1px), ` +
+            `linear-gradient(90deg, ${alpha(C.cyan, 0.055)} 1px, transparent 1px)`,
+          backgroundSize: "84px 84px",
+          maskImage: "radial-gradient(circle at center, black 8%, transparent 78%)",
+          WebkitMaskImage: "radial-gradient(circle at center, black 8%, transparent 78%)",
+        }}
+      />
+      <svg
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{position: "absolute", inset: 0, overflow: "visible"}}
+      >
+        <defs>
+          <radialGradient id="mesh-node" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={C.cyan} stopOpacity="0.95" />
+            <stop offset="100%" stopColor={C.cyan} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <g transform={`translate(${driftX * 0.34} ${driftY * 0.34})`}>
+          {meshEdges.map((edge, index) => {
+            const shimmer = 0.45 + 0.55 * Math.sin(time * 0.48 + edge.seed * 0.31);
+            return (
+              <line
+                key={`edge-${index}`}
+                x1={edge.from.x}
+                y1={edge.from.y}
+                x2={edge.to.x}
+                y2={edge.to.y}
+                stroke={C.cyan}
+                strokeWidth="1"
+                opacity={0.035 + shimmer * 0.035}
+              />
+            );
+          })}
+          {meshNodes.map((node, index) => {
+            const pulse = 0.55 + 0.45 * Math.sin(time * 0.7 + node.phase);
+            return (
+              <g key={`mesh-${index}`}>
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={node.radius * 4.2}
+                  fill="url(#mesh-node)"
+                  opacity={0.05 + pulse * 0.07}
+                />
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={node.radius}
+                  fill={index % 5 === 0 ? C.mint : C.cyan}
+                  opacity={0.2 + pulse * 0.28}
+                />
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 116 + ((time * 17) % 820),
+          height: 1,
+          opacity: 0.14,
+          background: `linear-gradient(90deg, transparent 4%, ${alpha(C.cyan, 0.8)} 50%, transparent 96%)`,
+          boxShadow: `0 0 16px ${alpha(C.cyan, 0.34)}`,
+        }}
+      />
+      {microTerms.map((term, index) => (
+        <div
+          key={term.text}
+          style={{
+            position: "absolute",
+            left: term.x,
+            top: term.y,
+            color: index % 2 === 0 ? C.cyan : C.mint,
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.22em",
+            opacity: 0.12 + 0.035 * Math.sin(time * 0.55 + index),
+          }}
+        >
+          {term.text}
+        </div>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+const Header: React.FC<{time: number}> = ({time}) => {
+  const reveal = outRamp(time, 0.42, 1.45);
+  const final = ramp(time, 9.15, 10.0);
+  const resultColor = mix(C.cyan, C.green, final);
+  return (
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: 78,
+          top: 55,
+          opacity: reveal,
+          transform: `translateY(${(1 - reveal) * 18}px)`,
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            color: resultColor,
+            fontSize: 11,
+            lineHeight: 1,
+            fontWeight: 800,
+            letterSpacing: "0.28em",
+            marginBottom: 12,
+          }}
+        >
+          ORGANIC DISCOVERY SYSTEM
+        </div>
+        <div
+          style={{
+            color: C.white,
+            fontSize: 24,
+            lineHeight: 1,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+          }}
+        >
+          SEARCH VISIBILITY INTELLIGENCE
+        </div>
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 78,
+          width: 1764,
+          top: 118,
+          height: 1,
+          opacity: reveal,
+          background: `linear-gradient(90deg, ${alpha(C.cyan, 0.55)}, ${alpha(C.cyan, 0.08)} 48%, transparent 82%)`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 1410,
+          top: 61,
+          width: 432,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 13,
+          opacity: reveal,
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: resultColor,
+            boxShadow: `0 0 14px ${resultColor}`,
+          }}
+        />
+        <div style={{color: C.text, fontSize: 11, fontWeight: 700, letterSpacing: "0.18em"}}>
+          {final > 0.5 ? "OPTIMIZED" : "LIVE SIGNAL MAP"}
+        </div>
+        <div
+          style={{
+            color: C.muted,
+            fontSize: 10,
+            letterSpacing: "0.14em",
+            padding: "7px 10px",
+            border: `1px solid ${alpha(C.cyan, 0.2)}`,
+            borderRadius: 4,
+          }}
+        >
+          06 CHANNELS
+        </div>
+      </div>
+    </>
+  );
+};
+
+const RouteLayer: React.FC<{time: number}> = ({time}) => {
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      style={{position: "absolute", inset: 0, overflow: "visible", zIndex: 2}}
+    >
+      <defs>
+        <filter id="packet-glow" x="-300%" y="-300%" width="700%" height="700%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {MODULES.map((module, index) => {
+        const route = ROUTES[index];
+        const reveal = ramp(time, module.connectorAt, module.connectorAt + 0.88);
+        const complete = ramp(time, module.sendEnd, module.sendEnd + 0.42);
+        const packetProgress = ramp(time, module.sendStart, module.sendEnd);
+        const packetOpacity = activityWindow(
+          time,
+          module.sendStart - 0.12,
+          module.sendEnd + 0.22,
+          0.2,
+        );
+        const d = `M ${route.start.x} ${route.start.y} Q ${route.control.x} ${route.control.y} ${route.end.x} ${route.end.y}`;
+        return (
+          <g key={module.label}>
+            <path
+              d={d}
+              fill="none"
+              stroke={C.lineSoft}
+              strokeWidth="2"
+              opacity={0.68 * reveal}
+              strokeDasharray="5 12"
+            />
+            <path
+              d={d}
+              fill="none"
+              stroke={module.color}
+              strokeWidth="1.8"
+              opacity={(0.48 + complete * 0.18) * reveal}
+              strokeDasharray={route.length}
+              strokeDashoffset={route.length * (1 - reveal)}
+              strokeLinecap="round"
+            />
+            <path
+              d={d}
+              fill="none"
+              stroke={C.green}
+              strokeWidth="2.2"
+              opacity={complete * 0.52}
+              strokeDasharray={route.length}
+              strokeDashoffset={route.length * (1 - reveal)}
+              strokeLinecap="round"
+            />
+            {[0.058, 0.032, 0].map((offset, trailIndex) => {
+              const progress = Math.max(0, packetProgress - offset);
+              const point = quadraticPoint(route.start, route.control, route.end, progress);
+              return (
+                <circle
+                  key={`packet-${trailIndex}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={trailIndex === 2 ? 5.2 : 2.8 + trailIndex * 0.65}
+                  fill={trailIndex === 2 ? C.white : module.color}
+                  opacity={packetOpacity * (0.2 + trailIndex * 0.33)}
+                  filter={trailIndex === 2 ? "url(#packet-glow)" : undefined}
+                />
+              );
+            })}
+            <circle
+              cx={route.end.x}
+              cy={route.end.y}
+              r={5 + complete * 3}
+              fill={complete > 0.5 ? C.green : module.color}
+              opacity={reveal * (0.45 + complete * 0.4)}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const ModuleCard: React.FC<{
+  module: SignalModule;
+  index: number;
   time: number;
   frame: number;
   fps: number;
-  decline: number;
-}> = ({time, frame, fps, decline}) => {
-  const appearFrame = 0.62 * fps;
-  const settle = frame < appearFrame
-    ? 0
-    : spring({
-        frame: frame - appearFrame,
-        fps,
-        config: {damping: 14, stiffness: 105, mass: 0.78},
-        durationInFrames: 64,
-      });
-  const tokenReveal = fastRamp(time, 1.05, 1.72);
-  const shakeEnvelope = activityWindow(time, 4.88, 5.78, 0.12);
-  const shake = Math.sin((time - 4.88) * 50) * 9 * shakeEnvelope;
-  const accent = mix(C.cyan, C.red, decline);
-  const dim = 1 - ramp(time, 5.22, 6.05) * 0.7;
+}> = ({module, index, time, frame, fps}) => {
+  const appearFrame = module.appearAt * fps;
+  const settle =
+    frame < appearFrame
+      ? 0
+      : spring({
+          frame: frame - appearFrame,
+          fps,
+          config: {damping: 28, stiffness: 125, mass: 0.85},
+          durationInFrames: 66,
+        });
+  const activity = activityWindow(
+    time,
+    module.sendStart - 0.25,
+    module.sendEnd + 0.34,
+    0.28,
+  );
+  const complete = ramp(time, module.sendEnd, module.sendEnd + 0.42);
+  const detailExit = ramp(time, module.sendEnd, module.sendEnd + 0.22);
+  const verifyEnter = ramp(time, module.sendEnd + 0.16, module.sendEnd + 0.42);
+  const radialX = (CENTER.x - module.x) * 0.09 * (1 - settle);
+  const radialY = (CENTER.y - module.y) * 0.09 * (1 - settle);
+  const accent = mix(module.color, C.green, complete);
 
   return (
     <div
       style={{
         position: "absolute",
-        left: 112,
-        top: 372,
-        width: 360,
-        height: 228,
-        opacity: settle * dim,
-        transform: `translateX(${(1 - settle) * -75 + shake}px) translateY(${(1 - settle) * 20}px) rotate(${(1 - settle) * -3 + shake * 0.08}deg) scale(${0.86 + settle * 0.14})`,
+        left: module.x - 160,
+        top: module.y - 61,
+        width: 320,
+        height: 122,
+        opacity: settle,
+        transform: `translate(${radialX}px, ${radialY}px) scale(${0.86 + settle * 0.14})`,
         transformOrigin: "center",
-        zIndex: 4,
+        zIndex: 5,
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
       <div
         style={{
           position: "absolute",
-          left: 16,
-          right: 16,
-          top: 18,
-          bottom: -20,
-          borderRadius: 32,
-          background: alpha(accent, 0.16),
-          filter: "blur(30px)",
-          opacity: 0.55 + decline * 0.35,
+          left: 0,
+          top: 0,
+          width: 320,
+          height: 122,
+          borderRadius: 18,
+          border: `1px solid ${alpha(accent, 0.26 + activity * 0.48)}`,
+          background:
+            `linear-gradient(135deg, ${alpha(accent, 0.11 + activity * 0.09)}, transparent 58%), ` +
+            `linear-gradient(160deg, ${alpha(C.panelLight, 0.9)}, ${alpha(C.panel, 0.94)})`,
+          boxShadow:
+            `0 18px 42px rgba(0,0,0,0.28), ` +
+            `0 0 ${12 + activity * 30}px ${alpha(accent, 0.06 + activity * 0.14)}, ` +
+            `inset 0 1px 0 rgba(255,255,255,0.04)`,
+          overflow: "hidden",
         }}
       />
       <div
         style={{
           position: "absolute",
           left: 0,
-          top: 0,
-          width: 360,
-          height: 228,
-          overflow: "hidden",
-          borderRadius: 27,
-          border: `1.5px solid ${alpha(accent, 0.36 + decline * 0.4)}`,
-          background: "linear-gradient(145deg, rgba(16,42,60,0.98) 0%, rgba(7,22,34,0.99) 58%, rgba(5,13,21,0.99) 100%)",
-          boxShadow: `0 24px 65px rgba(0,0,0,0.5), 0 0 ${16 + decline * 22}px ${alpha(accent, 0.13 + decline * 0.16)}, inset 0 1px 0 rgba(255,255,255,0.12)`,
+          top: 20,
+          width: 3,
+          height: 82,
+          borderRadius: "0 4px 4px 0",
+          background: accent,
+          opacity: 0.64 + activity * 0.36,
+          boxShadow: `0 0 14px ${alpha(accent, 0.72)}`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 20,
+          top: 27,
+          width: 67,
+          height: 67,
+          borderRadius: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: alpha(accent, 0.075 + activity * 0.08),
+          border: `1px solid ${alpha(accent, 0.2 + activity * 0.24)}`,
         }}
       >
-        <div style={{position: "absolute", left: 0, top: 0, width: 360, height: 228, background: `radial-gradient(circle at 15% 20%, ${alpha(C.cyan, 0.11)}, transparent 38%), linear-gradient(115deg, transparent 52%, rgba(255,255,255,0.055) 53%, transparent 72%)`}} />
-        <div style={{position: "absolute", right: -48, top: -64, width: 220, height: 220, borderRadius: "50%", border: `1px solid ${alpha(accent, 0.12)}`}} />
-        <div style={{position: "absolute", right: -16, top: -32, width: 150, height: 150, borderRadius: "50%", border: `1px solid ${alpha(accent, 0.12)}`}} />
-
-        <div style={{position: "absolute", left: 28, top: 24, color: alpha(C.text, 0.78), fontSize: 10, letterSpacing: 2.3, fontWeight: 800}}>SECURE PAYMENT TOKEN</div>
-        <div style={{position: "absolute", right: 27, top: 21, display: "flex", alignItems: "center", gap: 7}}>
-          <div style={{width: 7, height: 7, borderRadius: "50%", background: accent, boxShadow: `0 0 12px ${alpha(accent, 0.8)}`}} />
-          <div style={{color: accent, fontSize: 9, letterSpacing: 1.4, fontWeight: 900}}>{decline > 0.5 ? "HALTED" : "ACTIVE"}</div>
+        <SignalIcon kind={module.icon} color={accent} size={48} />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 105,
+          top: 24,
+          right: 20,
+          minWidth: 0,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            color: accent,
+            fontSize: 9,
+            lineHeight: 1,
+            fontWeight: 800,
+            letterSpacing: "0.18em",
+            marginBottom: 10,
+          }}
+        >
+          0{index + 1} / {module.descriptor}
         </div>
-
-        <div style={{position: "absolute", left: 30, top: 73, width: 48, height: 37, borderRadius: 8, border: `1.5px solid ${alpha(accent, 0.6)}`, background: alpha(accent, 0.07)}}>
-          <div style={{position: "absolute", left: 15, top: 0, bottom: 0, width: 1, background: alpha(accent, 0.45)}} />
-          <div style={{position: "absolute", left: 30, top: 0, bottom: 0, width: 1, background: alpha(accent, 0.45)}} />
-          <div style={{position: "absolute", left: 0, right: 0, top: 17, height: 1, background: alpha(accent, 0.45)}} />
+        <div
+          style={{
+            color: C.white,
+            fontSize: module.label.length > 16 ? 14 : 15,
+            lineHeight: 1.05,
+            fontWeight: 800,
+            letterSpacing: "0.025em",
+            whiteSpace: "nowrap",
+            maxWidth: "100%",
+            overflow: "hidden",
+          }}
+        >
+          {module.label}
         </div>
-        <div style={{position: "absolute", left: 94, top: 78, opacity: 0.72}}>
-          <svg viewBox="0 0 34 34" width="34" height="34">
-            <path d="M5 12c7 4 7 6 0 10M11 8c13 7 13 11 0 18M18 4c18 10 18 16 0 26" fill="none" stroke={accent} strokeWidth="2.4" strokeLinecap="round" />
-          </svg>
-        </div>
-
-        <div style={{position: "absolute", left: 29, top: 135, color: C.white, fontSize: 23, letterSpacing: 3.8, fontWeight: 700, whiteSpace: "nowrap"}}>
-          ••••&nbsp;&nbsp;••••&nbsp;&nbsp;4831
-        </div>
-        <div style={{position: "absolute", left: 30, top: 182, color: alpha(C.muted, 0.95), fontSize: 9.5, letterSpacing: 1.8, fontWeight: 800}}>ENCRYPTED CARD DATA</div>
-        <div style={{position: "absolute", right: 28, top: 176, width: 92, height: 25, borderRadius: 14, border: `1px solid ${alpha(accent, 0.28)}`, background: alpha(accent, 0.07), overflow: "hidden"}}>
-          <div style={{position: "absolute", left: 0, top: 0, bottom: 0, width: `${tokenReveal * 100}%`, background: alpha(accent, 0.11)}} />
-          <div style={{position: "absolute", left: 0, top: 0, width: 92, height: 25, display: "flex", alignItems: "center", justifyContent: "center", color: alpha(accent, 0.9), fontSize: 8.5, letterSpacing: 1.1, fontWeight: 900}}>TOKENIZED</div>
+        <div style={{position: "relative", height: 13, marginTop: 10, overflow: "hidden"}}>
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              color: C.muted,
+              fontSize: 11,
+              lineHeight: 1,
+              letterSpacing: "0.06em",
+              opacity: 1 - detailExit,
+              transform: `translateY(${-detailExit * 8}px)`,
+            }}
+          >
+            {module.detail}
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              color: C.muted,
+              fontSize: 11,
+              lineHeight: 1,
+              letterSpacing: "0.06em",
+              opacity: verifyEnter,
+              transform: `translateY(${(1 - verifyEnter) * 8}px)`,
+            }}
+          >
+            SIGNAL VERIFIED
+          </div>
         </div>
       </div>
-
-      <div style={{position: "absolute", left: 26, top: -43, padding: "9px 13px", borderRadius: 9, border: `1px solid ${alpha(C.cyan, 0.24)}`, background: "rgba(4,16,26,0.9)", color: alpha(C.white, 0.9), fontSize: 10, letterSpacing: 1.4, fontWeight: 900, boxShadow: "0 10px 24px rgba(0,0,0,0.32)"}}>
-        ORDER TOTAL&nbsp;&nbsp;<span style={{color: C.cyan}}>USD 128.40</span>
-      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 12,
+          top: 12,
+          width: 5,
+          height: 5,
+          borderRadius: "50%",
+          background: accent,
+          opacity: 0.35 + activity * 0.65,
+          boxShadow: `0 0 10px ${accent}`,
+        }}
+      />
     </div>
   );
 };
 
-const StageNode: React.FC<{
-  x: number;
-  y: number;
-  index: string;
-  label: string;
-  detail: string;
-  kind: GlyphKind;
-  appearAt: number;
-  arrival: number;
-  failure?: boolean;
-  time: number;
-  frame: number;
-  fps: number;
-  decline: number;
-}> = ({x, y, index, label, detail, kind, appearAt, arrival, failure = false, time, frame, fps, decline}) => {
-  const appearFrame = appearAt * fps;
-  const settle = frame < appearFrame
-    ? 0
-    : spring({
-        frame: frame - appearFrame,
-        fps,
-        config: {damping: 16, stiffness: 125, mass: 0.72},
-        durationInFrames: 44,
-      });
-  const scan = activityWindow(time, arrival - 0.42, arrival + 0.34, 0.18);
-  const complete = fastRamp(time, arrival, arrival + 0.24);
-  const color = failure ? mix(C.amber, C.red, decline) : mix(C.cyan, C.mint, complete);
-  const dim = 1 - ramp(time, 5.28, 6.06) * 0.76;
-  const status = failure
-    ? time < arrival - 0.34
-      ? "QUEUED"
-      : time < arrival + 0.12
-        ? "AUTHORIZING"
-        : "DECLINED"
-    : time < arrival - 0.34
-      ? "QUEUED"
-      : time < arrival + 0.1
-        ? "VERIFYING"
-        : "PASSED";
+const Core: React.FC<{time: number; frame: number; fps: number}> = ({time, frame, fps}) => {
+  const coreReveal = outRamp(time, 0.72, 2.18);
+  const ringDraw = ramp(time, 0.82, 2.48);
+  const final = ramp(time, 9.12, 10.0);
+  const subtitleExit = ramp(time, 9.08, 9.48);
+  const subtitleEnter = ramp(time, 9.44, 9.9);
+  const resultColor = mix(C.cyan, C.green, final);
+  const completed = MODULES.reduce(
+    (total, module) => total + ramp(time, module.sendEnd, module.sendEnd + 0.34),
+    0,
+  );
+  const count = Math.min(6, Math.floor(completed + 0.001));
+  const arrivalEnergy = Math.min(
+    1,
+    MODULES.reduce(
+      (total, module) =>
+        total + activityWindow(time, module.sendEnd - 0.08, module.sendEnd + 0.58, 0.15),
+      0,
+    ),
+  );
+  const progress = Math.min(1, 0.12 + (completed / 6) * 0.88);
+  const circumference = 2 * Math.PI * 205;
+  const orbitTime = Math.min(time, 12.82);
 
   return (
     <div
       style={{
         position: "absolute",
-        left: x - 85,
-        top: y - 78,
-        width: 170,
-        height: 156,
-        opacity: settle * dim,
-        transform: `translateY(${(1 - settle) * 24}px) scale(${0.88 + settle * 0.12})`,
+        left: CENTER.x - 280,
+        top: CENTER.y - 280,
+        width: 560,
+        height: 560,
+        zIndex: 4,
+        opacity: coreReveal,
+        transform: `scale(${0.82 + coreReveal * 0.18 + arrivalEnergy * 0.012})`,
         transformOrigin: "center",
-        zIndex: 5,
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{position: "absolute", left: 23, top: 17, width: 124, height: 124, borderRadius: 26, border: `1.4px solid ${alpha(color, 0.25 + scan * 0.5 + complete * 0.2)}`, background: "linear-gradient(155deg, rgba(11,33,48,0.97), rgba(4,14,23,0.98))", boxShadow: `0 18px 40px rgba(0,0,0,0.36), 0 0 ${scan * 28}px ${alpha(color, 0.23)}, inset 0 1px 0 rgba(255,255,255,0.08)`, overflow: "hidden"}}>
-        <div style={{position: "absolute", left: 0, top: `${interpolate(scan, [0, 1], [-20, 120], clamp)}px`, width: 124, height: 24, background: `linear-gradient(180deg, transparent, ${alpha(color, 0.2)}, transparent)`, opacity: scan}} />
-        <div style={{position: "absolute", left: 36, top: 22, width: 52, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${alpha(color, 0.23 + complete * 0.28)}`, background: alpha(color, 0.075 + scan * 0.055)}}>
-          <Glyph kind={kind} color={color} size={36} strokeWidth={2.6} />
+      <div
+        style={{
+          position: "absolute",
+          left: 72,
+          top: 72,
+          width: 416,
+          height: 416,
+          borderRadius: "50%",
+          background:
+            `radial-gradient(circle at 46% 40%, ${alpha(C.cyan, 0.12 + arrivalEnergy * 0.12)}, transparent 44%), ` +
+            `radial-gradient(circle, ${alpha(C.panelLight, 0.93)}, ${alpha(C.panel, 0.96)} 66%, ${alpha(C.bg, 0.96)} 100%)`,
+          border: `1px solid ${alpha(resultColor, 0.34 + arrivalEnergy * 0.3)}`,
+          boxShadow:
+            `0 0 ${50 + arrivalEnergy * 42}px ${alpha(resultColor, 0.1 + arrivalEnergy * 0.12)}, ` +
+            `inset 0 0 64px ${alpha(C.cyan, 0.06)}`,
+        }}
+      />
+      <svg width="560" height="560" viewBox="0 0 560 560" style={{position: "absolute", inset: 0}}>
+        <defs>
+          <filter id="core-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <circle
+          cx="280"
+          cy="280"
+          r="246"
+          fill="none"
+          stroke={C.line}
+          strokeWidth="1"
+          opacity="0.42"
+          strokeDasharray="2 10"
+          transform={`rotate(${orbitTime * 2.1} 280 280)`}
+        />
+        <circle
+          cx="280"
+          cy="280"
+          r="231"
+          fill="none"
+          stroke={C.cyan}
+          strokeWidth="1.2"
+          opacity={0.2 * ringDraw}
+          strokeDasharray="84 48 24 62"
+          transform={`rotate(${-orbitTime * 2.8} 280 280)`}
+        />
+        <circle
+          cx="280"
+          cy="280"
+          r="205"
+          fill="none"
+          stroke={C.lineSoft}
+          strokeWidth="7"
+          opacity="0.78"
+        />
+        <circle
+          cx="280"
+          cy="280"
+          r="205"
+          fill="none"
+          stroke={resultColor}
+          strokeWidth="7"
+          opacity={0.8 * ringDraw}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - Math.min(ringDraw, progress))}
+          transform="rotate(-90 280 280)"
+          filter="url(#core-glow)"
+        />
+        {Array.from({length: 48}, (_, index) => {
+          const angle = (index / 48) * Math.PI * 2 - Math.PI / 2;
+          const active = index / 48 <= Math.min(ringDraw, progress);
+          const inner = 218;
+          const outer = index % 4 === 0 ? 228 : 224;
+          return (
+            <line
+              key={`tick-${index}`}
+              x1={280 + Math.cos(angle) * inner}
+              y1={280 + Math.sin(angle) * inner}
+              x2={280 + Math.cos(angle) * outer}
+              y2={280 + Math.sin(angle) * outer}
+              stroke={active ? resultColor : C.line}
+              strokeWidth={index % 4 === 0 ? 2 : 1}
+              opacity={0.25 + (active ? 0.55 : 0)}
+            />
+          );
+        })}
+        {[0, 1, 2].map((index) => {
+          const angle = orbitTime * (0.32 + index * 0.055) + index * 2.12;
+          const radius = 231 + (index - 1) * 13;
+          return (
+            <g key={`orbiter-${index}`}>
+              <circle
+                cx={280 + Math.cos(angle) * radius}
+                cy={280 + Math.sin(angle) * radius}
+                r={index === 1 ? 5 : 3.5}
+                fill={index === 2 ? C.mint : C.cyan}
+                opacity={0.42 + coreReveal * 0.5}
+                filter="url(#core-glow)"
+              />
+            </g>
+          );
+        })}
+        {MODULES.map((module, index) => {
+          const impact = activityWindow(time, module.sendEnd, module.sendEnd + 0.56, 0.12);
+          return (
+            <circle
+              key={`impact-${index}`}
+              cx="280"
+              cy="280"
+              r={181 + ramp(time, module.sendEnd, module.sendEnd + 0.56) * 72}
+              fill="none"
+              stroke={module.color}
+              strokeWidth="2"
+              opacity={impact * 0.34}
+            />
+          );
+        })}
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          left: 142,
+          top: 151,
+          width: 276,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            color: resultColor,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.28em",
+            lineHeight: 1,
+            marginBottom: 19,
+          }}
+        >
+          SEARCH SIGNAL CORE
         </div>
-        <div style={{position: "absolute", left: 12, right: 12, top: 86, color: C.white, textAlign: "center", fontSize: 10.5, letterSpacing: 1.35, fontWeight: 900, whiteSpace: "nowrap"}}>{label}</div>
-        <div style={{position: "absolute", left: 12, right: 12, top: 105, color: alpha(C.muted, 0.92), textAlign: "center", fontSize: 7.6, letterSpacing: 1.05, fontWeight: 800, whiteSpace: "nowrap"}}>{detail}</div>
-      </div>
-
-      <div style={{position: "absolute", left: 9, top: 3, minWidth: 34, height: 22, padding: "0 7px", borderRadius: 11, border: `1px solid ${alpha(color, 0.36)}`, background: C.panelDeep, color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8.5, letterSpacing: 1.2, fontWeight: 900}}>{index}</div>
-      <div style={{position: "absolute", right: 5, top: 3, minWidth: 57, height: 22, padding: "0 8px", borderRadius: 11, border: `1px solid ${alpha(color, 0.25 + complete * 0.3)}`, background: C.panelDeep, color: alpha(color, 0.92), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7.5, letterSpacing: 0.85, fontWeight: 900}}>{status}</div>
-    </div>
-  );
-};
-
-const AuthorizationRail: React.FC<{
-  time: number;
-  motionTime: number;
-  decline: number;
-}> = ({time, motionTime, decline}) => {
-  const points: Point[] = [
-    {x: 456, y: 540},
-    {x: 680, y: 540},
-    {x: 910, y: 540},
-    {x: 1140, y: 540},
-    {x: 1370, y: 540},
-  ];
-  const length = routeLength(points);
-  const reveal = fastRamp(time, 1.12, 2.04);
-  const dim = 1 - ramp(time, 5.25, 6.05) * 0.8;
-  const packetProgress = interpolate(
-    motionTime,
-    [1.82, 2.36, 3.1, 3.83, 4.86],
-    [0, 0.245, 0.497, 0.748, 1],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-  const packetVisible = activityWindow(time, 1.74, 5.28, 0.14) * dim;
-  const position = pointOnRoute(points, packetProgress);
-  const tail = pointOnRoute(points, Math.max(0, packetProgress - 0.045));
-  const dash = interpolate(motionTime, [0, 4.86], [0, 310], clamp);
-
-  return (
-    <svg width="1920" height="1080" viewBox="0 0 1920 1080" style={{position: "absolute", left: 0, top: 0, zIndex: 2, overflow: "visible", opacity: dim}}>
-      <defs>
-        <linearGradient id="authorizationRoute" x1="456" y1="540" x2="1370" y2="540" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor={C.cyan} />
-          <stop offset="0.68" stopColor={C.blue} />
-          <stop offset="0.87" stopColor={C.amber} />
-          <stop offset="1" stopColor={mix(C.amber, C.red, decline)} />
-        </linearGradient>
-        <filter id="routeGlow" x="-100%" y="-400%" width="300%" height="900%">
-          <feGaussianBlur stdDeviation="5" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-
-      <line x1="456" y1="540" x2="1370" y2="540" stroke={C.lineSoft} strokeWidth="8" strokeLinecap="round" />
-      <line x1="456" y1="540" x2="1370" y2="540" stroke="url(#authorizationRoute)" strokeWidth="4" strokeLinecap="round" strokeDasharray={length} strokeDashoffset={length * (1 - reveal)} opacity={0.7} filter="url(#routeGlow)" />
-      <line x1="456" y1="540" x2="1370" y2="540" stroke={C.white} strokeWidth="1.3" strokeLinecap="round" strokeDasharray="7 25" strokeDashoffset={-dash} opacity={reveal * 0.42 * (1 - decline * 0.55)} />
-
-      {[570, 795, 1025, 1255].map((x, index) => (
-        <g key={x} opacity={reveal * (0.28 + index * 0.035)}>
-          <circle cx={x} cy="540" r="3" fill={index > 2 ? C.amber : C.cyan} />
-          <circle cx={x} cy="540" r="9" fill="none" stroke={index > 2 ? C.amber : C.cyan} strokeWidth="1" opacity="0.35" />
-        </g>
-      ))}
-
-      <g opacity={packetVisible}>
-        <line x1={tail.x} y1={tail.y} x2={position.x} y2={position.y} stroke={mix(C.cyan, C.red, decline)} strokeWidth="15" strokeLinecap="round" opacity="0.25" filter="url(#routeGlow)" />
-        <circle cx={position.x} cy={position.y} r="17" fill={alpha(mix(C.cyan, C.red, decline), 0.1)} />
-        <circle cx={position.x} cy={position.y} r="8" fill={mix(C.cyan, C.red, decline)} filter="url(#routeGlow)" />
-        <circle cx={position.x - 2} cy={position.y - 2} r="2.2" fill="#ffffff" />
-      </g>
-    </svg>
-  );
-};
-
-const ImpactBurst: React.FC<{time: number; decline: number}> = ({time, decline}) => {
-  const burst = activityWindow(time, 4.82, 6.12, 0.12);
-  const radius = interpolate(time, [4.86, 5.72], [28, 270], clamp);
-  const shardTravel = fastRamp(time, 4.92, 5.55);
-
-  return (
-    <div style={{position: "absolute", left: 1370, top: 540, width: 0, height: 0, zIndex: 12, opacity: burst}}>
-      {[0, 1, 2].map((ring) => {
-        const ringRadius = Math.max(0, radius - ring * 42);
-        return (
-          <div key={ring} style={{position: "absolute", left: -ringRadius, top: -ringRadius, width: ringRadius * 2, height: ringRadius * 2, borderRadius: "50%", border: `${2.4 - ring * 0.45}px solid ${alpha(C.red, 0.7 - ring * 0.16)}`, boxShadow: `0 0 22px ${alpha(C.red, 0.2)}`, opacity: Math.max(0, 1 - ringRadius / 320)}} />
-        );
-      })}
-      {Array.from({length: 12}, (_, index) => {
-        const angle = (index / 12) * Math.PI * 2 + 0.18;
-        const distance = shardTravel * (52 + (index % 4) * 18);
-        const size = 3 + (index % 3) * 1.5;
-        return (
-          <div key={index} style={{position: "absolute", left: Math.cos(angle) * distance - size / 2, top: Math.sin(angle) * distance - size / 2, width: size, height: size, borderRadius: index % 2 === 0 ? "50%" : 1, background: index % 3 === 0 ? C.amber : C.red, boxShadow: `0 0 10px ${alpha(C.red, 0.7)}`, transform: `rotate(${angle * 57.2958}deg)`, opacity: decline * (1 - shardTravel * 0.68)}} />
-        );
-      })}
-    </div>
-  );
-};
-
-const RecoveryOption: React.FC<{
-  icon: GlyphKind;
-  eyebrow: string;
-  label: string;
-  detail: string;
-  color: string;
-  appearAt: number;
-  time: number;
-  frame: number;
-  fps: number;
-}> = ({icon, eyebrow, label, detail, color, appearAt, time, frame, fps}) => {
-  const appearFrame = appearAt * fps;
-  const settle = frame < appearFrame
-    ? 0
-    : spring({
-        frame: frame - appearFrame,
-        fps,
-        config: {damping: 15, stiffness: 118, mass: 0.72},
-        durationInFrames: 46,
-      });
-  const pulse = 0.5 + Math.sin((Math.min(time, 12.5) - appearAt) * 2.1) * 0.5;
-
-  return (
-    <div style={{position: "relative", width: 290, height: 118, opacity: settle, transform: `translateY(${(1 - settle) * 24}px) scale(${0.92 + settle * 0.08})`, transformOrigin: "center", borderRadius: 17, border: `1px solid ${alpha(color, 0.2 + settle * 0.2)}`, background: "linear-gradient(145deg, rgba(12,31,44,0.96), rgba(5,15,24,0.98))", boxShadow: `0 14px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.065)`, overflow: "hidden"}}>
-      <div style={{position: "absolute", left: 0, top: 0, width: 4, height: 118, background: color, boxShadow: `0 0 ${10 + pulse * 8}px ${alpha(color, 0.5)}`}} />
-      <div style={{position: "absolute", left: 18, top: 24, width: 54, height: 54, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${alpha(color, 0.28)}`, background: alpha(color, 0.075)}}>
-        <Glyph kind={icon} color={color} size={34} strokeWidth={2.5} />
-      </div>
-      <div style={{position: "absolute", left: 88, top: 20, color: alpha(color, 0.88), fontSize: 8.5, letterSpacing: 1.55, fontWeight: 900}}>{eyebrow}</div>
-      <div style={{position: "absolute", left: 88, top: 41, color: C.white, fontSize: 14, letterSpacing: 0.9, fontWeight: 900, whiteSpace: "nowrap"}}>{label}</div>
-      <div style={{position: "absolute", left: 88, top: 69, right: 12, color: alpha(C.muted, 0.94), fontSize: 9, lineHeight: 1.35, letterSpacing: 0.35, fontWeight: 700}}>{detail}</div>
-      <div style={{position: "absolute", right: 15, top: 18, color: alpha(color, 0.66), fontSize: 16, fontWeight: 900}}>›</div>
-    </div>
-  );
-};
-
-const DeclinePanel: React.FC<{
-  time: number;
-  frame: number;
-  fps: number;
-  sceneOpacity: number;
-}> = ({time, frame, fps, sceneOpacity}) => {
-  const appearFrame = 5.12 * fps;
-  const settle = frame < appearFrame
-    ? 0
-    : spring({
-        frame: frame - appearFrame,
-        fps,
-        config: {damping: 14, stiffness: 108, mass: 0.76},
-        durationInFrames: 62,
-      });
-  const contentReveal = fastRamp(time, 5.34, 6.08);
-  const detailReveal = fastRamp(time, 6.12, 6.72);
-  const crossReveal = fastRamp(time, 5.3, 5.82);
-  const holdPulse = 0.5 + Math.sin(Math.min(time, 12.6) * 2.15) * 0.5;
-  const visible = settle * sceneOpacity;
-
-  return (
-    <div style={{position: "absolute", left: 455, top: 198, width: 1010, height: 650, opacity: visible, transform: `translateX(${(1 - settle) * 170}px) translateY(${(1 - settle) * 20}px) scale(${0.87 + settle * 0.13})`, transformOrigin: "76% 50%", zIndex: 20}}>
-      <div style={{position: "absolute", left: 35, right: 35, top: 28, bottom: -18, borderRadius: 42, background: alpha(C.red, 0.16), filter: "blur(42px)", opacity: 0.55 + holdPulse * 0.12}} />
-      <div style={{position: "absolute", left: 0, top: 0, width: 1010, height: 650, borderRadius: 32, overflow: "hidden", border: `1.5px solid ${alpha(C.red, 0.58)}`, background: "linear-gradient(145deg, rgba(13,31,43,0.985) 0%, rgba(6,17,27,0.995) 56%, rgba(10,16,25,0.995) 100%)", boxShadow: `0 34px 90px rgba(0,0,0,0.56), 0 0 48px ${alpha(C.red, 0.16)}, inset 0 1px 0 rgba(255,255,255,0.11)`}}>
-        <div style={{position: "absolute", left: 0, top: 0, width: 1010, height: 650, background: `radial-gradient(circle at 16% 30%, ${alpha(C.red, 0.115)}, transparent 30%), radial-gradient(circle at 88% 2%, ${alpha(C.blue, 0.07)}, transparent 33%)`}} />
-        <div style={{position: "absolute", left: 0, right: 0, top: 0, height: 62, borderBottom: `1px solid ${alpha(C.line, 0.72)}`, background: "rgba(3,12,20,0.58)"}} />
-        <div style={{position: "absolute", left: 26, top: 20, display: "flex", alignItems: "center", gap: 12}}>
-          <div style={{width: 9, height: 9, borderRadius: "50%", background: C.red, boxShadow: `0 0 15px ${alpha(C.red, 0.9)}`}} />
-          <div style={{color: alpha(C.white, 0.92), fontSize: 10, letterSpacing: 2.2, fontWeight: 900}}>AUTHORIZATION RESPONSE</div>
-          <div style={{width: 1, height: 18, background: alpha(C.line, 0.8)}} />
-          <div style={{color: alpha(C.red, 0.9), fontSize: 9.5, letterSpacing: 1.6, fontWeight: 900}}>SESSION HALTED</div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: 128,
+            gap: 1,
+          }}
+        >
+          {["S", "E", "O"].map((letter, index) => {
+            const appearFrame = (1.02 + index * 0.12) * fps;
+            const letterSettle =
+              frame < appearFrame
+                ? 0
+                : spring({
+                    frame: frame - appearFrame,
+                    fps,
+                    config: {damping: 24, stiffness: 112, mass: 0.8},
+                    durationInFrames: 58,
+                  });
+            return (
+              <span
+                key={letter}
+                style={{
+                  display: "inline-block",
+                  color: C.white,
+                  fontSize: 118,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  letterSpacing: "-0.07em",
+                  opacity: letterSettle,
+                  transform: `translateY(${(1 - letterSettle) * 42}px) scale(${0.82 + letterSettle * 0.18})`,
+                  textShadow:
+                    `0 0 22px ${alpha(resultColor, 0.42)}, ` +
+                    `0 2px 0 ${alpha(C.cyan, 0.26)}`,
+                }}
+              >
+                {letter}
+              </span>
+            );
+          })}
         </div>
-        <div style={{position: "absolute", right: 28, top: 20, color: alpha(C.muted, 0.92), fontSize: 9.5, letterSpacing: 1.7, fontWeight: 800}}>ISSUER RESPONSE • DECLINED</div>
-
-        <div style={{position: "absolute", left: 52, top: 94, width: 188, height: 188, borderRadius: "50%", border: `1.5px solid ${alpha(C.red, 0.42)}`, background: `radial-gradient(circle, ${alpha(C.red, 0.13)}, ${alpha(C.red, 0.025)} 66%, transparent 67%)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 ${30 + holdPulse * 18}px ${alpha(C.red, 0.18)}`}}>
-          <div style={{position: "absolute", width: 146 + holdPulse * 5, height: 146 + holdPulse * 5, borderRadius: "50%", border: `1px solid ${alpha(C.red, 0.2)}`}} />
-          <svg viewBox="0 0 124 124" width="124" height="124">
-            <path d="M62 10l39 15v29c0 26-15 47-39 60-24-13-39-34-39-60V25z" fill={alpha(C.red, 0.07)} stroke={C.red} strokeWidth="4" strokeLinejoin="round" />
-            <path d="M44 43l36 38M80 43L44 81" fill="none" stroke={C.red} strokeWidth="7" strokeLinecap="round" strokeDasharray="54" strokeDashoffset={54 * (1 - crossReveal)} />
-          </svg>
-        </div>
-        <div style={{position: "absolute", left: 71, top: 291, width: 150, textAlign: "center", color: alpha(C.red, 0.92), fontSize: 9.5, letterSpacing: 1.9, fontWeight: 900}}>PAYMENT STOPPED</div>
-
-        <div style={{position: "absolute", left: 288, top: 91, width: 660, height: 178, overflow: "hidden"}}>
-          <div style={{position: "absolute", left: 0, top: 0, color: alpha(C.red, 0.92), fontSize: 11, letterSpacing: 3.1, fontWeight: 900, opacity: contentReveal}}>SECURE PAYMENT STATUS</div>
-          <div style={{position: "absolute", left: 0, top: 27, width: `${contentReveal * 100}%`, overflow: "hidden", whiteSpace: "nowrap"}}>
-            <div style={{color: C.white, fontSize: 48, lineHeight: 1, letterSpacing: 1.2, fontWeight: 800}}>PAYMENT</div>
-            <div style={{marginTop: 3, color: C.red, fontSize: 72, lineHeight: 0.98, letterSpacing: 0.6, fontWeight: 900, textShadow: `0 0 28px ${alpha(C.red, 0.24)}`}}>DECLINED</div>
+        <div
+          style={{
+            position: "relative",
+            left: -42,
+            width: 360,
+            height: 22,
+            marginTop: 5,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              width: 360,
+              top: 0,
+              color: C.text,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              lineHeight: 1,
+              opacity: 1 - subtitleExit,
+              transform: `translateY(${-subtitleExit * 22}px)`,
+            }}
+          >
+            SEARCH ENGINE OPTIMIZATION
           </div>
-          <div style={{position: "absolute", left: 0, top: 143, color: alpha(C.text, 0.9), fontSize: 15, letterSpacing: 0.45, fontWeight: 700, opacity: detailReveal}}>Authorization failed. No charge was made to this card.</div>
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              width: 360,
+              top: 0,
+              color: C.green,
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: "0.18em",
+              lineHeight: 1,
+              opacity: subtitleEnter,
+              transform: `translateY(${(1 - subtitleEnter) * 22}px)`,
+              textShadow: `0 0 14px ${alpha(C.green, 0.52)}`,
+            }}
+          >
+            VISIBILITY OPTIMIZED
+          </div>
         </div>
-
-        <div style={{position: "absolute", left: 52, top: 337, width: 906, height: 86, borderRadius: 16, border: `1px solid ${alpha(C.red, 0.16)}`, background: "rgba(3,13,22,0.68)", opacity: detailReveal, overflow: "hidden"}}>
-          {[
-            {x: 0, label: "AMOUNT", value: "USD 128.40", color: C.white},
-            {x: 302, label: "PAYMENT METHOD", value: "CARD •••• 4831", color: C.white},
-            {x: 604, label: "TRANSACTION STATE", value: "NOT CHARGED", color: C.mint},
-          ].map((item, index) => (
-            <div key={item.label} style={{position: "absolute", left: item.x, top: 0, width: 302, height: 86, borderLeft: index === 0 ? undefined : `1px solid ${alpha(C.line, 0.68)}`}}>
-              <div style={{position: "absolute", left: index === 0 ? 21 : 25, top: 19, color: alpha(C.muted, 0.9), fontSize: 8.5, letterSpacing: 1.7, fontWeight: 900}}>{item.label}</div>
-              <div style={{position: "absolute", left: index === 0 ? 21 : 25, top: 43, color: item.color, fontSize: 15, letterSpacing: 0.9, fontWeight: 900}}>{item.value}</div>
-            </div>
-          ))}
+        <div
+          style={{
+            margin: "1px auto 0",
+            width: 204,
+            height: 31,
+            borderRadius: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 9,
+            color: mix(C.muted, C.green, final),
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.15em",
+            border: `1px solid ${alpha(resultColor, 0.18 + final * 0.34)}`,
+            background: alpha(resultColor, 0.04 + final * 0.06),
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: resultColor,
+              boxShadow: `0 0 10px ${resultColor}`,
+            }}
+          />
+          {final > 0.5 ? "ORGANIC GROWTH" : `SIGNALS 0${count} / 06`}
         </div>
-
-        <div style={{position: "absolute", left: 52, top: 449, color: alpha(C.muted, 0.92), fontSize: 9.5, letterSpacing: 2.1, fontWeight: 900, opacity: detailReveal}}>RECOVERY OPTIONS</div>
-        <div style={{position: "absolute", left: 52, top: 478, display: "flex", flexDirection: "row", gap: 18}}>
-          <RecoveryOption icon="verify" eyebrow="CHECK 01" label="VERIFY DETAILS" detail="Confirm card data and billing information." color={C.cyan} appearAt={6.82} time={time} frame={frame} fps={fps} />
-          <RecoveryOption icon="retry" eyebrow="RETRY 02" label="TRY AGAIN" detail="Retry after confirming the available balance." color={C.amber} appearAt={7.16} time={time} frame={frame} fps={fps} />
-          <RecoveryOption icon="wallet" eyebrow="OPTION 03" label="OTHER METHOD" detail="Choose a different secure payment method." color={C.mint} appearAt={7.46} time={time} frame={frame} fps={fps} />
-        </div>
-
-        <div style={{position: "absolute", left: 52, right: 52, bottom: 22, height: 1, background: `linear-gradient(90deg, ${alpha(C.red, 0.42)}, ${alpha(C.line, 0.5)}, transparent)`}} />
-        <div style={{position: "absolute", left: 52, bottom: 5, color: alpha(C.muted, 0.75), fontSize: 8, letterSpacing: 1.65, fontWeight: 800}}>PROTECTED RESPONSE • NO FUNDS TRANSFERRED</div>
-        <div style={{position: "absolute", right: 52, bottom: 5, color: alpha(C.red, 0.75), fontSize: 8, letterSpacing: 1.65, fontWeight: 900}}>ACTION REQUIRED</div>
-
-        <div style={{position: "absolute", left: interpolate(time, [5.15, 6.42], [-180, 1080], clamp), top: 0, width: 130, height: 650, transform: "skewX(-12deg)", background: `linear-gradient(90deg, transparent, ${alpha(C.red, 0.055)}, rgba(255,255,255,0.11), transparent)`, opacity: activityWindow(time, 5.14, 6.44, 0.14), pointerEvents: "none"}} />
       </div>
     </div>
   );
 };
 
-const Header: React.FC<{
-  time: number;
-  sceneOpacity: number;
-  decline: number;
-}> = ({time, sceneOpacity, decline}) => {
-  const reveal = fastRamp(time, 0.36, 1.02);
-  const statusColor = mix(C.mint, C.red, decline);
-
-  return (
-    <div style={{position: "absolute", left: 88, right: 88, top: 58, height: 74, opacity: sceneOpacity * reveal, fontFamily: "Arial, Helvetica, sans-serif", zIndex: 40}}>
-      <div style={{position: "absolute", left: 0, top: 0, display: "flex", alignItems: "center", gap: 14}}>
-        <div style={{width: 38, height: 38, borderRadius: 11, border: `1px solid ${alpha(C.cyan, 0.34)}`, background: alpha(C.cyan, 0.065), display: "flex", alignItems: "center", justifyContent: "center"}}>
-          <Glyph kind="lock" color={C.cyan} size={24} strokeWidth={2.6} />
-        </div>
-        <div>
-          <div style={{color: C.white, fontSize: 15, letterSpacing: 2.3, fontWeight: 900}}>SECURE PAYMENT AUTHORIZATION</div>
-          <div style={{marginTop: 7, color: alpha(C.muted, 0.9), fontSize: 9.5, letterSpacing: 1.75, fontWeight: 800}}>TOKEN • DEVICE • ENCRYPTION • ISSUER RESPONSE</div>
-        </div>
-      </div>
-
-      <div style={{position: "absolute", right: 0, top: 2, display: "flex", flexDirection: "row", gap: 10}}>
-        <div style={{height: 34, padding: "0 14px", borderRadius: 10, border: `1px solid ${alpha(C.cyan, 0.23)}`, background: "rgba(4,16,26,0.78)", display: "flex", alignItems: "center", gap: 8}}>
-          <div style={{width: 6, height: 6, borderRadius: "50%", background: C.cyan, boxShadow: `0 0 10px ${alpha(C.cyan, 0.78)}`}} />
-          <span style={{color: alpha(C.cyan, 0.9), fontSize: 8.5, letterSpacing: 1.35, fontWeight: 900}}>ENCRYPTED CHANNEL</span>
-        </div>
-        <div style={{height: 34, minWidth: 145, padding: "0 14px", borderRadius: 10, border: `1px solid ${alpha(statusColor, 0.3)}`, background: "rgba(4,16,26,0.78)", display: "flex", alignItems: "center", gap: 8}}>
-          <div style={{width: 6, height: 6, borderRadius: "50%", background: statusColor, boxShadow: `0 0 11px ${alpha(statusColor, 0.85)}`}} />
-          <span style={{color: alpha(statusColor, 0.92), fontSize: 8.5, letterSpacing: 1.35, fontWeight: 900}}>{decline > 0.5 ? "PAYMENT HALTED" : "SESSION ACTIVE"}</span>
-        </div>
-      </div>
-
-      <div style={{position: "absolute", left: 0, right: 0, top: 68, height: 1, background: `linear-gradient(90deg, ${alpha(C.cyan, 0.34)}, ${alpha(C.line, 0.46)} 48%, transparent)`}} />
-    </div>
-  );
-};
-
-const ProgressRail: React.FC<{
-  time: number;
-  sceneOpacity: number;
-  decline: number;
-}> = ({time, sceneOpacity, decline}) => {
+const StatusRail: React.FC<{time: number}> = ({time}) => {
+  const reveal = outRamp(time, 1.15, 2.05);
+  const final = ramp(time, 9.15, 10.0);
   const stages = [
-    {label: "TOKENIZED", at: 2.36, color: C.cyan},
-    {label: "DEVICE VERIFIED", at: 3.1, color: C.mint},
-    {label: "CHANNEL SECURED", at: 3.83, color: C.blue},
-    {label: "BANK AUTHORIZATION", at: 4.86, color: C.red},
+    {label: "DISCOVER", at: 2.2},
+    {label: "UNDERSTAND", at: 5.1},
+    {label: "OPTIMIZE", at: 7.25},
+    {label: "MEASURE", at: 8.75},
   ];
-  const reveal = fastRamp(time, 0.95, 1.5);
-  const progress = interpolate(time, stages.map((stage) => stage.at), stages.map((_, index) => index / (stages.length - 1)), clamp);
-
+  const status =
+    time < 5.1
+      ? "MAPPING SEARCH SIGNALS"
+      : time < 7.25
+        ? "ANALYZING RELEVANCE"
+        : time < 8.75
+          ? "COMBINING RANKING SIGNALS"
+          : time < 9.55
+            ? "MEASURING VISIBILITY"
+            : "ORGANIC DISCOVERY READY";
   return (
-    <div style={{position: "absolute", left: 152, right: 152, top: 976, height: 66, opacity: sceneOpacity * reveal, zIndex: 42, fontFamily: "Arial, Helvetica, sans-serif"}}>
-      <div style={{position: "absolute", left: 0, right: 0, top: 12, height: 2, background: alpha(C.line, 0.72)}} />
-      <div style={{position: "absolute", left: 0, top: 12, width: `${progress * 100}%`, height: 2, background: `linear-gradient(90deg, ${C.cyan}, ${C.mint}, ${C.blue}, ${mix(C.amber, C.red, decline)})`, boxShadow: `0 0 13px ${alpha(decline > 0.5 ? C.red : C.cyan, 0.45)}`}} />
-      {stages.map((stage, index) => {
-        const x = (index / (stages.length - 1)) * 100;
-        const complete = fastRamp(time, stage.at, stage.at + 0.22);
-        const stageColor = index === stages.length - 1 ? mix(C.amber, C.red, decline) : stage.color;
-        return (
-          <div key={stage.label} style={{position: "absolute", left: `${x}%`, top: 0}}>
-            <div style={{position: "absolute", left: -7, top: 5, width: 15, height: 15, borderRadius: "50%", border: `2px solid ${mix("#365468", stageColor, complete)}`, background: mix(C.bg2, stageColor, complete), boxShadow: `0 0 ${complete * 14}px ${alpha(stageColor, 0.8)}`}} />
-            <div style={{position: "absolute", top: 31, left: index === 0 ? 0 : index === stages.length - 1 ? undefined : "50%", right: index === stages.length - 1 ? 0 : undefined, transform: index > 0 && index < stages.length - 1 ? "translateX(-50%)" : undefined, color: mix(C.muted, index === stages.length - 1 && decline > 0.5 ? C.red : C.white, complete), fontSize: 9.2, letterSpacing: 1.5, fontWeight: 900, whiteSpace: "nowrap"}}>{stage.label}</div>
-            <div style={{position: "absolute", top: 48, left: index === 0 ? 0 : index === stages.length - 1 ? undefined : "50%", right: index === stages.length - 1 ? 0 : undefined, transform: index > 0 && index < stages.length - 1 ? "translateX(-50%)" : undefined, color: alpha(stageColor, 0.72), fontSize: 7.5, letterSpacing: 1.2, fontWeight: 800, whiteSpace: "nowrap"}}>{index === stages.length - 1 && decline > 0.5 ? "DECLINED" : complete > 0.5 ? "COMPLETE" : "PENDING"}</div>
-          </div>
-        );
-      })}
+    <div
+      style={{
+        position: "absolute",
+        left: 78,
+        top: 960,
+        width: 1764,
+        height: 68,
+        opacity: reveal,
+        zIndex: 7,
+        fontFamily: "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          width: 1764,
+          top: 0,
+          height: 1,
+          background: `linear-gradient(90deg, transparent, ${alpha(C.cyan, 0.22)} 15%, ${alpha(C.cyan, 0.22)} 85%, transparent)`,
+        }}
+      />
+      <div style={{position: "absolute", left: 0, top: 27, display: "flex", gap: 28}}>
+        {stages.map((stage, index) => {
+          const active = ramp(time, stage.at, stage.at + 0.45);
+          const nextAt = stages[index + 1]?.at ?? 99;
+          const current = active * (1 - ramp(time, nextAt, nextAt + 0.35));
+          return (
+            <div key={stage.label} style={{display: "flex", alignItems: "center", gap: 10}}>
+              <div
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: active > 0.5 ? (final > 0.5 ? C.green : C.cyan) : C.line,
+                  boxShadow: current > 0.1 ? `0 0 14px ${C.cyan}` : "none",
+                }}
+              />
+              <div
+                style={{
+                  color: active > 0.5 ? C.text : C.muted,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.18em",
+                  opacity: 0.46 + active * 0.54,
+                }}
+              >
+                0{index + 1} {stage.label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 1180,
+          top: 24,
+          width: 584,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 13,
+          color: final > 0.5 ? C.green : C.text,
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: "0.18em",
+        }}
+      >
+        <span>{status}</span>
+        <span style={{color: C.muted}}>{final > 0.5 ? "100%" : `${Math.round(ramp(time, 2.2, 9.55) * 100)}%`}</span>
+      </div>
     </div>
+  );
+};
+
+const IntroBloom: React.FC<{time: number}> = ({time}) => {
+  const bloom = activityWindow(time, 0.18, 1.72, 0.46);
+  const expand = outRamp(time, 0.18, 1.45);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: CENTER.x - 290,
+        top: CENTER.y - 290,
+        width: 580,
+        height: 580,
+        borderRadius: "50%",
+        opacity: bloom,
+        transform: `scale(${0.15 + expand * 1.22})`,
+        background: `radial-gradient(circle, ${alpha(C.cyan, 0.18)}, ${alpha(C.cyan, 0.035)} 46%, transparent 70%)`,
+        border: `1px solid ${alpha(C.cyan, 0.17)}`,
+        boxShadow: `0 0 90px ${alpha(C.cyan, 0.12)}`,
+        zIndex: 1,
+      }}
+    />
+  );
+};
+
+const OutroVeil: React.FC<{time: number}> = ({time}) => {
+  const progress = ramp(time, 13.24, 14.18);
+  const opacity = activityWindow(time, 13.18, 14.48, 0.22);
+  return (
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: CENTER.x - 230,
+          top: CENTER.y - 230,
+          width: 460,
+          height: 460,
+          borderRadius: "50%",
+          transform: `scale(${0.2 + progress * 5.4})`,
+          opacity,
+          border: `2px solid ${alpha(C.cyan, 0.42 * (1 - progress))}`,
+          background: `radial-gradient(circle, transparent 0%, ${alpha(C.bg, 0.22)} 42%, ${alpha(C.bg, 0.92)} 73%)`,
+          boxShadow: `0 0 70px ${alpha(C.cyan, 0.14 * (1 - progress))}`,
+          zIndex: 20,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: ramp(time, 13.68, 14.22) * (1 - ramp(time, 14.22, 14.5)),
+          background: `radial-gradient(circle at 50% 49%, ${alpha(C.cyan, 0.08)}, ${alpha(C.bg, 0.98)} 74%)`,
+          zIndex: 19,
+        }}
+      />
+    </>
   );
 };
 
@@ -654,79 +1260,68 @@ export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const time = frame / fps;
-  const motionTime = Math.min(time, 12.62);
+  const heldTime = Math.min(time, 12.82);
+  const intro = ramp(time, 0.12, 0.86);
+  const outro = ramp(time, 13.36, 14.16);
+  const sceneOpacity = intro * (1 - outro);
 
-  const sceneOpacity = Math.min(
-    fastRamp(time, 0.05, 0.55),
-    1 - fastRamp(time, 13.42, 14.24),
-  );
-  const decline = fastRamp(time, 4.82, 5.2);
-  const resultDim = ramp(time, 5.05, 5.76) * 0.64;
-
-  const cameraScale = interpolate(
-    time,
-    [0, 1.8, 4.3, 5.18, 6.36, 13.48, 14.32, 14.82, 15],
-    [1.02, 1.02, 1.06, 1.105, 0.94, 0.94, 0.94, 1.02, 1.02],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-  const cameraX = interpolate(
-    time,
-    [0, 1.8, 4.3, 5.18, 6.36, 13.48, 14.32, 14.82, 15],
-    [38, 38, -54, -84, 0, 0, 0, 38, 38],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-  const cameraY = interpolate(
-    time,
-    [0, 4.3, 5.18, 6.36, 13.48, 14.32, 14.82, 15],
-    [8, 0, -14, 14, 14, 14, 8, 8],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-
-  const nodes = [
-    {x: 680, index: "01", label: "TOKENIZED", detail: "CARD DATA", kind: "token" as GlyphKind, appearAt: 1.03, arrival: 2.36},
-    {x: 910, index: "02", label: "DEVICE CHECK", detail: "IDENTITY SIGNAL", kind: "device" as GlyphKind, appearAt: 1.2, arrival: 3.1},
-    {x: 1140, index: "03", label: "ENCRYPTED", detail: "SECURE CHANNEL", kind: "lock" as GlyphKind, appearAt: 1.37, arrival: 3.83},
-    {x: 1370, index: "04", label: "BANK AUTH", detail: "ISSUER RESPONSE", kind: "bank" as GlyphKind, appearAt: 1.54, arrival: 4.86, failure: true},
-  ];
+  const introScale = interpolate(heldTime, [0, 1.72], [0.955, 1], {
+    ...clamp,
+    easing: easeOut,
+  });
+  const push = ramp(heldTime, 3.1, 8.75);
+  const pull = ramp(heldTime, 9.05, 11.45);
+  const cameraScale = introScale + push * 0.022 - pull * 0.064;
+  const cameraLock = 1 - ramp(heldTime, 10.7, 12.2);
+  const cameraX = Math.sin(heldTime * 0.44) * 7 * cameraLock + push * 4 - pull * 3;
+  const cameraY = Math.cos(heldTime * 0.36) * 4 * cameraLock - push * 2 + pull * 3;
 
   return (
-    <AbsoluteFill style={{background: C.bg, overflow: "hidden", fontFamily: "Arial, Helvetica, sans-serif"}}>
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, background: "radial-gradient(circle at 52% 46%, rgba(21,86,120,0.16), transparent 43%), radial-gradient(circle at 82% 52%, rgba(112,25,45,0.08), transparent 32%), linear-gradient(135deg, #02070d 0%, #06131f 53%, #02070d 100%)"}} />
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, opacity: 0.42, backgroundImage: "linear-gradient(rgba(58,139,184,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(58,139,184,0.09) 1px, transparent 1px), linear-gradient(rgba(58,139,184,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(58,139,184,0.03) 1px, transparent 1px)", backgroundSize: "54px 54px, 54px 54px, 13.5px 13.5px, 13.5px 13.5px", maskImage: "radial-gradient(ellipse at 50% 50%, black 0%, rgba(0,0,0,0.75) 62%, transparent 100%)"}} />
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, opacity: sceneOpacity}}>
-        {backgroundParticles.map((particle, index) => {
-          const drift = Math.sin(motionTime * 0.55 + particle.phase) * 7;
-          const twinkle = 0.62 + Math.sin(motionTime * 1.7 + particle.phase) * 0.38;
-          return (
-            <div key={index} style={{position: "absolute", left: particle.x, top: particle.y + drift, width: particle.radius * 2, height: particle.radius * 2, borderRadius: "50%", background: index % 10 === 0 ? C.red : C.cyan, opacity: particle.opacity * twinkle, boxShadow: `0 0 ${particle.radius * 7}px currentColor`}} />
-          );
-        })}
-      </div>
-
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, opacity: sceneOpacity, transform: `translate(${cameraX}px, ${cameraY}px) scale(${cameraScale})`, transformOrigin: "960px 540px"}}>
-        <div style={{position: "absolute", left: 98, right: 98, top: 302, height: 1, background: `linear-gradient(90deg, transparent, ${alpha(C.line, 0.34)}, ${alpha(C.line, 0.34)}, transparent)`, opacity: 1 - resultDim}} />
-        <div style={{position: "absolute", left: 114, top: 319, color: alpha(C.cyan, 0.48), fontSize: 9, letterSpacing: 2.2, fontWeight: 900, opacity: 1 - resultDim}}>PAYMENT TOKEN / ORIGIN</div>
-        <div style={{position: "absolute", left: 593, top: 319, color: alpha(C.blue, 0.48), fontSize: 9, letterSpacing: 2.2, fontWeight: 900, opacity: 1 - resultDim}}>REAL-TIME AUTHORIZATION ROUTE</div>
-        <div style={{position: "absolute", right: 177, top: 319, color: alpha(C.amber, 0.52), fontSize: 9, letterSpacing: 2.2, fontWeight: 900, opacity: 1 - resultDim}}>ISSUER GATE / RESPONSE</div>
-
-        <PaymentCard time={time} frame={frame} fps={fps} decline={decline} />
-        <AuthorizationRail time={time} motionTime={motionTime} decline={decline} />
-        {nodes.map((node) => (
-          <StageNode key={node.index} {...node} y={540} time={time} frame={frame} fps={fps} decline={decline} />
+    <AbsoluteFill
+      style={{
+        width: W,
+        height: H,
+        overflow: "hidden",
+        background: `linear-gradient(180deg, ${C.bg} 0%, #03101b 54%, ${C.bg} 100%)`,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: sceneOpacity,
+          transform: `translate(${cameraX}px, ${cameraY}px) scale(${cameraScale})`,
+          transformOrigin: `${CENTER.x}px ${CENTER.y}px`,
+        }}
+      >
+        <Background time={heldTime} />
+        <IntroBloom time={time} />
+        <Header time={time} />
+        <RouteLayer time={time} />
+        <Core time={time} frame={frame} fps={fps} />
+        {MODULES.map((module, index) => (
+          <ModuleCard
+            key={module.label}
+            module={module}
+            index={index}
+            time={time}
+            frame={frame}
+            fps={fps}
+          />
         ))}
-
-        <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, zIndex: 9, background: `rgba(2,7,13,${resultDim * 0.74})`, opacity: resultDim, pointerEvents: "none"}} />
-        <ImpactBurst time={time} decline={decline} />
-        <DeclinePanel time={time} frame={frame} fps={fps} sceneOpacity={1} />
+        <StatusRail time={time} />
       </div>
-
-      <Header time={time} sceneOpacity={sceneOpacity} decline={decline} />
-      <ProgressRail time={time} sceneOpacity={sceneOpacity} decline={decline} />
-
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, background: alpha(C.red, 0.1), opacity: activityWindow(time, 4.88, 5.45, 0.08), pointerEvents: "none"}} />
-      <div style={{position: "absolute", left: interpolate(time, [13.4, 14.28], [W + 360, -520], clamp), top: 0, width: 330, height: H, opacity: activityWindow(time, 13.36, 14.31, 0.14) * 0.76, transform: "skewX(-10deg)", background: `linear-gradient(90deg, transparent, ${alpha(C.red, 0.06)}, rgba(255,255,255,0.12), ${alpha(C.cyan, 0.045)}, transparent)`, boxShadow: `0 0 60px ${alpha(C.red, 0.08)}`, pointerEvents: "none"}} />
-      <div style={{position: "absolute", left: 0, right: 0, top: ((motionTime * 82) % (H + 160)) - 80, height: 82, opacity: sceneOpacity * 0.035 * (1 - decline * 0.7), background: "linear-gradient(180deg, transparent, rgba(53,216,255,0.32), transparent)", pointerEvents: "none"}} />
-      <div style={{position: "absolute", left: 0, top: 0, width: W, height: H, pointerEvents: "none", boxShadow: "inset 0 0 180px rgba(0,0,0,0.62)"}} />
+      <OutroVeil time={time} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at center, transparent 54%, rgba(0,5,10,0.38) 100%)",
+          zIndex: 30,
+        }}
+      />
     </AbsoluteFill>
   );
 };
