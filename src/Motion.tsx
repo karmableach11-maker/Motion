@@ -1,716 +1,169 @@
-import React from "react";
+import React from 'react';
 import {
-  Easing,
-  interpolate,
-  spring,
+  AbsoluteFill,
   useCurrentFrame,
   useVideoConfig,
-} from "remotion";
+  interpolate,
+  spring,
+  Easing,
+  random,
+} from 'remotion';
 
-const FullFrame: React.FC<{
-  children?: React.ReactNode;
-  style?: React.CSSProperties;
-}> = ({children, style}) => (
-  <div
-    style={{
-      position: "absolute",
-      inset: 0,
-      width: "100%",
-      height: "100%",
-      display: "flex",
-      ...style,
-    }}
-  >
-    {children}
-  </div>
-);
+/**
+ * PAYMENT DECLINED — ERROR ALERT (PREMIUM)
+ * A glassmorphic dark alert card springs in with a subtle error shake, its red
+ * border "charges", a red error icon pops as its ring draws and the X strokes on,
+ * radiating alert pulse rings, a breathing red glow, drifting embers and a
+ * "Try Again" button with a shine sweep. Premium UI motion for payment-failure /
+ * transaction-error / security content. Deterministic. IP-safe. 1920x1080·60fps.
+ */
 
-const palette = {
-  canvas: "#F4F8F5",
-  paper: "#FFFFFF",
-  ink: "#13251C",
-  muted: "#6E7C74",
-  faint: "#A8B4AD",
-  line: "#DCE6E0",
-  green: "#12B76A",
-  greenDark: "#087A49",
-  greenSoft: "#DFF7EA",
-  mint: "#89E4B5",
-};
+const INK = '#f4f6fb';
+const SUB = '#9aa6b8';
+const RED = '#ff4256';
+const RED2 = '#ff6f7d';
+const REDDK = '#c31d31';
+const clampO = { extrapolateLeft: 'clamp' as const, extrapolateRight: 'clamp' as const };
+const EO = Easing.out(Easing.cubic);
 
-const clamp = {
-  extrapolateLeft: "clamp" as const,
-  extrapolateRight: "clamp" as const,
-};
-
-const easeOut = Easing.bezier(0.22, 1, 0.36, 1);
-
-const appear = (
-  frame: number,
-  fps: number,
-  startSeconds: number,
-  durationSeconds = 0.48,
-) =>
-  interpolate(
-    frame,
-    [startSeconds * fps, (startSeconds + durationSeconds) * fps],
-    [0, 1],
-    {...clamp, easing: easeOut},
-  );
-
-const miniCheckPath = "M 4.5 9.5 L 8 13 L 15.5 5.5";
-
-const LockMark: React.FC<{size?: number; color?: string}> = ({
-  size = 18,
-  color = palette.greenDark,
-}) => (
-  <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
-    <rect
-      x="4"
-      y="8"
-      width="12"
-      height="9"
-      rx="3"
-      stroke={color}
-      strokeWidth="1.7"
-    />
-    <path
-      d="M7 8V6.6C7 4.6 8.35 3 10 3s3 1.6 3 3.6V8"
-      stroke={color}
-      strokeWidth="1.7"
-      strokeLinecap="round"
-    />
-    <circle cx="10" cy="12.5" r="1" fill={color} />
-  </svg>
-);
-
-const CornerBrackets: React.FC<{opacity: number}> = ({opacity}) => {
-  const shared: React.CSSProperties = {
-    position: "absolute",
-    width: 78,
-    height: 78,
-    opacity,
-    borderColor: "rgba(18, 183, 106, 0.22)",
-  };
-
-  return (
-    <div style={{position: "absolute", inset: 0, display: "flex"}}>
-      <div
-        style={{
-          ...shared,
-          left: 170,
-          top: 150,
-          borderLeft: "1px solid",
-          borderTop: "1px solid",
-        }}
-      />
-      <div
-        style={{
-          ...shared,
-          left: 1672,
-          top: 150,
-          borderRight: "1px solid",
-          borderTop: "1px solid",
-        }}
-      />
-      <div
-        style={{
-          ...shared,
-          left: 170,
-          top: 852,
-          borderLeft: "1px solid",
-          borderBottom: "1px solid",
-        }}
-      />
-      <div
-        style={{
-          ...shared,
-          left: 1672,
-          top: 852,
-          borderRight: "1px solid",
-          borderBottom: "1px solid",
-        }}
-      />
-    </div>
-  );
-};
-
-const Background: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const build = appear(frame, fps, 0, 0.7);
-  const drift = Math.sin(frame / 80) * 14;
-  const glowPulse = 0.92 + Math.sin(frame / 33) * 0.04;
-
-  const particles = [
-    {x: 250, y: 300, r: 3, delay: 0},
-    {x: 1660, y: 318, r: 4, delay: 16},
-    {x: 205, y: 760, r: 5, delay: 34},
-    {x: 1715, y: 730, r: 3, delay: 52},
-    {x: 420, y: 166, r: 3, delay: 70},
-    {x: 1510, y: 902, r: 4, delay: 88},
-  ];
-
-  return (
-    <FullFrame
-      style={{
-        overflow: "hidden",
-        background:
-          "linear-gradient(145deg, #F9FBF9 0%, #F2F8F4 48%, #EEF6F1 100%)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.38 * build,
-          backgroundImage:
-            "radial-gradient(circle, rgba(39, 92, 65, 0.18) 1.15px, transparent 1.15px)",
-          backgroundSize: "34px 34px",
-          backgroundPosition: `${drift}px ${-drift * 0.45}px`,
-          WebkitMaskImage:
-            "radial-gradient(ellipse 58% 60% at 50% 50%, black 4%, transparent 74%)",
-          maskImage:
-            "radial-gradient(ellipse 58% 60% at 50% 50%, black 4%, transparent 74%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "49%",
-          width: 1220,
-          height: 760,
-          transform: `translate(-50%, -50%) scale(${glowPulse})`,
-          borderRadius: "50%",
-          opacity: 0.66 * build,
-          background:
-            "radial-gradient(ellipse, rgba(95, 218, 153, 0.18) 0%, rgba(120, 225, 169, 0.07) 43%, rgba(244, 248, 245, 0) 73%)",
-          filter: "blur(8px)",
-        }}
-      />
-
-      <CornerBrackets opacity={0.85 * build} />
-
-      {particles.map((particle, index) => {
-        const float = Math.sin((frame + particle.delay) / 31) * 8;
-        const particleOpacity =
-          (0.22 + Math.sin((frame + particle.delay) / 27) * 0.08) * build;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: particle.x,
-              top: particle.y + float,
-              width: particle.r * 2,
-              height: particle.r * 2,
-              borderRadius: "50%",
-              background: index % 2 === 0 ? palette.green : palette.mint,
-              boxShadow: "0 0 16px rgba(18, 183, 106, 0.32)",
-              opacity: particleOpacity,
-            }}
-          />
-        );
-      })}
-    </FullFrame>
-  );
-};
-
-const SuccessBadge: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const badgeSpring = spring({
-    frame: Math.max(0, frame - 0.4 * fps),
-    fps,
-    config: {damping: 14, mass: 0.72, stiffness: 165},
-  });
-  const badgeScale = interpolate(badgeSpring, [0, 1], [0.42, 1]);
-  const checkDraw = interpolate(
-    frame,
-    [0.68 * fps, 1.16 * fps],
-    [0, 1],
-    {...clamp, easing: easeOut},
-  );
-  const ringPhase = appear(frame, fps, 0.38, 0.72);
-  const pulsePhase = interpolate(
-    frame,
-    [0.48 * fps, 1.38 * fps],
-    [0, 1],
-    clamp,
-  );
-  const orbitRotation = Math.min(Math.max(frame - 0.34 * fps, 0), fps * 1.1) * 3.25;
-
-  const sparks = [
-    {angle: -130, distance: 92, size: 7},
-    {angle: -43, distance: 104, size: 5},
-    {angle: 21, distance: 96, size: 6},
-    {angle: 148, distance: 102, size: 5},
-  ];
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 172,
-        height: 172,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transform: `scale(${badgeScale})`,
-        opacity: badgeSpring,
-      }}
-    >
-      {[0, 1].map((ring) => {
-        const local = Math.max(0, Math.min(1, pulsePhase * 1.45 - ring * 0.48));
-        return (
-          <div
-            key={ring}
-            style={{
-              position: "absolute",
-              width: 122,
-              height: 122,
-              borderRadius: "50%",
-              border: `${ring === 0 ? 2 : 1}px solid rgba(18, 183, 106, ${
-                ring === 0 ? 0.3 : 0.2
-              })`,
-              transform: `scale(${1 + local * (ring === 0 ? 0.56 : 0.88)})`,
-              opacity: (1 - local) * (ring === 0 ? 0.9 : 0.6),
-            }}
-          />
-        );
-      })}
-
-      <svg
-        width="158"
-        height="158"
-        viewBox="0 0 158 158"
-        fill="none"
-        style={{position: "absolute", transform: `rotate(${orbitRotation}deg)`}}
-      >
-        <circle
-          cx="79"
-          cy="79"
-          r="71"
-          stroke="rgba(18, 183, 106, 0.22)"
-          strokeWidth="2"
-          strokeDasharray="10 15"
-          strokeDashoffset={ringPhase * -14}
-        />
-        <circle cx="79" cy="8" r="4.5" fill={palette.green} opacity={ringPhase} />
-      </svg>
-
-      {sparks.map((spark, index) => {
-        const sparkProgress = interpolate(
-          frame,
-          [(0.48 + index * 0.045) * fps, (0.94 + index * 0.045) * fps],
-          [0, 1],
-          {...clamp, easing: easeOut},
-        );
-        const rad = (spark.angle * Math.PI) / 180;
-        const distance = spark.distance * (1 - sparkProgress * 0.33);
-        return (
-          <div
-            key={spark.angle}
-            style={{
-              position: "absolute",
-              left: 86 + Math.cos(rad) * distance - spark.size / 2,
-              top: 86 + Math.sin(rad) * distance - spark.size / 2,
-              width: spark.size,
-              height: spark.size,
-              borderRadius: index % 2 === 0 ? "50%" : 2,
-              background: index % 2 === 0 ? palette.green : palette.mint,
-              transform: `scale(${Math.sin(sparkProgress * Math.PI)}) rotate(${
-                sparkProgress * 90
-              }deg)`,
-              opacity: Math.sin(sparkProgress * Math.PI),
-            }}
-          />
-        );
-      })}
-
-      <svg width="122" height="122" viewBox="0 0 122 122" fill="none">
-        <defs>
-          <linearGradient id="badge-fill" x1="23" y1="12" x2="101" y2="112">
-            <stop stopColor="#2AD17F" />
-            <stop offset="0.58" stopColor={palette.green} />
-            <stop offset="1" stopColor={palette.greenDark} />
-          </linearGradient>
-          <linearGradient id="badge-gloss" x1="36" y1="16" x2="79" y2="89">
-            <stop stopColor="white" stopOpacity="0.42" />
-            <stop offset="1" stopColor="white" stopOpacity="0" />
-          </linearGradient>
-          <filter id="badge-shadow" x="-40%" y="-40%" width="180%" height="190%">
-            <feDropShadow dx="0" dy="13" stdDeviation="11" floodColor="#087A49" floodOpacity="0.22" />
-          </filter>
-        </defs>
-        <circle cx="61" cy="61" r="52" fill="url(#badge-fill)" filter="url(#badge-shadow)" />
-        <path
-          d="M29 45C37 25 59 14 80 20C92 23 101 31 106 41C95 32 82 28 69 29C51 30 37 36 29 45Z"
-          fill="url(#badge-gloss)"
-        />
-        <path
-          d="M39 62.5L54 77L84.5 44.5"
-          pathLength={1}
-          stroke="white"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray={1}
-          strokeDashoffset={1 - checkDraw}
-        />
-      </svg>
-    </div>
-  );
-};
-
-const VerificationRail: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const railAppear = appear(frame, fps, 1.14, 0.42);
-  const fillProgress = interpolate(
-    frame,
-    [1.34 * fps, 2.34 * fps],
-    [0, 1],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-  const steps = [
-    {label: "INITIATED", x: 18, delay: 1.28},
-    {label: "VERIFIED", x: 280, delay: 1.72},
-    {label: "RECEIVED", x: 542, delay: 2.14},
-  ];
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 560,
-        height: 68,
-        display: "flex",
-        marginTop: 38,
-        opacity: railAppear,
-        transform: `translateY(${interpolate(railAppear, [0, 1], [12, 0])}px)`,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          right: 18,
-          top: 15,
-          height: 3,
-          display: "flex",
-          borderRadius: 999,
-          background: palette.line,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${fillProgress * 100}%`,
-            borderRadius: 999,
-            background: `linear-gradient(90deg, ${palette.mint}, ${palette.green})`,
-            boxShadow: "0 0 13px rgba(18, 183, 106, 0.35)",
-          }}
-        />
-      </div>
-
-      {steps.map((step) => {
-        const stepSpring = spring({
-          frame: Math.max(0, frame - step.delay * fps),
-          fps,
-          config: {damping: 16, mass: 0.65, stiffness: 180},
-        });
-        return (
-          <div
-            key={step.label}
-            style={{
-              position: "absolute",
-              left: step.x,
-              top: 0,
-              width: 112,
-              transform: `translateX(-50%)`,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-            }}
-          >
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: stepSpring > 0.5 ? palette.green : palette.paper,
-                border: `2px solid ${
-                  stepSpring > 0.5 ? palette.green : palette.line
-                }`,
-                transform: `scale(${interpolate(stepSpring, [0, 1], [0.72, 1])})`,
-                boxShadow:
-                  stepSpring > 0.7 ? "0 5px 13px rgba(18, 183, 106, 0.18)" : "none",
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path
-                  d={miniCheckPath}
-                  pathLength={1}
-                  stroke="white"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeDasharray={1}
-                  strokeDashoffset={1 - stepSpring}
-                />
-              </svg>
-            </div>
-            <div
-              style={{
-                marginTop: 11,
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: 15,
-                lineHeight: 1,
-                fontWeight: 750,
-                letterSpacing: 1.35,
-                color: stepSpring > 0.7 ? palette.ink : palette.faint,
-                opacity: interpolate(stepSpring, [0, 1], [0.35, 1]),
-              }}
-            >
-              {step.label}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const StatusCard: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
-  const cardSpring = spring({
-    frame: Math.max(0, frame - 0.08 * fps),
-    fps,
-    config: {damping: 18, mass: 0.82, stiffness: 145},
-  });
-  const cardOpacity = appear(frame, fps, 0.05, 0.38);
-  const labelIn = appear(frame, fps, 0.65, 0.35);
-  const titleIn = appear(frame, fps, 0.82, 0.52);
-  const copyIn = appear(frame, fps, 1.02, 0.5);
-  const pillSpring = spring({
-    frame: Math.max(0, frame - 2.16 * fps),
-    fps,
-    config: {damping: 17, mass: 0.72, stiffness: 175},
-  });
-  const sheen = interpolate(
-    frame,
-    [1.82 * fps, 2.82 * fps],
-    [-28, 128],
-    {...clamp, easing: Easing.inOut(Easing.quad)},
-  );
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 980,
-        height: 650,
-        borderRadius: 42,
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        paddingTop: 42,
-        boxSizing: "border-box",
-        background:
-          "linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.965) 58%, rgba(248,252,249,0.98) 100%)",
-        border: "1px solid rgba(150, 180, 163, 0.28)",
-        boxShadow:
-          "0 38px 90px rgba(43, 81, 59, 0.12), 0 10px 30px rgba(55, 92, 70, 0.07), inset 0 1px 0 rgba(255,255,255,0.9)",
-        opacity: cardOpacity,
-        transform: `translateY(${interpolate(cardSpring, [0, 1], [54, 0])}px) scale(${interpolate(
-          cardSpring,
-          [0, 1],
-          [0.94, 1],
-        )})`,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: 6,
-          background: `linear-gradient(90deg, transparent 8%, ${palette.mint} 34%, ${palette.green} 50%, ${palette.mint} 66%, transparent 92%)`,
-          opacity: 0.74,
-          transform: `scaleX(${interpolate(cardSpring, [0, 1], [0, 1])})`,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          background: `linear-gradient(108deg, transparent ${sheen - 18}%, rgba(255,255,255,0.78) ${sheen}%, transparent ${sheen + 18}%)`,
-          opacity: 0.6,
-        }}
-      />
-
-      <div
-        style={{
-          height: 30,
-          padding: "0 15px",
-          borderRadius: 999,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          color: palette.greenDark,
-          background: palette.greenSoft,
-          border: "1px solid rgba(18, 183, 106, 0.14)",
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 14,
-          fontWeight: 800,
-          letterSpacing: 1.6,
-          opacity: labelIn,
-          transform: `translateY(${interpolate(labelIn, [0, 1], [8, 0])}px)`,
-        }}
-      >
-        <LockMark size={15} />
-        SECURE TRANSFER
-      </div>
-
-      <div style={{height: 11}} />
-      <SuccessBadge frame={frame} fps={fps} />
-
-      <div
-        style={{
-          overflow: "hidden",
-          display: "flex",
-          marginTop: 4,
-          padding: "0 22px 4px",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "Inter, Arial, sans-serif",
-            fontSize: 64,
-            lineHeight: 1.06,
-            fontWeight: 780,
-            letterSpacing: -2.25,
-            color: palette.ink,
-            opacity: titleIn,
-            transform: `translateY(${interpolate(titleIn, [0, 1], [42, 0])}px)`,
-          }}
-        >
-          Payment received
-        </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: 13,
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 24,
-          lineHeight: 1.3,
-          fontWeight: 450,
-          letterSpacing: -0.2,
-          color: palette.muted,
-          opacity: copyIn,
-          transform: `translateY(${interpolate(copyIn, [0, 1], [18, 0])}px)`,
-        }}
-      >
-        Transaction completed successfully
-      </div>
-
-      <VerificationRail frame={frame} fps={fps} />
-
-      <div
-        style={{
-          marginTop: 28,
-          height: 38,
-          padding: "0 17px",
-          borderRadius: 999,
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          background: "rgba(232, 247, 238, 0.9)",
-          border: "1px solid rgba(18, 183, 106, 0.16)",
-          color: palette.greenDark,
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 15,
-          fontWeight: 800,
-          letterSpacing: 1.45,
-          opacity: pillSpring,
-          transform: `translateY(${interpolate(pillSpring, [0, 1], [12, 0])}px) scale(${interpolate(
-            pillSpring,
-            [0, 1],
-            [0.88, 1],
-          )})`,
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: palette.green,
-            boxShadow: "0 0 0 5px rgba(18, 183, 106, 0.11)",
-          }}
-        />
-        COMPLETED
-      </div>
-    </div>
-  );
-};
-
-const MotionCanvas: React.FC<{
-  frame: number;
-  fps: number;
-  durationInFrames: number;
-}> = ({frame, fps, durationInFrames}) => {
-  const fadeIn = interpolate(frame, [0, Math.max(1, 0.12 * fps)], [0, 1], clamp);
-  const outroLength = Math.min(0.72 * fps, Math.max(1, durationInFrames * 0.16));
-  const outroStart = Math.max(0, durationInFrames - outroLength);
-  const fadeOut = interpolate(
-    frame,
-    [outroStart, Math.max(outroStart + 1, durationInFrames - 1)],
-    [1, 0],
-    {...clamp, easing: Easing.inOut(Easing.quad)},
-  );
-  const endShift = interpolate(frame, [outroStart, durationInFrames - 1], [0, -12], clamp);
-  const endScale = interpolate(frame, [outroStart, durationInFrames - 1], [1, 0.985], clamp);
-
-  return (
-    <FullFrame
-      style={{
-        background: palette.canvas,
-        color: palette.ink,
-        overflow: "hidden",
-        opacity: fadeIn * fadeOut,
-      }}
-    >
-      <Background frame={frame} fps={fps} />
-
-      <FullFrame
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transform: `translateY(${endShift}px) scale(${endScale})`,
-        }}
-      >
-        <StatusCard frame={frame} fps={fps} />
-      </FullFrame>
-    </FullFrame>
-  );
-};
+const MX = 590, MY = 246, MW = 740, MH = 560, MR = 32;
+const CX = 960;
+const IY = 392;
+const IR = 74;
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps, durationInFrames} = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
+
+  const bgOp = interpolate(frame, [0, 28], [0, 1], clampO);
+  const intro = spring({ frame: frame - 8, fps, config: { damping: 13, stiffness: 95, mass: 1 } });
+  const mScale = interpolate(intro, [0, 1], [0.82, 1]);
+  const mOp = interpolate(frame, [8, 26], [0, 1], clampO);
+  const shake = frame >= 22 && frame < 58 ? Math.exp(-(frame - 22) / 11) * Math.sin((frame - 22) * 0.95) * 16 : 0;
+  const floatY = Math.sin(frame * 0.04) * 3;
+
+  const borderDraw = interpolate(frame, [14, 44], [0, 1], { ...clampO, easing: EO });
+  const ringDraw = interpolate(frame, [34, 60], [0, 1], { ...clampO, easing: EO });
+  const iconPop = spring({ frame: frame - 40, fps, config: { damping: 11, stiffness: 120, mass: 0.8 } });
+  const xDraw = interpolate(frame, [52, 74], [0, 1], { ...clampO, easing: EO });
+  const flash = interpolate(frame, [54, 62, 78], [0, 0.9, 0], clampO);
+  const iconBreath = 1 + 0.035 * Math.sin(frame * 0.12);
+  const glowBreath = 0.4 + 0.28 * (0.5 + 0.5 * Math.sin(frame * 0.09));
+
+  const titleOp = interpolate(frame, [62, 84], [0, 1], clampO);
+  const titleY = interpolate(frame, [62, 84], [16, 0], { ...clampO, easing: EO });
+  const subOp = interpolate(frame, [76, 98], [0, 1], clampO);
+  const btnOp = interpolate(frame, [90, 112], [0, 1], clampO);
+  const btnY = interpolate(frame, [90, 112], [14, 0], { ...clampO, easing: EO });
+  const linkOp = interpolate(frame, [102, 122], [0, 1], clampO);
+
+  const C = 2 * Math.PI * IR;
+
+  /* alert pulse rings */
+  const rings = [];
+  if (frame > 58) {
+    for (let k = 0; k < 3; k++) {
+      const local = frame - 58 - k * 18;
+      if (local <= 0) continue;
+      const p = (local % 60) / 60;
+      rings.push(<circle key={k} cx={CX} cy={IY} r={IR + p * 150} fill="none" stroke={RED} strokeWidth={(1 - p) * 4 + 0.5} opacity={(1 - p) * 0.45} />);
+    }
+  }
+
+  /* embers */
+  const embers = [];
+  for (let i = 0; i < 26; i++) {
+    const ex = random(`ex${i}`) * 1920;
+    const ey = 1120 - ((frame * (0.5 + random(`es${i}`) * 0.8) + random(`ep${i}`) * 1100) % 1160);
+    const s = 1.4 + random(`er${i}`) * 3;
+    embers.push(<circle key={i} cx={ex} cy={ey} r={s} fill={random(`ec${i}`) > 0.5 ? RED : '#ff8a5c'} opacity={0.06 + random(`eo${i}`) * 0.14} filter="url(#dsoft)" />);
+  }
+
+  const shineX = -160 + ((frame * 7) % 560);
 
   return (
-    <MotionCanvas
-      frame={frame}
-      fps={fps}
-      durationInFrames={durationInFrames}
-    />
+    <AbsoluteFill style={{ backgroundColor: '#08070c' }}>
+      <svg width={width} height={height} viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+        <defs>
+          <radialGradient id="dbg" cx="50%" cy="42%" r="70%">
+            <stop offset="0" stopColor="#1c0f16" />
+            <stop offset="0.5" stopColor="#100a10" />
+            <stop offset="1" stopColor="#06050a" />
+          </radialGradient>
+          <linearGradient id="modal" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#1a1d29" />
+            <stop offset="1" stopColor="#111219" />
+          </linearGradient>
+          <linearGradient id="mborder" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ff6f7d" />
+            <stop offset="0.5" stopColor={RED} />
+            <stop offset="1" stopColor="#8f1524" />
+          </linearGradient>
+          <radialGradient id="iconFill" cx="42%" cy="36%" r="70%">
+            <stop offset="0" stopColor="#ff7a86" />
+            <stop offset="0.55" stopColor={RED} />
+            <stop offset="1" stopColor={REDDK} />
+          </radialGradient>
+          <radialGradient id="redGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor={RED} stopOpacity="0.6" />
+            <stop offset="1" stopColor={RED} stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="btnG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ff5b6a" />
+            <stop offset="1" stopColor="#d8283b" />
+          </linearGradient>
+          <filter id="dsoft" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="12" /></filter>
+          <filter id="dglow" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          <filter id="mshadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="26" stdDeviation="40" floodColor="#000" floodOpacity="0.55" /></filter>
+          <filter id="dgrain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" stitchTiles="stitch" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0" /></filter>
+          <radialGradient id="dvig" cx="50%" cy="50%" r="72%"><stop offset="0.55" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.5" /></radialGradient>
+          <clipPath id="btnClip"><rect x={CX - 150} y="694" width="300" height="66" rx="33" /></clipPath>
+        </defs>
+
+        <rect x="0" y="0" width="1920" height="1080" fill="url(#dbg)" />
+        <g opacity={bgOp}>
+          <circle cx={CX} cy={460} r={430} fill="url(#redGlow)" opacity={glowBreath} filter="url(#dsoft)" />
+          {embers}
+        </g>
+
+        {/* MODAL */}
+        <g opacity={mOp} transform={`translate(${(shake).toFixed(2)} ${floatY.toFixed(2)}) translate(${CX} ${MY + MH / 2}) scale(${mScale.toFixed(3)}) translate(${-CX} ${-(MY + MH / 2)})`}>
+          <rect x={MX} y={MY} width={MW} height={MH} rx={MR} fill="url(#modal)" filter="url(#mshadow)" />
+          <rect x={MX} y={MY} width={MW} height={MH} rx={MR} fill="none" stroke={RED} strokeWidth="6" opacity="0.16" filter="url(#dglow)" />
+          {/* charging border */}
+          <rect x={MX} y={MY} width={MW} height={MH} rx={MR} fill="none" stroke="url(#mborder)" strokeWidth="2.6" pathLength={1} strokeDasharray="1" strokeDashoffset={1 - borderDraw} filter="url(#dglow)" />
+          <rect x={MX + 1} y={MY + 1} width={MW - 2} height="2" rx="1" fill="#ffffff" opacity="0.12" />
+
+          {/* alert rings + icon */}
+          {rings}
+          <circle cx={CX} cy={IY} r={140} fill="url(#redGlow)" opacity={0.5 + 0.3 * flash + 0.15 * Math.sin(frame * 0.12)} />
+          <g transform={`translate(${CX} ${IY}) scale(${(iconPop * iconBreath).toFixed(3)}) translate(${-CX} ${-IY})`}>
+            <circle cx={CX} cy={IY} r={IR} fill="url(#iconFill)" opacity="0.16" />
+            <circle cx={CX} cy={IY} r={IR} fill="none" stroke={RED} strokeWidth="6" pathLength={1} strokeDasharray="1" strokeDashoffset={1 - ringDraw} filter="url(#dglow)" />
+            <g filter="url(#dglow)" stroke="#fff" strokeWidth="8" strokeLinecap="round">
+              <line x1={CX - 26} y1={IY - 26} x2={CX - 26 + 52 * xDraw} y2={IY - 26 + 52 * xDraw} />
+              <line x1={CX + 26} y1={IY - 26} x2={CX + 26 - 52 * xDraw} y2={IY - 26 + 52 * xDraw} />
+            </g>
+            <circle cx={CX} cy={IY} r={IR} fill="#fff" opacity={flash * 0.5} />
+          </g>
+
+          {/* title + subtitle */}
+          <text x={CX} y={548 + titleY} fontSize="52" fontWeight="800" fill={INK} textAnchor="middle" opacity={titleOp} fontFamily="Inter, 'Segoe UI', Arial, sans-serif" letterSpacing="0.5">Payment Declined</text>
+          <text x={CX} y="596" fontSize="23" fontWeight="500" fill={SUB} textAnchor="middle" opacity={subOp} fontFamily="Inter, 'Segoe UI', Arial, sans-serif">Your transaction could not be processed.</text>
+          <text x={CX} y="628" fontSize="23" fontWeight="500" fill={SUB} textAnchor="middle" opacity={subOp} fontFamily="Inter, 'Segoe UI', Arial, sans-serif">Please check your details or try another method.</text>
+
+          {/* button */}
+          <g opacity={btnOp} transform={`translate(0 ${btnY.toFixed(2)})`}>
+            <rect x={CX - 150} y="694" width="300" height="66" rx="33" fill="url(#btnG)" filter="url(#dglow)" />
+            <g clipPath="url(#btnClip)"><rect x={CX - 150 + shineX} y="690" width="70" height="74" fill="#fff" opacity="0.16" transform="skewX(-18)" /></g>
+            <text x={CX} y="736" fontSize="26" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">Try Again</text>
+          </g>
+          <text x={CX} y="792" fontSize="20" fontWeight="600" fill={SUB} textAnchor="middle" opacity={linkOp} letterSpacing="0.5" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">Use a different payment method</text>
+        </g>
+
+        <rect x="0" y="0" width="1920" height="1080" filter="url(#dgrain)" opacity="0.035" style={{ mixBlendMode: 'overlay' }} />
+        <rect x="0" y="0" width="1920" height="1080" fill="url(#dvig)" />
+      </svg>
+    </AbsoluteFill>
   );
 };
