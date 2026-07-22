@@ -1,603 +1,1069 @@
 import React from "react";
 import {
-  AbsoluteFill,
+  Easing,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
-type Vec3 = {x: number; y: number; z: number};
-type IconKind =
-  | "bit"
-  | "folder"
-  | "document"
-  | "image"
-  | "chart"
-  | "cloud"
-  | "profile"
-  | "lock";
-
-type WorldNode = Vec3 & {
-  id: number;
-  kind: IconKind;
-  size: number;
-  brightness: number;
-  phase: number;
-  hero?: boolean;
-};
-
-type Edge = {
-  a: number;
-  b: number;
-  phase: number;
-  energy: number;
-};
-
-type Camera = {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  pitch: number;
-  roll: number;
-};
-
-type Projected = {
-  x: number;
-  y: number;
-  depth: number;
-  scale: number;
-  visible: boolean;
-};
+/**
+ * Original Remotion reconstruction of the supplied SEO-network reference.
+ * Every visual is generated locally with SVG/CSS; there are no runtime assets,
+ * logos, hotlinks, or non-deterministic values.
+ */
 
 const W = 1920;
 const H = 1080;
-const FOCAL = 1040;
-const NEAR = 115;
-const FAR = 8800;
-const TAU = Math.PI * 2;
+export const MOTION_FPS = 60;
+export const MOTION_DURATION_IN_FRAMES = 720;
+export const MOTION_WIDTH = W;
+export const MOTION_HEIGHT = H;
+const FONT_CONDENSED =
+  '"Arial Narrow", "Roboto Condensed", "Helvetica Neue Condensed", Impact, sans-serif';
+const FONT_UI = 'Inter, "Helvetica Neue", Arial, sans-serif';
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, value));
-
-const fract = (value: number) => value - Math.floor(value);
-
-const hash01 = (seed: number) => {
-  let value = (seed + 0x9e3779b9) >>> 0;
-  value = Math.imul(value ^ (value >>> 16), 0x21f0aaad);
-  value = Math.imul(value ^ (value >>> 15), 0x735a2d97);
-  value ^= value >>> 15;
-  return (value >>> 0) / 4294967296;
+const palette = {
+  black: "#010711",
+  navy: "#02101E",
+  navyLift: "#061B2D",
+  cyan: "#34E0FA",
+  cyanBright: "#BDF9FF",
+  blue: "#249AF1",
+  teal: "#34D8C9",
+  white: "#FFFFFF",
+  ice: "#D6E5EC",
+  lavender: "#CBD1DE",
+  magenta: "#D12778",
+  lime: "#8BCB2C",
+  amber: "#D7A82D",
 };
 
-const HERO_NODES: Omit<WorldNode, "id">[] = [
-  {x: -180, y: -88, z: 1235, kind: "folder", size: 92, brightness: 1, phase: 0.14, hero: true},
-  {x: -185, y: 112, z: 1915, kind: "document", size: 88, brightness: 1, phase: 0.27, hero: true},
-  {x: -205, y: 86, z: 2715, kind: "folder", size: 84, brightness: 0.96, phase: 0.39, hero: true},
-  {x: 55, y: -142, z: 3075, kind: "document", size: 94, brightness: 1, phase: 0.45, hero: true},
-  {x: -190, y: 54, z: 3390, kind: "image", size: 86, brightness: 0.94, phase: 0.51, hero: true},
-  {x: -170, y: -82, z: 4265, kind: "chart", size: 88, brightness: 1, phase: 0.63, hero: true},
-  {x: -188, y: 12, z: 4620, kind: "cloud", size: 90, brightness: 0.98, phase: 0.7, hero: true},
-  {x: 185, y: 92, z: 5420, kind: "image", size: 96, brightness: 1, phase: 0.83, hero: true},
-  {x: 172, y: -92, z: 6020, kind: "profile", size: 86, brightness: 0.96, phase: 0.92, hero: true},
-  {x: -168, y: 94, z: 6420, kind: "lock", size: 90, brightness: 1, phase: 0.98, hero: true},
+const clamp = {
+  extrapolateLeft: "clamp" as const,
+  extrapolateRight: "clamp" as const,
+};
+
+const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
+const easeInOut = Easing.bezier(0.65, 0, 0.35, 1);
+
+const phase = (
+  frame: number,
+  fps: number,
+  startSeconds: number,
+  endSeconds: number,
+  easing: (value: number) => number = easeOut,
+) =>
+  interpolate(
+    frame,
+    [startSeconds * fps, endSeconds * fps],
+    [0, 1],
+    {...clamp, easing},
+  );
+
+const FullFrame: React.FC<{
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}> = ({children, style}) => (
+  <div
+    style={{
+      position: "absolute",
+      inset: 0,
+      width: "100%",
+      height: "100%",
+      overflow: "hidden",
+      display: "flex",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const seededRandom = (seed: number) => {
+  let value = seed >>> 0;
+  return () => {
+    value += 0x6d2b79f5;
+    let result = value;
+    result = Math.imul(result ^ (result >>> 15), result | 1);
+    result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
+    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+type MeshNode = {
+  x: number;
+  y: number;
+  depth: number;
+  phase: number;
+  bright: boolean;
+};
+
+type MeshEdge = {
+  a: number;
+  b: number;
+  strength: number;
+  accent: number;
+};
+
+const makeMesh = () => {
+  const random = seededRandom(483123487);
+  const nodes: MeshNode[] = [];
+  const columns = 15;
+  const rows = 10;
+
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      nodes.push({
+        x: -150 + column * 158 + (random() - 0.5) * 128,
+        y: -110 + row * 142 + (random() - 0.5) * 112,
+        depth: 0.35 + random() * 0.9,
+        phase: random() * Math.PI * 2,
+        bright: random() > 0.79,
+      });
+    }
+  }
+
+  const edges: MeshEdge[] = [];
+  const addEdge = (a: number, b: number, strength: number) => {
+    if (b < 0 || b >= nodes.length) return;
+    edges.push({
+      a,
+      b,
+      strength,
+      accent: random(),
+    });
+  };
+
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      const index = row * columns + column;
+      if (column < columns - 1) addEdge(index, index + 1, 0.45 + random() * 0.5);
+      if (row < rows - 1) addEdge(index, index + columns, 0.32 + random() * 0.5);
+      if (row < rows - 1 && column < columns - 1 && random() > 0.23) {
+        addEdge(index, index + columns + 1, 0.28 + random() * 0.52);
+      }
+      if (row < rows - 1 && column > 0 && random() > 0.58) {
+        addEdge(index, index + columns - 1, 0.25 + random() * 0.44);
+      }
+    }
+  }
+
+  return {nodes, edges};
+};
+
+const mesh = makeMesh();
+
+type MarkerType =
+  | "square"
+  | "diamond"
+  | "triangle"
+  | "hex"
+  | "target"
+  | "mail"
+  | "brackets"
+  | "bars";
+
+type MarkerDatum = {
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  type: MarkerType;
+  phase: number;
+  depth: number;
+};
+
+const makeMarkers = (): MarkerDatum[] => {
+  const random = seededRandom(20260822);
+  const types: MarkerType[] = [
+    "square",
+    "diamond",
+    "triangle",
+    "hex",
+    "target",
+    "mail",
+    "brackets",
+    "bars",
+  ];
+  const colors = [palette.magenta, palette.lime, palette.amber, palette.cyan];
+
+  return Array.from({length: 52}, (_, index) => ({
+    x: 30 + random() * 1860,
+    y: 30 + random() * 1020,
+    size: 12 + random() * 26,
+    color: colors[index % colors.length],
+    type: types[index % types.length],
+    phase: random() * Math.PI * 2,
+    depth: 0.35 + random() * 0.85,
+  }));
+};
+
+const markers = makeMarkers();
+
+const microWords = [
+  "OPTIMIZATION",
+  "STRATEGY",
+  "SEARCH",
+  "INDEXING",
+  "CRAWLING",
+  "CONTENT",
+  "MARKETING",
+  "RANKING",
+  "RESULTS",
+  "BOUNCE",
+  "KEYWORDS",
+  "LINK",
+  "RELEVANCE",
+  "VISIBILITY",
+  "PAGE RANK",
+  "SOCIAL MEDIA",
 ];
 
-const GENERATED_NODES: WorldNode[] = Array.from({length: 270}, (_, index) => {
-  const spread = 0.42 + Math.pow(hash01(index * 17 + 4), 0.7) * 0.72;
-  const kindRoll = hash01(index * 41 + 9);
-  const kind: IconKind =
-    kindRoll < 0.1
-      ? "bit"
-      : kindRoll < 0.27
-        ? "folder"
-        : kindRoll < 0.52
-          ? "document"
-          : kindRoll < 0.68
-            ? "image"
-              : kindRoll < 0.8
-              ? "profile"
-              : kindRoll < 0.9
-                ? "cloud"
-                : kindRoll < 0.97
-                  ? "chart"
-                  : "lock";
-  return {
-    id: index + HERO_NODES.length,
-    x: (hash01(index * 59 + 5) * 2 - 1) * 1180 * spread,
-    y: (hash01(index * 73 + 7) * 2 - 1) * 650 * spread,
-    z: 260 + hash01(index * 97 + 11) * 9700,
-    kind,
-    size: kind === "bit" ? 8 + hash01(index * 107 + 13) * 12 : 35 + hash01(index * 109 + 19) * 34,
-    brightness: 0.58 + hash01(index * 127 + 23) * 0.42,
-    phase: hash01(index * 131 + 29),
-  };
-});
-
-const NODES: WorldNode[] = [
-  ...HERO_NODES.map((node, id) => ({...node, id})),
-  ...GENERATED_NODES,
-].sort((a, b) => a.id - b.id);
-
-const makeEdges = () => {
-  const pairs = new Set<string>();
-  const edges: Edge[] = [];
-  const add = (a: number, b: number, energy: number) => {
-    if (a === b) return;
-    const low = Math.min(a, b);
-    const high = Math.max(a, b);
-    const key = `${low}-${high}`;
-    if (pairs.has(key)) return;
-    pairs.add(key);
-    edges.push({
-      a: low,
-      b: high,
-      phase: hash01(low * 331 + high * 197 + 17),
-      energy,
-    });
-  };
-
-  NODES.forEach((node, index) => {
-    const nearest = NODES
-      .map((candidate, candidateIndex) => {
-        if (candidateIndex === index) return {candidateIndex, distance: Number.POSITIVE_INFINITY};
-        const dx = candidate.x - node.x;
-        const dy = candidate.y - node.y;
-        const dz = (candidate.z - node.z) * 0.64;
-        return {candidateIndex, distance: Math.hypot(dx, dy, dz)};
-      })
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, node.kind === "bit" ? 2 : 3);
-
-    nearest.forEach(({candidateIndex, distance}, rank) => {
-      if (distance < 1450) add(index, candidateIndex, 0.76 + (2 - rank) * 0.12);
-    });
-
-    if (index % 9 === 0) {
-      const target = (index + 13 + Math.floor(hash01(index * 181 + 3) * 17)) % NODES.length;
-      if (Math.abs(NODES[target].z - node.z) < 1850) add(index, target, 0.72);
-    }
-  });
-
-  return edges;
-};
-
-const EDGES = makeEdges();
-
-const getCamera = (seconds: number): Camera => ({
-  x:
-    -60 +
-    seconds * 8.5 +
-    Math.sin(seconds * 0.31 + 0.4) * 92 +
-    Math.sin(seconds * 0.097) * 38,
-  y:
-    18 +
-    Math.sin(seconds * 0.27 + 1.1) * 68 +
-    Math.sin(seconds * 0.11 + 0.2) * 30,
-  z: seconds * 308,
-  yaw: -0.036 + Math.sin(seconds * 0.2 + 0.3) * 0.045 + seconds * 0.0017,
-  pitch: 0.018 + Math.sin(seconds * 0.17 + 1.4) * 0.032,
-  roll: Math.sin(seconds * 0.14 - 0.8) * 0.022,
-});
-
-const project = (point: Vec3, camera: Camera): Projected => {
-  const dx = point.x - camera.x;
-  const dy = point.y - camera.y;
-  const dz = point.z - camera.z;
-
-  const cy = Math.cos(camera.yaw);
-  const sy = Math.sin(camera.yaw);
-  const xYaw = cy * dx - sy * dz;
-  const zYaw = sy * dx + cy * dz;
-
-  const cp = Math.cos(camera.pitch);
-  const sp = Math.sin(camera.pitch);
-  const yPitch = cp * dy - sp * zYaw;
-  const zPitch = sp * dy + cp * zYaw;
-
-  const cr = Math.cos(camera.roll);
-  const sr = Math.sin(camera.roll);
-  const xRoll = cr * xYaw - sr * yPitch;
-  const yRoll = sr * xYaw + cr * yPitch;
-  const scale = FOCAL / Math.max(zPitch, NEAR);
-  const x = W / 2 + xRoll * scale;
-  const y = H / 2 + yRoll * scale;
-
-  return {
-    x,
-    y,
-    depth: zPitch,
-    scale,
-    visible:
-      zPitch > NEAR &&
-      zPitch < FAR &&
-      x > -700 &&
-      x < W + 700 &&
-      y > -520 &&
-      y < H + 520,
-  };
-};
-
-const depthOpacity = (depth: number) => {
-  const nearFade = interpolate(depth, [NEAR, 245], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const farFade = interpolate(depth, [5600, FAR], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  return nearFade * farFade;
-};
-
-const nodePosition = (node: WorldNode, seconds: number): Vec3 => {
-  const float = node.kind === "bit" ? 5 : 11;
-  return {
-    x: node.x + Math.sin(seconds * (0.23 + node.phase * 0.1) + node.phase * TAU) * float,
-    y: node.y + Math.cos(seconds * (0.2 + node.phase * 0.11) + node.phase * TAU) * float * 0.74,
-    z: node.z + Math.sin(seconds * 0.16 + node.phase * TAU) * float * 0.8,
-  };
-};
-
-const Glyph: React.FC<{
-  kind: IconKind;
+type MicroWord = {
+  x: number;
+  y: number;
+  text: string;
+  size: number;
   color: string;
-  fill: string;
-  strokeWidth: number;
-}> = ({kind, color, fill, strokeWidth}) => {
-  if (kind === "bit") {
+  opacity: number;
+  phase: number;
+  depth: number;
+};
+
+const makeMicroWords = (): MicroWord[] => {
+  const random = seededRandom(31415926);
+  const colors = [palette.blue, palette.cyan, palette.ice, palette.teal];
+  return Array.from({length: 62}, (_, index) => ({
+    x: -20 + random() * 1960,
+    y: 20 + random() * 1040,
+    text: microWords[index % microWords.length],
+    size: 10 + random() * 17,
+    color: colors[index % colors.length],
+    opacity: 0.07 + random() * 0.15,
+    phase: random() * Math.PI * 2,
+    depth: 0.3 + random() * 0.9,
+  }));
+};
+
+const backgroundWords = makeMicroWords();
+
+const markerGlyph = (type: MarkerType, size: number) => {
+  const half = size / 2;
+  const inset = Math.max(2, size * 0.16);
+  const r = size * 0.34;
+
+  if (type === "square") {
+    return <rect x={-half} y={-half} width={size} height={size} />;
+  }
+  if (type === "diamond") {
+    return <rect x={-half * 0.72} y={-half * 0.72} width={size * 0.72} height={size * 0.72} transform="rotate(45)" />;
+  }
+  if (type === "triangle") {
+    return <path d={`M0 ${-half} L${half} ${half} L${-half} ${half} Z`} />;
+  }
+  if (type === "hex") {
     return (
-      <g>
-        <rect x={-5} y={-4} width={10} height={8} rx={1.8} fill={color} />
-        <rect x={-3.2} y={-2.4} width={6.4} height={1.2} rx={0.6} fill="#d9fbff" opacity={0.62} />
-      </g>
+      <path
+        d={`M${-r} ${-half} L${r} ${-half} L${half} 0 L${r} ${half} L${-r} ${half} L${-half} 0 Z`}
+      />
     );
   }
-
-  if (kind === "folder") {
+  if (type === "target") {
     return (
-      <g strokeLinejoin="round">
-        <path
-          d="M-34-21h24l8 8h36v36a8 8 0 0 1-8 8h-52a8 8 0 0 1-8-8z"
-          fill={color}
-          stroke={color}
-          strokeWidth={strokeWidth}
-        />
-        <path d="M-31-10h62" stroke="#d8fbff" strokeWidth={strokeWidth * 0.72} opacity={0.72} />
-        <path d="M-29-18h17l5 5h-22z" fill="#b9f4ff" opacity={0.7} />
-      </g>
+      <>
+        <circle cx="0" cy="0" r={half} />
+        <circle cx="0" cy="0" r={half * 0.48} />
+        <circle cx="0" cy="0" r={1.7} fill="currentColor" stroke="none" />
+      </>
     );
   }
-
-  const filePath = "M-28-38h34l22 22v54h-56z";
-  const common = (
+  if (type === "mail") {
+    return (
+      <>
+        <rect x={-half} y={-half * 0.68} width={size} height={size * 0.68} />
+        <path d={`M${-half} ${-half * 0.68} L0 ${inset} L${half} ${-half * 0.68}`} />
+      </>
+    );
+  }
+  if (type === "brackets") {
+    return (
+      <>
+        <path d={`M${-inset} ${-half} H${-half} V${half} H${-inset}`} />
+        <path d={`M${inset} ${-half} H${half} V${half} H${inset}`} />
+      </>
+    );
+  }
+  return (
     <>
-      <path d={filePath} fill={fill} stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
-      <path d="M6-38v22h22" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <path d={`M${-half} ${-half * 0.7} H${half * 0.15}`} />
+      <path d={`M${-half * 0.2} 0 H${half}`} />
+      <path d={`M${-half} ${half * 0.7} H${half * 0.45}`} />
     </>
   );
+};
 
-  if (kind === "document") {
-    return (
-      <g strokeLinecap="round">
-        {common}
-        <path d="M-16-9h28M-16 1h32M-16 11h32M-16 21h22" stroke={color} strokeWidth={strokeWidth * 0.86} />
-      </g>
-    );
-  }
-
-  if (kind === "image") {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        {common}
-        <rect x={-17} y={-8} width={34} height={30} rx={2} fill="none" stroke={color} strokeWidth={strokeWidth * 0.84} />
-        <circle cx={8} cy={0} r={3.6} fill={color} />
-        <path d="M-14 18l10-10 7 7 5-5 7 8" fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-      </g>
-    );
-  }
-
-  if (kind === "chart") {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        {common}
-        <path d="M-17 23V8h7v15M-4 23V-2h7v25M9 23V4h7v19" fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-        <path d="M-18 25h35" stroke={color} strokeWidth={strokeWidth * 0.8} />
-      </g>
-    );
-  }
-
-  if (kind === "cloud") {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        {common}
-        <path
-          d="M-15 18h29a8 8 0 0 0 1-16 12 12 0 0 0-23-3 9 9 0 0 0-7 19z"
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth * 0.9}
-        />
-      </g>
-    );
-  }
-
-  if (kind === "profile") {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        {common}
-        <circle cx={0} cy={-2} r={8} fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-        <path d="M-16 24c2-10 9-15 16-15s14 5 16 15" fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-      </g>
-    );
-  }
+const NetworkField: React.FC<{
+  frame: number;
+  fps: number;
+}> = ({frame, fps}) => {
+  const time = frame / fps;
+  const positions = mesh.nodes.map((node) => ({
+    x:
+      node.x +
+      Math.sin(time * (0.27 + node.depth * 0.12) + node.phase) *
+        16 *
+        node.depth,
+    y:
+      node.y +
+      Math.cos(time * (0.23 + node.depth * 0.1) + node.phase * 0.81) *
+        12 *
+        node.depth,
+  }));
 
   return (
-    <g strokeLinecap="round" strokeLinejoin="round">
-      {common}
-      <rect x={-14} y={4} width={28} height={21} rx={4} fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-      <path d="M-8 4v-7a8 8 0 0 1 16 0v7" fill="none" stroke={color} strokeWidth={strokeWidth * 0.9} />
-      <circle cx={0} cy={14} r={2.4} fill={color} />
-    </g>
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="xMidYMid slice"
+      style={{position: "absolute", left: 0, top: 0, width: W, height: H, overflow: "visible"}}
+    >
+      <defs>
+        <filter id="nodeGlow" x="-250%" y="-250%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g>
+        {mesh.edges.map((edge, index) => {
+          const a = positions[edge.a];
+          const b = positions[edge.b];
+          const pulse = 0.74 + Math.sin(time * 0.8 + index * 0.61) * 0.26;
+          const colored = edge.accent > 0.94;
+          return (
+            <line
+              key={`base-${edge.a}-${edge.b}`}
+              x1={a.x}
+              y1={a.y}
+              x2={b.x}
+              y2={b.y}
+              stroke={
+                colored
+                  ? edge.accent > 0.97
+                    ? palette.magenta
+                    : palette.cyan
+                  : "#90BCD0"
+              }
+              strokeWidth={0.55 + edge.strength * 1.2}
+              opacity={(colored ? 0.17 : 0.08 + edge.strength * 0.19) * pulse}
+            />
+          );
+        })}
+      </g>
+
+      <g opacity="0.72">
+        {mesh.edges
+          .filter((_, index) => index % 13 === 2)
+          .map((edge, index) => {
+            const a = positions[edge.a];
+            const b = positions[edge.b];
+            return (
+              <line
+                key={`flow-${edge.a}-${edge.b}`}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={index % 4 === 0 ? palette.cyan : palette.white}
+                strokeWidth="1.5"
+                strokeDasharray="2 17"
+                strokeDashoffset={-(time * 24 + index * 9)}
+                opacity="0.38"
+              />
+            );
+          })}
+      </g>
+
+      <g>
+        {mesh.nodes.map((node, index) => {
+          const position = positions[index];
+          const pulse = 0.45 + 0.55 * Math.max(0, Math.sin(time * 1.25 + node.phase));
+          const radius = node.bright ? 2.3 + pulse * 2.2 : 0.8 + node.depth * 1.3;
+          return (
+            <g key={`node-${index}`}>
+              {node.bright && (
+                <circle
+                  cx={position.x}
+                  cy={position.y}
+                  r={6 + pulse * 7}
+                  fill="none"
+                  stroke={index % 5 === 0 ? palette.cyan : palette.white}
+                  strokeWidth="0.65"
+                  opacity={0.08 + pulse * 0.18}
+                />
+              )}
+              <circle
+                cx={position.x}
+                cy={position.y}
+                r={radius}
+                fill={node.bright ? palette.white : "#8FC0D4"}
+                opacity={node.bright ? 0.45 + pulse * 0.5 : 0.21 + pulse * 0.18}
+                filter={node.bright ? "url(#nodeGlow)" : undefined}
+              />
+            </g>
+          );
+        })}
+      </g>
+
+      <g>
+        {mesh.edges
+          .filter((_, index) => index % 19 === 4)
+          .map((edge, index) => {
+            const a = positions[edge.a];
+            const b = positions[edge.b];
+            const progress = (time * (0.16 + (index % 4) * 0.026) + index * 0.17) % 1;
+            const x = a.x + (b.x - a.x) * progress;
+            const y = a.y + (b.y - a.y) * progress;
+            return (
+              <circle
+                key={`signal-${edge.a}-${edge.b}`}
+                cx={x}
+                cy={y}
+                r={2.1 + (index % 3)}
+                fill={index % 4 === 0 ? palette.lime : palette.cyanBright}
+                opacity={0.35 + Math.sin(progress * Math.PI) * 0.6}
+                filter="url(#nodeGlow)"
+              />
+            );
+          })}
+      </g>
+    </svg>
   );
 };
 
-const FileNode: React.FC<{
-  node: WorldNode;
-  projected: Projected;
-  seconds: number;
-}> = ({node, projected, seconds}) => {
-  const depthFade = depthOpacity(projected.depth);
-  const pulse = 0.82 + Math.sin(seconds * (1.1 + node.phase * 0.65) + node.phase * TAU) * 0.18;
-  const brightness = clamp(node.brightness * pulse, 0.45, 1.12);
-  const iconScale = projected.scale * (node.size / 72);
-  const opacity = depthFade * (node.kind === "bit" ? 0.72 : 0.92) * brightness;
-  const near = projected.depth < 430;
-  const blurFilter = projected.depth < 235
-    ? "url(#focusNearStrong)"
-    : near
-      ? "url(#focusNear)"
-      : undefined;
-  const color = node.hero ? "#4fe5ff" : "#31c9f4";
-  const fill = `rgba(0, 35, 71, ${node.kind === "bit" ? 0 : 0.66})`;
-  const beacon = node.hero || (node.id % 17 === 0 && node.kind !== "bit");
-  const haloSize = node.kind === "bit" ? 22 : 92;
+const BackgroundWords: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
+  const time = frame / fps;
+  return (
+    <FullFrame style={{pointerEvents: "none"}}>
+      {backgroundWords.map((word, index) => {
+        const x = word.x + Math.sin(time * 0.18 + word.phase) * 28 * word.depth;
+        const y = word.y + Math.cos(time * 0.14 + word.phase) * 15 * word.depth;
+        const flicker = 0.7 + Math.max(0, Math.sin(time * 0.95 + word.phase)) * 0.3;
+        return (
+          <div
+            key={`${word.text}-${index}`}
+            style={{
+              position: "absolute",
+              left: x,
+              top: y - word.size,
+              color: word.color,
+              opacity: word.opacity * flicker,
+              fontFamily: FONT_CONDENSED,
+              fontSize: word.size,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              lineHeight: 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {word.text}
+          </div>
+        );
+      })}
+    </FullFrame>
+  );
+};
+
+const FloatingMarkers: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
+  const time = frame / fps;
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      style={{position: "absolute", left: 0, top: 0, width: W, height: H}}
+    >
+      <defs>
+        <filter id="markerGlow" x="-180%" y="-180%" width="360%" height="360%">
+          <feGaussianBlur stdDeviation="2.4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {markers.map((marker, index) => {
+        const pulse = 0.42 + Math.max(0, Math.sin(time * (0.9 + marker.depth * 0.22) + marker.phase)) * 0.58;
+        const x = marker.x + Math.sin(time * 0.2 + marker.phase) * 22 * marker.depth;
+        const y = marker.y + Math.cos(time * 0.16 + marker.phase) * 13 * marker.depth;
+        const rotation = Math.sin(time * 0.13 + marker.phase) * 9;
+        return (
+          <g
+            key={`marker-${index}`}
+            transform={`translate(${x} ${y}) rotate(${rotation})`}
+            color={marker.color}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.25 + marker.depth * 0.9}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.18 + pulse * 0.58}
+            filter={pulse > 0.82 ? "url(#markerGlow)" : undefined}
+          >
+            {markerGlyph(marker.type, marker.size)}
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const GlitchData: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
+  const time = frame / fps;
+  const bars = Array.from({length: 22}, (_, index) => {
+    const random = seededRandom(8888 + index * 71);
+    return {
+      x: random() * 1860,
+      y: random() * 1050,
+      w: 14 + random() * 78,
+      color: index % 3 === 0 ? palette.magenta : index % 3 === 1 ? palette.lime : palette.cyan,
+      phase: random() * 8,
+    };
+  });
 
   return (
-    <g
-      transform={`translate(${projected.x.toFixed(2)} ${projected.y.toFixed(2)}) scale(${iconScale.toFixed(4)})`}
-      opacity={opacity}
-      filter={blurFilter}
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      style={{position: "absolute", left: 0, top: 0, width: W, height: H}}
     >
-      {beacon ? (
-        <g opacity={0.42 + brightness * 0.22}>
-          <circle cx={0} cy={0} r={haloSize} fill="url(#nodeHalo)" />
-          <path d={`M${-haloSize * 1.1} 0H${haloSize * 1.1}M0 ${-haloSize * 0.72}V${haloSize * 0.72}`} stroke="#67e9ff" strokeWidth={0.7} opacity={0.35} />
+      {bars.map((bar, index) => {
+        const flicker = Math.sin(time * 5.7 + bar.phase) > 0.79 ? 1 : 0;
+        const slide = ((time * (18 + (index % 4) * 5) + bar.phase * 10) % 56) - 28;
+        return (
+          <g key={`glitch-${index}`} opacity={flicker * (0.12 + (index % 4) * 0.055)}>
+            <rect x={bar.x + slide} y={bar.y} width={bar.w} height="4" fill={bar.color} />
+            <rect x={bar.x + slide + 8} y={bar.y + 7} width={bar.w * 0.58} height="2" fill={bar.color} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+type PrimaryWordProps = {
+  children: React.ReactNode;
+  x: number;
+  y: number;
+  size: number;
+  fill: string;
+  weight?: number;
+  anchor?: "start" | "middle" | "end";
+  tracking?: number;
+  glow?: boolean;
+  opacity?: number;
+};
+
+const PrimaryWord: React.FC<PrimaryWordProps> = ({
+  children,
+  x,
+  y,
+  size,
+  fill,
+  weight = 800,
+  anchor = "start",
+  tracking = 0.2,
+  glow = false,
+  opacity = 1,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      left: x,
+      top: y - size * 0.84,
+      color: fill,
+      fontFamily: FONT_CONDENSED,
+      fontSize: size,
+      fontWeight: weight,
+      letterSpacing: tracking,
+      lineHeight: 0.95,
+      whiteSpace: "nowrap",
+      opacity,
+      transform:
+        anchor === "middle"
+          ? "translateX(-50%) scaleX(0.72)"
+          : anchor === "end"
+            ? "translateX(-100%) scaleX(0.72)"
+            : "scaleX(0.72)",
+      transformOrigin:
+        anchor === "middle" ? "center center" : anchor === "end" ? "right center" : "left center",
+      textShadow: glow
+        ? `0 0 9px ${fill}, 0 0 22px ${fill}`
+        : `0 0 4px ${fill}88`,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const WordCloud: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
+  const time = frame / fps;
+  const breathe = 1 + Math.sin((time - 1) * 0.67) * 0.006;
+  const yaw = phase(frame, fps, 1, 8.25, Easing.linear);
+  const yawScaleX = 1 + yaw * 0.14;
+  const x = Math.sin((time - 1) * 0.29) * 7 + Math.sin(time * 0.09) * 4;
+  const y = Math.cos((time - 1) * 0.24) * 4 - yaw * 11;
+  const shimmer = 0.965 + Math.sin(time * 2.8) * 0.025;
+
+  return (
+    <FullFrame
+      style={{
+        overflow: "visible",
+        transform: `translate(${x}px, ${y}px) scaleX(${yawScaleX}) scaleY(${breathe})`,
+        transformOrigin: "660px 540px",
+        opacity: shimmer,
+      }}
+    >
+        <PrimaryWord x={760} y={233} size={27} fill={palette.blue} weight={700} tracking={1.2}>
+          SOCIAL MEDIA
+        </PrimaryWord>
+
+        <PrimaryWord x={422} y={351} size={77} fill={palette.teal} tracking={0.1}>
+          LINK BUILDING
+        </PrimaryWord>
+
+        <PrimaryWord x={1000} y={306} size={70} fill={palette.lavender} tracking={0.3}>
+          BOUNCE RATE
+        </PrimaryWord>
+
+        <PrimaryWord x={954} y={361} size={32} fill={palette.ice} weight={700} tracking={0.6}>
+          VISIBILITY
+        </PrimaryWord>
+
+        <PrimaryWord x={370} y={470} size={67} fill={palette.blue} tracking={0.2}>
+          ALGORITHM
+        </PrimaryWord>
+
+        <PrimaryWord x={414} y={541} size={47} fill={palette.cyan} weight={700} tracking={0.3}>
+          RELEVANCE
+        </PrimaryWord>
+
+        <PrimaryWord x={520} y={592} size={28} fill={palette.lavender} weight={700} tracking={0.5} opacity={0.82}>
+          PAGE RANK
+        </PrimaryWord>
+
+        <PrimaryWord x={1235} y={442} size={77} fill={palette.cyan} tracking={-0.2}>
+          CONTENT
+        </PrimaryWord>
+        <PrimaryWord x={1235} y={516} size={77} fill={palette.cyan} tracking={-0.6}>
+          MARKETING
+        </PrimaryWord>
+
+        <PrimaryWord x={1302} y={591} size={33} fill={palette.ice} weight={700} tracking={0.4}>
+          INDEXING
+        </PrimaryWord>
+
+        <PrimaryWord x={1350} y={670} size={61} fill={palette.blue} tracking={0.1}>
+          ANALYSIS
+        </PrimaryWord>
+
+        <PrimaryWord x={484} y={742} size={77} fill={palette.ice} tracking={-0.1}>
+          KEYWORD
+        </PrimaryWord>
+        <PrimaryWord x={548} y={820} size={77} fill={palette.ice} tracking={-0.3}>
+          DENSITY
+        </PrimaryWord>
+
+        <PrimaryWord x={856} y={738} size={26} fill={palette.cyan} weight={700} tracking={0.5}>
+          SEARCH ENGINE OPTIMIZATION
+        </PrimaryWord>
+
+        <PrimaryWord x={1067} y={844} size={76} fill={palette.teal} tracking={0}>
+          BACKLINKS
+        </PrimaryWord>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 925,
+            top: 442,
+            color: palette.cyan,
+            opacity: 0.68,
+            fontFamily: FONT_CONDENSED,
+            fontSize: 247,
+            fontWeight: 900,
+            letterSpacing: -5,
+            lineHeight: 0.9,
+            whiteSpace: "nowrap",
+            transform: "translateX(-50%) scaleX(0.74) scaleY(1.16)",
+            transformOrigin: "center center",
+            filter: "blur(13px)",
+          }}
+        >
+          SEO
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 925,
+            top: 442,
+            color: palette.white,
+            fontFamily: FONT_CONDENSED,
+            fontSize: 247,
+            fontWeight: 900,
+            letterSpacing: -5,
+            lineHeight: 0.9,
+            whiteSpace: "nowrap",
+            transform: "translateX(-50%) scaleX(0.74) scaleY(1.16)",
+            transformOrigin: "center center",
+          }}
+        >
+          SEO
+        </div>
+    </FullFrame>
+  );
+};
+
+const RadialStreaks: React.FC<{
+  progress: number;
+  opacity: number;
+  reverse?: boolean;
+}> = ({progress, opacity, reverse = false}) => {
+  const random = seededRandom(17012026);
+  const streaks = Array.from({length: 58}, (_, index) => {
+    const angle = random() * Math.PI * 2;
+    const inner = 45 + random() * 205;
+    const length = 160 + random() * 620;
+    const color =
+      index % 7 === 0
+        ? palette.magenta
+        : index % 7 === 1
+          ? palette.lime
+          : index % 9 === 0
+            ? palette.amber
+            : index % 3 === 0
+              ? palette.cyan
+              : palette.ice;
+    return {angle, inner, length, color, width: 0.8 + random() * 3};
+  });
+
+  const drive = reverse ? 1 - progress : progress;
+  const span = reverse ? Math.sin(progress * Math.PI) : progress;
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      style={{position: "absolute", left: 0, top: 0, width: W, height: H, opacity, mixBlendMode: "screen"}}
+    >
+      <defs>
+        <filter id="streakGlow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {streaks.map((streak, index) => {
+        const startRadius = streak.inner * (0.55 + drive * 0.9);
+        const endRadius = startRadius + streak.length * (0.12 + span * 0.88);
+        const x1 = 960 + Math.cos(streak.angle) * startRadius;
+        const y1 = 540 + Math.sin(streak.angle) * startRadius * 0.62;
+        const x2 = 960 + Math.cos(streak.angle) * endRadius;
+        const y2 = 540 + Math.sin(streak.angle) * endRadius * 0.62;
+        return (
+          <line
+            key={`streak-${index}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={streak.color}
+            strokeWidth={streak.width}
+            opacity={0.1 + (index % 5) * 0.09}
+            filter={index % 6 === 0 ? "url(#streakGlow)" : undefined}
+          />
+        );
+      })}
+    </svg>
+  );
+};
+
+const BlurredSphere: React.FC<{
+  frame: number;
+  durationInFrames: number;
+  opacity: number;
+  blur: number;
+  scale: number;
+}> = ({frame, durationInFrames, opacity, blur, scale}) => {
+  const loopLength = Math.max(1, durationInFrames - 1);
+  const time = ((frame % loopLength) / loopLength) * Math.PI * 2;
+  const random = seededRandom(99551);
+  const points = Array.from({length: 78}, (_, index) => {
+    const angle = random() * Math.PI * 2;
+    const radius = Math.sqrt(random()) * 365;
+    return {
+      x: 455 + Math.cos(angle) * radius,
+      y: 455 + Math.sin(angle) * radius,
+      color:
+        index % 9 === 0
+          ? palette.magenta
+          : index % 7 === 0
+            ? palette.lime
+            : palette.cyan,
+      phase: random() * Math.PI * 2,
+      size: 2 + random() * 7,
+    };
+  });
+
+  const animatedPoints = points.map((point) => ({
+    ...point,
+    x: point.x + Math.sin(time * 0.3 + point.phase) * 15,
+    y: point.y + Math.cos(time * 0.23 + point.phase) * 10,
+  }));
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        width: 910,
+        height: 910,
+        marginLeft: -455,
+        marginTop: -455,
+        display: "flex",
+        borderRadius: "50%",
+        opacity,
+        transform: `scale(${scale})`,
+        filter: `blur(${blur}px)`,
+        background:
+          "radial-gradient(circle at 43% 42%, rgba(45,171,216,.18) 0%, transparent 40%), radial-gradient(circle at 61% 59%, rgba(27,116,165,.14) 0%, transparent 44%), radial-gradient(circle at 51% 49%, rgba(28,119,166,.14) 0%, rgba(8,48,82,.46) 57%, rgba(3,22,41,.22) 73%, transparent 83%)",
+        boxShadow:
+          "inset 0 0 80px rgba(82,196,232,0.11), 0 0 110px rgba(11,76,119,0.2)",
+      }}
+    >
+      <svg width={910} height={910} viewBox="0 0 910 910">
+        <defs>
+          <clipPath id="sphereClip">
+            <circle cx="455" cy="455" r="370" />
+          </clipPath>
+          <filter id="sphereGlow" x="-180%" y="-180%" width="360%" height="360%">
+            <feGaussianBlur stdDeviation="7" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <g clipPath="url(#sphereClip)" opacity="0.5">
+          {animatedPoints.map((point, index) => {
+            const next = animatedPoints[(index + 11) % animatedPoints.length];
+            return (
+              <g key={`sphere-point-${index}`}>
+                <line
+                  x1={point.x}
+                  y1={point.y}
+                  x2={next.x}
+                  y2={next.y}
+                  stroke="#78AECB"
+                  strokeWidth="1"
+                  opacity="0.23"
+                />
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={point.size}
+                  fill={point.color}
+                  opacity={0.3 + Math.max(0, Math.sin(time + point.phase)) * 0.5}
+                  filter={index % 8 === 0 ? "url(#sphereGlow)" : undefined}
+                />
+              </g>
+            );
+          })}
+          <ellipse cx="455" cy="455" rx="367" ry="140" fill="none" stroke="#4E9CBD" strokeWidth="1" opacity="0.08" />
+          <ellipse cx="455" cy="455" rx="367" ry="255" fill="none" stroke="#5BA7C4" strokeWidth="0.8" opacity="0.06" />
+          <ellipse cx="455" cy="455" rx="155" ry="367" fill="none" stroke="#5BA7C4" strokeWidth="0.8" opacity="0.06" />
+          <ellipse cx="455" cy="455" rx="275" ry="367" fill="none" stroke="#5BA7C4" strokeWidth="0.8" opacity="0.045" />
         </g>
-      ) : null}
-      {beacon || node.id % 4 === 0 ? (
-        <g opacity={0.7} filter="url(#iconBloom)">
-          <Glyph kind={node.kind} color={color} fill={fill} strokeWidth={2.5} />
-        </g>
-      ) : null}
-      <Glyph kind={node.kind} color={color} fill={fill} strokeWidth={2.1} />
-      {node.kind !== "bit" ? (
-        <circle cx={0} cy={0} r={2.3} fill="#d9fbff" opacity={0.5 + brightness * 0.3} />
-      ) : null}
-    </g>
+      </svg>
+    </div>
+  );
+};
+
+const BaseBackground: React.FC<{frame: number; durationInFrames: number}> = ({frame, durationInFrames}) => {
+  const loopLength = Math.max(1, durationInFrames - 1);
+  const drift = Math.sin(((frame % loopLength) / loopLength) * Math.PI * 2) * 9;
+  return (
+    <FullFrame
+      style={{
+        background:
+          "radial-gradient(ellipse 82% 95% at 50% 48%, #08233A 0%, #031525 40%, #020C18 72%, #01050B 100%)",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: -40,
+          top: -40,
+          width: W + 80,
+          height: H + 80,
+          transform: `translate(${drift}px, ${-drift * 0.32}px)`,
+          opacity: 0.35,
+          backgroundImage:
+            "radial-gradient(circle, rgba(92,172,200,0.32) 1px, transparent 1.3px)",
+          backgroundSize: "23px 23px",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 85% 95% at 50% 50%, #000 18%, rgba(0,0,0,.75) 58%, transparent 94%)",
+          maskImage:
+            "radial-gradient(ellipse 85% 95% at 50% 50%, #000 18%, rgba(0,0,0,.75) 58%, transparent 94%)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: W,
+          height: H,
+          opacity: 0.15,
+          backgroundImage:
+            "repeating-linear-gradient(0deg, rgba(166,225,240,0.08) 0px, rgba(166,225,240,0.08) 1px, transparent 1px, transparent 4px)",
+          mixBlendMode: "screen",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: W,
+          height: H,
+          background:
+            "radial-gradient(ellipse 68% 76% at 50% 48%, transparent 34%, rgba(0,5,12,0.2) 68%, rgba(0,3,8,0.76) 100%)",
+        }}
+      />
+    </FullFrame>
+  );
+};
+
+export const MotionCanvas: React.FC<{
+  frame: number;
+  fps: number;
+  durationInFrames: number;
+}> = ({frame, fps, durationInFrames}) => {
+  const durationSeconds = durationInFrames / fps;
+  const closeStart = Math.max(2.2, durationSeconds - 1.09);
+  const opening = phase(frame, fps, 0.70, 1.01, easeInOut);
+  const closing = phase(frame, fps, closeStart, closeStart + 0.22, easeOut);
+  const sceneVisibility =
+    phase(frame, fps, 0.66, 0.82, easeOut) *
+    (1 - phase(frame, fps, closeStart + 0.15, closeStart + 0.35, easeOut));
+
+  const sceneScale = closing > 0
+    ? interpolate(closing, [0, 1], [1, 0.075], clamp)
+    : interpolate(opening, [0, 1], [0.075, 1], clamp);
+  const sceneBlur = closing > 0
+    ? interpolate(closing, [0, 1], [0, 18], clamp)
+    : interpolate(opening, [0, 1], [18, 0], clamp);
+  const clipRadius = closing > 0
+    ? interpolate(closing, [0, 1], [1500, 350], clamp)
+    : interpolate(opening, [0, 1], [350, 1500], clamp);
+
+  const introSphereOpacity = 1 - phase(frame, fps, 0.74, 1.04, easeOut);
+  const outroSphereOpacity = phase(frame, fps, closeStart + 0.10, closeStart + 0.30, easeOut);
+  const sphereOpacity = Math.max(introSphereOpacity, outroSphereOpacity);
+  const sphereBlur = closing > 0
+    ? interpolate(outroSphereOpacity, [0, 1], [3, 16], clamp)
+    : interpolate(opening, [0, 1], [16, 3], clamp);
+  const sphereScale = closing > 0
+    ? interpolate(outroSphereOpacity, [0, 1], [1.08, 0.84], clamp)
+    : interpolate(opening, [0, 1], [0.84, 1.08], clamp);
+
+  const settledTime = Math.max(0, frame / fps - 1);
+  const cameraX = Math.sin(settledTime * 0.27) * 24 + Math.sin(settledTime * 0.08) * 10;
+  const cameraY = Math.cos(settledTime * 0.22) * 12;
+  const cameraScale = 1.025 + Math.sin(settledTime * 0.31) * 0.012;
+
+  const entranceBurst = phase(frame, fps, 0.73, 0.84, easeOut) *
+    (1 - phase(frame, fps, 0.96, 1.08, easeOut));
+  const exitBurst = phase(frame, fps, closeStart - 0.02, closeStart + 0.07, easeOut) *
+    (1 - phase(frame, fps, closeStart + 0.08, closeStart + 0.20, easeOut));
+
+  return (
+    <FullFrame
+      style={{
+        width: W,
+        height: H,
+        backgroundColor: palette.black,
+        fontFamily: FONT_UI,
+      }}
+    >
+      <BaseBackground frame={frame} durationInFrames={durationInFrames} />
+
+      {sphereOpacity > 0.0005 && (
+        <BlurredSphere
+          frame={frame}
+          durationInFrames={durationInFrames}
+          opacity={sphereOpacity}
+          blur={sphereBlur}
+          scale={sphereScale}
+        />
+      )}
+
+      {sceneVisibility > 0.0005 && (
+        <FullFrame
+          style={{
+            opacity: sceneVisibility,
+            clipPath: `circle(${clipRadius}px at 50% 50%)`,
+          }}
+        >
+          <FullFrame
+            style={{
+              transform: `scale(${sceneScale})`,
+              transformOrigin: "50% 50%",
+              filter: sceneBlur > 0.05 ? `blur(${sceneBlur}px)` : undefined,
+            }}
+          >
+            <FullFrame
+              style={{
+                transform: `translate(${cameraX}px, ${cameraY}px) scale(${cameraScale})`,
+                transformOrigin: "50% 50%",
+              }}
+            >
+              <BackgroundWords frame={frame} fps={fps} />
+              <NetworkField frame={frame} fps={fps} />
+              <GlitchData frame={frame} fps={fps} />
+              <FloatingMarkers frame={frame} fps={fps} />
+            </FullFrame>
+
+            <WordCloud frame={frame} fps={fps} />
+          </FullFrame>
+        </FullFrame>
+      )}
+
+      {entranceBurst > 0.001 && <RadialStreaks progress={opening} opacity={entranceBurst} />}
+      {exitBurst > 0.001 && <RadialStreaks progress={closing} opacity={exitBurst} reverse />}
+
+    </FullFrame>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const seconds = frame / fps;
-  const camera = getCamera(seconds);
-  const nodeWorld = NODES.map((node) => nodePosition(node, seconds));
-  const projectedNodes = nodeWorld.map((node) => project(node, camera));
-  const visibleNodes = NODES
-    .map((node, index) => ({node, projected: projectedNodes[index]}))
-    .filter(({projected}) => projected.visible)
-    .sort((a, b) => b.projected.depth - a.projected.depth);
-
-  const visibleEdges = EDGES.flatMap((edge, index) => {
-    const start = projectedNodes[edge.a];
-    const end = projectedNodes[edge.b];
-    if (
-      start.depth <= NEAR ||
-      end.depth <= NEAR ||
-      start.depth >= FAR ||
-      end.depth >= FAR ||
-      Math.hypot(start.x - end.x, start.y - end.y) < 0.8 ||
-      (!start.visible && !end.visible)
-    ) {
-      return [];
-    }
-    const avgDepth = (start.depth + end.depth) / 2;
-    const endpointFade = Math.min(depthOpacity(start.depth), depthOpacity(end.depth));
-    const opacity = depthOpacity(avgDepth) * endpointFade * edge.energy;
-    const width = clamp(2200 / avgDepth, 0.48, 9.5);
-    return [{edge, index, start, end, avgDepth, opacity, width}];
-  }).sort((a, b) => b.avgDepth - a.avgDepth);
-
-  const driftX = Math.sin(seconds * 0.18 + 0.3) * 70;
-  const driftY = Math.cos(seconds * 0.15 + 0.8) * 46;
-
+  const {fps, durationInFrames} = useVideoConfig();
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: "#00162f",
-        overflow: "hidden",
-      }}
-    >
-      <svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="xMidYMid slice"
-        style={{display: "block"}}
-      >
-        <defs>
-          <linearGradient id="bgDepth" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#001128" />
-            <stop offset="0.46" stopColor="#00224a" />
-            <stop offset="1" stopColor="#00152e" />
-          </linearGradient>
-          <radialGradient id="tunnelFog" cx="50%" cy="48%" r="66%">
-            <stop offset="0" stopColor="#06689a" stopOpacity="0.44" />
-            <stop offset="0.35" stopColor="#034979" stopOpacity="0.25" />
-            <stop offset="0.74" stopColor="#012645" stopOpacity="0.06" />
-            <stop offset="1" stopColor="#001024" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="nodeHalo">
-            <stop offset="0" stopColor="#c9f9ff" stopOpacity="0.98" />
-            <stop offset="0.07" stopColor="#4de7ff" stopOpacity="0.9" />
-            <stop offset="0.26" stopColor="#13bfe9" stopOpacity="0.34" />
-            <stop offset="0.64" stopColor="#087bae" stopOpacity="0.09" />
-            <stop offset="1" stopColor="#087bae" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="flareHalo">
-            <stop offset="0" stopColor="#ecfeff" stopOpacity="1" />
-            <stop offset="0.08" stopColor="#80efff" stopOpacity="0.94" />
-            <stop offset="0.3" stopColor="#20c9f4" stopOpacity="0.36" />
-            <stop offset="1" stopColor="#0078ba" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="vignette" cx="50%" cy="49%" r="72%">
-            <stop offset="0" stopColor="#00040e" stopOpacity="0" />
-            <stop offset="0.6" stopColor="#00040e" stopOpacity="0.08" />
-            <stop offset="0.83" stopColor="#00030b" stopOpacity="0.36" />
-            <stop offset="1" stopColor="#000208" stopOpacity="0.72" />
-          </radialGradient>
-          <filter id="lineBloom" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4.5" />
-          </filter>
-          <filter id="iconBloom" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="3.2" />
-          </filter>
-          <filter id="focusNear" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="2.4" />
-          </filter>
-          <filter id="focusNearStrong" x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation="5.2" />
-          </filter>
-          <filter id="fogBlur" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="48" />
-          </filter>
-        </defs>
-
-        <rect width={W} height={H} fill="url(#bgDepth)" />
-        <ellipse
-          cx={960 + driftX}
-          cy={520 + driftY}
-          rx={720}
-          ry={520}
-          fill="url(#tunnelFog)"
-          opacity={0.88}
-          filter="url(#fogBlur)"
-        />
-        <ellipse
-          cx={1110 - driftX * 0.45}
-          cy={370 - driftY * 0.55}
-          rx={420}
-          ry={310}
-          fill="#055a8f"
-          opacity={0.08}
-          filter="url(#fogBlur)"
-        />
-
-        <g style={{mixBlendMode: "screen"}} filter="url(#lineBloom)">
-          {visibleEdges.map(({index, start, end, avgDepth, opacity, width}) => {
-            const nearBoost = interpolate(avgDepth, [180, 900, 5000], [1.7, 1, 0.55], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            });
-            const pulse = 0.78 + Math.sin(seconds * 0.75 + index * 0.91) * 0.22;
-            return (
-              <line
-                key={`glow-${index}`}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                stroke="#1fcff5"
-                strokeWidth={width * 4.6}
-                strokeLinecap="round"
-                opacity={opacity * 0.2 * nearBoost * pulse}
-              />
-            );
-          })}
-        </g>
-
-        <g>
-          {visibleEdges.map(({index, start, end, avgDepth, opacity, width}) => {
-            const nearBoost = interpolate(avgDepth, [180, 900, 5000], [1.45, 1, 0.65], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            });
-            return (
-              <line
-                key={`edge-${index}`}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                stroke={avgDepth < 850 ? "#31d9fb" : "#1389bd"}
-                strokeWidth={width}
-                strokeLinecap="round"
-                opacity={opacity * 0.72 * nearBoost}
-              />
-            );
-          })}
-        </g>
-
-        <g style={{mixBlendMode: "screen"}}>
-          {visibleEdges.flatMap(({edge, index}) => {
-            if (index % 3 !== 0) return [];
-            const startWorld = nodeWorld[edge.a];
-            const endWorld = nodeWorld[edge.b];
-            const speed = 0.17 + hash01(index * 239 + 7) * 0.16;
-            const count = index % 13 === 0 ? 3 : 1;
-            return Array.from({length: count}, (_, beadIndex) => {
-              const q = fract(seconds * speed + edge.phase - beadIndex * 0.055);
-              const world = {
-                x: startWorld.x + (endWorld.x - startWorld.x) * q,
-                y: startWorld.y + (endWorld.y - startWorld.y) * q,
-                z: startWorld.z + (endWorld.z - startWorld.z) * q,
-              };
-              const p = project(world, camera);
-              if (!p.visible) return null;
-              const opacity = depthOpacity(p.depth) * Math.sin(Math.PI * q) * (1 - beadIndex * 0.18);
-              const radius = clamp(p.scale * (3.2 - beadIndex * 0.45), 1.2, 8.5);
-              return (
-                <g key={`packet-${index}-${beadIndex}`} opacity={opacity}>
-                  <circle cx={p.x} cy={p.y} r={radius * 3.8} fill="url(#flareHalo)" opacity={0.6} />
-                  <circle cx={p.x} cy={p.y} r={radius} fill="#d9fbff" />
-                </g>
-              );
-            });
-          })}
-        </g>
-
-        {visibleNodes.map(({node, projected}) => (
-          <FileNode key={node.id} node={node} projected={projected} seconds={seconds} />
-        ))}
-
-        <g style={{mixBlendMode: "screen"}}>
-          {visibleNodes.flatMap(({node, projected}) => {
-            if (node.id % 23 !== 0 || projected.depth < 230) return [];
-            const pulse = 0.5 + 0.5 * Math.sin(seconds * 1.45 + node.phase * TAU);
-            const r = clamp(projected.scale * 82, 18, 110);
-            return [
-              <g key={`flare-${node.id}`} opacity={depthOpacity(projected.depth) * (0.24 + pulse * 0.34)}>
-                <circle cx={projected.x} cy={projected.y} r={r} fill="url(#flareHalo)" />
-                <path d={`M${projected.x - r * 1.8} ${projected.y}H${projected.x + r * 1.8}`} stroke="#6eeeff" strokeWidth={1.1} opacity={0.55} />
-              </g>,
-            ];
-          })}
-        </g>
-
-        <rect width={W} height={H} fill="url(#vignette)" pointerEvents="none" />
-        <rect width={W} height={H} fill="#0a91c7" opacity={0.018 + Math.sin(seconds * 0.43) * 0.006} pointerEvents="none" />
-      </svg>
-    </AbsoluteFill>
+    <MotionCanvas
+      frame={frame}
+      fps={fps}
+      durationInFrames={durationInFrames}
+    />
   );
 };
