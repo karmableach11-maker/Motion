@@ -477,8 +477,9 @@ const Folder: React.FC<FolderProps> = ({
   const activity = isLeft ? 1 - progress * 0.48 : 0.55 + progress * 0.45;
   const destinationCardY = 128 - progress * 48;
   const completionScale = 0.86 + completion * 0.14;
+  const verifiedReveal = smooth(completion, 0.58, 0.96);
   const receivedFiles =
-    completion >= 0.82 ? 148 : Math.min(147, Math.floor(progress * 148));
+    verifiedReveal >= 0.5 ? 148 : Math.min(147, Math.floor(progress * 148));
   const statusColor = isLeft
     ? accent
     : interpolateColors(completion, [0, 1], [accent, COLORS.success]);
@@ -525,7 +526,7 @@ const Folder: React.FC<FolderProps> = ({
           position: "absolute",
           inset: 0,
           overflow: "visible",
-          filter: `drop-shadow(0 24px 28px rgba(0,0,0,0.34)) drop-shadow(0 0 22px rgba(${accentRgb},0.12))`,
+          filter: `drop-shadow(0 20px 24px rgba(0,0,0,0.34)) drop-shadow(0 0 22px rgba(${accentRgb},0.12))`,
         }}
       >
         <defs>
@@ -693,7 +694,7 @@ const Folder: React.FC<FolderProps> = ({
             y="23"
             fill="#AFC8D7"
             fontFamily="Arial, Helvetica, sans-serif"
-            fontSize="9"
+            fontSize="10.5"
             letterSpacing="2.1"
           >
             {isLeft ? "SOURCE" : "RECEIVER"}
@@ -704,7 +705,7 @@ const Folder: React.FC<FolderProps> = ({
             fill="#EAF7FF"
             fontFamily="Arial, Helvetica, sans-serif"
             fontWeight="700"
-            fontSize="11"
+            fontSize="12.5"
             letterSpacing="1.7"
           >
             {isLeft ? "ARCHIVE 01" : "VAULT 02"}
@@ -712,32 +713,32 @@ const Folder: React.FC<FolderProps> = ({
         </g>
 
         {!isLeft && (
-          <g
-            transform={`translate(344 190) scale(${completionScale})`}
-            opacity={completion}
-            style={{transformOrigin: "376px 220px"}}
-          >
-            <circle
-              cx="32"
-              cy="32"
-              r="25"
-              fill={`rgba(${COLORS.successRgb},0.1)`}
-              stroke={COLORS.success}
-              strokeOpacity="0.9"
-              strokeWidth="2"
-              filter={`url(#${glowFilter})`}
-            />
-            <path
-              d="M20 32L28 40L45 23"
-              fill="none"
-              stroke={COLORS.success}
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              pathLength="1"
-              strokeDasharray="1"
-              strokeDashoffset={1 - completion}
-            />
+          <g transform="translate(376 222)" opacity={completion}>
+            <g transform={`scale(${completionScale})`}>
+              <g transform="translate(-32 -32)">
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="25"
+                  fill={`rgba(${COLORS.successRgb},0.1)`}
+                  stroke={COLORS.success}
+                  strokeOpacity="0.9"
+                  strokeWidth="2"
+                  filter={`url(#${glowFilter})`}
+                />
+                <path
+                  d="M20 32L28 40L45 23"
+                  fill="none"
+                  stroke={COLORS.success}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pathLength="1"
+                  strokeDasharray="1"
+                  strokeDashoffset={1 - completion}
+                />
+              </g>
+            </g>
           </g>
         )}
 
@@ -753,7 +754,7 @@ const Folder: React.FC<FolderProps> = ({
       <div
         style={{
           position: "absolute",
-          top: 386,
+          top: 444,
           left: 38,
           width: 466,
           display: "flex",
@@ -763,12 +764,54 @@ const Folder: React.FC<FolderProps> = ({
           fontFamily: "Arial, Helvetica, sans-serif",
         }}
       >
-        <span style={{fontSize: 9, letterSpacing: 2.8, color: COLORS.muted}}>
+        <span
+          style={{
+            fontSize: 12.5,
+            lineHeight: 1,
+            fontWeight: 650,
+            letterSpacing: 2.2,
+            color: "#A6C3D2",
+            textShadow: "0 0 10px rgba(166,195,210,0.22)",
+          }}
+        >
           {isLeft ? "READY / 148 FILES" : `BUFFER / ${receivedFiles} FILES`}
         </span>
-        <span style={{fontSize: 9, letterSpacing: 2.4, color: statusColor}}>
-          {isLeft ? "ONLINE" : completion >= 0.82 ? "VERIFIED" : "RECEIVING"}
-        </span>
+        {isLeft ? (
+          <span
+            style={{
+              fontSize: 12.5,
+              lineHeight: 1,
+              fontWeight: 700,
+              letterSpacing: 2.05,
+              color: statusColor,
+              textShadow: `0 0 11px ${statusColor}55`,
+            }}
+          >
+            ONLINE
+          </span>
+        ) : (
+          <span
+            style={{
+              position: "relative",
+              width: 112,
+              height: 14,
+              fontSize: 12.5,
+              lineHeight: 1,
+              fontWeight: 700,
+              letterSpacing: 1.9,
+              textAlign: "right",
+              color: statusColor,
+              textShadow: `0 0 11px ${statusColor}55`,
+            }}
+          >
+            <span style={{position: "absolute", inset: 0, opacity: 1 - verifiedReveal}}>
+              RECEIVING
+            </span>
+            <span style={{position: "absolute", inset: 0, opacity: verifiedReveal}}>
+              VERIFIED
+            </span>
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1044,7 +1087,8 @@ const ProgressPanel: React.FC<{
   completion: number;
 }> = ({frame, progress, completion}) => {
   const reveal = smooth(frame, 140, 218);
-  const isComplete = completion >= 0.82;
+  const verifiedReveal = smooth(completion, 0.58, 0.96);
+  const isComplete = verifiedReveal >= 0.5;
   const percent = isComplete ? 100 : Math.min(99, Math.floor(progress * 100));
   const files = isComplete ? 148 : Math.min(147, Math.floor(progress * 148));
   const data = (isComplete ? 8.42 : Math.min(8.41, progress * 8.42)).toFixed(2);
@@ -1110,8 +1154,8 @@ const ProgressPanel: React.FC<{
 
         <div style={{position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "space-between"}}>
           <div>
-            <div style={{fontSize: 10, letterSpacing: 2.8, color: activeColor, fontWeight: 700}}>{title}</div>
-            <div style={{marginTop: 7, fontSize: 9, letterSpacing: 2.1, color: COLORS.muted}}>END-TO-END ENCRYPTED ROUTE</div>
+            <div style={{fontSize: 11.5, letterSpacing: 2.65, color: activeColor, fontWeight: 700}}>{title}</div>
+            <div style={{marginTop: 7, fontSize: 10.5, letterSpacing: 1.95, color: "#92B1C2"}}>END-TO-END ENCRYPTED ROUTE</div>
           </div>
           <div style={{display: "flex", alignItems: "baseline", color: COLORS.text, fontVariantNumeric: "tabular-nums"}}>
             <span style={{fontSize: 42, lineHeight: 0.8, fontWeight: 700, letterSpacing: -2}}>{percent}</span>
@@ -1161,7 +1205,7 @@ const ProgressPanel: React.FC<{
           {[
             {label: "FILES", value: `${files} / 148`},
             {label: "TRANSFERRED", value: `${data} GB`},
-            {label: "INTEGRITY", value: isComplete ? "VERIFIED" : "100%"},
+            {label: "INTEGRITY", value: isComplete ? "VERIFIED" : "CHECKING"},
           ].map((stat, i) => (
             <div
               key={stat.label}
@@ -1170,8 +1214,8 @@ const ProgressPanel: React.FC<{
                 borderLeft: i === 0 ? "none" : "1px solid rgba(106,148,168,0.15)",
               }}
             >
-              <div style={{fontSize: 8, letterSpacing: 2.1, opacity: 0.7}}>{stat.label}</div>
-              <div style={{marginTop: 7, color: i === 2 && isComplete ? activeColor : COLORS.text, fontSize: 12, letterSpacing: 1.1, fontWeight: 700, fontVariantNumeric: "tabular-nums"}}>{stat.value}</div>
+              <div style={{fontSize: 9.5, letterSpacing: 1.95, opacity: 0.82}}>{stat.label}</div>
+              <div style={{marginTop: 7, color: i === 2 && isComplete ? activeColor : COLORS.text, fontSize: 13, letterSpacing: 1.05, fontWeight: 700, fontVariantNumeric: "tabular-nums"}}>{stat.value}</div>
             </div>
           ))}
         </div>
