@@ -31,7 +31,6 @@ type IconName =
 
 const W = 1920;
 const H = 1080;
-const DURATION = 15;
 
 const COLORS = {
   bg: "#020916",
@@ -578,214 +577,275 @@ const WorkflowNode: React.FC<{
   );
 };
 
-const Robot: React.FC<{
+const HeroTypography: React.FC<{
   time: number;
   frame: number;
   fps: number;
   sceneOpacity: number;
+  contextActivity: number;
   reasonActivity: number;
+  toolActivity: number;
+  verifyActivity: number;
   resultActivity: number;
-}> = ({time, frame, fps, sceneOpacity, reasonActivity, resultActivity}) => {
+}> = ({
+  time,
+  frame,
+  fps,
+  sceneOpacity,
+  contextActivity,
+  reasonActivity,
+  toolActivity,
+  verifyActivity,
+  resultActivity,
+}) => {
   const settle = frame < 18
     ? 0
     : spring({
         frame: frame - 18,
         fps,
-        config: {damping: 13, stiffness: 92, mass: 0.9},
-        durationInFrames: 72,
+        config: {damping: 15, stiffness: 105, mass: 0.8},
+        durationInFrames: 64,
       });
-  const floatY = Math.sin((time / DURATION) * Math.PI * 4) * 5;
-  const sourceLook = windowStrength(time, 1.2, 3.7, 0.4);
-  const toolLook = windowStrength(time, 7.2, 10.0, 0.4);
-  const lookX = 1.5 + 5.5 * Math.max(sourceLook, toolLook, resultActivity);
-  const pointAmount = Math.min(ramp(time, 1.15, 1.9), 1 - ramp(time, 4.05, 4.65));
-  const waveAmount = Math.min(ramp(time, 11.45, 11.9), 1 - ramp(time, 13.15, 13.6));
-  const wave = Math.sin((time - 11.5) * 12.5) * 8 * waveAmount;
-  const rightArmAngle = 10 - pointAmount * 18 - waveAmount * 29 + wave * 0.75;
-  const leftSweep = windowStrength(time, 7.45, 9.35, 0.42);
-  const leftArmAngle = -2 + leftSweep * 12;
-  const nod = Math.sin(ramp(time, 11.55, 12.3) * Math.PI * 2) * 3.5 * resultActivity;
-  const chestPulse = 1 + (0.045 + reasonActivity * 0.07) * Math.sin(time * 7.2);
-  const antennaLive = Math.max(sourceLook, reasonActivity, toolLook, resultActivity * 0.7);
-  const pointerPulse = pointAmount * (0.65 + Math.sin(time * 9) * 0.35);
 
-  const blinkCenters = [3.86, 8.15, 12.82];
-  let blinkScale = 1;
-  blinkCenters.forEach((center) => {
-    const distance = Math.abs(time - center);
-    if (distance < 0.09) {
-      blinkScale = Math.min(
-        blinkScale,
-        interpolate(distance, [0, 0.04, 0.09], [0.18, 0.35, 1], clamp),
-      );
-    }
-  });
-
-  // Keep each blink anchored to a fixed point high in the visor. Computing the
-  // eye geometry directly avoids SVG transform-origin differences that could
-  // previously push the eyes far below the face during a blink.
-  const eyeCenterY = 179;
-  const eyeHeight = Math.max(8, 48 * blinkScale);
-  const eyeY = eyeCenterY - eyeHeight / 2;
-  const eyeRadius = Math.min(15.5, eyeHeight / 2);
+  const phases = [
+    {label: "INGESTING DATA", detail: "04 SOURCES CONNECTED", start: 0.65, end: 3.75, color: COLORS.blue},
+    {label: "BUILDING CONTEXT", detail: "RELEVANCE LAYER ACTIVE", start: 3.55, end: 4.85, color: COLORS.cyan},
+    {label: "REASONING", detail: "PLAN + MEMORY + POLICY", start: 4.65, end: 7.35, color: COLORS.violet},
+    {label: "EXECUTING TOOLS", detail: "FUNCTION ROUTE ACTIVE", start: 7.15, end: 9.45, color: COLORS.cyan},
+    {label: "VALIDATING OUTPUT", detail: "QUALITY GATE RUNNING", start: 9.25, end: 11.75, color: COLORS.amber},
+    {label: "OUTPUT VERIFIED", detail: "DECISION READY / 100%", start: 11.55, end: 14.4, color: COLORS.mint},
+  ];
+  const activePhaseIndex = time < 3.65
+    ? 0
+    : time < 4.75
+      ? 1
+      : time < 7.25
+        ? 2
+        : time < 9.35
+          ? 3
+          : time < 11.65
+            ? 4
+            : 5;
+  const activePhase = phases[activePhaseIndex];
+  const pipelineProgress = interpolate(
+    time,
+    [0.65, 3.65, 4.75, 7.25, 9.35, 11.65, 12.4],
+    [0.04, 0.23, 0.39, 0.62, 0.79, 0.94, 1],
+    clamp,
+  );
+  const lineReveal = [0, 1, 2].map((index) => ramp(time, 0.5 + index * 0.13, 1.06 + index * 0.13));
+  const scanX = interpolate((time * 0.19) % 1, [0, 1], [-120, 560]);
+  const stageTokens = [
+    {label: "UNDERSTAND", active: contextActivity, color: COLORS.cyan},
+    {label: "REASON", active: reasonActivity, color: COLORS.violet},
+    {label: "ACT", active: toolActivity, color: COLORS.cyan},
+    {label: "VERIFY", active: Math.max(verifyActivity, resultActivity), color: resultActivity > 0.55 ? COLORS.mint : COLORS.amber},
+  ];
 
   return (
     <div
       style={{
         position: "absolute",
-        left: 35,
-        top: 175,
-        width: 500,
-        height: 700,
+        left: 70,
+        top: 252,
+        width: 480,
+        height: 594,
         opacity: sceneOpacity * interpolate(settle, [0, 0.2, 1], [0, 0.45, 1], clamp),
-        transform: `translateY(${(1 - settle) * 34 + floatY}px) scale(${0.92 + settle * 0.08})`,
-        transformOrigin: "50% 55%",
+        transform: `translateY(${(1 - settle) * 30}px)`,
+        transformOrigin: "0% 50%",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <svg viewBox="0 0 500 700" style={{width: "100%", height: "100%", overflow: "visible"}}>
-        <defs>
-          <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#ffffff" />
-            <stop offset="0.48" stopColor="#dceeff" />
-            <stop offset="1" stopColor="#8eb8da" />
-          </linearGradient>
-          <linearGradient id="shellShade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#dff2ff" />
-            <stop offset="1" stopColor="#789ebb" />
-          </linearGradient>
-          <radialGradient id="visor" cx="36%" cy="28%" r="82%">
-            <stop offset="0" stopColor="#147cdb" />
-            <stop offset="0.58" stopColor="#06498f" />
-            <stop offset="1" stopColor="#031b3b" />
-          </radialGradient>
-          <radialGradient id="core" cx="42%" cy="34%" r="70%">
-            <stop offset="0" stopColor="#adf4ff" />
-            <stop offset="0.38" stopColor="#2bd8ff" />
-            <stop offset="1" stopColor="#0968ca" />
-          </radialGradient>
-          <filter id="robotShadow" x="-50%" y="-50%" width="200%" height="200%">
-            <feDropShadow dx="0" dy="18" stdDeviation="18" floodColor="#000812" floodOpacity="0.65" />
-          </filter>
-          <filter id="robotGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="7" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-
-        <ellipse cx="245" cy="632" rx="112" ry="24" fill="rgba(22,139,255,0.09)" filter="url(#robotGlow)" />
-        <ellipse cx="245" cy="627" rx="72" ry="11" fill="none" stroke={alpha(COLORS.cyan, 0.62)} strokeWidth="3" />
-
-        <g transform={`rotate(${leftArmAngle} 154 374)`} filter="url(#robotShadow)">
-          <circle cx="154" cy="374" r="33" fill="url(#shellShade)" stroke="#bfe1f5" strokeWidth="3" />
-          <path d="M151 380C130 390 119 411 117 437" fill="none" stroke="url(#shell)" strokeWidth="42" strokeLinecap="round" />
-          <circle cx="117" cy="439" r="21" fill="url(#shellShade)" stroke="#bfe1f5" strokeWidth="3" />
-          <path d="M117 439C111 461 111 482 116 501" fill="none" stroke="url(#shell)" strokeWidth="34" strokeLinecap="round" />
-          <rect x="98" y="482" width="36" height="52" rx="18" fill="url(#shell)" stroke="#bfe1f5" strokeWidth="3" transform="rotate(4 116 508)" />
-          <path d="M104 494C111 489 122 488 129 492" fill="none" stroke="rgba(255,255,255,0.58)" strokeWidth="3" strokeLinecap="round" />
-        </g>
-
-        <g transform={`rotate(${rightArmAngle} 346 374)`} filter="url(#robotShadow)">
-          <circle cx="346" cy="374" r="33" fill="url(#shellShade)" stroke="#bfe1f5" strokeWidth="3" />
-          <path d="M350 377C378 383 399 398 408 420" fill="none" stroke="url(#shell)" strokeWidth="42" strokeLinecap="round" />
-          <circle cx="408" cy="420" r="21" fill="url(#shellShade)" stroke="#bfe1f5" strokeWidth="3" />
-          <path d="M416 416C438 400 455 381 465 365" fill="none" stroke="url(#shell)" strokeWidth="34" strokeLinecap="round" />
-          <rect x="450" y="343" width="40" height="36" rx="18" fill="url(#shell)" stroke="#bfe1f5" strokeWidth="3" transform="rotate(-33 470 361)" />
-          <path d="M459 352C467 346 476 344 483 346" fill="none" stroke="rgba(255,255,255,0.62)" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="488" cy="350" r={5 + pointerPulse * 2.5} fill={alpha(COLORS.cyan, 0.48 + pointerPulse * 0.52)} stroke="#e7feff" strokeWidth="2" filter="url(#robotGlow)" />
-        </g>
-
-        <g filter="url(#robotShadow)">
-          <path
-            d="M250 321C177 321 137 361 137 451c0 88 43 145 113 145s113-57 113-145c0-90-40-130-113-130z"
-            fill="url(#shell)"
-            stroke="#c9e8fb"
-            strokeWidth="4"
-          />
-          <path d="M168 380c19-31 47-44 82-44s63 13 82 44" fill="none" stroke="rgba(255,255,255,0.72)" strokeWidth="4" strokeLinecap="round" />
-          <path d="M173 537c24 31 49 45 77 45s53-14 77-45" fill="none" stroke="rgba(62,112,148,0.26)" strokeWidth="4" strokeLinecap="round" />
-          <rect x="200" y="302" width="100" height="58" rx="25" fill="url(#shellShade)" stroke="#b8d9ed" strokeWidth="3" />
-
-          <g transform={`translate(250 446) scale(${chestPulse}) translate(-250 -446)`}>
-            <circle cx="250" cy="446" r="59" fill="#052d59" stroke="#62dff8" strokeWidth="4" />
-            <circle cx="250" cy="446" r="45" fill="url(#core)" opacity={0.9} filter="url(#robotGlow)" />
-            <circle cx="250" cy="446" r="28" fill="#073873" stroke="#d8fbff" strokeWidth="2" />
-            <circle cx="250" cy="446" r="7" fill="#e9feff" />
-            {[0, 60, 120, 180, 240, 300].map((angle) => {
-              const radians = (angle * Math.PI) / 180;
-              const x = 250 + Math.cos(radians) * 20;
-              const y = 446 + Math.sin(radians) * 20;
-              return (
-                <g key={angle}>
-                  <line x1="250" y1="446" x2={x} y2={y} stroke="#aef5ff" strokeWidth="2" opacity={0.8} />
-                  <circle cx={x} cy={y} r="3.2" fill="#eaffff" />
-                </g>
-              );
-            })}
-          </g>
-        </g>
-
-        <g transform={`rotate(${nod} 250 205)`} filter="url(#robotShadow)">
-          <path d="M250 94V53" stroke="#c8e7f8" strokeWidth="12" strokeLinecap="round" />
-          <ellipse cx="250" cy="43" rx="13" ry="13" fill={COLORS.cyan} filter="url(#robotGlow)" opacity={0.74 + antennaLive * 0.26} />
-          <circle cx="250" cy="43" r={6 + antennaLive * 2} fill="#edffff" />
-          <rect x="104" y="94" width="292" height="226" rx="104" fill="url(#shell)" stroke="#d7effd" strokeWidth="5" />
-          <rect x="72" y="144" width="57" height="126" rx="28" fill="url(#shellShade)" stroke="#a9d1e9" strokeWidth="4" />
-          <rect x="371" y="144" width="57" height="126" rx="28" fill="url(#shellShade)" stroke="#a9d1e9" strokeWidth="4" />
-          <rect x="78" y="170" width="13" height="72" rx="6" fill={COLORS.blue} />
-          <rect x="409" y="170" width="13" height="72" rx="6" fill={COLORS.blue} />
-          <rect x="127" y="119" width="246" height="174" rx="76" fill="url(#visor)" stroke="#4fc8ff" strokeWidth="4" />
-          <path d="M157 145c30-25 65-34 103-32" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="8" strokeLinecap="round" />
-          <ellipse cx="250" cy="284" rx="68" ry="4" fill={alpha(COLORS.cyan, 0.26 + antennaLive * 0.24)} />
-          <g transform={`translate(${lookX} 0)`}>
-            <rect
-              x="181"
-              y={eyeY}
-              width="31"
-              height={eyeHeight}
-              rx={eyeRadius}
-              fill="#dffcff"
-              filter="url(#robotGlow)"
-            />
-            <rect
-              x="288"
-              y={eyeY}
-              width="31"
-              height={eyeHeight}
-              rx={eyeRadius}
-              fill="#dffcff"
-              filter="url(#robotGlow)"
-            />
-          </g>
-        </g>
-      </svg>
-
       <div
         style={{
           position: "absolute",
-          left: 78,
-          right: 78,
-          bottom: 2,
-          textAlign: "center",
-          fontFamily: "Arial, Helvetica, sans-serif",
+          left: 0,
+          top: 0,
+          width: 2,
+          height: 578,
+          background: `linear-gradient(180deg, transparent, ${alpha(COLORS.cyan, 0.66)}, ${alpha(COLORS.violet, 0.38)}, transparent)`,
+          boxShadow: `0 0 18px ${alpha(COLORS.cyan, 0.16)}`,
         }}
-      >
-        <div style={{fontSize: 23, letterSpacing: 4.5, fontWeight: 800, color: COLORS.text}}>
-          AUTONOMOUS AGENT
-        </div>
+      />
+      <div style={{position: "absolute", left: -7, top: 23, width: 16, height: 2, background: COLORS.cyan}} />
+      <div style={{position: "absolute", left: -7, bottom: 20, width: 16, height: 2, background: alpha(COLORS.violet, 0.7)}} />
+
+      <div style={{position: "absolute", left: 31, top: 0, right: 0}}>
         <div
           style={{
-            marginTop: 11,
             display: "flex",
-            justifyContent: "center",
             alignItems: "center",
-            gap: 9,
-            fontSize: 11,
-            letterSpacing: 2.5,
-            color: COLORS.muted,
+            gap: 11,
+            color: COLORS.cyan,
+            fontSize: 10.5,
+            letterSpacing: 2.8,
+            fontWeight: 800,
           }}
         >
-          <span style={{width: 7, height: 7, borderRadius: "50%", background: COLORS.mint, boxShadow: `0 0 10px ${COLORS.mint}`}} />
-          INTERACTIVE • ONLINE
+          <span style={{color: alpha(COLORS.text, 0.48)}}>01 /</span>
+          ENTERPRISE AI ORCHESTRATION
+        </div>
+
+        <div style={{position: "relative", marginTop: 31, overflow: "hidden"}}>
+          <div
+            style={{
+              position: "absolute",
+              left: scanX,
+              top: -20,
+              width: 72,
+              height: 230,
+              transform: "rotate(10deg)",
+              background: "linear-gradient(90deg, transparent, rgba(65,219,255,0.09), transparent)",
+              pointerEvents: "none",
+            }}
+          />
+          {[
+            {text: "FROM DATA", accent: false},
+            {text: "TO VERIFIED", accent: true},
+            {text: "DECISIONS", accent: false},
+          ].map((line, index) => (
+            <div
+              key={line.text}
+              style={{
+                height: 65,
+                overflow: "hidden",
+                opacity: lineReveal[index],
+                transform: `translateY(${(1 - lineReveal[index]) * 32}px)`,
+                color: line.accent ? COLORS.cyan : COLORS.text,
+                fontSize: line.accent ? 50 : 57,
+                lineHeight: "65px",
+                letterSpacing: line.accent ? -0.9 : -1.4,
+                fontWeight: 900,
+                whiteSpace: "nowrap",
+                textShadow: line.accent ? `0 0 26px ${alpha(COLORS.cyan, 0.18)}` : "none",
+              }}
+            >
+              {line.text}
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop: 23}}>
+          {["CONTEXT-AWARE INTELLIGENCE", "SECURE TOOL EXECUTION"].map((label, index) => (
+            <div
+              key={label}
+              style={{
+                marginTop: index === 0 ? 0 : 6,
+                color: alpha(COLORS.muted, 0.92),
+                fontSize: 10.5,
+                letterSpacing: 1.8,
+                fontWeight: 700,
+              }}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            marginTop: 25,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: 410,
+          }}
+        >
+          {stageTokens.map((stage) => (
+            <div key={stage.label} style={{display: "flex", alignItems: "center", gap: 7}}>
+              <span
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: mixHex("#23415b", stage.color, stage.active),
+                  boxShadow: `0 0 ${stage.active * 11}px ${alpha(stage.color, stage.active)}`,
+                }}
+              />
+              <span
+                style={{
+                  color: mixHex(COLORS.muted, COLORS.text, stage.active),
+                  fontSize: 8.5,
+                  letterSpacing: 1.15,
+                  fontWeight: 800,
+                }}
+              >
+                {stage.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            position: "relative",
+            marginTop: 24,
+            width: 414,
+            height: 116,
+            borderRadius: 14,
+            overflow: "hidden",
+            border: `1px solid ${alpha(activePhase.color, 0.28)}`,
+            background: "linear-gradient(135deg, rgba(8,29,48,0.94), rgba(3,15,28,0.94))",
+            boxShadow: `0 15px 36px rgba(0,0,0,0.24), 0 0 28px ${alpha(activePhase.color, 0.06)}`,
+          }}
+        >
+          <div style={{position: "absolute", left: 18, top: 16, color: alpha(COLORS.muted, 0.74), fontSize: 8.5, letterSpacing: 2, fontWeight: 800}}>
+            CURRENT STAGE / 0{activePhaseIndex + 1}
+          </div>
+          {phases.map((phase, index) => {
+            const enter = ramp(time, phase.start, phase.start + 0.24);
+            const leave = index === phases.length - 1 ? 1 : 1 - ramp(time, phase.end - 0.22, phase.end);
+            const visible = Math.min(enter, leave);
+            return (
+              <div
+                key={phase.label}
+                style={{
+                  position: "absolute",
+                  left: 18,
+                  top: 39,
+                  opacity: visible,
+                  transform: `translateY(${(1 - enter) * 8 - (1 - leave) * 8}px)`,
+                }}
+              >
+                <div style={{color: phase.color, fontSize: 18.5, letterSpacing: 1.1, fontWeight: 900}}>{phase.label}</div>
+                <div style={{marginTop: 7, color: alpha(COLORS.muted, 0.9), fontSize: 8.8, letterSpacing: 1.45, fontWeight: 700}}>{phase.detail}</div>
+              </div>
+            );
+          })}
+          <div style={{position: "absolute", left: 18, right: 18, bottom: 14, height: 3, borderRadius: 2, background: alpha(COLORS.line, 0.78), overflow: "hidden"}}>
+            <div
+              style={{
+                width: `${pipelineProgress * 100}%`,
+                height: "100%",
+                borderRadius: 2,
+                background: `linear-gradient(90deg, ${COLORS.blue}, ${activePhase.color})`,
+                boxShadow: `0 0 12px ${alpha(activePhase.color, 0.55)}`,
+              }}
+            />
+          </div>
+          <div style={{position: "absolute", right: 18, top: 16, color: activePhase.color, fontSize: 9.5, letterSpacing: 1.2, fontWeight: 900}}>
+            {String(Math.round(pipelineProgress * 100)).padStart(2, "0")}%
+          </div>
+        </div>
+
+        <div style={{marginTop: 18, display: "flex", gap: 9}}>
+          {["SECURE", "SCALABLE", "TRACEABLE"].map((label, index) => (
+            <div
+              key={label}
+              style={{
+                padding: "7px 9px",
+                borderRadius: 7,
+                border: `1px solid ${alpha(index === 0 ? COLORS.mint : COLORS.blue, 0.2)}`,
+                color: index === 0 ? alpha(COLORS.mint, 0.86) : alpha(COLORS.muted, 0.88),
+                background: "rgba(5,24,40,0.62)",
+                fontSize: 7.8,
+                letterSpacing: 1.35,
+                fontWeight: 800,
+              }}
+            >
+              {label}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1088,12 +1148,6 @@ export const Motion: React.FC = () => {
     {x: 724 + index * 22, y: 449},
   ]);
 
-  const robotRoute = [
-    {x: 523, y: 525},
-    {x: 622, y: 525},
-    {x: 622, y: 520},
-    {x: 683, y: 520},
-  ];
   const contextReasonRoute = [
     {x: 837, y: 520},
     {x: 967, y: 520},
@@ -1244,7 +1298,6 @@ export const Motion: React.FC = () => {
             </filter>
           </defs>
 
-          <NetworkRoute points={robotRoute} transits={[{start: 1.35, end: 2.45}]} color={COLORS.blue} time={time} finalHold={finalHold} packets={2} />
           {sourceRoutes.map((route, index) => (
             <NetworkRoute
               key={index}
@@ -1281,12 +1334,15 @@ export const Motion: React.FC = () => {
           <NetworkRoute points={verifyResultRoute} transits={[{start: 11.58, end: 12.18}]} color={COLORS.mint} time={time} finalHold={finalHold} packets={2} />
         </svg>
 
-        <Robot
+        <HeroTypography
           time={time}
           frame={frame}
           fps={fps}
           sceneOpacity={1}
+          contextActivity={contextActivity}
           reasonActivity={reasonActivity}
+          toolActivity={toolActivity}
+          verifyActivity={verifyActivity}
           resultActivity={resultActivity}
         />
 
