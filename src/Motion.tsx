@@ -1,446 +1,699 @@
-import React from 'react';
-import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
+import React, {useMemo} from 'react';
+import {AbsoluteFill, random, useCurrentFrame, useVideoConfig} from 'remotion';
 
-/**
- * MOTION — "Digital Skull Alert | Cyber Threat Hologram"
- * 1920x1080 • 60 fps • 1200 frames (20 s) • SEAMLESS LOOP
- *
- * - Tengkorak hologram neon merah berputar penuh 360° pada sumbu Y tepat
- *   satu putaran per 20 s (CSS 3D perspective, tiga lapis kedalaman
- *   translateZ → terasa volumetrik tanpa Three.js). Loop otomatis mulus.
- * - Isi tengkorak bergaris scanline (pattern di-clip path); sapuan scan
- *   terang menyapu atas→bawah tiap 4 s (5× per loop).
- * - Hologram sesekali "rusak": slice glitch horizontal 2-3 frame pada
- *   jendela berjadwal, kedip mati-hidup singkat, flicker halus konstan.
- * - Kerucut cahaya proyektor dari bawah + ellipse basis berdenyut.
- * - Teks "MALWARE SIGNATURE FOUND" berdenyut + persentase scan merambat
- *   0→100% dan ter-reset tepat di titik loop.
- * - Latar sekeluarga Motion3/4/5 (dinding kode, partikel, beam, grain,
- *   scanline, vignette).
- *
- * ASET: siluet tengkorak dari Font Awesome Free 6 (ikon "skull", solid) —
- * lisensi ikon CC BY 4.0 (butuh atribusi; periksa kebijakan platform).
- * Halaman: https://fontawesome.com/icons/skull  •  Alternatif menarik:
- * game-icons.net (CC BY 3.0) mis. Dread Skull / Skull Crossed Bones —
- * tinggal ganti konstanta SKULL_PATH.
- *
- * Mandiri — hanya butuh 'remotion'.
- */
+// ============================================================================
+// MOTION3 — "WARNING" Cyber Attack Glitch Alert
+// 15 s • 60 fps • 1920×1080 • loop mulus
+//
+// Direkayasa-balik dari referensi (bukti terukur, bukan tebakan):
+// - 1 scene statis: judul WARNING (font pixel) dalam kotak garis-ganda,
+//   latar hitam-merah penuh fragmen kode digital yang berkedip.
+// - motion_probe: ~1 burst glitch/detik, durasi 0,23–0,7 s, in-place
+//   (dx=dy=0 → bukan slide), easing linear → pergantian state DISKRIT
+//   per 2–3 frame, bukan tween halus.
+// - Onion-skin: judul tetap terkunci di tempat; latar ber-shimmer per frame.
+// State glitch yang terobservasi: slice-shift, ghost/double, box terisi
+// penuh (invers), underline-only + stretch, dim flicker.
+// ============================================================================
+
+const W = 1920;
+const H = 1080;
 
 // ---------------------------------------------------------------------------
-// Deterministic helpers (loop-safe)
+// Palet (aproksimasi dari frame referensi, bt709 merah tunggal)
 // ---------------------------------------------------------------------------
-
-const LOOP = 1200;
-const fract = (x: number) => x - Math.floor(x);
-const hash = (n: number) => fract(Math.sin(n * 127.1 + 43.7) * 43758.5453123);
-const hash2 = (a: number, b: number) => hash(a * 57.31 + b * 911.7);
-const TAU = Math.PI * 2;
-const lsin = (f: number, k: number, phase = 0) =>
-  Math.sin(TAU * (f / LOOP) * k + phase);
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-
-// ---------------------------------------------------------------------------
-// Palette & aset
-// ---------------------------------------------------------------------------
-
-const BG0 = '#0b1c2c';
-const BG1 = '#16344e';
-const BEAM = '#38b6e8';
-const CODE_C = '#4a8cb2';
-const PART_C = '#4fc3f0';
-const NEON = '#ff2f5e';
-const NEON_CORE = '#ffb3c4';
-const MONO = "Consolas, 'Courier New', monospace";
-
-// Font Awesome Free 6 "skull" (solid), viewBox 0 0 512 512 — CC BY 4.0
-const SKULL_PATH =
-  'M416 398.9c58.5-41.1 96-104.1 96-174.9C512 100.3 397.4 0 256 0S0 100.3 0 ' +
-  '224c0 70.7 37.5 133.8 96 174.9c0 .4 0 .7 0 1.1l0 64c0 26.5 21.5 48 48 ' +
-  '48l48 0 0-48c0-8.8 7.2-16 16-16s16 7.2 16 16l0 48 64 0 0-48c0-8.8 7.2-16 ' +
-  '16-16s16 7.2 16 16l0 48 48 0c26.5 0 48-21.5 48-48l0-64c0-.4 0-.7 0-1.1zM96 ' +
-  '256a64 64 0 1 1 128 0A64 64 0 1 1 96 256zm256-64a64 64 0 1 1 0 128 64 64 0 1 1 0-128z';
-
-// Jendela slice-glitch (frame mulai, durasi) — jauh dari seam loop
-const GLITCHES: Array<[number, number]> = [
-  [210, 14], [462, 10], [700, 16], [934, 10], [1080, 12],
-];
+const PAL = {
+  bg: '#060000',
+  titleRed: '#ff2d2d',
+  titleDark: '#2a0303',
+  boxRed: '#e42222',
+  fillRed: '#c41919',
+  ghostRed: '#a81414',
+  frag: ['#571010', '#7c1515', '#a51e1e', '#d42a2a', '#ff4040'],
+};
 
 // ---------------------------------------------------------------------------
-// Latar (keluarga seri ini)
+// Font pixel 5×7 untuk "WARNING" (gaya VCR/terminal seperti referensi)
 // ---------------------------------------------------------------------------
+const GLYPHS: Record<string, string[]> = {
+  W: ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  N: ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'],
+  G: ['01110', '10001', '10000', '10111', '10001', '10001', '01110'],
+};
 
-const CODE_SNIPS = [
-  'scan /sys/proc/*', 'sig=0xDEAD9F', 'quarantine(pid)', 'heuristic match 91%',
-  'entropy spike @0x7C', 'hook detected', 'payload.bin found', 'CRC mismatch',
-  'sandbox trace on', 'yara rule hit', 'root@ids:~$ tail', 'port 4444 open',
-];
+const WORD = 'WARNING';
+const CELL_W = 13;
+const CELL_H = 15;
+const TEXT_W = (WORD.length * 6 - 1) * CELL_W; // 41 kolom
+const TEXT_H = 7 * CELL_H;
 
-const CodeLayer: React.FC<{f: number}> = ({f}) => (
-  <AbsoluteFill>
-    {Array.from({length: 44}, (_, i) => {
-      const txt = CODE_SNIPS[i % CODE_SNIPS.length];
-      const x = 20 + hash(i * 3.1) * 1780;
-      const y = 20 + hash(i * 7.7) * 1010;
-      const k = 2 + Math.floor(hash(i * 5.3) * 4);
-      const op = clamp01(0.16 + 0.5 * lsin(f, k, hash(i) * TAU)) * 0.8;
-      return (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            left: x,
-            top: y,
-            fontFamily: MONO,
-            fontSize: 13 + hash(i * 9.7) * 5,
-            color: CODE_C,
-            opacity: op,
-            whiteSpace: 'pre',
-          }}
-        >
-          {txt}
-          {'\n'}
-          {CODE_SNIPS[(i + 4) % CODE_SNIPS.length]}
-        </div>
-      );
-    })}
-  </AbsoluteFill>
-);
+const BOX_W = 660;
+const BOX_H = 184;
+const SVG_W = 900;
+const SVG_H = 300;
 
-const Particles: React.FC<{f: number}> = ({f}) => (
-  <AbsoluteFill>
-    {Array.from({length: 55}, (_, i) => {
-      const x = hash(i * 11.3) * 1920;
-      const y = hash(i * 17.9) * 1080;
-      const s = 1.5 + hash(i * 23.1) * 3;
-      const k = 3 + Math.floor(hash(i * 31.7) * 5);
-      const tw = clamp01(0.15 + 0.85 * lsin(f, k, hash(i * 41.3) * TAU));
-      return (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            left: x,
-            top: y + 7 * lsin(f, 1, hash(i * 51.9) * TAU),
-            width: s,
-            height: s,
-            background: PART_C,
-            opacity: tw * 0.45,
-          }}
+// ---------------------------------------------------------------------------
+// Judul inti: teks pixel + kotak garis ganda, dalam satu SVG
+// ---------------------------------------------------------------------------
+type BoxMode = 'outline' | 'filled' | 'none';
+
+const TitleCore: React.FC<{
+  textFill: string;
+  boxMode: BoxMode;
+  underline?: boolean;
+  scaleX?: number;
+}> = ({textFill, boxMode, underline = false, scaleX = 1}) => {
+  const cx = SVG_W / 2;
+  const cy = SVG_H / 2;
+  const textX = cx - TEXT_W / 2;
+  const textY = cy - TEXT_H / 2;
+
+  const pixels: React.ReactNode[] = [];
+  WORD.split('').forEach((ch, li) => {
+    const g = GLYPHS[ch];
+    g.forEach((row, r) => {
+      row.split('').forEach((bit, c) => {
+        if (bit === '1') {
+          pixels.push(
+            <rect
+              key={`${li}-${r}-${c}`}
+              x={textX + (li * 6 + c) * CELL_W}
+              y={textY + r * CELL_H}
+              width={CELL_W - 2}
+              height={CELL_H - 2}
+              fill={textFill}
+            />,
+          );
+        }
+      });
+    });
+  });
+
+  return (
+    <svg
+      width={SVG_W}
+      height={SVG_H}
+      viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        transform: `translate(-50%, -50%) scaleX(${scaleX})`,
+      }}
+    >
+      {boxMode === 'filled' && (
+        <rect
+          x={cx - BOX_W / 2}
+          y={cy - BOX_H / 2}
+          width={BOX_W}
+          height={BOX_H}
+          fill={PAL.fillRed}
         />
-      );
-    })}
-  </AbsoluteFill>
+      )}
+      {boxMode === 'outline' && (
+        <>
+          <rect
+            x={cx - BOX_W / 2}
+            y={cy - BOX_H / 2}
+            width={BOX_W}
+            height={BOX_H}
+            fill="none"
+            stroke={PAL.boxRed}
+            strokeWidth={3}
+          />
+          <rect
+            x={cx - BOX_W / 2 + 8}
+            y={cy - BOX_H / 2 + 8}
+            width={BOX_W - 16}
+            height={BOX_H - 16}
+            fill="none"
+            stroke={PAL.boxRed}
+            strokeWidth={2}
+          />
+        </>
+      )}
+      {underline && (
+        <rect
+          x={cx - (TEXT_W * 1.22) / 2}
+          y={textY + TEXT_H + 16}
+          width={TEXT_W * 1.22}
+          height={11}
+          fill={PAL.boxRed}
+        />
+      )}
+      {pixels}
+    </svg>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Pembungkus slice: memotong judul jadi 5 pita horizontal dengan offset X
+// (mekanisme glitch utama yang terlihat di referensi t≈3,9 s / 6,6–7,1 s)
+// ---------------------------------------------------------------------------
+const Sliced: React.FC<{offsets: number[]; children: React.ReactNode}> = ({
+  offsets,
+  children,
+}) => (
+  <>
+    {offsets.map((o, i) => (
+      <div
+        key={i}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          clipPath: `inset(${i * 20}% 0 ${(offsets.length - 1 - i) * 20}% 0)`,
+          transform: `translateX(${o}px)`,
+        }}
+      >
+        {children}
+      </div>
+    ))}
+  </>
 );
 
 // ---------------------------------------------------------------------------
-// Satu lapis tengkorak hologram (SVG 560×560, skull di-scale dari 512)
+// Jadwal burst glitch — fraksi durasi agar ritme terjaga bila durasi diubah.
+// Kerapatan ≈1 burst/dtk (referensi: 27 jendela gerak / 20 s, banyak yang
+// bersambungan). Awal & akhir timeline bersih → loop mulus.
 // ---------------------------------------------------------------------------
+const BURSTS: {f: number; len: number}[] = [
+  {f: 30 / 900, len: 16},
+  {f: 80 / 900, len: 12},
+  {f: 135 / 900, len: 20},
+  {f: 190 / 900, len: 14},
+  {f: 250 / 900, len: 24},
+  {f: 300 / 900, len: 12},
+  {f: 360 / 900, len: 18},
+  {f: 415 / 900, len: 14},
+  {f: 470 / 900, len: 20},
+  {f: 530 / 900, len: 12},
+  {f: 585 / 900, len: 16},
+  {f: 640 / 900, len: 14},
+  {f: 700 / 900, len: 26},
+  {f: 750 / 900, len: 46}, // periode aktif panjang (ref. 17,4–19,1 s)
+  {f: 820 / 900, len: 14},
+  {f: 860 / 900, len: 12},
+];
 
-const SkullLayer: React.FC<{
-  glow: number;
-  sweepY: number; // 0..1 posisi sapuan scan
-  bright?: boolean;
-  idSuffix: string;
-}> = ({glow, sweepY, bright = false, idSuffix}) => (
-  <svg width={560} height={560} viewBox="-24 -24 560 560" style={{display: 'block'}}>
-    <defs>
-      <pattern id={`holo${idSuffix}`} width="8" height="8" patternUnits="userSpaceOnUse">
-        <rect width="8" height="8" fill="rgba(255,47,94,0.10)" />
-        <rect y="0" width="8" height="3.5" fill="rgba(255,47,94,0.30)" />
-      </pattern>
-      <linearGradient id={`sweep${idSuffix}`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="rgba(255,180,200,0)" />
-        <stop offset="0.5" stopColor="rgba(255,180,200,0.75)" />
-        <stop offset="1" stopColor="rgba(255,180,200,0)" />
-      </linearGradient>
-      <clipPath id={`clip${idSuffix}`}>
-        <path d={SKULL_PATH} />
-      </clipPath>
-    </defs>
-    {/* isi scanline */}
-    <path d={SKULL_PATH} fill={`url(#holo${idSuffix})`} />
-    {/* outline neon */}
-    <path
-      d={SKULL_PATH}
-      fill="none"
-      stroke={NEON}
-      strokeWidth={bright ? 10 : 7}
-      opacity={0.9 * glow}
-    />
-    <path
-      d={SKULL_PATH}
-      fill="none"
-      stroke={NEON_CORE}
-      strokeWidth={bright ? 3.6 : 2.4}
-      opacity={Math.min(1, glow)}
-    />
-    {/* sapuan scan terang, di-clip bentuk tengkorak */}
-    <g clipPath={`url(#clip${idSuffix})`}>
-      <rect x={-24} y={sweepY * 560 - 60} width={560} height={90} fill={`url(#sweep${idSuffix})`} />
-    </g>
-  </svg>
-);
+type GlitchState =
+  | 'normal'
+  | 'slices'
+  | 'ghost'
+  | 'filled'
+  | 'underline'
+  | 'stretch'
+  | 'dim';
+
+const STATE_POOL: GlitchState[] = [
+  'slices',
+  'ghost',
+  'filled',
+  'underline',
+  'slices',
+  'dim',
+  'normal',
+  'stretch',
+];
 
 // ---------------------------------------------------------------------------
-// Main composition
+// Fragmen kode latar — deterministik penuh via random(seed) Remotion
 // ---------------------------------------------------------------------------
+type Frag = {
+  x: number;
+  y: number;
+  type: 'txt' | 'dash' | 'dot';
+  len: number;
+  size: number;
+  color: string;
+  bright: boolean;
+  blur: number;
+  period: number;
+  phase: number;
+  duty: number;
+  seed: number;
+};
 
+const makeFrags = (): Frag[] => {
+  const arr: Frag[] = [];
+  let id = 0;
+  const push = (x: number, y: number, forceTxt = false) => {
+    const r = (k: string) => random(`fr${id}-${k}`);
+    const t = r('t');
+    const type: Frag['type'] = forceTxt
+      ? 'txt'
+      : t < 0.5
+        ? 'txt'
+        : t < 0.82
+          ? 'dash'
+          : 'dot';
+    const b = r('b');
+    const color =
+      b < 0.35
+        ? PAL.frag[0]
+        : b < 0.6
+          ? PAL.frag[1]
+          : b < 0.8
+            ? PAL.frag[2]
+            : b < 0.94
+              ? PAL.frag[3]
+              : PAL.frag[4];
+    arr.push({
+      x,
+      y,
+      type,
+      len: 4 + Math.floor(r('l') * 10),
+      size: 11 + Math.floor(r('sz') * 7),
+      color,
+      bright: b >= 0.94,
+      blur: r('bl') < 0.16 ? 1 + r('bl2') * 1.5 : 0,
+      // ~35% fragmen berkedip cepat (baseline shimmer tinggi di referensi)
+      period: r('fast') < 0.26 ? 2 + Math.floor(r('p') * 5) : 8 + Math.floor(r('p') * 30),
+      phase: Math.floor(r('ph') * 40),
+      duty: 0.5 + r('d') * 0.4,
+      seed: id,
+    });
+    id++;
+  };
+
+  // Sebaran acak — lebih padat di tepi kiri/kanan seperti referensi
+  for (let i = 0; i < 270; i++) {
+    const rs = (k: string) => random(`sc${i}-${k}`);
+    const side = rs('s') < 0.62;
+    const x = side
+      ? rs('h') < 0.5
+        ? rs('x') * 0.34
+        : 0.66 + rs('x') * 0.34
+      : 0.05 + rs('x') * 0.9;
+    push(x, 0.02 + rs('y') * 0.96);
+  }
+  // Klaster kolom bertumpuk (blok kode di sisi kanan/kiri referensi)
+  for (let c = 0; c < 16; c++) {
+    const rc = (k: string) => random(`cl${c}-${k}`);
+    const cx = rc('s') < 0.5 ? rc('x') * 0.3 : 0.68 + rc('x') * 0.28;
+    const cy = 0.05 + rc('y') * 0.75;
+    const rows = 3 + Math.floor(rc('n') * 6);
+    for (let rr = 0; rr < rows; rr++) {
+      push(cx + (rc(`ox${rr}`) - 0.5) * 0.02, cy + rr * 0.028, true);
+    }
+  }
+  return arr;
+};
+
+const CHARSET = '0123456789';
+
+const fragText = (f: Frag, cycle: number): string => {
+  let s = '';
+  for (let j = 0; j < f.len; j++) {
+    const v = random(`ch${f.seed}-${cycle}-${j}`);
+    s += CHARSET[Math.floor(v * CHARSET.length)];
+  }
+  return s;
+};
+
+// Blob merah besar out-of-focus (tekstur kedalaman di latar referensi)
+type Blob = {x: number; y: number; w: number; h: number; k: number; ph: number; op: number};
+const makeBlobs = (): Blob[] =>
+  new Array(7).fill(0).map((_, i) => {
+    const r = (k: string) => random(`bl${i}-${k}`);
+    return {
+      x: r('x') * 100,
+      y: 45 + r('y') * 55,
+      w: 220 + r('w') * 320,
+      h: 120 + r('h') * 220,
+      k: 2 + Math.floor(r('k') * 3),
+      ph: r('p') * Math.PI * 2,
+      op: 0.1 + r('o') * 0.14,
+    };
+  });
+
+// ============================================================================
+// KOMPOSISI UTAMA
+// ============================================================================
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const f = Math.floor((frame / durationInFrames) * LOOP) % LOOP;
 
-  const epoch = Math.floor(f / 5);
+  const frags = useMemo(makeFrags, []);
+  const blobs = useMemo(makeBlobs, []);
 
-  // Rotasi hologram: tepat satu putaran per loop
-  const rotY = (f / LOOP) * 360;
+  const tw = frame / durationInFrames; // 0..1, untuk sinus loop-sempurna
 
-  // Flicker & kedip mati-hidup singkat
-  const flick = 1 + 0.07 * (hash(epoch * 4.3) - 0.5);
-  const blackout = hash(epoch * 9.1) < 0.025 ? 0.25 : 1; // kedip langka
-  const breathe = 0.9 + 0.1 * lsin(f, 3, 0.9);
-  const glow = breathe * flick;
-  const holoOp = 0.92 * blackout * flick;
-
-  // Sapuan scan: 5 sapuan per loop (tiap 4 s), atas → bawah
-  const sweepY = (f % 240) / 240;
-
-  // Slice glitch berjadwal
-  let glitchAmt = 0;
-  for (const [gs, gd] of GLITCHES) {
-    if (f >= gs && f < gs + gd) glitchAmt = 1 - Math.abs((f - gs) / gd - 0.5) * 2;
+  // ------ status glitch judul --------------------------------------------
+  let state: GlitchState = 'normal';
+  let stateSeed = '';
+  let burstIdx = -1;
+  for (let i = 0; i < BURSTS.length; i++) {
+    const start = Math.round(BURSTS[i].f * durationInFrames);
+    if (frame >= start && frame < start + BURSTS[i].len) {
+      burstIdx = i;
+      const step = Math.floor((frame - start) / 4);
+      stateSeed = `st-${i}-${step}`;
+      state = STATE_POOL[Math.floor(random(stateSeed) * STATE_POOL.length)];
+      break;
+    }
+  }
+  // Blip idle 1–2 frame di antara burst (kedip halus referensi)
+  if (burstIdx === -1) {
+    const bc = Math.floor(frame / 29);
+    if (random(`blip${bc}`) < 0.15 && frame - bc * 29 < 2) {
+      state = 'dim';
+      stateSeed = `blip${bc}`;
+    }
   }
 
-  // Persentase scan: 0→100 linear, reset tepat di loop
-  const pct = Math.floor((f / LOOP) * 100);
+  // Jitter posisi judul hanya saat burst (in-place, amplitudo kecil)
+  const jx =
+    burstIdx >= 0 ? (random(`${stateSeed}-jx`) - 0.5) * 10 : 0;
+  const jy =
+    burstIdx >= 0 ? (random(`${stateSeed}-jy`) - 0.5) * 6 : 0;
 
-  // Denyut basis proyektor
-  const basePulse = 0.75 + 0.25 * lsin(f, 5, 0.3);
+  // Flicker kecerahan mikro — frekuensi bilangan bulat → loop mulus
+  const flick =
+    0.96 +
+    0.04 * Math.sin(2 * Math.PI * 47 * tw) +
+    0.035 * Math.sin(2 * Math.PI * 89 * tw + 1.7);
 
-  const holo = (
-    <div
-      style={{
-        position: 'absolute',
-        left: 960 - 280,
-        top: 230,
-        width: 560,
-        height: 560,
-        perspective: 1100,
-        perspectiveOrigin: '50% 50%',
-      }}
-    >
+  // Napas ambient lambat (3 siklus / durasi → loop mulus)
+  const breath = 0.86 + 0.14 * Math.sin(2 * Math.PI * 3 * tw + 0.6);
+
+  // ------ bangun judul sesuai state ---------------------------------------
+  let title: React.ReactNode;
+  const normalCore = (
+    <TitleCore textFill={PAL.titleRed} boxMode="outline" />
+  );
+  switch (state) {
+    case 'slices': {
+      const offsets = [0, 1, 2, 3, 4].map((i) => {
+        const centerBias = 1 - Math.abs(i - 2) / 2.5;
+        return (
+          (random(`${stateSeed}-sl${i}`) - 0.5) * 2 * (6 + 20 * centerBias)
+        );
+      });
+      title = <Sliced offsets={offsets}>{normalCore}</Sliced>;
+      break;
+    }
+    case 'ghost':
+      title = (
+        <>
+          <div style={{position: 'absolute', inset: 0, transform: 'translateX(-11px)', opacity: 0.45}}>
+            <TitleCore textFill={PAL.ghostRed} boxMode="outline" />
+          </div>
+          <div style={{position: 'absolute', inset: 0, transform: 'translateX(11px)', opacity: 0.45}}>
+            <TitleCore textFill={PAL.ghostRed} boxMode="outline" />
+          </div>
+          <div style={{position: 'absolute', inset: 0, opacity: 0.9}}>{normalCore}</div>
+        </>
+      );
+      break;
+    case 'filled':
+      title = (
+        <div style={{position: 'absolute', inset: 0, opacity: 0.85}}>
+          <TitleCore textFill={PAL.titleDark} boxMode="filled" />
+        </div>
+      );
+      break;
+    case 'underline':
+      title = (
+        <TitleCore
+          textFill={PAL.titleRed}
+          boxMode="none"
+          underline
+          scaleX={1.12}
+        />
+      );
+      break;
+    case 'stretch':
+      title = (
+        <div style={{position: 'absolute', inset: 0, opacity: 0.92}}>
+          <TitleCore textFill={PAL.titleRed} boxMode="outline" scaleX={1.3} />
+        </div>
+      );
+      break;
+    case 'dim':
+      title = (
+        <div style={{position: 'absolute', inset: 0, opacity: 0.5}}>
+          {normalCore}
+        </div>
+      );
+      break;
+    default:
+      title = normalCore;
+  }
+
+  // ------ streak horizontal (muncul terutama saat burst) ------------------
+  const streaks: React.ReactNode[] = [];
+  if (burstIdx >= 0) {
+    const n = 2 + Math.floor(random(`${stateSeed}-sn`) * 3);
+    for (let i = 0; i < n; i++) {
+      const sy = random(`${stateSeed}-sy${i}`) * H;
+      const sw = (0.25 + random(`${stateSeed}-sw${i}`) * 0.5) * W;
+      const sx = random(`${stateSeed}-sx${i}`) * (W - sw);
+      streaks.push(
+        <div
+          key={`b${i}`}
+          style={{
+            position: 'absolute',
+            left: sx,
+            top: sy,
+            width: sw,
+            height: 2,
+            background:
+              'linear-gradient(90deg, transparent, rgba(255,70,70,0.55), transparent)',
+          }}
+        />,
+      );
+    }
+  } else {
+    const sc = Math.floor(frame / 45);
+    if (random(`ist${sc}`) < 0.3 && frame - sc * 45 < 4) {
+      const sy = random(`isty${sc}`) * H;
+      streaks.push(
+        <div
+          key="idle"
+          style={{
+            position: 'absolute',
+            left: W * 0.15,
+            top: sy,
+            width: W * 0.7,
+            height: 1.5,
+            background:
+              'linear-gradient(90deg, transparent, rgba(230,50,50,0.35), transparent)',
+          }}
+        />,
+      );
+    }
+  }
+
+  // Pita lebar translusen saat burst (band displacement di referensi)
+  const bands: React.ReactNode[] = [];
+  if (burstIdx >= 0) {
+    for (let i = 0; i < 2; i++) {
+      const by = random(`${stateSeed}-by${i}`) * H;
+      const bh = 18 + random(`${stateSeed}-bh${i}`) * 50;
+      bands.push(
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: by,
+            width: '100%',
+            height: bh,
+            background: 'rgba(255,35,35,0.05)',
+          }}
+        />,
+      );
+    }
+  }
+
+  const grainSeed = Math.floor(frame / 2);
+
+  return (
+    <AbsoluteFill style={{backgroundColor: PAL.bg, overflow: 'hidden'}}>
+      {/* Ambient merah: vignette tengah + bloom atas-tengah */}
+      <AbsoluteFill style={{opacity: breath}}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'radial-gradient(ellipse 72% 62% at 50% 48%, rgba(150,15,15,0.55), transparent 80%)',
+          }}
+        />
+      </AbsoluteFill>
+
+      {/* Blob kedalaman out-of-focus */}
+      {blobs.map((b, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: `${b.x}%`,
+            top: `${b.y}%`,
+            width: b.w,
+            height: b.h,
+            transform: 'translate(-50%, -50%)',
+            background:
+              'radial-gradient(ellipse, rgba(170,22,22,0.55), transparent 70%)',
+            filter: 'blur(26px)',
+            opacity: b.op * (0.7 + 0.3 * Math.sin(2 * Math.PI * b.k * tw + b.ph)),
+          }}
+        />
+      ))}
+
+      {/* Medan fragmen kode digital */}
+      <AbsoluteFill>
+        {frags.map((f) => {
+          const cycle = Math.floor((frame + f.phase) / f.period);
+          if (random(`v${f.seed}-${cycle}`) > f.duty) return null;
+          const dx = (random(`dx${f.seed}-${cycle}`) - 0.5) * 5;
+          const op =
+            0.45 +
+            random(`op${f.seed}-${cycle}`) * 0.5;
+          const common: React.CSSProperties = {
+            position: 'absolute',
+            left: f.x * W + dx,
+            top: f.y * H,
+            opacity: op,
+            filter: f.blur ? `blur(${f.blur}px)` : undefined,
+          };
+          if (f.type === 'txt') {
+            return (
+              <div
+                key={f.seed}
+                style={{
+                  ...common,
+                  color: f.color,
+                  fontFamily: "'Courier New', monospace",
+                  fontSize: f.size,
+                  fontWeight: 700,
+                  letterSpacing: 2,
+                  whiteSpace: 'nowrap',
+                  textShadow: f.bright
+                    ? '0 0 7px rgba(255,64,64,0.9)'
+                    : undefined,
+                }}
+              >
+                {fragText(f, cycle)}
+              </div>
+            );
+          }
+          if (f.type === 'dash') {
+            return (
+              <div
+                key={f.seed}
+                style={{
+                  ...common,
+                  width: 8 + f.len * 7,
+                  height: 2.5,
+                  background: f.color,
+                }}
+              />
+            );
+          }
+          return (
+            <div
+              key={f.seed}
+              style={{
+                ...common,
+                width: 3,
+                height: 3,
+                background: f.color,
+              }}
+            />
+          );
+        })}
+      </AbsoluteFill>
+
+      {bands}
+      {streaks}
+
+      {/* Judul WARNING — terkunci di tengah, glow + flicker mikro */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '47.5%',
+          width: SVG_W,
+          height: SVG_H,
+          transform: `translate(-50%, -50%) translate(${jx}px, ${jy}px)`,
+          filter: `drop-shadow(0 0 12px rgba(255,35,35,0.85)) drop-shadow(0 0 46px rgba(255,0,0,0.4)) brightness(${flick})`,
+        }}
+      >
+        {title}
+      </div>
+
+      {/* Grain per-2-frame (shimmer terukur pada kurva energi referensi) */}
+      <svg width={0} height={0} style={{position: 'absolute'}}>
+        <defs>
+          <filter id="m3grain">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.75"
+              numOctaves={2}
+              seed={grainSeed}
+              stitchTiles="stitch"
+            />
+            <feColorMatrix
+              type="matrix"
+              values="0.85 0 0 0 0  0.12 0 0 0 0  0.1 0 0 0 0  0 0 0 0.5 0"
+            />
+          </filter>
+        </defs>
+      </svg>
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          transformStyle: 'preserve-3d',
-          transform: `rotateY(${rotY}deg)`,
-        }}
-      >
-        {/* Konstruksi BIDANG SILANG: dua bidang tegak lurus — saat satu
-            bidang edge-on (rotasi 90°/270°), bidang lain frontal, sehingga
-            tengkorak tidak pernah hilang selama rotasi penuh. */}
-        {([0, 90] as const).map((planeRot, p) => (
-          <div
-            key={p}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              transformStyle: 'preserve-3d',
-              transform: `rotateY(${planeRot}deg)`,
-            }}
-          >
-            {/* lapis kedalaman → volumetrik */}
-            {([-26, 0, 26] as const).map((z, i) => (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  transform: `translateZ(${z}px)`,
-                  opacity:
-                    (z === 0 ? holoOp : holoOp * 0.32) * (p === 0 ? 1 : 0.75),
-                  filter:
-                    z === 0 && p === 0
-                      ? `drop-shadow(0 0 14px ${NEON}) drop-shadow(0 0 40px ${NEON})`
-                      : undefined,
-                }}
-              >
-                <SkullLayer
-                  glow={glow}
-                  sweepY={sweepY}
-                  bright={z === 0}
-                  idSuffix={`${p}_${i}`}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  return (
-    <AbsoluteFill style={{background: BG0}}>
-      {/* Latar */}
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 120% 95% at 50% 28%, ${BG1} 0%, ${BG0} 78%)`,
-        }}
-      />
-      <CodeLayer f={f} />
-      <Particles f={f} />
-      <div
-        style={{
-          position: 'absolute',
-          left: 960 - 560,
-          top: -320,
-          width: 1120,
-          height: 780,
-          background: `radial-gradient(ellipse at 50% 18%, ${BEAM}55 0%, ${BEAM}1c 42%, transparent 72%)`,
-          opacity: 0.7 + 0.15 * lsin(f, 2, 0.4),
+          filter: 'url(#m3grain)',
+          mixBlendMode: 'screen',
+          opacity: 0.38,
         }}
       />
 
-      {/* Kerucut cahaya proyektor dari bawah */}
+      {/* Scanline halus */}
       <div
         style={{
           position: 'absolute',
-          left: 960 - 340,
-          top: 300,
-          width: 680,
-          height: 600,
+          inset: 0,
+          backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 2px, transparent 2px, transparent 6px)',
+          opacity: 0.3,
+        }}
+      />
+
+      {/* Vignette tepi gelap */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
           background:
-            'linear-gradient(0deg, rgba(255,47,94,0.20) 0%, rgba(255,47,94,0.05) 55%, transparent 100%)',
-          clipPath: 'polygon(38% 100%, 62% 100%, 96% 0%, 4% 0%)',
-          opacity: basePulse * 0.8,
-        }}
-      />
-      {/* Ellipse basis */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 960 - 190,
-          top: 862,
-          width: 380,
-          height: 46,
-          borderRadius: '50%',
-          border: `2px solid ${NEON}`,
-          background: 'rgba(255,47,94,0.10)',
-          boxShadow: `0 0 24px rgba(255,47,94,${0.5 * basePulse})`,
-          opacity: 0.55 + 0.35 * basePulse,
+            'radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(0,0,0,0.8) 100%)',
         }}
       />
 
-      {/* Hologram tengkorak (dengan slice glitch saat jendela aktif) */}
-      {glitchAmt > 0.02 ? (
-        <>
-          {Array.from({length: 6}, (_, i) => {
-            const top = 230 + hash2(Math.floor(f / 2), i) * 560;
-            const h = 16 + hash2(Math.floor(f / 2) + 1, i) * 70;
-            const dx = (hash2(Math.floor(f / 2) + 2, i) - 0.5) * 150 * glitchAmt;
-            return (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  clipPath: `inset(${top}px 0 ${Math.max(0, 1080 - top - h)}px 0)`,
-                  transform: `translateX(${dx}px)`,
-                }}
-              >
-                {holo}
-              </div>
-            );
-          })}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              clipPath: 'inset(0 0 0 0)',
-              opacity: 0.45,
-            }}
-          >
-            {holo}
-          </div>
-        </>
-      ) : (
-        holo
-      )}
-
-      {/* Teks status */}
+      {/* Bloom cahaya atas-tengah — DI ATAS vignette agar tetap terang */}
       <div
         style={{
           position: 'absolute',
-          left: 960,
-          top: 930,
-          transform: 'translateX(-50%)',
-          fontFamily: MONO,
-          fontSize: 30,
-          letterSpacing: 8,
-          color: NEON_CORE,
-          opacity: 0.7 + 0.3 * Math.abs(lsin(f, 10)),
-          textShadow: `0 0 14px ${NEON}`,
-        }}
-      >
-        MALWARE SIGNATURE FOUND
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: 960,
-          top: 986,
-          transform: 'translateX(-50%)',
-          fontFamily: MONO,
-          fontSize: 23,
-          letterSpacing: 4,
-          color: '#bfe6ee',
-          opacity: 0.75,
-        }}
-      >
-        DEEP SCAN {String(pct).padStart(2, '0')}% // THREAT LEVEL: CRITICAL
-      </div>
-
-      {/* Grain shimmer */}
-      <svg
-        width={1920}
-        height={1080}
-        style={{position: 'absolute', inset: 0, opacity: 0.2, mixBlendMode: 'screen'}}
-      >
-        <filter id="grain6">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.11"
-            numOctaves="3"
-            seed={Math.floor(f / 2) % 600}
-            stitchTiles="stitch"
-          />
-          <feColorMatrix type="saturate" values="0" />
-          <feComponentTransfer>
-            <feFuncR type="linear" slope="0.5" />
-            <feFuncG type="linear" slope="0.55" />
-            <feFuncB type="linear" slope="0.7" />
-          </feComponentTransfer>
-        </filter>
-        <rect width={1920} height={1080} filter="url(#grain6)" />
-      </svg>
-
-      {/* Scanline + vignette */}
-      <AbsoluteFill
-        style={{
+          inset: 0,
+          opacity: breath,
           background:
-            'repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 2px, transparent 2px 4px)',
+            'radial-gradient(ellipse 34% 24% at 50% -2%, rgba(255,40,35,0.5), transparent 65%)',
         }}
       />
-      <AbsoluteFill
+      <div
         style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: breath,
           background:
-            'radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.42) 100%)',
+            'radial-gradient(ellipse 10% 6% at 50% 0%, rgba(255,120,95,0.9), transparent 100%)',
         }}
       />
     </AbsoluteFill>
   );
 };
-
-export default Motion;
