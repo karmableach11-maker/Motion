@@ -1,989 +1,504 @@
 import React from 'react';
-import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  useCurrentFrame,
-} from 'remotion';
+import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 
 /**
- * MOTION — "Deep Learning Headlines | Fast News Sequence"
- * 1920x1080 • 60 fps • 900 frames (15 s) • seamless loop
+ * MOTION — "System Failure | Virus Code Glitch • Cyber Attack Warning"
+ * 1920x1080 • 60 fps • 1200 frames (20 s)
  *
- * Prinsip utama (dari analisa frame-by-frame referensi):
- * - Kata kunci "Deep Learning" TERKUNCI di pusat frame (960, 520) di SEMUA
- *   halaman. Teks di sekitarnya, layout, font, dan ketebalan berganti cepat,
- *   tetapi keyword tidak pernah berpindah — inilah focal point video.
- *   Posisi dihitung presisi dengan measureText, jadi akurat di font apa pun.
- * - Hard cut setiap ~0.2–0.9 s dengan "zoom-blur burst" vertikal-radial
- *   yang berpusat DI keyword, sehingga keyword tetap semi-terbaca saat blur.
- * - Push-in sangat halus selama hold, juga berpusat di keyword.
- * - Shot pertama masuk dari blur, shot terakhir keluar ke blur → loop mulus.
+ * Direkonstruksi dari analisa frame-by-frame video referensi (20 s, 30 fps):
+ * - Fase 1 (0–3.5 s)  : terminal gelap penuh log compiler/error, progress bar
+ *                       cyan naik 0%→100% dengan lompatan tidak rata.
+ * - Fase 2 (3.55–4 s) : layar "meledak" kuning penuh dengan smear horizontal.
+ * - Fase 3 (4–5.6 s)  : wash biru berat, lalu tenang sejenak.
+ * - Fase 4 (5.65–20 s): badge WARNING! merah ber-panah terkunci di pusat,
+ *                       terus di-glitch (jitter, flip warna, dobel), teks
+ *                       besar samar CYBER ATTACK muncul di burst tertentu.
+ * - Sistem glitch: slice horizontal tergeser + RGB split, bar warna solid,
+ *   wash biru berpita. State berganti patah-patah ~15 Hz (bukan halus).
+ *
+ * Seluruh keacakan deterministik (hash seeded per-frame) — aman untuk
+ * render multi-thread Remotion. Timeline dinormalisasi ke durasi komposisi,
+ * jadi tetap benar bila durationInFrames diubah. Set komposisi ke 1200
+ * frame @60fps untuk durasi 20 s sesuai referensi.
  */
 
 // ---------------------------------------------------------------------------
-// Constants
+// Deterministic pseudo-random
 // ---------------------------------------------------------------------------
 
-const KW = 'Deep Learning';
-const ANCHOR_X = 960;
-const ANCHOR_Y = 520; // ≈48% tinggi frame, sesuai referensi
-const ORIGIN = `${(ANCHOR_X / 1920) * 100}% ${(ANCHOR_Y / 1080) * 100}%`;
+const fract = (x: number) => x - Math.floor(x);
+const hash = (n: number) => fract(Math.sin(n * 127.1 + 43.7) * 43758.5453123);
+const hash2 = (a: number, b: number) => hash(a * 57.31 + b * 911.7);
 
-const INK = '#0d0d0d';
-const INK_SOFT = '#2e2e2e';
-const GREY = '#555555';
-const GREY_LIGHT = '#8a8a8a';
-const PAPER = '#ffffff';
-const NAV_BG = '#3b3b3b';
-
-const SANS = "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif";
-const SERIF_OLD = "Georgia, 'Times New Roman', serif";
-const SERIF_NEWS = "'Times New Roman', Times, Georgia, serif";
-const ROUND = "'Trebuchet MS', 'Segoe UI', Verdana, sans-serif";
-const GROT = 'Verdana, Geneva, Arial, sans-serif';
-const FAT = "'Cooper Black', 'Arial Rounded MT Bold', Georgia, serif";
-
-const NBSP = ' ';
-
-// ---------------------------------------------------------------------------
-// Pengukur teks mandiri (tanpa @remotion/layout-utils).
-// Remotion me-render di dalam Chrome, jadi Canvas 2D measureText tersedia
-// dan deterministik antar-frame. Ada fallback aman bila document tak ada.
-// ---------------------------------------------------------------------------
-
-const _getMeasureCtx = (() => {
-  let ctx: CanvasRenderingContext2D | null | undefined;
-  return (): CanvasRenderingContext2D | null => {
-    if (ctx !== undefined) return ctx;
-    ctx =
-      typeof document !== 'undefined'
-        ? document.createElement('canvas').getContext('2d')
-        : null;
-    return ctx;
-  };
-})();
-
-const measureText = ({
-  text,
-  fontFamily,
-  fontSize,
-  fontWeight = 400,
-}: {
-  text: string;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight?: string | number;
-}): {width: number} => {
-  const ctx = _getMeasureCtx();
-  if (!ctx) {
-    // Perkiraan kasar bila kanvas tak tersedia (mis. saat SSR).
-    return {width: text.length * fontSize * 0.5};
-  }
-  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-  return {width: ctx.measureText(text).width};
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const smooth = (a: number, b: number, x: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
 };
 
 // ---------------------------------------------------------------------------
-// Keyword anchoring — hitung offset agar substring "Deep Learning"
-// selalu berpusat tepat di (ANCHOR_X, ANCHOR_Y)
+// Palette & typography
 // ---------------------------------------------------------------------------
 
-type KwFont = {
-  font: string;
-  size: number;
-  weight: number | string;
-  lh: number;
-};
+const MONO = "Consolas, 'Courier New', Menlo, monospace";
+const SANS = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
-const kwLayout = (cfg: KwFont, pre = '') => {
-  const opts = {
-    fontFamily: cfg.font,
-    fontSize: cfg.size,
-    fontWeight: String(cfg.weight),
-  };
-  const kwW = measureText({text: KW, ...opts}).width;
-  const preW = pre ? measureText({text: pre, ...opts}).width : 0;
-  const lineH = cfg.size * cfg.lh;
-  return {
-    left: ANCHOR_X - preW - kwW / 2, // tepi kiri baris yang memuat keyword
-    top: ANCHOR_Y - lineH / 2, // tepi atas baris keyword
-    lineH,
-    kwW,
-    preW,
-  };
-};
-
-const lineWidth = (cfg: KwFont, text: string) =>
-  measureText({
-    text,
-    fontFamily: cfg.font,
-    fontSize: cfg.size,
-    fontWeight: String(cfg.weight),
-  }).width;
-
-const HLine: React.FC<{
-  left: number;
-  top: number;
-  cfg: KwFont;
-  color?: string;
-  children: React.ReactNode;
-}> = ({left, top, cfg, color = INK, children}) => (
-  <div
-    style={{
-      position: 'absolute',
-      left,
-      top,
-      fontFamily: cfg.font,
-      fontSize: cfg.size,
-      fontWeight: cfg.weight as never,
-      lineHeight: cfg.lh,
-      color,
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {children}
-  </div>
-);
+const BG = '#04070a';
+const CODE_DIM = '#8fa398';
+const CODE_FAINT = '#5c6e64';
+const C_ERROR = '#e0524a';
+const C_WARN = '#e8c04a';
+const C_PATH = '#6fd3c3';
+const C_BUILD = '#5fdd7a';
+const C_NOTE = '#7f9fe0';
+const C_ADDR = '#b48fe0';
+const C_MARK = '#3fe07f';
 
 // ---------------------------------------------------------------------------
-// Small building blocks
+// Fake compiler / crash log (dekoratif, meniru gaya referensi)
 // ---------------------------------------------------------------------------
 
-const NavBar: React.FC<{
-  items: string[];
-  top: number;
-  font?: string;
-  italic?: boolean;
-  fontSize?: number;
-  offsetX?: number;
-}> = ({items, top, font = SANS, italic = false, fontSize = 30, offsetX = 0}) => (
-  <div
-    style={{
-      position: 'absolute',
-      top,
-      left: -200,
-      width: 2400,
-      height: 96,
-      background: NAV_BG,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 90,
-      paddingLeft: 260 + offsetX,
-      fontFamily: font,
-      fontStyle: italic ? 'italic' : 'normal',
-      fontWeight: 700,
-      fontSize,
-      color: '#f2f2f2',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {items.map((it) => (
-      <span key={it}>{it}</span>
-    ))}
-  </div>
-);
+type LogLine = {t: string; c: string};
 
-const Chip: React.FC<{label: string}> = ({label}) => (
-  <span
-    style={{
-      background: '#333333',
-      color: '#f5f5f5',
-      fontFamily: SERIF_OLD,
-      fontSize: 30,
-      padding: '10px 26px',
-      borderRadius: 6,
-      marginRight: 26,
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {label}
-  </span>
-);
+const L = (t: string, c: string = CODE_DIM): LogLine => ({t, c});
 
-const Body: React.FC<{
-  text: string;
-  width: number;
-  fontSize?: number;
-  font?: string;
-  color?: string;
-  justify?: boolean;
-  lineHeight?: number;
-}> = ({
-  text,
-  width,
-  fontSize = 25,
-  font = SANS,
-  color = INK_SOFT,
-  justify = false,
-  lineHeight = 1.55,
-}) => (
-  <div
-    style={{
-      width,
-      fontFamily: font,
-      fontSize,
-      lineHeight,
-      color,
-      textAlign: justify ? 'justify' : 'left',
-    }}
-  >
-    {text}
-  </div>
-);
-
-const ShareRail: React.FC<{left: number; top: number}> = ({left, top}) => (
-  <div
-    style={{
-      position: 'absolute',
-      left,
-      top,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 44,
-      color: GREY,
-    }}
-  >
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-      <circle cx="18" cy="5" r="3" stroke={GREY} strokeWidth="1.8" />
-      <circle cx="6" cy="12" r="3" stroke={GREY} strokeWidth="1.8" />
-      <circle cx="18" cy="19" r="3" stroke={GREY} strokeWidth="1.8" />
-      <path d="M8.6 10.6l6.8-4.1M8.6 13.4l6.8 4.1" stroke={GREY} strokeWidth="1.8" />
-    </svg>
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-      <path d="M6 3h12v18l-6-4.5L6 21V3z" stroke={GREY} strokeWidth="1.8" />
-    </svg>
-    <div style={{fontFamily: SANS, fontSize: 30, fontWeight: 600}}>
-      A<span style={{fontSize: 20}}>a</span>
-    </div>
-  </div>
-);
-
-// ---------------------------------------------------------------------------
-// Article pages — setiap halaman meletakkan "Deep Learning" tepat di anchor,
-// teks lain mengalir dari posisi itu dan boleh bleed keluar frame
-// ---------------------------------------------------------------------------
-
-const LOREM_TECH =
-  'Deep learning has become a driving force in advancing modern technology, greatly improving accuracy and reliability across industries. These innovations are powering everything from personal assistants to real-time analysis tools, revolutionizing how humans and machines interact. By training on large, unstructured datasets, neural networks learn to recognize patterns through successive layers of data processing, distinguishing subtle differences that traditional methods routinely miss.';
-
-const LOREM_DATA =
-  'Deep learning is fundamentally changing the way predictions are made across various sectors. Traditional analytics relied on linear models and structured data, often limited in their ability to capture complexity. Deep learning, however, thrives on vast amounts of unstructured data and can identify intricate patterns that were previously difficult to uncover.';
-
-// --- 1. Modern sans, kw membuka baris pertama dari 3 baris -----------------
-
-const PageDrugDiscovery: React.FC = () => {
-  const cfg: KwFont = {font: SANS, size: 108, weight: 800, lh: 1.18};
-  const L = kwLayout(cfg);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top - 96,
-          fontFamily: SANS,
-          fontWeight: 700,
-          fontSize: 36,
-          color: INK_SOFT,
-        }}
-      >
-        Technology &amp; Health
-      </div>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        {KW}
-      </HLine>
-      <HLine left={L.left} top={L.top + L.lineH} cfg={cfg}>
-        in Drug Discovery:
-      </HLine>
-      <HLine left={L.left} top={L.top + 2 * L.lineH} cfg={cfg}>
-        Medical Innovations
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 6,
-          top: L.top + 3 * L.lineH + 44,
-          fontFamily: SANS,
-          fontStyle: 'italic',
-          fontSize: 32,
-          color: GREY,
-        }}
-      >
-        June 4, 2024
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 2. Sans bold + share rail, kw membuka baris pertama -------------------
-
-const PageAutonomous: React.FC = () => {
-  const cfg: KwFont = {font: SANS, size: 100, weight: 700, lh: 1.2};
-  const L = kwLayout(cfg);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top - 208,
-          fontFamily: SANS,
-          fontSize: 26,
-          color: GREY,
-        }}
-      >
-        06-02-24 | 10:00 AM
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top - 132,
-          fontFamily: SANS,
-          fontWeight: 600,
-          fontSize: 34,
-          color: INK_SOFT,
-        }}
-      >
-        AI &amp; Automation
-      </div>
-      <ShareRail left={L.left - 118} top={L.top + 24} />
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        {KW}
-        {NBSP}for
-      </HLine>
-      <HLine left={L.left} top={L.top + L.lineH} cfg={cfg}>
-        Autonomous Systems:
-      </HLine>
-      <HLine left={L.left} top={L.top + 2 * L.lineH} cfg={cfg}>
-        Revolutionizing Technology
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top + 3 * L.lineH + 40,
-          fontFamily: SANS,
-          fontWeight: 600,
-          fontSize: 34,
-          color: '#444444',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        The integration of deep learning in self-driving cars, industrial
-        automation and human-machine collaboration.
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 3. Rounded bold, kw di tengah satu baris sangat panjang ---------------
-
-const PageIntersection: React.FC = () => {
-  const cfg: KwFont = {font: ROUND, size: 118, weight: 800, lh: 1.2};
-  const L = kwLayout(cfg, `Intersection of${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <NavBar
-        top={L.top - 250}
-        font={SANS}
-        fontSize={31}
-        items={[
-          'Advances',
-          'Ethics & Policy',
-          'Interviews',
-          'Opinion & Analysis',
-          'Tutorials & Guides',
-        ]}
-        offsetX={-60}
-      />
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Intersection of{NBSP}
-        {KW} and Humanity
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: ANCHOR_X,
-          top: L.top + L.lineH + 40,
-          transform: 'translateX(-50%)',
-          fontFamily: ROUND,
-          fontWeight: 700,
-          fontSize: 40,
-          color: INK_SOFT,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        As learning algorithms evolve, the boundaries between artificial
-        intelligence and human creativity continue to blur.
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 4. Serif old-style + chips, kw membuka baris pertama ------------------
-
-const PageCyber: React.FC = () => {
-  const cfg: KwFont = {font: SERIF_OLD, size: 106, weight: 400, lh: 1.26};
-  const L = kwLayout(cfg);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top - 122,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <Chip label="Industry News" />
-        <Chip label="Applications" />
-        <Chip label="Security & Privacy" />
-        <Chip label="Development" />
-        <Chip label="Insights" />
-      </div>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        {KW}
-        {NBSP}for
-      </HLine>
-      <HLine left={L.left} top={L.top + L.lineH} cfg={cfg}>
-        Cybersecurity: Safeguarding Data
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top + 2 * L.lineH + 56,
-          fontFamily: SERIF_OLD,
-          fontSize: 40,
-          color: INK_SOFT,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        As cyber threats evolve, deep learning models are enhancing the defense
-        of critical systems.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + 2 * L.lineH + 170,
-          fontFamily: SANS,
-          fontSize: 27,
-          color: GREY,
-        }}
-      >
-        06-03-24 | 08:00 AM
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 5. Grotesque bold + nav terang, kw menutup baris kedua ----------------
-
-const PageSmartCities: React.FC = () => {
-  const cfg: KwFont = {font: GROT, size: 98, weight: 700, lh: 1.24};
-  const L = kwLayout(cfg, `Powered by${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: -100,
-          width: 2200,
-          height: 68,
-          borderBottom: '2px solid #d9d9d9',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 70,
-          paddingLeft: 120,
-          fontFamily: SANS,
-          fontWeight: 600,
-          fontSize: 25,
-          color: INK_SOFT,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <span>Apps &amp; Devices</span>
-        <span>Startups &amp; Innovation</span>
-        <span>Product Reviews</span>
-        <span>Opinion &amp; Analysis</span>
-        <span>Cybersecurity</span>
-        <span>Tech Policy</span>
-      </div>
-      <HLine left={L.left} top={L.top - L.lineH} cfg={cfg}>
-        Future of Smart Cities
-      </HLine>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Powered by{NBSP}
-        {KW}
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top + L.lineH + 44,
-          fontFamily: GROT,
-          fontSize: 33,
-          color: '#454545',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Leveraging deep learning to optimize energy usage and traffic
-        management.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 2,
-          top: L.top + L.lineH + 150,
-        }}
-      >
-        <Body
-          text={
-            'Urban infrastructure is rapidly evolving, and deep learning is playing a critical role in this transformation. By using advanced models that process vast amounts of data in real time, cities can optimize energy usage, traffic flow and public safety. This technology allows urban systems to be more efficient and responsive, adapting to the needs of citizens as they change.'
-          }
-          width={1240}
-          fontSize={26}
-          font={GROT}
-          color={GREY}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 6. Serif koran + nav italic, kw menutup baris kedua -------------------
-
-const PageImageSpeech: React.FC = () => {
-  const cfg: KwFont = {font: SERIF_NEWS, size: 106, weight: 400, lh: 1.32};
-  const L = kwLayout(cfg, `Recognition with${NBSP}`);
-  const line1W = lineWidth(cfg, 'Revolutionizing Image and Speech');
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <NavBar
-        top={0}
-        font={SERIF_NEWS}
-        italic
-        fontSize={30}
-        items={[
-          'Privacy',
-          'Case Studies',
-          'Applications',
-          'Opinion & Analysis',
-          'Art & Culture',
-          'Health & Society',
-        ]}
-        offsetX={-90}
-      />
-      <HLine left={ANCHOR_X - line1W / 2} top={L.top - L.lineH} cfg={cfg}>
-        Revolutionizing Image and Speech
-      </HLine>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Recognition with{NBSP}
-        {KW}
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: ANCHOR_X,
-          top: L.top + L.lineH + 48,
-          transform: 'translateX(-50%)',
-          fontFamily: SERIF_NEWS,
-          fontSize: 38,
-          color: INK_SOFT,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Deep learning is pushing the boundaries of image and speech
-        recognition, making machines see and listen.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: ANCHOR_X,
-          top: L.top + L.lineH + 180,
-          transform: 'translateX(-50%)',
-        }}
-      >
-        <Body
-          text={LOREM_TECH}
-          width={2050}
-          fontSize={28}
-          font={SERIF_NEWS}
-          justify
-          color={INK_SOFT}
-          lineHeight={1.5}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 7. Serif bold editorial, kw di tengah baris kedua ---------------------
-
-const PageDataDecisions: React.FC = () => {
-  const cfg: KwFont = {font: SERIF_OLD, size: 102, weight: 700, lh: 1.34};
-  const L = kwLayout(cfg, `How${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top - L.lineH - 84,
-          fontFamily: SANS,
-          fontSize: 27,
-          color: GREY,
-        }}
-      >
-        06-04-24 | 6:00 AM
-      </div>
-      <HLine left={L.left} top={L.top - L.lineH} cfg={cfg}>
-        From Data to Decisions:
-      </HLine>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        How{NBSP}
-        {KW} is Revolutionizing Analytics
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 40,
-          fontFamily: SANS,
-          fontSize: 33,
-          color: '#3f3f3f',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Deep learning has transformed how organizations harness data, offering
-        new ways to analyze and act.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 160,
-        }}
-      >
-        <Body text={LOREM_DATA} width={1560} fontSize={25} color={GREY} />
-        <div style={{marginTop: 26}}>
-          <Body
-            text={
-              'By training on large datasets, deep learning algorithms continuously improve their accuracy, making predictions sharper with every iteration and turning raw information into confident business decisions.'
-            }
-            width={1560}
-            fontSize={25}
-            color={GREY}
-          />
-        </div>
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 8. Fat slab + nav serif, kw di tengah satu baris panjang --------------
-
-const PageAlgorithms: React.FC = () => {
-  const cfg: KwFont = {font: FAT, size: 104, weight: 900, lh: 1.25};
-  const L = kwLayout(cfg, `Data Security with${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <NavBar
-        top={0}
-        font={SERIF_OLD}
-        fontSize={29}
-        items={[
-          'Education & Learning',
-          'Environment & Sustainability',
-          'Startups & Investment',
-          'World & Politics',
-        ]}
-        offsetX={-160}
-      />
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Data Security with{NBSP}
-        {KW} Algorithms
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: ANCHOR_X,
-          top: L.top + L.lineH + 66,
-          transform: 'translateX(-50%)',
-        }}
-      >
-        <Body
-          text={
-            'Deep learning is quickly becoming a vital tool in safeguarding sensitive information across industries. With its ability to process vast patterns, deep learning algorithms are making significant strides in detecting anomalies and preventing potential breaches. Conventional methods of data security often fall short in identifying sophisticated attacks, but deep learning provides a more adaptive protection. Anomaly detection is one of the key applications where deep learning shines. By analyzing behavior patterns in data systems, models flag activity that may signal a threat, such as unauthorized access or suspicious transactions.'
-          }
-          width={2300}
-          fontSize={29}
-          font={SERIF_OLD}
-          justify
-          color={INK_SOFT}
-          lineHeight={1.6}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 9. Light sans, kw di awal-tengah satu baris panjang -------------------
-
-const PagePredictive: React.FC = () => {
-  const cfg: KwFont = {font: SANS, size: 96, weight: 300, lh: 1.25};
-  const L = kwLayout(cfg, `Power of${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top - 92,
-          fontFamily: SANS,
-          fontWeight: 600,
-          fontSize: 30,
-          color: GREY,
-        }}
-      >
-        AI Development
-      </div>
-      <HLine left={L.left} top={L.top} cfg={cfg} color="#1a1a1a">
-        Power of{NBSP}
-        {KW} for Predictive Analytics
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 36,
-          fontFamily: SANS,
-          fontStyle: 'italic',
-          fontSize: 32,
-          color: GREY,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Empowering industries to predict outcomes more accurately, from market
-        trends to patient care.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 150,
-        }}
-      >
-        <Body
-          text={
-            'Deep learning is a powerful tool for predictive analytics, enabling industries to forecast outcomes with greater precision. This is achieved by processing enormous amounts of data and identifying patterns that traditional models might miss. By applying complex algorithms, systems analyze datasets in real time, offering insights that help organizations anticipate trends and make informed decisions. In finance, deep learning models are used to predict market fluctuations, allowing businesses to manage risk more effectively.'
-          }
-          width={1800}
-          fontSize={26}
-          color={GREY}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 10. Serif bold, kw di tengah satu baris panjang -----------------------
-
-const PageClimate: React.FC = () => {
-  const cfg: KwFont = {font: SERIF_OLD, size: 100, weight: 700, lh: 1.26};
-  const L = kwLayout(cfg, `Potential of${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top - 100,
-          fontFamily: SANS,
-          fontSize: 25,
-          color: GREY_LIGHT,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        06-01-24 8:30 AM GMT +2 &nbsp;-&nbsp; Last Updated 5 hours ago
-      </div>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Potential of{NBSP}
-        {KW} in Climate Modeling
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 34,
-          fontFamily: SANS,
-          fontSize: 30,
-          color: '#454545',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Using deep learning to process climate data and make more accurate
-        predictions of environmental changes.
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + L.lineH + 148,
-        }}
-      >
-        <Body
-          text={
-            'Deep learning is revolutionizing climate modeling by offering more accurate predictions of future environmental changes. Traditional climate models, while effective, often struggle with the immense complexity and volume of data needed to predict long-term shifts. Deep learning provides a solution by processing vast datasets, such as atmospheric readings, satellite imagery and ocean temperatures, at unprecedented speed.'
-          }
-          width={1600}
-          fontSize={28}
-          color={GREY}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// --- 11. Serif koran ringan, kw di tengah baris pertama --------------------
-
-const PageHci: React.FC = () => {
-  const cfg: KwFont = {font: SERIF_NEWS, size: 100, weight: 400, lh: 1.32};
-  const L = kwLayout(cfg, `Role of${NBSP}`);
-  return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <HLine left={L.left} top={L.top} cfg={cfg}>
-        Role of{NBSP}
-        {KW} in
-      </HLine>
-      <HLine left={L.left} top={L.top + L.lineH} cfg={cfg}>
-        Human-Computer Interaction
-      </HLine>
-      <div
-        style={{
-          position: 'absolute',
-          left: L.left + 4,
-          top: L.top + 2 * L.lineH + 52,
-          fontFamily: SERIF_NEWS,
-          fontSize: 36,
-          lineHeight: 1.5,
-          color: INK_SOFT,
-          width: 1900,
-        }}
-      >
-        From virtual assistants to voice recognition, deep learning is creating
-        more intuitive and natural interactions between humans and machines.
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Shot list — ritme meniru referensi: hold pembuka panjang -> klaster
-// rapid-fire -> hold sedang -> klaster lagi. Total = 900 frame tepat.
-// ---------------------------------------------------------------------------
-
-const PAGES: Record<string, React.FC> = {
-  climate: PageClimate,
-  intersection: PageIntersection,
-  drug: PageDrugDiscovery,
-  autonomous: PageAutonomous,
-  datadec: PageDataDecisions,
-  smart: PageSmartCities,
-  imgspeech: PageImageSpeech,
-  predictive: PagePredictive,
-  algorithms: PageAlgorithms,
-  cyber: PageCyber,
-  hci: PageHci,
-};
-
-type Shot = {p: keyof typeof PAGES; h: number; v?: number};
-
-const SHOTS: Shot[] = [
-  {p: 'climate', h: 78},
-  {p: 'intersection', h: 40},
-  {p: 'drug', h: 42},
-  {p: 'autonomous', h: 40},
-  {p: 'datadec', h: 42},
-  {p: 'smart', h: 14},
-  {p: 'intersection', h: 12, v: 1},
-  {p: 'imgspeech', h: 12},
-  {p: 'autonomous', h: 12, v: 1},
-  {p: 'smart', h: 12, v: 1},
-  {p: 'drug', h: 56, v: 1},
-  {p: 'autonomous', h: 20, v: 2},
-  {p: 'predictive', h: 14},
-  {p: 'algorithms', h: 14},
-  {p: 'cyber', h: 52},
-  {p: 'smart', h: 44, v: 2},
-  {p: 'imgspeech', h: 26, v: 1},
-  {p: 'algorithms', h: 26, v: 1},
-  {p: 'hci', h: 30},
-  {p: 'drug', h: 14, v: 2},
-  {p: 'imgspeech', h: 12, v: 2},
-  {p: 'predictive', h: 42, v: 1},
-  {p: 'cyber', h: 22, v: 1},
-  {p: 'datadec', h: 22, v: 1},
-  {p: 'intersection', h: 22, v: 2},
-  {p: 'drug', h: 40, v: 3},
-  {p: 'algorithms', h: 24, v: 2},
-  {p: 'smart', h: 12, v: 3},
-  {p: 'imgspeech', h: 12, v: 3},
-  {p: 'autonomous', h: 26, v: 3},
-  {p: 'hci', h: 22, v: 1},
-  {p: 'datadec', h: 44, v: 2},
+const LOG: LogLine[] = [
+  L('In file included from C:/Users/dev/projects/kernel_core/src/main.cpp:14:', CODE_FAINT),
+  L('C:/Users/dev/projects/kernel_core/include/net/socket_layer.h:212:37: error: no member named', C_ERROR),
+  L("      'bind_addr' in 'net::SocketConfig'; did you mean 'bound_addr'?", C_ERROR),
+  L('      if (cfg.bind_addr && !cfg.reuse_port) {', CODE_DIM),
+  L('          ~~~~~~~~~~~~~ ^~~~~~~~~~~~~~~~~~', C_MARK),
+  L('C:/PROGRA~1/LLVM/include/c++/v1/type_traits:1523:8: note: candidate template ignored:', C_NOTE),
+  L("      could not match 'integral_constant' against 'net::PacketHeader'", C_NOTE),
+  L('  [ 47%] Building CXX object modules/CMakeFiles/payload.dir/src/inject_stub.cpp.obj', C_BUILD),
+  L('warning C4996: strcpy: This function or variable may be unsafe. Consider strcpy_s.', C_WARN),
+  L('  0x00007FFA3B2E19D4  ntdll!RtlRaiseException + 0x3d4', C_ADDR),
+  L('  0x00007FFA3B1A88F1  KERNELBASE!UnhandledExceptionFilter + 0x1f1', C_ADDR),
+  L('C:/Users/dev/projects/kernel_core/src/heap_guard.cpp:88:19: error: use of undeclared', C_ERROR),
+  L("      identifier '__guard_page'; did you mean '__guard_zone'?", C_ERROR),
+  L('    verify(__guard_page != nullptr && "heap guard missing");', CODE_DIM),
+  L('           ^~~~~~~~~~~~', C_MARK),
+  L('  [ 52%] Linking CXX shared library bin/libtelemetry_core.dll', C_BUILD),
+  L('In file included from C:/Users/dev/projects/kernel_core/src/sched/ring.cpp:9:', CODE_FAINT),
+  L('C:/Users/dev/projects/kernel_core/include/sched/ring.h:301:5: warning: field priority', C_WARN),
+  L('      will be initialized after field quantum_ns [-Wreorder-ctor]', C_WARN),
+  L('    ring_scheduler(uint32_t slots) : priority(0), quantum_ns(250000) {}', CODE_DIM),
+  L('fatal error LNK1120: 3 unresolved externals -- target injector_svc', C_ERROR),
+  L('==> BUILD FAILED: process exited with code 0xC0000005 (ACCESS_VIOLATION)', C_ERROR),
+  L('Check dependencies: libcrypto-3-x64.dll not found in search PATH', C_WARN),
+  L('Stack overflow detected in thread 0x1A44 -- dumping core to crash_1a44.dmp', C_ERROR),
+  L('  #12 0x0000000140011F02 in packet_reassembler::flush(std::span<uint8_t>) ring.cpp:412', C_ADDR),
+  L('  #13 0x000000014000C4B7 in event_pump::drain() event_pump.cpp:117', C_ADDR),
+  L('C:/Users/dev/projects/kernel_core/src/crypto/chain.cpp:56:23: error: static assertion', C_ERROR),
+  L("      failed: block size must be a power of two", C_ERROR),
+  L('    static_assert((BLOCK & (BLOCK - 1)) == 0, "block size must be a power of two");', CODE_DIM),
+  L('                  ^~~~~~~~~~~~~~~~~~~~~~~~~~', C_MARK),
+  L('  [ 61%] Building CXX object modules/CMakeFiles/observer.dir/src/watchdog.cpp.obj', C_BUILD),
+  L('note: in instantiation of member function hash_ring<64>::rebalance requested here', C_NOTE),
+  L('  retrying handshake (2/5): ETIMEDOUT after 30000 ms -- peer 10.0.14.88:8443', C_WARN),
+  L('  retrying handshake (3/5): ECONNRESET -- peer 10.0.14.88:8443', C_WARN),
+  L('C:/Users/dev/projects/kernel_core/src/io/mmap_pool.cpp:174:9: error: cannot initialize', C_ERROR),
+  L("      a member subobject of type 'std::atomic<page_state>' with an rvalue", C_ERROR),
+  L('    : pages_{page_state::cold}, high_water_(limit) {', CODE_DIM),
+  L('      ^~~~~~', C_MARK),
+  L('  0x00007FFA39D144A0  ucrtbase!abort + 0x50', C_ADDR),
+  L('  [ 64%] Building CXX object modules/CMakeFiles/net.dir/src/tls_shim.cpp.obj', C_BUILD),
+  L('warning: unchecked cast from volatile uint8_t* to dma_descriptor* [-Wcast-qual]', C_WARN),
+  L('==> WHILE NATIVE TARGET OF PROJECT block_tools WITH THE DEFAULT CONFIGURATION default ==', CODE_FAINT),
+  L('verifying signature chain............FAILED (certificate revoked 2024-11-02)', C_ERROR),
+  L('  #14 0x0000000140002E11 in main crt0.c:288', C_ADDR),
+  L('In file included from C:/Users/dev/projects/kernel_core/src/svc/daemon.cpp:31:', CODE_FAINT),
+  L('C:/Users/dev/projects/kernel_core/include/svc/daemon.h:77:14: warning: daemon_loop', C_WARN),
+  L('      hides overloaded virtual function [-Woverloaded-virtual]', C_WARN),
+  L('  [ 68%] Linking CXX executable bin/injector_svc.exe', C_BUILD),
 ];
 
-const TOTAL = SHOTS.reduce((a, s) => a + s.h, 0); // = 900
-
-// Variasi framing HANYA lewat scale di sekitar anchor — keyword tidak
-// pernah bergeser dari pusat, hanya sedikit lebih besar/kecil per shot.
-const VARIANTS = [1.0, 1.12, 1.05, 1.18];
-
 // ---------------------------------------------------------------------------
-// Fake radial/vertical zoom blur — tumpukan salinan yang diskalakan
-// (dominan vertikal) berpusat di keyword, meniru streak pada referensi.
-// Saat blur = 0 hanya render 1 salinan (murah selama hold).
+// Burst schedule (detik referensi 0..20) — dari timeline bukti
 // ---------------------------------------------------------------------------
 
-const ZoomBlur: React.FC<{blur: number; children: React.ReactNode}> = ({
-  blur,
-  children,
-}) => {
-  if (blur < 0.005) {
-    return <AbsoluteFill>{children}</AbsoluteFill>;
+type Burst = {s: number; e: number; v: number; c?: string};
+
+const BURSTS: Burst[] = [
+  {s: 0.85, e: 1.05, v: 0.5, c: 'blue'},
+  {s: 1.05, e: 2.5, v: 0.85, c: 'blue'},
+  {s: 2.9, e: 3.35, v: 0.55},
+  {s: 3.55, e: 4.0, v: 1.0, c: 'yellow'},
+  {s: 4.0, e: 4.45, v: 0.9, c: 'olive'},
+  {s: 4.45, e: 5.0, v: 0.85, c: 'blue'},
+  {s: 5.6, e: 5.9, v: 0.35},
+  {s: 6.6, e: 7.1, v: 0.45},
+  {s: 7.4, e: 7.75, v: 0.6, c: 'green'},
+  {s: 8.05, e: 9.6, v: 0.85, c: 'blue'},
+  {s: 9.9, e: 10.15, v: 0.45},
+  {s: 10.4, e: 12.0, v: 0.9, c: 'blue'},
+  {s: 12.55, e: 12.9, v: 0.5},
+  {s: 13.6, e: 13.85, v: 0.5, c: 'magenta'},
+  {s: 14.05, e: 14.6, v: 0.55, c: 'amber'},
+  {s: 15.3, e: 16.0, v: 0.5, c: 'green'},
+  {s: 16.55, e: 17.6, v: 0.8, c: 'blue'},
+  {s: 17.9, e: 18.3, v: 0.7, c: 'blue'},
+  {s: 19.15, e: 20.0, v: 0.9, c: 'blue'},
+];
+
+const EDGE = 0.12; // ramp masuk/keluar burst (detik)
+
+const burstAt = (t: number): {lvl: number; color: string} => {
+  let lvl = 0.06;
+  let color = 'none';
+  for (const b of BURSTS) {
+    const env =
+      smooth(b.s - EDGE, b.s + EDGE, t) * (1 - smooth(b.e - EDGE, b.e + EDGE, t));
+    const v = b.v * env;
+    if (v > lvl) {
+      lvl = v;
+      color = b.c ?? 'none';
+    }
   }
-  const copies = 14;
-  const layers = Array.from({length: copies}, (_, i) => {
-    const t = i / (copies - 1);
-    return {
-      sx: 1 + blur * t * 0.55, // streak horizontal, lebih lembut
-      sy: 1 + blur * t, // streak vertikal, dominan (sesuai observasi)
-      w: 1 / (1 + 2.6 * t),
-    };
-  });
-  const total = layers.reduce((a, l) => a + l.w, 0);
+  return {lvl, color};
+};
+
+// Progress bar: persentase per keyframe (detik, %) — lompatan tidak rata
+const PCT: Array<[number, number]> = [
+  [0, 0], [0.6, 0], [0.75, 7], [0.9, 19], [1.1, 24], [1.3, 33], [1.5, 38],
+  [1.8, 46], [2.05, 49], [2.25, 57], [2.5, 64], [2.8, 71], [2.95, 82],
+  [3.15, 89], [3.35, 96], [3.5, 100], [99, 100],
+];
+
+const pctAt = (t: number) => {
+  let p = 0;
+  for (const [kt, kv] of PCT) {
+    if (t >= kt) p = kv;
+    else break;
+  }
+  return p;
+};
+
+// Jendela kemunculan CYBER ATTACK (detik referensi)
+const CYBER_WINDOWS: Array<[number, number]> = [
+  [6.55, 7.15], [10.8, 11.35], [16.8, 17.35], [19.2, 19.95],
+];
+
+const WASH_COLORS: Record<string, string> = {
+  blue: '#1f35e8',
+  yellow: '#ffe81a',
+  olive: '#9aa023',
+  green: '#19c94f',
+  magenta: '#ff2bd1',
+  amber: '#ffb400',
+};
+
+// ---------------------------------------------------------------------------
+// Content layers
+// ---------------------------------------------------------------------------
+
+const CodeWall: React.FC<{t: number; epoch: number}> = ({t, epoch}) => {
+  // Log tampil hampir penuh sejak awal; sesekali "melompat" (scroll patah)
+  const jump = hash(epoch * 7.13) < 0.12 ? Math.floor(hash(epoch * 3.7) * 6) : 0;
+  const visible = Math.min(LOG.length, 34 + Math.floor(t * 1.2));
   return (
-    <AbsoluteFill style={{background: PAPER}}>
-      {layers
-        .slice()
-        .reverse()
-        .map((l, i) => (
-          <AbsoluteFill
+    <div
+      style={{
+        position: 'absolute',
+        left: 46,
+        top: 18 - jump * 23,
+        fontFamily: MONO,
+        fontSize: 17,
+        lineHeight: '23px',
+        whiteSpace: 'pre',
+        opacity: 0.92,
+      }}
+    >
+      {LOG.slice(0, visible).map((ln, i) => {
+        const flick =
+          hash2(epoch, i) < 0.04 ? 0.25 : 1; // baris sesekali redup
+        return (
+          <div key={i} style={{color: ln.c, opacity: flick}}>
+            {ln.t}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const ProgressBar: React.FC<{t: number; lvl: number; epoch: number}> = ({
+  t,
+  lvl,
+  epoch,
+}) => {
+  if (t > 4.15) return null;
+  const pct = pctAt(t);
+  const x = 320;
+  const y = 238;
+  const w = 900;
+  const h = 18;
+  const fills = ['#35e0d6', '#c8ff3d', '#ff4fd8', '#ffd23d'];
+  const fill =
+    lvl > 0.5 ? fills[Math.floor(hash(epoch * 5.21) * fills.length)] : fills[0];
+  const isYellowPhase = t >= 3.55;
+  const barColor = isYellowPhase ? '#ffffff' : fill;
+  return (
+    <div style={{position: 'absolute', left: 0, top: 0}}>
+      <div
+        style={{
+          position: 'absolute',
+          left: x,
+          top: y,
+          width: w,
+          height: h,
+          border: '2px solid rgba(210,255,252,0.55)',
+          background: 'rgba(16,34,38,0.55)',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: 2,
+            top: 2,
+            bottom: 2,
+            width: `${Math.max(0.5, pct * 0.99)}%`,
+            background: barColor,
+            boxShadow: `0 0 14px ${barColor}`,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: x + w + 26,
+          top: y - 8,
+          fontFamily: MONO,
+          fontSize: 28,
+          fontWeight: 700,
+          color: isYellowPhase ? '#ffffff' : '#dffcff',
+        }}
+      >
+        {pct}%
+      </div>
+    </div>
+  );
+};
+
+const Tri: React.FC<{dir: 1 | -1; color: string}> = ({dir, color}) => {
+  const style: React.CSSProperties = {
+    width: 0,
+    height: 0,
+    borderTop: '16px solid transparent',
+    borderBottom: '16px solid transparent',
+  };
+  if (dir === 1) style.borderLeft = `26px solid ${color}`;
+  else style.borderRight = `26px solid ${color}`;
+  return <div style={style} />;
+};
+
+const WarningBadge: React.FC<{t: number; lvl: number; epoch: number}> = ({
+  t,
+  lvl,
+  epoch,
+}) => {
+  if (t < 5.65) return null;
+  const born = smooth(5.65, 6.05, t);
+  const flicker =
+    born < 1 ? (hash(epoch * 9.77) < 0.5 ? 0.15 : 1) : hash(epoch * 9.77) < 0.05 ? 0.3 : 1;
+  const jx = lvl > 0.2 ? (hash(epoch * 3.31) - 0.5) * 60 * lvl : 0;
+  const jy = lvl > 0.45 ? (hash(epoch * 8.17) - 0.5) * 26 * lvl : 0;
+  const hues = [0, 300, 120, 185];
+  const hue =
+    lvl > 0.35 ? hues[Math.floor(hash(epoch * 2.71) * hues.length)] : 0;
+  const doubled = lvl > 0.4 && hash(epoch * 6.43) < 0.3;
+
+  const badge = (dy: number, op: number, key: string) => (
+    <div
+      key={key}
+      style={{
+        position: 'absolute',
+        left: 960 + jx,
+        top: 520 + dy + jy,
+        transform: 'translate(-50%, -50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 34,
+        opacity: op * flicker,
+        filter: hue ? `hue-rotate(${hue}deg) saturate(1.3)` : undefined,
+      }}
+    >
+      <Tri dir={1} color="#ff2222" />
+      <div
+        style={{
+          border: '3px solid #ff2222',
+          background: 'rgba(64,0,10,0.6)',
+          color: '#ffe9e9',
+          fontFamily: SANS,
+          fontWeight: 800,
+          fontSize: 36,
+          letterSpacing: 6,
+          padding: '14px 46px',
+          textShadow: '0 0 18px rgba(255,40,40,0.9)',
+          boxShadow: '0 0 26px rgba(255,30,30,0.35)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        WARNING!
+      </div>
+      <Tri dir={-1} color="#ff2222" />
+    </div>
+  );
+
+  return (
+    <div style={{position: 'absolute', inset: 0}}>
+      {badge(0, 1, 'a')}
+      {doubled ? badge(102, 0.65, 'b') : null}
+    </div>
+  );
+};
+
+const CyberAttack: React.FC<{t: number; lvl: number; epoch: number}> = ({
+  t,
+  lvl,
+  epoch,
+}) => {
+  const inWindow = CYBER_WINDOWS.some(([s, e]) => t >= s && t <= e);
+  const surprise = t > 6.4 && lvl > 0.75 && hash(epoch * 4.99) < 0.35;
+  if (!inWindow && !surprise) return null;
+  const op = 0.16 + 0.1 * hash(epoch * 1.37);
+  const jx = (hash(epoch * 2.03) - 0.5) * 40;
+  const base: React.CSSProperties = {
+    position: 'absolute',
+    left: '50%',
+    top: 430,
+    transform: `translateX(-50%) translateX(${jx}px)`,
+    fontFamily: SANS,
+    fontWeight: 900,
+    fontSize: 168,
+    letterSpacing: 34,
+    whiteSpace: 'nowrap',
+    color: 'rgba(205,220,255,0.09)',
+    WebkitTextStroke: '2px rgba(205,225,255,0.30)',
+  };
+  return (
+    <div style={{position: 'absolute', inset: 0, opacity: op / 0.2}}>
+      <div style={{...base, color: 'rgba(255,60,180,0.10)', transform: `translateX(-50%) translateX(${jx - 8}px)`}}>
+        CYBER ATTACK
+      </div>
+      <div style={{...base, color: 'rgba(60,220,255,0.10)', transform: `translateX(-50%) translateX(${jx + 8}px)`}}>
+        CYBER ATTACK
+      </div>
+      <div style={base}>CYBER ATTACK</div>
+    </div>
+  );
+};
+
+// Semua konten "layar" digabung — sumber untuk salinan slice/tint
+const Content: React.FC<{t: number; lvl: number; epoch: number}> = ({
+  t,
+  lvl,
+  epoch,
+}) => (
+  <AbsoluteFill style={{background: BG}}>
+    <CodeWall t={t} epoch={epoch} />
+    <CyberAttack t={t} lvl={lvl} epoch={epoch} />
+    <ProgressBar t={t} lvl={lvl} epoch={epoch} />
+    <WarningBadge t={t} lvl={lvl} epoch={epoch} />
+  </AbsoluteFill>
+);
+
+// ---------------------------------------------------------------------------
+// Glitch overlays
+// ---------------------------------------------------------------------------
+
+const BandedWash: React.FC<{color: string; lvl: number; epoch: number}> = ({
+  color,
+  lvl,
+  epoch,
+}) => {
+  // Wash berpita horizontal: pita-pita dengan alpha berbeda (seeded)
+  const bands = 14;
+  const stops: string[] = [];
+  for (let i = 0; i < bands; i++) {
+    const a = 0.1 + hash2(epoch, i) * 0.85;
+    const y0 = (i / bands) * 100;
+    const y1 = ((i + 1) / bands) * 100;
+    stops.push(`${hexA(color, a)} ${y0.toFixed(1)}% ${y1.toFixed(1)}%`);
+  }
+  return (
+    <>
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(180deg, ${stops.join(', ')})`,
+          mixBlendMode: 'screen',
+          opacity: Math.min(1, lvl * 1.05),
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background: color,
+          mixBlendMode: 'overlay',
+          opacity: lvl * 0.55,
+        }}
+      />
+    </>
+  );
+};
+
+function hexA(hex: string, a: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+}
+
+const BAR_COLORS = [
+  '#ff2bd1', '#00e0ff', '#ffe600', '#28ff5c', '#ff2d55', '#2743ff', '#ff8a00',
+];
+
+const BURST_BAR_HUES: Record<string, string> = {
+  magenta: '#ff2bd1',
+  amber: '#ffe600',
+  green: '#28ff5c',
+};
+
+const ColorBars: React.FC<{lvl: number; epoch: number; burstColor: string}> = ({
+  lvl,
+  epoch,
+  burstColor,
+}) => {
+  const hueLock = BURST_BAR_HUES[burstColor]; // burst berwarna = event bar, bukan wash
+  const rare = lvl <= 0.3 && hash(epoch * 11.3) < 0.08; // streak tunggal langka
+  let count =
+    lvl > 0.45
+      ? Math.round(lvl * 3 + hash(epoch * 1.91) * 1.5)
+      : rare
+        ? 1
+        : 0;
+  if (hueLock) count = Math.max(count, 2);
+  if (count === 0) return null;
+  return (
+    <AbsoluteFill>
+      {Array.from({length: count}, (_, i) => {
+        const pick =
+          hueLock && hash2(epoch * 9 + 4, i) < 0.6
+            ? hueLock
+            : BAR_COLORS[Math.floor(hash2(epoch * 3 + 1, i) * BAR_COLORS.length)];
+        const top = hash2(epoch * 5 + 2, i) * 1030;
+        const h = 5 + hash2(epoch * 7 + 3, i) * 42 * Math.max(lvl, 0.4);
+        return (
+          <div
             key={i}
             style={{
-              transform: `scale(${l.sx}, ${l.sy})`,
-              transformOrigin: ORIGIN,
-              opacity: l.w / total,
+              position: 'absolute',
+              left: 0,
+              width: '100%',
+              top,
+              height: h,
+              background: pick,
+              backgroundImage:
+                'repeating-linear-gradient(90deg, rgba(0,0,0,0.3) 0 1px, transparent 1px 23px)',
+              opacity: 0.92,
             }}
-          >
-            {children}
-          </AbsoluteFill>
-        ))}
+          />
+        );
+      })}
     </AbsoluteFill>
   );
 };
@@ -994,68 +509,109 @@ const ZoomBlur: React.FC<{blur: number; children: React.ReactNode}> = ({
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const f = frame % TOTAL; // loop mulus meski durasi > TOTAL
+  const {fps, durationInFrames} = useVideoConfig();
 
-  // Cari shot aktif
-  let acc = 0;
-  let idx = 0;
-  for (let i = 0; i < SHOTS.length; i++) {
-    if (f < acc + SHOTS[i].h) {
-      idx = i;
-      break;
-    }
-    acc += SHOTS[i].h;
-  }
-  const shot = SHOTS[idx];
-  const local = f - acc;
-  const h = shot.h;
+  // Normalisasi ke "detik referensi" 0..20 agar timeline tetap benar
+  // untuk durasi komposisi berapa pun.
+  const t = (frame / durationInFrames) * 20;
+  const epoch = Math.floor((frame / fps) * 15); // state glitch ~15 Hz
 
-  const IN = Math.max(2, Math.min(5, Math.floor(h * 0.28)));
-  const OUT = Math.max(3, Math.min(6, Math.floor(h * 0.32)));
+  const {lvl, color} = burstAt(t);
+  // Hanya blue/yellow/olive yang menjadi wash layar penuh;
+  // magenta/amber/green adalah event bar warna (sesuai referensi).
+  const washColor =
+    color === 'blue' || color === 'yellow' || color === 'olive'
+      ? WASH_COLORS[color]
+      : undefined;
 
-  // Push-in sangat halus selama hold, berpusat di keyword
-  const push = interpolate(local, [0, h], [1.0, 1.0 + 0.05 * (h / 78)], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
+  // Slice displacement — salinan konten terpotong & tergeser
+  const sliceCount = lvl > 0.14 ? Math.round(2 + lvl * 8) : 0;
+  const slices = Array.from({length: sliceCount}, (_, i) => {
+    const s = epoch * 13.7 + i * 3.1;
+    const top = hash(s + 0.1) * 1040;
+    const h = 8 + hash(s + 0.2) * 110 * lvl;
+    const dx = (hash(s + 0.3) - 0.5) * 320 * lvl;
+    const hue = (hash(s + 0.4) - 0.5) * 90;
+    return {top, h, dx, hue};
   });
 
-  // Settle-in dari blur / burst-out ke blur
-  let blur = 0;
-  let burst = 1;
-  if (local < IN) {
-    const p = interpolate(local, [0, IN], [1, 0], {
-      easing: Easing.out(Easing.cubic),
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    });
-    blur = 0.5 * p;
-    burst = 1 + 0.4 * p;
-  } else if (local >= h - OUT) {
-    const p = interpolate(local, [h - OUT, h], [0, 1], {
-      easing: Easing.in(Easing.quad),
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    });
-    blur = 0.68 * p;
-    burst = 1 + 0.75 * p;
-  }
+  // Getar global + kedip kecerahan
+  const gx = lvl > 0.25 ? (hash(epoch * 1.13) - 0.5) * 18 * lvl : 0;
+  const gy = lvl > 0.5 && hash(epoch * 2.61) < 0.3 ? (hash(epoch * 3.3) - 0.5) * 56 * lvl : 0;
+  const flicker = 1 + (hash(epoch * 4.47) - 0.5) * 0.06 * (1 + lvl);
 
-  const scale = push * burst * VARIANTS[(shot.v ?? 0) % VARIANTS.length];
-  const Page = PAGES[shot.p];
+  const content = <Content t={t} lvl={lvl} epoch={epoch} />;
 
   return (
-    <AbsoluteFill style={{background: PAPER}}>
-      <ZoomBlur blur={blur}>
+    <AbsoluteFill style={{background: BG, filter: `brightness(${flicker})`}}>
+      {/* Konten dasar */}
+      <AbsoluteFill style={{transform: `translate(${gx}px, ${gy}px)`}}>
+        {content}
+      </AbsoluteFill>
+
+      {/* Salinan slice tergeser (glitch utama) */}
+      {slices.map((sl, i) => (
         <AbsoluteFill
+          key={i}
           style={{
-            background: PAPER,
-            transform: `scale(${scale})`,
-            transformOrigin: ORIGIN,
+            transform: `translate(${gx + sl.dx}px, ${gy}px)`,
+            clipPath: `inset(${sl.top}px 0 ${Math.max(0, 1080 - sl.top - sl.h)}px 0)`,
+            filter: `hue-rotate(${sl.hue}deg) saturate(1.35)`,
           }}
         >
-          <Page />
+          {content}
         </AbsoluteFill>
-      </ZoomBlur>
+      ))}
+
+      {/* RGB split saat burst berat */}
+      {lvl > 0.45 ? (
+        <>
+          <AbsoluteFill
+            style={{
+              transform: `translateX(${-11 * lvl}px)`,
+              mixBlendMode: 'screen',
+              opacity: 0.32,
+              filter: 'sepia(1) saturate(7) hue-rotate(-45deg) brightness(1.05)',
+            }}
+          >
+            {content}
+          </AbsoluteFill>
+          <AbsoluteFill
+            style={{
+              transform: `translateX(${11 * lvl}px)`,
+              mixBlendMode: 'screen',
+              opacity: 0.32,
+              filter: 'sepia(1) saturate(7) hue-rotate(140deg) brightness(1.05)',
+            }}
+          >
+            {content}
+          </AbsoluteFill>
+        </>
+      ) : null}
+
+      {/* Wash warna berpita */}
+      {washColor && lvl > 0.2 ? (
+        <BandedWash color={washColor} lvl={lvl} epoch={epoch} />
+      ) : null}
+
+      {/* Bar warna solid */}
+      <ColorBars lvl={lvl} epoch={epoch} burstColor={color} />
+
+      {/* Scanlines + vignette */}
+      <AbsoluteFill
+        style={{
+          background:
+            'repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 2px, transparent 2px 4px)',
+          pointerEvents: 'none',
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%)',
+          pointerEvents: 'none',
+        }}
+      />
     </AbsoluteFill>
   );
 };
