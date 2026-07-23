@@ -1,1050 +1,652 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   AbsoluteFill,
-  interpolate,
-  random,
   useCurrentFrame,
   useVideoConfig,
+  interpolate,
+  spring,
+  Easing,
+  delayRender,
+  continueRender,
 } from 'remotion';
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const FRAMES_PER_SCENE = 60;
+/* ============================================================================
+   BUSINESS ANALYTICS DASHBOARD — DATA REVEAL
+   Premium microstock motion graphic. 1920x1080 @ 60fps, 900 frames (15s).
+   Dark fintech / SaaS style. Self-contained: core Remotion + SVG + CSS.
+   ========================================================================== */
 
-const COLORS = {
-  ink: '#030509',
-  paper: '#F5F7FF',
-  muted: '#647083',
-  cyan: '#58E8FF',
-  blue: '#4C76FF',
-  violet: '#8B73FF',
-  lime: '#A4FF82',
-  magenta: '#FF4FD8',
-  red: '#FF4B5F',
+const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const NUM = {fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"'} as const;
+
+// ---- palette -------------------------------------------------------------
+const C = {
+  bg0: '#070B16',
+  bg1: '#0B1122',
+  panel: 'rgba(255,255,255,0.045)',
+  panelBorder: 'rgba(255,255,255,0.09)',
+  text: '#EAF0FF',
+  sub: '#8894B4',
+  faint: '#5A6688',
+  grid: 'rgba(255,255,255,0.06)',
+  blue: '#3E86FF',
+  cyan: '#22D3EE',
+  green: '#34E0A1',
+  red: '#FF6B8A',
+  purple: '#8B7CFF',
+  amber: '#FFB25E',
 };
 
-const CLAMP = {
-  extrapolateLeft: 'clamp' as const,
-  extrapolateRight: 'clamp' as const,
+// ---- easings -------------------------------------------------------------
+const eOut = Easing.out(Easing.cubic);
+const eExpo = Easing.bezier(0.16, 1, 0.3, 1);
+const eInOut = Easing.inOut(Easing.cubic);
+
+// ---- helpers -------------------------------------------------------------
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+const fmt = (v: number, dec: number) => {
+  const f = v.toFixed(dec);
+  const parts = f.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.');
 };
 
-const sans = 'Inter, Aptos, Helvetica Neue, Arial, sans-serif';
-const serif = 'Georgia, Times New Roman, serif';
-const mono = 'IBM Plex Mono, SFMono-Regular, Consolas, monospace';
+const ease = (frame: number, a: number, b: number, easing = eExpo) =>
+  interpolate(frame, [a, b], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing,
+  });
 
-const range = (
-  value: number,
-  inputStart: number,
-  inputEnd: number,
-  outputStart: number,
-  outputEnd: number,
-) =>
-  interpolate(
-    value,
-    [inputStart, inputEnd],
-    [outputStart, outputEnd],
-    CLAMP,
-  );
-
-const seeded = (seed: string, min: number, max: number) =>
-  min + random(seed) * (max - min);
-
-const ARTICLE_LINES = [
-  'Machine perception reshapes the language of modern industry',
-  'Neural systems learn patterns across an expanding data universe',
-  'Robotics and automation accelerate the next digital chapter',
-  'Human insight meets computational speed in connected workflows',
-  'Responsible models transform research design and communication',
-  'Intelligent tools reveal signals hidden inside complex information',
-  'New interfaces bring machine reasoning closer to everyday work',
-  'Vision language and prediction converge across the global network',
-];
-
-const CODE_LINES = [
-  'MODEL.STATUS      TRAINING_COMPLETE',
-  'VISION.STREAM     08 CHANNELS ACTIVE',
-  'TOKEN.CONTEXT     128K / OPTIMIZED',
-  'DATA.PIPELINE     SIGNAL VERIFIED',
-  'NEURAL.LAYERS     024 / SYNCHRONIZED',
-  'INFERENCE.NODE    LATENCY 018.4 MS',
-  'SAFETY.CHECK      ALIGNMENT ONLINE',
-  'ROBOTICS.CORE     MOTION PLAN READY',
-];
-
-const CLOUD_WORDS = [
-  'NEURAL NETWORKS',
-  'ROBOTICS',
-  'COMPUTER VISION',
-  'LANGUAGE MODELS',
-  'AUTOMATION',
-  'DATA SCIENCE',
-  'MACHINE LEARNING',
-  'PREDICTION',
-  'DEEP LEARNING',
-  'ALGORITHMS',
-  'GENERATIVE SYSTEMS',
-  'RESEARCH',
-  'FUTURE',
-  'SYNTHESIS',
-  'INDUSTRY 4.0',
-  'PATTERN RECOGNITION',
-];
-
-const cloudPlacements = [
-  {x: 120, y: 120, size: 38},
-  {x: 540, y: 95, size: 25},
-  {x: 1110, y: 115, size: 33},
-  {x: 1510, y: 145, size: 45},
-  {x: 225, y: 280, size: 26},
-  {x: 695, y: 260, size: 45},
-  {x: 1270, y: 275, size: 24},
-  {x: 1580, y: 330, size: 32},
-  {x: 115, y: 700, size: 42},
-  {x: 485, y: 790, size: 28},
-  {x: 1030, y: 770, size: 39},
-  {x: 1510, y: 725, size: 25},
-  {x: 170, y: 930, size: 24},
-  {x: 680, y: 925, size: 36},
-  {x: 1190, y: 940, size: 27},
-  {x: 1580, y: 900, size: 39},
-];
-
-const meshNodes = Array.from({length: 38}, (_, index) => {
-  let x = seeded(`mesh-x-${index}`, 105, 1815);
-  let y = seeded(`mesh-y-${index}`, 105, 975);
-
-  if (x > 500 && x < 1420 && y > 390 && y < 690) {
-    y = y < 540 ? seeded(`mesh-up-${index}`, 190, 360) : seeded(`mesh-down-${index}`, 720, 900);
+// Catmull-Rom -> smooth bezier path
+const smoothPath = (pts: {x: number; y: number}[]) => {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
-
-  return {
-    x,
-    y,
-    radius: seeded(`mesh-r-${index}`, 2.3, 6.8),
-    depth: seeded(`mesh-d-${index}`, 0.25, 1),
-  };
-});
-
-const BaseAtmosphere: React.FC<{frame: number}> = ({frame}) => {
-  const driftX = Math.sin((frame / 900) * Math.PI * 2) * 38;
-  const driftY = Math.cos((frame / 450) * Math.PI * 2) * 22;
-
-  return (
-    <AbsoluteFill style={{overflow: 'hidden', backgroundColor: COLORS.ink}}>
-      <div
-        style={{
-          position: 'absolute',
-          inset: -120,
-          background: `radial-gradient(circle at ${50 + driftX / 32}% ${48 + driftY / 24}%, rgba(76,118,255,0.15), transparent 36%), radial-gradient(circle at 12% 78%, rgba(255,79,216,0.07), transparent 28%), radial-gradient(circle at 88% 18%, rgba(88,232,255,0.08), transparent 30%)`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.2,
-          backgroundImage:
-            'linear-gradient(rgba(102,132,178,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(102,132,178,0.06) 1px, transparent 1px)',
-          backgroundSize: '96px 96px',
-          backgroundPosition: `${(frame * 0.14) % 96}px ${(frame * 0.08) % 96}px`,
-          maskImage: 'radial-gradient(circle at center, black, transparent 82%)',
-        }}
-      />
-    </AbsoluteFill>
-  );
+  return d;
 };
 
-const SceneHeader: React.FC<{
-  eyebrow: string;
-  title: string;
-  align?: 'left' | 'right';
-  serifTitle?: boolean;
-  accent: string;
-  slot: number;
-}> = ({eyebrow, title, align = 'left', serifTitle = false, accent, slot}) => (
-  <>
-    <div
-      style={{
-        position: 'absolute',
-        top: 58,
-        left: align === 'left' ? 88 : undefined,
-        right: align === 'right' ? 88 : undefined,
-        textAlign: align,
-        fontFamily: mono,
-        fontSize: 14,
-        fontWeight: 700,
-        letterSpacing: 4,
-        color: accent,
-        opacity: 0.82,
-      }}
-    >
-      {eyebrow} / {String(slot + 1).padStart(2, '0')}
-    </div>
-    <div
-      style={{
-        position: 'absolute',
-        top: 80,
-        left: align === 'left' ? 84 : undefined,
-        right: align === 'right' ? 84 : undefined,
-        textAlign: align,
-        fontFamily: serifTitle ? serif : sans,
-        fontSize: serifTitle ? 57 : 52,
-        fontWeight: serifTitle ? 600 : 790,
-        letterSpacing: serifTitle ? -2 : -1,
-        color: COLORS.paper,
-        opacity: 0.7,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {title}
-    </div>
-    <div
-      style={{
-        position: 'absolute',
-        top: 151,
-        left: 84,
-        right: 84,
-        height: 1,
-        background: `linear-gradient(90deg, transparent, ${accent}88 18%, rgba(255,255,255,0.15) 50%, ${accent}55 82%, transparent)`,
-      }}
-    />
-  </>
-);
+/* ============================================================================
+   TIMELINE
+   ========================================================================== */
+const T = {
+  shellIn: 4,
+  topBar: 8,
+  kpiCountStart: 54,
+  kpiCountEnd: 250,
+  sparkStart: 70,
+  sparkEnd: 210,
+  lineStart: 120,
+  lineEnd: 336,
+  barStart: 200,
+  donutStart: 210,
+  donutEnd: 430,
+  chanStart: 250,
+  chanEnd: 440,
+  pushStart: 430,
+  pushEnd: 690,
+  refresh: 726,
+  refreshEnd: 828,
+};
 
-const CyberScene: React.FC<{frame: number; variant: number; slot: number}> = ({
-  frame,
-  variant,
-  slot,
-}) => {
-  const local = frame % FRAMES_PER_SCENE;
-  const drift = range(local, 0, 59, 0, -42 - variant * 8);
+/* ============================================================================
+   LAYOUT (content 60..1860)
+   ========================================================================== */
+const L = {
+  cx: 60,
+  cw: 1800,
+  kpiY: 148,
+  kpiH: 168,
+  kpiGap: 26.7,
+  kpiW: 430,
+  mainY: 344,
+  mainH: 372,
+  leftW: 1180,
+  rightX: 1266,
+  rightW: 594,
+  botY: 740,
+  botH: 272,
+};
 
+/* ============================================================================
+   DATA
+   ========================================================================== */
+const KPIS = [
+  {label: 'Total Revenue', prefix: '$', suffix: '', value: 2847392, dec: 0, delta: '+18.4%', up: true, color: C.blue, spark: [0.30, 0.44, 0.38, 0.55, 0.5, 0.66, 0.6, 0.8, 0.92]},
+  {label: 'Active Users', prefix: '', suffix: '', value: 84120, dec: 0, delta: '+12.7%', up: true, color: C.cyan, spark: [0.4, 0.42, 0.5, 0.47, 0.6, 0.57, 0.7, 0.78, 0.86]},
+  {label: 'Conversion Rate', prefix: '', suffix: '%', value: 4.82, dec: 2, delta: '+2.1%', up: true, color: C.green, spark: [0.35, 0.5, 0.44, 0.6, 0.72, 0.66, 0.8, 0.85, 0.95]},
+  {label: 'Avg. Order Value', prefix: '$', suffix: '', value: 128.4, dec: 2, delta: '-1.3%', up: false, color: C.amber, spark: [0.7, 0.66, 0.72, 0.58, 0.62, 0.5, 0.54, 0.45, 0.4]},
+];
+
+const LINE = [0.30, 0.36, 0.32, 0.45, 0.5, 0.45, 0.58, 0.64, 0.6, 0.73, 0.8, 0.93];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const BARS = [0.5, 0.62, 0.55, 0.72, 0.67, 0.82, 0.78, 0.94];
+const WEEKS = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'];
+const SEG = [
+  {name: 'Organic', frac: 0.42, color: C.cyan},
+  {name: 'Direct', frac: 0.28, color: C.blue},
+  {name: 'Referral', frac: 0.18, color: C.purple},
+  {name: 'Social', frac: 0.12, color: C.amber},
+];
+const CHAN = [
+  {name: 'Organic Search', pct: 82, color: C.cyan},
+  {name: 'Direct Traffic', pct: 64, color: C.blue},
+  {name: 'Referral', pct: 47, color: C.purple},
+  {name: 'Social Media', pct: 31, color: C.amber},
+];
+
+/* ============================================================================
+   BACKGROUND
+   ========================================================================== */
+const Background: React.FC = () => {
+  const frame = useCurrentFrame();
   return (
-    <AbsoluteFill style={{overflow: 'hidden'}}>
-      <SceneHeader
-        eyebrow="ANALYSIS · REPORTS"
-        title={variant === 0 ? 'CYBER BUSINESS' : variant === 1 ? 'INTELLIGENT SYSTEMS' : 'FUTURE NETWORK'}
-        accent={COLORS.cyan}
-        slot={slot}
+    <>
+      <AbsoluteFill
+        style={{
+          background: `radial-gradient(120% 90% at 25% 8%, #10203E 0%, ${C.bg1} 42%, ${C.bg0} 100%)`,
+        }}
       />
-      {[0, 1, 2].map((column) => (
-        <div
-          key={column}
-          style={{
-            position: 'absolute',
-            top: 188,
-            bottom: 170,
-            left: 62 + column * 616,
-            width: 566,
-            borderLeft: '1px solid rgba(129,155,196,0.12)',
-            borderRight: '1px solid rgba(129,155,196,0.07)',
-            background: column === 1 ? 'rgba(18,26,40,0.15)' : 'transparent',
-          }}
-        />
-      ))}
-      {[0, 1, 2, 3, 4, 5, 6].map((row) => {
-        const y = 202 + row * 114;
-        const item = ARTICLE_LINES[(row + variant * 2) % ARTICLE_LINES.length];
+      {[
+        {c: '#1E5BFF', s: 1100, x: 260, y: 120, a: 0.28, sp: 1},
+        {c: '#7C4DFF', s: 900, x: 1700, y: 260, a: 0.22, sp: 1.5},
+        {c: '#12C8E0', s: 820, x: 1500, y: 1000, a: 0.16, sp: 1.1},
+      ].map((b, i) => {
+        const dx = Math.sin(frame / (170 * b.sp) + i) * 50;
+        const dy = Math.cos(frame / (190 * b.sp) + i) * 40;
         return (
           <div
-            key={row}
+            key={i}
             style={{
               position: 'absolute',
-              top: y,
-              left: -120 + drift * (row % 2 === 0 ? 1 : -0.65),
-              width: 2260,
-              height: 78,
-              borderBottom: '1px solid rgba(125,151,190,0.11)',
-              fontFamily: sans,
-              fontSize: 51 + (row % 3) * 4,
-              lineHeight: '72px',
-              fontWeight: row % 3 === 1 ? 720 : 540,
-              letterSpacing: -1.3,
-              color: row % 2 === 0 ? '#6B7585' : '#414A58',
-              opacity: 0.48,
-              whiteSpace: 'nowrap',
+              left: b.x - b.s / 2 + dx,
+              top: b.y - b.s / 2 + dy,
+              width: b.s,
+              height: b.s,
+              borderRadius: '50%',
+              background: `radial-gradient(circle at 50% 50%, ${b.c} 0%, rgba(0,0,0,0) 68%)`,
+              opacity: b.a,
+              filter: 'blur(20px)',
             }}
-          >
-            {item} &nbsp; — &nbsp; {ARTICLE_LINES[(row + 3) % ARTICLE_LINES.length]}
-          </div>
+          />
         );
       })}
-      <div
-        style={{
-          position: 'absolute',
-          left: 84,
-          right: 84,
-          bottom: 84,
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontFamily: mono,
-          fontSize: 15,
-          letterSpacing: 2.8,
-          color: COLORS.muted,
-        }}
-      >
-        <span>GLOBAL SIGNAL / {83 + variant * 4}.7%</span>
-        <span>CONNECTED INDUSTRY · AUTOMATION · RESEARCH</span>
-      </div>
-    </AbsoluteFill>
+      <AbsoluteFill style={{opacity: 0.5}}>
+        <svg width="1920" height="1080">
+          <defs>
+            <pattern id="grid" width="46" height="46" patternUnits="userSpaceOnUse">
+              <path d="M46 0 L0 0 0 46" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <rect width="1920" height="1080" fill="url(#grid)" />
+        </svg>
+      </AbsoluteFill>
+    </>
   );
 };
 
-const DigitalScene: React.FC<{frame: number; variant: number; slot: number}> = ({
-  frame,
-  variant,
-  slot,
-}) => {
-  const local = frame % FRAMES_PER_SCENE;
-  const pulse = 0.5 + Math.sin(frame * 0.12) * 0.5;
-
+/* ============================================================================
+   PANEL
+   ========================================================================== */
+const Panel: React.FC<{
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  delay: number;
+  children?: React.ReactNode;
+}> = ({x, y, w, h, delay, children}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const s = spring({frame: frame - T.shellIn - delay, fps, config: {damping: 20, mass: 0.8, stiffness: 110}});
+  const op = interpolate(s, [0, 1], [0, 1]);
+  const ty = interpolate(s, [0, 1], [26, 0]);
+  const sc = interpolate(s, [0, 1], [0.985, 1]);
   return (
-    <AbsoluteFill style={{overflow: 'hidden'}}>
-      <SceneHeader
-        eyebrow="LIVE DATA · MODEL HEALTH"
-        title={variant === 0 ? 'DIGITAL REPORT' : variant === 1 ? 'SYSTEM MONITOR' : 'MACHINE INDEX'}
-        align="right"
-        accent={COLORS.lime}
-        slot={slot}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: 82,
-          top: 190,
-          width: 485,
-          bottom: 116,
-          padding: '30px 30px',
-          border: '1px solid rgba(164,255,130,0.16)',
-          background: 'linear-gradient(145deg, rgba(11,17,28,0.8), rgba(4,7,12,0.15))',
-        }}
-      >
-        <div style={{fontFamily: mono, color: COLORS.lime, fontSize: 15, letterSpacing: 3}}>CORE TELEMETRY</div>
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
-          <div key={index} style={{marginTop: 26}}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontFamily: mono,
-                fontSize: 13,
-                color: '#758297',
-              }}
-            >
-              <span>{CODE_LINES[(index + variant) % CODE_LINES.length].split('     ')[0]}</span>
-              <span>{String(76 + ((index * 7 + variant * 5) % 23)).padStart(2, '0')}%</span>
-            </div>
-            <div style={{height: 4, marginTop: 8, background: '#151D29', overflow: 'hidden'}}>
-              <div
-                style={{
-                  height: '100%',
-                  width: `${42 + ((index * 13 + variant * 11) % 53)}%`,
-                  background: `linear-gradient(90deg, ${COLORS.blue}, ${index % 2 ? COLORS.lime : COLORS.cyan})`,
-                  transform: `translateX(${range(local, 0, 18, -28, 0)}px)`,
-                  boxShadow: `0 0 16px ${COLORS.cyan}55`,
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          right: 82,
-          top: 202,
-          width: 1100,
-          height: 260,
-          borderTop: '1px solid rgba(88,232,255,0.22)',
-          borderBottom: '1px solid rgba(88,232,255,0.12)',
-        }}
-      >
-        <svg width="1100" height="260" viewBox="0 0 1100 260">
-          <path
-            d={`M0 190 ${Array.from({length: 24}, (_, i) => {
-              const x = i * 48;
-              const y = 130 + Math.sin(i * 0.72 + frame * 0.065) * (42 + variant * 8) + Math.sin(i * 1.9) * 18;
-              return `L${x} ${y}`;
-            }).join(' ')}`}
-            fill="none"
-            stroke={COLORS.cyan}
-            strokeWidth="3"
-            opacity="0.72"
-          />
-          <path
-            d={`M0 214 ${Array.from({length: 24}, (_, i) => {
-              const x = i * 48;
-              const y = 154 + Math.cos(i * 0.6 + frame * 0.045) * 34;
-              return `L${x} ${y}`;
-            }).join(' ')}`}
-            fill="none"
-            stroke={COLORS.violet}
-            strokeWidth="2"
-            opacity="0.48"
-          />
-          {Array.from({length: 12}, (_, i) => (
-            <line key={i} x1={i * 100} y1="0" x2={i * 100} y2="260" stroke="#647083" strokeOpacity="0.1" />
-          ))}
+    <div
+      style={{
+        position: 'absolute',
+        left: x,
+        top: y,
+        width: w,
+        height: h,
+        opacity: op,
+        transform: `translateY(${ty}px) scale(${sc})`,
+        transformOrigin: 'center',
+        borderRadius: 22,
+        background: C.panel,
+        border: `1px solid ${C.panelBorder}`,
+        boxShadow: '0 30px 70px -30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      {children}
+    </div>
+  );
+};
+
+const PanelTitle: React.FC<{children: React.ReactNode; sub?: string}> = ({children, sub}) => (
+  <div style={{position: 'absolute', top: 24, left: 28, right: 28, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between'}}>
+    <span style={{fontFamily: FONT, fontSize: 21, fontWeight: 600, color: C.text, letterSpacing: 0.2}}>{children}</span>
+    {sub ? <span style={{fontFamily: FONT, fontSize: 15, fontWeight: 500, color: C.faint}}>{sub}</span> : null}
+  </div>
+);
+
+/* ============================================================================
+   TOP BAR
+   ========================================================================== */
+const TopBar: React.FC = () => {
+  const frame = useCurrentFrame();
+  const op = ease(frame, T.topBar, T.topBar + 24, eOut);
+  const ty = interpolate(op, [0, 1], [-14, 0]);
+  const ranges = ['24H', '7D', '30D', '12M'];
+  const pulse = 0.5 + 0.5 * Math.sin(frame / 14);
+  return (
+    <div style={{position: 'absolute', left: 60, top: 50, width: 1800, height: 66, opacity: op, transform: `translateY(${ty}px)`, display: 'flex', alignItems: 'center'}}>
+      <div style={{width: 42, height: 42, borderRadius: 12, background: `linear-gradient(145deg,${C.cyan},${C.blue})`, boxShadow: `0 8px 20px -6px ${C.blue}`, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <svg width="22" height="22" viewBox="0 0 24 24">
+          <path d="M4 15 L9 9 L13 13 L20 5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="20" cy="5" r="2.4" fill="#fff" />
         </svg>
-        <div
-          style={{
-            position: 'absolute',
-            right: 24,
-            top: 20,
-            fontFamily: mono,
-            fontSize: 13,
-            color: COLORS.cyan,
-            opacity: 0.6 + pulse * 0.35,
-            letterSpacing: 2,
-          }}
-        >
-          SIGNAL FLOW / ACTIVE
+      </div>
+      <span style={{fontFamily: FONT, fontSize: 23, fontWeight: 700, color: C.text, marginLeft: 14, letterSpacing: -0.2}}>Insightly</span>
+      <div style={{width: 1, height: 26, background: 'rgba(255,255,255,0.12)', margin: '0 22px'}} />
+      <span style={{fontFamily: FONT, fontSize: 19, fontWeight: 500, color: C.sub}}>Analytics Overview</span>
+
+      <div style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 20, background: 'rgba(52,224,161,0.12)', border: `1px solid rgba(52,224,161,0.3)`}}>
+          <div style={{width: 8, height: 8, borderRadius: 4, background: C.green, opacity: 0.5 + pulse * 0.5, boxShadow: `0 0 ${6 + pulse * 8}px ${C.green}`}} />
+          <span style={{fontFamily: FONT, fontSize: 14, fontWeight: 600, color: C.green, letterSpacing: 0.5}}>LIVE</span>
+        </div>
+        <div style={{display: 'flex', padding: 4, borderRadius: 14, background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.panelBorder}`}}>
+          {ranges.map((r) => {
+            const active = r === '30D';
+            return (
+              <div key={r} style={{padding: '7px 15px', borderRadius: 10, fontFamily: FONT, fontSize: 14, fontWeight: 600, color: active ? '#fff' : C.faint, background: active ? `linear-gradient(145deg,${C.blue},#2A5FD0)` : 'transparent'}}>{r}</div>
+            );
+          })}
         </div>
       </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: 630,
-          right: 82,
-          bottom: 110,
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 14,
-        }}
-      >
-        {['VISION', 'LANGUAGE', 'PLANNING', 'ROBOTICS'].map((label, index) => (
-          <div
-            key={label}
-            style={{
-              height: 178,
-              padding: 20,
-              border: '1px solid rgba(126,145,178,0.13)',
-              background: 'rgba(10,15,24,0.56)',
-            }}
-          >
-            <div style={{fontFamily: mono, fontSize: 13, letterSpacing: 2.5, color: '#748196'}}>{label}</div>
-            <div style={{fontFamily: sans, marginTop: 16, fontSize: 48, fontWeight: 760, color: COLORS.paper}}>
-              {84 + ((index * 4 + variant * 3) % 15)}<span style={{fontSize: 18, color: COLORS.cyan}}>%</span>
-            </div>
-            <div style={{fontFamily: mono, fontSize: 11, color: COLORS.muted, marginTop: 16}}>STATUS / NOMINAL</div>
-          </div>
-        ))}
-      </div>
-    </AbsoluteFill>
+    </div>
   );
 };
 
-const NeuralScene: React.FC<{frame: number; variant: number; slot: number}> = ({
-  frame,
-  variant,
-  slot,
-}) => {
-  const sweep = (frame * 5.8 + variant * 140) % 2200 - 140;
+/* ============================================================================
+   KPI TILE
+   ========================================================================== */
+const KpiTile: React.FC<{i: number; d: (typeof KPIS)[number]; x: number}> = ({i, d, x}) => {
+  const frame = useCurrentFrame();
+  const prog = ease(frame, T.kpiCountStart + i * 6, T.kpiCountEnd, eExpo);
+  const val = d.value * prog;
 
-  const positions = meshNodes.map((node, index) => ({
-    ...node,
-    x: node.x + Math.sin(frame * 0.025 + index * 1.7) * (5 + node.depth * 9),
-    y: node.y + Math.cos(frame * 0.021 + index * 1.3) * (4 + node.depth * 7),
-  }));
+  const sW = 120;
+  const sH = 42;
+  const spts = d.spark.map((v, k) => ({x: (k / (d.spark.length - 1)) * sW, y: sH - v * sH}));
+  const sp = ease(frame, T.sparkStart + i * 8, T.sparkEnd, eOut);
+  const deltaOp = ease(frame, T.kpiCountStart + i * 6 + 20, T.kpiCountStart + i * 6 + 44, eOut);
 
   return (
-    <AbsoluteFill style={{overflow: 'hidden'}}>
-      <SceneHeader
-        eyebrow="SYNAPTIC MAP · LIVE INFERENCE"
-        title={variant === 0 ? 'AI LAB REPORT' : variant === 1 ? 'NEURAL ATLAS' : 'COGNITIVE SYSTEMS'}
-        align="right"
-        serifTitle
-        accent={COLORS.violet}
-        slot={slot}
-      />
-      <svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{position: 'absolute', inset: 0}}>
+    <Panel x={x} y={L.kpiY} w={L.kpiW} h={L.kpiH} delay={6 + i * 5}>
+      <div style={{position: 'absolute', inset: 0, padding: 26}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+          <div style={{width: 10, height: 10, borderRadius: 3, background: d.color, boxShadow: `0 0 10px ${d.color}`}} />
+          <span style={{fontFamily: FONT, fontSize: 16, fontWeight: 500, color: C.sub}}>{d.label}</span>
+        </div>
+        <div style={{marginTop: 16}}>
+          <span style={{fontFamily: FONT, fontSize: 40, fontWeight: 700, color: C.text, letterSpacing: -1, ...NUM}}>
+            {d.prefix}
+            {fmt(val, d.dec)}
+            {d.suffix}
+          </span>
+        </div>
+        <div style={{marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, opacity: deltaOp}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, background: d.up ? 'rgba(52,224,161,0.14)' : 'rgba(255,107,138,0.14)'}}>
+            <svg width="11" height="11" viewBox="0 0 12 12" style={{transform: d.up ? 'none' : 'rotate(180deg)'}}>
+              <path d="M6 2 L10 8 L2 8 Z" fill={d.up ? C.green : C.red} />
+            </svg>
+            <span style={{fontFamily: FONT, fontSize: 13, fontWeight: 700, color: d.up ? C.green : C.red, ...NUM}}>{d.delta}</span>
+          </div>
+          <span style={{fontFamily: FONT, fontSize: 13, color: C.faint}}>vs last month</span>
+        </div>
+
+        {/* mini sparkline, top-right */}
+        <svg width={sW} height={sH} style={{position: 'absolute', right: 26, top: 30, overflow: 'visible'}} viewBox={`0 0 ${sW} ${sH}`}>
+          <defs>
+            <linearGradient id={`sg${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={d.color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={d.color} stopOpacity="0" />
+            </linearGradient>
+            <clipPath id={`sc${i}`}>
+              <rect x="0" y="-6" width={sp * sW} height={sH + 12} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#sc${i})`}>
+            <path d={`${smoothPath(spts)} L ${sW} ${sH} L 0 ${sH} Z`} fill={`url(#sg${i})`} />
+            <path d={smoothPath(spts)} fill="none" stroke={d.color} strokeWidth={2.4} strokeLinecap="round" />
+          </g>
+        </svg>
+      </div>
+    </Panel>
+  );
+};
+
+/* ============================================================================
+   LINE / AREA CHART
+   ========================================================================== */
+const LineChart: React.FC = () => {
+  const frame = useCurrentFrame();
+  const W = L.leftW;
+  const PH = L.mainH;
+  const svgTop = 62;
+  const VBW = W;
+  const VBH = 300;
+  const plotL = 52;
+  const plotR = W - 38;
+  const plotW = plotR - plotL;
+  const top = 18;
+  const bot = 250;
+
+  const pts = LINE.map((v, i) => ({x: plotL + (i / (LINE.length - 1)) * plotW, y: bot - v * (bot - top)}));
+  const p = ease(frame, T.lineStart, T.lineEnd, eOut);
+  const fi = p * (LINE.length - 1);
+  const idx = Math.min(Math.floor(fi), LINE.length - 2);
+  const tt = fi - idx;
+  const dot = {x: lerp(pts[idx].x, pts[idx + 1].x, tt), y: lerp(pts[idx].y, pts[idx + 1].y, tt)};
+  const curVal = lerp(LINE[idx], LINE[idx + 1], tt);
+  const revealW = plotL + p * plotW;
+  const gridVals = [0, 0.25, 0.5, 0.75, 1];
+  const tipOp = interpolate(frame, [T.lineStart + 24, T.lineStart + 44, T.lineEnd + 26, T.lineEnd + 54], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const tipTop = clamp(svgTop + dot.y - 82, 64, PH - 96);
+  const tipLeft = clamp(dot.x - 80, 40, W - 200);
+
+  return (
+    <Panel x={L.cx} y={L.mainY} w={W} h={PH} delay={10}>
+      <PanelTitle sub="Monthly · USD">Revenue Trend</PanelTitle>
+      <svg width={VBW} height={VBH} viewBox={`0 0 ${VBW} ${VBH}`} style={{position: 'absolute', top: svgTop, left: 0, overflow: 'visible'}}>
         <defs>
-          <radialGradient id="nodeGlow">
-            <stop offset="0" stopColor="#FFFFFF" />
-            <stop offset="0.35" stopColor={COLORS.cyan} />
-            <stop offset="1" stopColor={COLORS.blue} stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="sweepLine" x1="0" x2="1">
-            <stop offset="0" stopColor={COLORS.cyan} stopOpacity="0" />
-            <stop offset="0.5" stopColor={COLORS.cyan} stopOpacity="0.75" />
-            <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0" />
+          <linearGradient id="lineArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.blue} stopOpacity="0.42" />
+            <stop offset="55%" stopColor={C.cyan} stopOpacity="0.12" />
+            <stop offset="100%" stopColor={C.cyan} stopOpacity="0" />
           </linearGradient>
+          <linearGradient id="lineStroke" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={C.blue} />
+            <stop offset="100%" stopColor={C.cyan} />
+          </linearGradient>
+          <clipPath id="lineReveal">
+            <rect x={plotL} y={top - 18} width={Math.max(0, revealW - plotL)} height={bot - top + 40} />
+          </clipPath>
         </defs>
-        {positions.map((node, index) => {
-          const target = positions[(index * 7 + 5) % positions.length];
+
+        {gridVals.map((g, i) => {
+          const y = bot - g * (bot - top);
           return (
-            <line
-              key={`line-a-${index}`}
-              x1={node.x}
-              y1={node.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={index % 3 === 0 ? COLORS.violet : COLORS.cyan}
-              strokeWidth={0.7 + node.depth * 0.8}
-              strokeOpacity={0.08 + node.depth * 0.15}
-            />
-          );
-        })}
-        {positions.filter((_, index) => index % 2 === 0).map((node, index) => {
-          const target = positions[(index * 5 + 13) % positions.length];
-          return (
-            <line
-              key={`line-b-${index}`}
-              x1={node.x}
-              y1={node.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={COLORS.blue}
-              strokeWidth="1"
-              strokeDasharray="4 10"
-              strokeOpacity="0.2"
-            />
-          );
-        })}
-        {positions.map((node, index) => {
-          const flare = 0.72 + Math.sin(frame * 0.11 + index) * 0.28;
-          return (
-            <g key={`node-${index}`}>
-              <circle cx={node.x} cy={node.y} r={node.radius * 4.2} fill="url(#nodeGlow)" opacity={0.14 * flare} />
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={node.radius}
-                fill={index % 5 === 0 ? COLORS.paper : index % 2 ? COLORS.cyan : COLORS.violet}
-                opacity={0.42 + node.depth * 0.48}
-              />
+            <g key={i}>
+              <line x1={plotL} y1={y} x2={plotR} y2={y} stroke={C.grid} strokeWidth={1} strokeDasharray="2 6" />
+              <text x={plotL - 12} y={y + 4} textAnchor="end" fontFamily={FONT} fontSize={13} fill={C.faint}>{Math.round(g * 3)}M</text>
             </g>
           );
         })}
-        <rect x={sweep} y="155" width="170" height="820" fill="url(#sweepLine)" opacity="0.11" />
+
+        <g clipPath="url(#lineReveal)">
+          <path d={`${smoothPath(pts)} L ${pts[pts.length - 1].x} ${bot} L ${pts[0].x} ${bot} Z`} fill="url(#lineArea)" />
+          <path d={smoothPath(pts)} fill="none" stroke="url(#lineStroke)" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+
+        {MONTHS.map((m, i) => (
+          <text key={m} x={pts[i].x} y={bot + 32} textAnchor="middle" fontFamily={FONT} fontSize={13} fill={C.faint}>{m}</text>
+        ))}
+
+        {p > 0.02 && p < 0.999 ? (
+          <>
+            <line x1={dot.x} y1={top - 6} x2={dot.x} y2={bot} stroke="rgba(62,134,255,0.4)" strokeWidth={1.5} />
+            <circle cx={dot.x} cy={dot.y} r={13} fill={C.blue} opacity={0.22} />
+            <circle cx={dot.x} cy={dot.y} r={6.5} fill="#fff" stroke={C.blue} strokeWidth={3} />
+          </>
+        ) : null}
+        {p >= 0.999 ? (
+          <>
+            <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r={7 + 2 * (0.5 + 0.5 * Math.sin(frame / 16))} fill={C.cyan} opacity={0.3} />
+            <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r={6.5} fill="#fff" stroke={C.cyan} strokeWidth={3} />
+          </>
+        ) : null}
       </svg>
-      <div
-        style={{
-          position: 'absolute',
-          left: 84,
-          top: 202,
-          width: 255,
-          fontFamily: mono,
-          fontSize: 13,
-          lineHeight: 2.15,
-          letterSpacing: 1.3,
-          color: '#6D7B90',
-        }}
-      >
-        {CODE_LINES.slice(0, 6).map((line, index) => (
-          <div key={line} style={{opacity: 0.45 + ((index + variant) % 3) * 0.16}}>{line}</div>
-        ))}
+
+      <div style={{position: 'absolute', left: tipLeft, top: tipTop, width: 160, opacity: tipOp, pointerEvents: 'none'}}>
+        <div style={{background: 'rgba(14,22,44,0.94)', border: `1px solid ${C.panelBorder}`, borderRadius: 12, padding: '10px 14px', boxShadow: '0 16px 30px -12px rgba(0,0,0,0.6)'}}>
+          <div style={{fontFamily: FONT, fontSize: 12, color: C.sub, fontWeight: 500}}>{MONTHS[clamp(Math.round(fi), 0, 11)]} 2026</div>
+          <div style={{fontFamily: FONT, fontSize: 22, color: '#fff', fontWeight: 700, ...NUM}}>${fmt(curVal * 3, 2)}M</div>
+        </div>
       </div>
-      <div
-        style={{
-          position: 'absolute',
-          right: 84,
-          bottom: 84,
-          width: 440,
-          textAlign: 'right',
-          fontFamily: mono,
-          fontSize: 13,
-          lineHeight: 1.8,
-          color: COLORS.muted,
-          letterSpacing: 1.5,
-        }}
-      >
-        {positions.length} NODES / {positions.length * 2 - 1} CONNECTIONS<br />
-        CONFIDENCE {(94.2 + variant * 1.7).toFixed(1)} / LATENCY 018 MS
-      </div>
-    </AbsoluteFill>
+    </Panel>
   );
 };
 
-const ReviewScene: React.FC<{frame: number; variant: number; slot: number}> = ({
-  frame,
-  variant,
-  slot,
-}) => {
-  const local = frame % FRAMES_PER_SCENE;
-  const offset = range(local, 0, 59, 0, variant % 2 === 0 ? -22 : 22);
+/* ============================================================================
+   DONUT
+   ========================================================================== */
+const Donut: React.FC = () => {
+  const frame = useCurrentFrame();
+  const W = L.rightW;
+  const PH = L.mainH;
+  const cx = 188;
+  const cy = 158;
+  const r = 92;
+  const sw = 26;
+  const Cc = 2 * Math.PI * r;
+  const sweep = ease(frame, T.donutStart, T.donutEnd, eOut);
+  const centerVal = 248910 * ease(frame, T.donutStart + 20, T.donutEnd, eExpo);
+
+  let cum = 0;
+  const segs = SEG.map((s) => {
+    const start = cum;
+    cum += s.frac;
+    return {...s, start};
+  });
 
   return (
-    <AbsoluteFill style={{overflow: 'hidden'}}>
-      <SceneHeader
-        eyebrow="SCIENCE · SOCIETY · DESIGN"
-        title={variant === 0 ? 'TECHNOLOGY REVIEW' : variant === 1 ? 'RESEARCH QUARTERLY' : 'THE MACHINE ERA'}
-        serifTitle
-        accent={COLORS.magenta}
-        slot={slot}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: 84,
-          right: 84,
-          top: 192,
-          height: 174,
-          display: 'grid',
-          gridTemplateColumns: '1.3fr 0.7fr 1fr',
-          gap: 32,
-        }}
-      >
-        {[
-          ['01', 'Machines that learn from the world around them'],
-          ['02', 'Designing trust into tomorrow’s intelligent tools'],
-          ['03', 'A new creative language built from data and insight'],
-        ].map(([number, copy], index) => (
-          <div key={number} style={{borderTop: `3px solid ${index === variant ? COLORS.magenta : '#394253'}`, paddingTop: 18}}>
-            <div style={{fontFamily: mono, fontSize: 13, color: COLORS.magenta, letterSpacing: 2}}>{number} / FIELD NOTE</div>
-            <div style={{fontFamily: serif, fontSize: 31, lineHeight: 1.13, marginTop: 12, color: '#9CA5B4', opacity: 0.7}}>{copy}</div>
-          </div>
-        ))}
+    <Panel x={L.rightX} y={L.mainY} w={W} h={PH} delay={16}>
+      <PanelTitle sub="This month">Traffic Sources</PanelTitle>
+      <svg width={W} height={300} viewBox={`0 0 ${W} 300`} style={{position: 'absolute', top: 58, left: 0, overflow: 'visible'}}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={sw} />
+        {segs.map((s, i) => {
+          const vis = clamp((sweep - s.start) / s.frac, 0, 1) * s.frac;
+          const angle = s.start * 360 - 90;
+          return (
+            <g key={i} transform={`rotate(${angle} ${cx} ${cy})`}>
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${vis * Cc} ${Cc}`} style={{filter: `drop-shadow(0 0 6px ${s.color}66)`}} />
+            </g>
+          );
+        })}
+        <text x={cx} y={cy - 2} textAnchor="middle" fontFamily={FONT} fontSize={33} fontWeight={700} fill="#fff" style={NUM}>{fmt(centerVal, 0)}</text>
+        <text x={cx} y={cy + 24} textAnchor="middle" fontFamily={FONT} fontSize={14} fontWeight={500} fill={C.sub}>Total Visits</text>
+      </svg>
+
+      <div style={{position: 'absolute', right: 34, top: 128, width: 190, display: 'flex', flexDirection: 'column', gap: 20}}>
+        {segs.map((s, i) => {
+          const op = ease(frame, T.donutStart + 30 + i * 12, T.donutStart + 60 + i * 12, eOut);
+          return (
+            <div key={i} style={{display: 'flex', alignItems: 'center', opacity: op, transform: `translateX(${interpolate(op, [0, 1], [10, 0])}px)`}}>
+              <div style={{width: 11, height: 11, borderRadius: 3, background: s.color, boxShadow: `0 0 8px ${s.color}`, marginRight: 12}} />
+              <span style={{fontFamily: FONT, fontSize: 16, color: C.text, fontWeight: 500}}>{s.name}</span>
+              <span style={{marginLeft: 'auto', fontFamily: FONT, fontSize: 16, color: C.sub, fontWeight: 600, ...NUM}}>{Math.round(s.frac * 100)}%</span>
+            </div>
+          );
+        })}
       </div>
-      {[0, 1, 2, 3].map((row) => (
-        <div
-          key={row}
-          style={{
-            position: 'absolute',
-            top: 696 + row * 76,
-            left: -80 + offset * (row % 2 ? -1 : 1),
-            width: 2200,
-            height: 68,
-            borderBottom: '1px solid rgba(154,164,181,0.11)',
-            fontFamily: serif,
-            fontSize: 48 + (row % 2) * 5,
-            lineHeight: '62px',
-            fontWeight: row % 2 ? 700 : 400,
-            letterSpacing: -1.1,
-            color: row === variant ? '#7F8794' : '#535B68',
-            opacity: row === variant ? 0.62 : 0.4,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {ARTICLE_LINES[(row + 4 + variant) % ARTICLE_LINES.length]} &nbsp; ◆ &nbsp; {ARTICLE_LINES[(row + 1) % ARTICLE_LINES.length]}
-        </div>
-      ))}
-      <div
-        style={{
-          position: 'absolute',
-          left: 82,
-          bottom: 55,
-          display: 'flex',
-          gap: 10,
-        }}
-      >
-        {[0, 1, 2].map((dot) => (
-          <div key={dot} style={{width: 7, height: 7, borderRadius: 10, background: dot === variant ? COLORS.magenta : '#4A5260'}} />
-        ))}
-      </div>
-    </AbsoluteFill>
+    </Panel>
   );
 };
 
-const CloudScene: React.FC<{frame: number; variant: number; slot: number}> = ({
-  frame,
-  variant,
-  slot,
-}) => (
-  <AbsoluteFill style={{overflow: 'hidden'}}>
-    <SceneHeader
-      eyebrow="EMERGING FIELDS · KEYWORD MAP"
-      title={variant === 0 ? 'FUTURE INDEX' : variant === 1 ? 'MACHINE CULTURE' : 'INTELLIGENCE MAP'}
-      align={variant % 2 ? 'right' : 'left'}
-      accent={COLORS.cyan}
-      slot={slot}
-    />
-    {cloudPlacements.map((placement, index) => {
-      const word = CLOUD_WORDS[(index + variant * 5) % CLOUD_WORDS.length];
-      const floatX = Math.sin(frame * 0.025 + index * 1.8) * (4 + (index % 3) * 3);
-      const floatY = Math.cos(frame * 0.021 + index * 1.25) * (3 + (index % 4) * 2);
-      const isBright = (index + variant) % 5 === 0;
-      return (
-        <div
-          key={`${placement.x}-${word}`}
-          style={{
-            position: 'absolute',
-            left: placement.x,
-            top: placement.y,
-            transform: `translate(${floatX}px, ${floatY}px)`,
-            fontFamily: index % 4 === 0 ? serif : sans,
-            fontSize: placement.size,
-            fontWeight: index % 3 === 0 ? 760 : 520,
-            letterSpacing: index % 4 === 0 ? -1 : 1.2,
-            color: isBright ? COLORS.paper : index % 2 ? '#697386' : '#414A59',
-            opacity: isBright ? 0.74 : 0.42,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {word}
-        </div>
-      );
-    })}
-    <svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{position: 'absolute', inset: 0, opacity: 0.2}}>
-      <ellipse cx="960" cy="540" rx="700" ry="340" fill="none" stroke={COLORS.cyan} strokeWidth="1" strokeDasharray="6 18" />
-      <ellipse cx="960" cy="540" rx="520" ry="250" fill="none" stroke={COLORS.violet} strokeWidth="1" strokeDasharray="2 20" />
-    </svg>
-  </AbsoluteFill>
-);
-
-const ChangingScene: React.FC<{frame: number; slot: number}> = ({frame, slot}) => {
-  const scene = slot % 5;
-  const variant = Math.floor(slot / 5);
-
-  if (scene === 0) return <CyberScene frame={frame} variant={variant} slot={slot} />;
-  if (scene === 1) return <DigitalScene frame={frame} variant={variant} slot={slot} />;
-  if (scene === 2) return <NeuralScene frame={frame} variant={variant} slot={slot} />;
-  if (scene === 3) return <ReviewScene frame={frame} variant={variant} slot={slot} />;
-  return <CloudScene frame={frame} variant={variant} slot={slot} />;
-};
-
-const RobotMascot: React.FC<{frame: number; slot: number}> = ({frame, slot}) => {
-  const orbit = (frame / 900) * Math.PI * 2;
-  const x = WIDTH / 2 + Math.cos(orbit) * 725;
-  const y = HEIGHT / 2 + Math.sin(orbit) * 338 + Math.sin(frame * 0.07) * 6;
-  const tilt = Math.sin(frame * 0.055) * 3.5;
-  const blinkPhase = (frame + 17) % 174;
-  const eyeHeight = blinkPhase > 165 ? 3 : 15;
-  const local = frame % FRAMES_PER_SCENE;
-  const wave = Math.sin(range(local, 10, 48, 0, Math.PI * 2));
-  const leftArm = slot % 2 === 0 ? -18 + wave * 16 : -2 + wave * 5;
-  const rightArm = slot % 2 === 1 ? 18 - wave * 16 : 3 - wave * 5;
-  const antenna = Math.sin(frame * 0.14) * 4;
+/* ============================================================================
+   BAR CHART
+   ========================================================================== */
+const BarChart: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const W = L.leftW;
+  const plotL = 56;
+  const plotR = W - 40;
+  const plotW = plotR - plotL;
+  const base = 150;
+  const maxH = 120;
+  const n = BARS.length;
+  const slot = plotW / n;
+  const bw = 48;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x - 110,
-        top: y - 142,
-        width: 220,
-        height: 284,
-        transform: `rotate(${tilt}deg)`,
-        transformOrigin: '50% 60%',
-        filter: 'drop-shadow(0 22px 28px rgba(0,0,0,0.5)) drop-shadow(0 0 18px rgba(88,232,255,0.16))',
-        zIndex: 24,
-      }}
-    >
-      <svg width="220" height="284" viewBox="0 0 240 310" overflow="visible">
+    <Panel x={L.cx} y={L.botY} w={W} h={L.botH} delay={20}>
+      <PanelTitle sub="Weekly">Active Users by Week</PanelTitle>
+      <svg width={W} height={190} viewBox={`0 0 ${W} 190`} style={{position: 'absolute', top: 62, left: 0, overflow: 'visible'}}>
         <defs>
-          <linearGradient id="robotShell" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#F7FBFF" />
-            <stop offset="0.5" stopColor="#DCE8F7" />
-            <stop offset="1" stopColor="#8FA3BF" />
+          <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.cyan} />
+            <stop offset="100%" stopColor={C.blue} />
           </linearGradient>
-          <linearGradient id="robotVisor" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#172942" />
-            <stop offset="1" stopColor="#07111F" />
-          </linearGradient>
-          <radialGradient id="robotGlow">
-            <stop offset="0" stopColor="#FFFFFF" />
-            <stop offset="0.3" stopColor={COLORS.cyan} />
-            <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0" />
-          </radialGradient>
         </defs>
-
-        <g transform={`rotate(${antenna}, 120, 38)`}>
-          <line x1="120" y1="49" x2="120" y2="19" stroke="#6E829F" strokeWidth="7" strokeLinecap="round" />
-          <circle cx="120" cy="14" r="13" fill="url(#robotGlow)" opacity={0.85 + Math.sin(frame * 0.16) * 0.12} />
-          <circle cx="120" cy="14" r="5" fill={COLORS.cyan} />
-        </g>
-
-        <g transform={`rotate(${leftArm}, 72, 201)`}>
-          <rect x="43" y="190" width="37" height="81" rx="18" fill="#7185A1" />
-          <circle cx="61" cy="273" r="19" fill="url(#robotShell)" />
-          <circle cx="61" cy="273" r="7" fill={COLORS.cyan} opacity="0.72" />
-        </g>
-        <g transform={`rotate(${rightArm}, 168, 201)`}>
-          <rect x="160" y="190" width="37" height="81" rx="18" fill="#7185A1" />
-          <circle cx="179" cy="273" r="19" fill="url(#robotShell)" />
-          <circle cx="179" cy="273" r="7" fill={COLORS.cyan} opacity="0.72" />
-        </g>
-
-        <rect x="72" y="175" width="96" height="104" rx="36" fill="url(#robotShell)" stroke="#FFFFFF" strokeOpacity="0.48" strokeWidth="2" />
-        <rect x="92" y="200" width="56" height="42" rx="16" fill="#142339" />
-        <path d="M106 221h28" stroke={COLORS.cyan} strokeWidth="5" strokeLinecap="round" opacity="0.9" />
-        <circle cx="120" cy="255" r="6" fill={COLORS.violet} />
-
-        <rect x="79" y="265" width="31" height="38" rx="14" fill="#667B98" />
-        <rect x="130" y="265" width="31" height="38" rx="14" fill="#667B98" />
-        <rect x="72" y="293" width="45" height="13" rx="7" fill="#DDE8F6" />
-        <rect x="123" y="293" width="45" height="13" rx="7" fill="#DDE8F6" />
-
-        <rect x="25" y="50" width="190" height="137" rx="59" fill="url(#robotShell)" stroke="#FFFFFF" strokeOpacity="0.65" strokeWidth="3" />
-        <rect x="48" y="73" width="144" height="91" rx="39" fill="url(#robotVisor)" />
-        <path d="M64 97c25-19 78-25 112-2" fill="none" stroke="#8AB8E6" strokeOpacity="0.24" strokeWidth="7" strokeLinecap="round" />
-        <rect x="78" y={111 + (15 - eyeHeight) / 2} width="21" height={eyeHeight} rx="8" fill={COLORS.cyan} />
-        <rect x="141" y={111 + (15 - eyeHeight) / 2} width="21" height={eyeHeight} rx="8" fill={COLORS.cyan} />
-        <circle cx="66" cy="145" r="8" fill="#FF8295" opacity="0.72" />
-        <circle cx="174" cy="145" r="8" fill="#FF8295" opacity="0.72" />
-        <path d="M104 143c10 8 22 8 32 0" fill="none" stroke="#BDEFFF" strokeWidth="4" strokeLinecap="round" />
-        <rect x="16" y="91" width="17" height="51" rx="8" fill="#6E829F" />
-        <rect x="207" y="91" width="17" height="51" rx="8" fill="#6E829F" />
+        <line x1={plotL} y1={base} x2={plotR} y2={base} stroke={C.grid} strokeWidth={1} />
+        {BARS.map((v, i) => {
+          const g = spring({frame: frame - (T.barStart + i * 9), fps, config: {damping: 15, mass: 0.7, stiffness: 120}});
+          const h = v * maxH * clamp(g, 0, 1);
+          const x = plotL + i * slot + slot / 2 - bw / 2;
+          return (
+            <g key={i}>
+              <rect x={x} y={base - h} width={bw} height={h} rx={9} fill="url(#barGrad)" style={{filter: 'drop-shadow(0 6px 14px rgba(34,211,238,0.25))'}} />
+              <text x={x + bw / 2} y={base + 26} textAnchor="middle" fontFamily={FONT} fontSize={13} fill={C.faint}>{WEEKS[i]}</text>
+            </g>
+          );
+        })}
       </svg>
-      <div
-        style={{
-          position: 'absolute',
-          left: '50%',
-          bottom: -28,
-          width: 126,
-          height: 10,
-          borderRadius: '50%',
-          background: 'rgba(0,0,0,0.55)',
-          filter: 'blur(7px)',
-          transform: 'translateX(-50%)',
-        }}
-      />
-    </div>
+    </Panel>
   );
 };
 
-const GlitchOverlay: React.FC<{frame: number; slot: number}> = ({frame, slot}) => {
-  const local = frame % FRAMES_PER_SCENE;
-  const incoming = range(local, 0, 15, 1, 0);
-  const outgoing = range(local, 52, 59, 0, 0.92);
-  const burstCenter = 31 + ((slot * 7) % 12);
-  const internalBurst = [3, 7, 12].includes(slot)
-    ? Math.max(
-        range(local, burstCenter - 2, burstCenter, 0, 0.58),
-        range(local, burstCenter, burstCenter + 3, 0.58, 0),
-      )
-    : 0;
-  const strength = Math.max(incoming, outgoing, internalBurst);
-  const quantizedFrame = Math.floor(frame / 2);
-  const jitter = seeded(`jitter-${quantizedFrame}`, -1, 1) * strength;
-
-  if (strength < 0.015) return null;
-
+/* ============================================================================
+   CHANNEL PROGRESS BARS
+   ========================================================================== */
+const Channels: React.FC = () => {
+  const frame = useCurrentFrame();
   return (
-    <AbsoluteFill
-      style={{
-        pointerEvents: 'none',
-        overflow: 'hidden',
-        zIndex: 28,
-        opacity: 0.98,
-      }}
-    >
+    <Panel x={L.rightX} y={L.botY} w={L.rightW} h={L.botH} delay={24}>
+      <PanelTitle sub="Share">Top Channels</PanelTitle>
+      <div style={{position: 'absolute', top: 70, left: 30, right: 30, display: 'flex', flexDirection: 'column', gap: 12}}>
+        {CHAN.map((c, i) => {
+          const g = ease(frame, T.chanStart + i * 12, T.chanEnd + i * 8, eOut);
+          const pctVal = c.pct * g;
+          return (
+            <div key={i}>
+              <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 7}}>
+                <span style={{fontFamily: FONT, fontSize: 16, color: C.text, fontWeight: 500}}>{c.name}</span>
+                <span style={{fontFamily: FONT, fontSize: 16, color: C.sub, fontWeight: 700, ...NUM}}>{Math.round(pctVal)}%</span>
+              </div>
+              <div style={{height: 9, borderRadius: 6, background: 'rgba(255,255,255,0.06)', overflow: 'hidden'}}>
+                <div style={{height: '100%', width: `${pctVal}%`, borderRadius: 6, background: `linear-gradient(90deg,${c.color},${c.color}cc)`, boxShadow: `0 0 12px ${c.color}88`}} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+};
+
+/* ============================================================================
+   REFRESH SWEEP
+   ========================================================================== */
+const RefreshSweep: React.FC = () => {
+  const frame = useCurrentFrame();
+  if (frame < T.refresh || frame > T.refreshEnd) return null;
+  const p = interpolate(frame, [T.refresh, T.refreshEnd], [-20, 120]);
+  return (
+    <AbsoluteFill style={{overflow: 'hidden', pointerEvents: 'none'}}>
       <div
         style={{
           position: 'absolute',
-          inset: 0,
-          transform: `translateX(${jitter * 11}px)`,
-          opacity: strength * 0.24,
-          background: `repeating-linear-gradient(0deg, transparent 0 12px, ${COLORS.cyan} 13px 14px, transparent 15px 26px, ${COLORS.magenta}55 27px 29px, transparent 30px 45px)`,
-          mixBlendMode: 'screen',
+          top: '-10%',
+          left: `${p}%`,
+          width: '16%',
+          height: '120%',
+          transform: 'rotate(12deg)',
+          background: 'linear-gradient(90deg,rgba(120,180,255,0) 0%,rgba(140,200,255,0.14) 50%,rgba(120,180,255,0) 100%)',
+          filter: 'blur(8px)',
         }}
       />
-      {Array.from({length: 18}, (_, index) => {
-        const seed = `glitch-${quantizedFrame}-${index}`;
-        const top = seeded(`${seed}-top`, 38, 1035);
-        const height = seeded(`${seed}-height`, 2, 30);
-        const left = seeded(`${seed}-left`, -130, 650);
-        const width = seeded(`${seed}-width`, 360, 1640);
-        const move = seeded(`${seed}-move`, -120, 120) * strength;
-        const palette = [COLORS.cyan, COLORS.blue, COLORS.magenta, COLORS.lime, COLORS.red];
-        const color = palette[index % palette.length];
-        return (
-          <div
-            key={index}
-            style={{
-              position: 'absolute',
-              top,
-              left: left + move,
-              width,
-              height,
-              background:
-                index % 4 === 0
-                  ? 'rgba(0,0,0,0.92)'
-                  : `linear-gradient(90deg, transparent, ${color} 8%, rgba(245,247,255,0.7) 48%, ${color} 78%, transparent)`,
-              opacity: strength * seeded(`${seed}-opacity`, 0.16, 0.7),
-              boxShadow: index % 3 === 0 ? `8px 0 0 ${COLORS.red}66, -8px 0 0 ${COLORS.cyan}66` : undefined,
-              filter: index % 5 === 0 ? 'blur(1px)' : undefined,
-            }}
-          />
-        );
-      })}
-      {Array.from({length: 8}, (_, index) => (
-        <div
-          key={`copy-${index}`}
-          style={{
-            position: 'absolute',
-            top: 80 + index * 125 + seeded(`copy-${quantizedFrame}-${index}`, -22, 22),
-            left: -80 + seeded(`copy-x-${quantizedFrame}-${index}`, -50, 80) * strength,
-            width: 2200,
-            height: 28,
-            overflow: 'hidden',
-            fontFamily: index % 2 ? serif : sans,
-            fontSize: 32,
-            fontWeight: 700,
-            letterSpacing: 2,
-            color: index % 3 === 0 ? COLORS.cyan : COLORS.paper,
-            opacity: strength * 0.18,
-            whiteSpace: 'nowrap',
-            transform: `translateX(${seeded(`copy-shift-${quantizedFrame}-${index}`, -130, 130) * strength}px)`,
-          }}
-        >
-          NEURAL SYSTEMS / MACHINE LEARNING / DATA / INTELLIGENCE / AUTOMATION / VISION / LANGUAGE
-        </div>
-      ))}
     </AbsoluteFill>
   );
 };
 
-const FrameFurniture: React.FC<{frame: number; slot: number}> = ({frame, slot}) => (
-  <AbsoluteFill style={{pointerEvents: 'none', zIndex: 35}}>
-    <div style={{position: 'absolute', left: 34, top: 34, width: 70, height: 70, borderLeft: '2px solid rgba(151,170,202,0.36)', borderTop: '2px solid rgba(151,170,202,0.36)'}} />
-    <div style={{position: 'absolute', right: 34, top: 34, width: 70, height: 70, borderRight: '2px solid rgba(151,170,202,0.36)', borderTop: '2px solid rgba(151,170,202,0.36)'}} />
-    <div style={{position: 'absolute', left: 34, bottom: 34, width: 70, height: 70, borderLeft: '2px solid rgba(151,170,202,0.36)', borderBottom: '2px solid rgba(151,170,202,0.36)'}} />
-    <div style={{position: 'absolute', right: 34, bottom: 34, width: 70, height: 70, borderRight: '2px solid rgba(151,170,202,0.36)', borderBottom: '2px solid rgba(151,170,202,0.36)'}} />
-    <div
-      style={{
-        position: 'absolute',
-        right: 55,
-        bottom: 43,
-        fontFamily: mono,
-        fontSize: 12,
-        letterSpacing: 2.5,
-        color: '#778296',
-      }}
-    >
-      FRAME {String(frame).padStart(3, '0')} / SCENE {String(slot + 1).padStart(2, '0')}
-    </div>
-  </AbsoluteFill>
-);
-
-const CenterReadabilityVeil: React.FC = () => (
-  <div
-    style={{
-      position: 'absolute',
-      left: '50%',
-      top: '50%',
-      width: 1470,
-      height: 188,
-      transform: 'translate(-50%, -50%)',
-      zIndex: 40,
-      background:
-        'linear-gradient(90deg, transparent 0%, rgba(3,5,9,0.82) 10%, rgba(3,5,9,0.97) 27%, rgba(3,5,9,0.99) 73%, rgba(3,5,9,0.82) 90%, transparent 100%)',
-      borderTop: '1px solid rgba(136,155,190,0.15)',
-      borderBottom: '1px solid rgba(136,155,190,0.15)',
-      boxShadow: '0 0 75px rgba(0,0,0,0.72)',
-      pointerEvents: 'none',
-    }}
-  />
-);
-
-const CenterLockedTitle: React.FC = () => (
-  <AbsoluteFill
-    style={{
-      zIndex: 50,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      pointerEvents: 'none',
-    }}
-  >
-    <div
-      style={{
-        position: 'absolute',
-        width: 1330,
-        height: 126,
-        borderLeft: `3px solid ${COLORS.cyan}`,
-        borderRight: `3px solid ${COLORS.violet}`,
-        opacity: 0.68,
-      }}
-    />
-    <div
-      style={{
-        fontFamily: sans,
-        fontSize: 74,
-        lineHeight: 1,
-        fontWeight: 820,
-        letterSpacing: 5.5,
-        color: COLORS.paper,
-        whiteSpace: 'nowrap',
-        textAlign: 'center',
-        textShadow: '0 2px 0 rgba(255,255,255,0.08), 0 0 26px rgba(88,232,255,0.15), 0 8px 32px rgba(0,0,0,0.92)',
-      }}
-    >
-      ARTIFICIAL INTELLIGENCE
-    </div>
-    <div
-      style={{
-        position: 'absolute',
-        top: 'calc(50% + 70px)',
-        fontFamily: mono,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: 7,
-        color: COLORS.cyan,
-        opacity: 0.72,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      MACHINE PERCEPTION · REASONING · CREATION
-    </div>
-  </AbsoluteFill>
-);
-
-const TextureOverlay: React.FC<{frame: number}> = ({frame}) => (
-  <AbsoluteFill style={{pointerEvents: 'none', zIndex: 60, overflow: 'hidden'}}>
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.18,
-        background: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 4px)',
-      }}
-    />
-    <div
-      style={{
-        position: 'absolute',
-        inset: -40,
-        opacity: 0.055,
-        transform: `translate(${(frame * 17) % 31}px, ${(frame * 11) % 29}px)`,
-        backgroundImage:
-          'radial-gradient(circle, white 0 0.7px, transparent 0.9px), radial-gradient(circle, white 0 0.6px, transparent 0.8px)',
-        backgroundPosition: '0 0, 13px 17px',
-        backgroundSize: '23px 19px, 29px 31px',
-        mixBlendMode: 'screen',
-      }}
-    />
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'radial-gradient(ellipse at center, transparent 48%, rgba(0,0,0,0.18) 72%, rgba(0,0,0,0.76) 110%)',
-      }}
-    />
-  </AbsoluteFill>
-);
-
+/* ============================================================================
+   MAIN
+   ========================================================================== */
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
-  const slotCount = Math.max(1, Math.round(durationInFrames / FRAMES_PER_SCENE));
-  const slot = Math.min(slotCount - 1, Math.floor(frame / FRAMES_PER_SCENE));
-  const local = frame % FRAMES_PER_SCENE;
-  const sceneJitter = seeded(`scene-jitter-${Math.floor(frame / 2)}`, -1, 1);
-  const glitchIn = range(local, 0, 12, 1, 0);
-  const glitchOut = range(local, 53, 59, 0, 1);
-  const sceneShake = Math.max(glitchIn, glitchOut) * sceneJitter * 7;
-  const breathe = 1.008 + Math.sin((frame / 300) * Math.PI * 2) * 0.006;
+  const [handle] = useState(() => delayRender('Loading Inter font'));
+
+  useEffect(() => {
+    const id = 'motion-inter-font';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+      document.head.appendChild(link);
+    }
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        continueRender(handle);
+      }
+    };
+    const anyDoc = document as unknown as {fonts: {load: (s: string) => Promise<unknown>; ready: Promise<unknown>}};
+    Promise.all([
+      anyDoc.fonts.load('400 1em Inter'),
+      anyDoc.fonts.load('500 1em Inter'),
+      anyDoc.fonts.load('600 1em Inter'),
+      anyDoc.fonts.load('700 1em Inter'),
+    ])
+      .then(() => anyDoc.fonts.ready)
+      .then(finish)
+      .catch(finish);
+    const t = setTimeout(finish, 3000);
+    return () => clearTimeout(t);
+  }, [handle]);
+
+  const push = interpolate(frame, [T.pushStart, T.pushEnd], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: eInOut,
+  });
+  const scale = 1 + push * 0.038;
+  const ty = push * -10;
 
   return (
-    <AbsoluteFill style={{backgroundColor: COLORS.ink, overflow: 'hidden'}}>
-      <BaseAtmosphere frame={frame} />
-      <div
-        style={{
-          position: 'absolute',
-          inset: -10,
-          transform: `translateX(${sceneShake}px) scale(${breathe})`,
-          transformOrigin: '50% 50%',
-          zIndex: 10,
-        }}
-      >
-        <ChangingScene frame={frame} slot={slot} />
-      </div>
-      <RobotMascot frame={frame} slot={slot} />
-      <GlitchOverlay frame={frame} slot={slot} />
-      <FrameFurniture frame={frame} slot={slot} />
-      <CenterReadabilityVeil />
-      <CenterLockedTitle />
-      <TextureOverlay frame={frame} />
+    <AbsoluteFill style={{background: C.bg0, fontFamily: FONT}}>
+      <Background />
+      <AbsoluteFill style={{transform: `scale(${scale}) translateY(${ty}px)`, transformOrigin: '46% 52%'}}>
+        <TopBar />
+        {KPIS.map((d, i) => (
+          <KpiTile key={i} i={i} d={d} x={L.cx + i * (L.kpiW + L.kpiGap)} />
+        ))}
+        <LineChart />
+        <Donut />
+        <BarChart />
+        <Channels />
+        <RefreshSweep />
+      </AbsoluteFill>
+      <AbsoluteFill style={{pointerEvents: 'none', boxShadow: 'inset 0 0 320px rgba(0,0,0,0.55)'}} />
     </AbsoluteFill>
   );
 };
