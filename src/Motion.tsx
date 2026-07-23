@@ -1,439 +1,983 @@
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {
   AbsoluteFill,
+  Easing,
+  interpolate,
   useCurrentFrame,
   useVideoConfig,
-  interpolate,
-  spring,
-  Easing,
-  delayRender,
-  continueRender,
 } from 'remotion';
 
-/* ============================================================================
-   AI NEURAL NETWORK — THINKING CORE
-   Premium microstock motion graphic. 1920x1080 @ 60fps, 900 frames (15s).
-   Brain silhouette: Fluent Emoji (Microsoft) high-contrast "brain", MIT license.
-   Self-contained: brain path inlined; core Remotion + SVG + CSS only.
-   ========================================================================== */
+const INK = '#070909';
+const DEEP_INK = '#020303';
+const PAPER = '#d8d7d1';
+const BRIGHT = '#f1f0e9';
+const MID = '#8f918c';
+const WARM = '#a68c6b';
+const CYAN = '#35dbe6';
+const RED = '#ff355c';
+const BLUE = '#4169ff';
 
-const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-const NUM = {fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"'} as const;
+const clamp = {
+  extrapolateLeft: 'clamp' as const,
+  extrapolateRight: 'clamp' as const,
+};
 
-// Fluent Emoji high-contrast "brain" (MIT) — viewBox 0 0 32 32
-const BRAIN_PATHS = [
-  'M20.505 7.286a1 1 0 0 1-1.414 0A2.94 2.94 0 0 0 17 6.421c-.82 0-1.553.329-2.091.865a.999.999 0 1 1-1.414-1.414A4.95 4.95 0 0 1 17 4.421a4.95 4.95 0 0 1 3.505 1.451a1 1 0 0 1 0 1.414M8.894 6.331a10 10 0 0 0-2.369 1.923l-.001.001a10 10 0 0 0-1.683 2.558a9.9 9.9 0 0 0-.835 3.028a1 1 0 1 0 1.988.22a8 8 0 0 1 .667-2.418a8 8 0 0 1 3.242-3.585a1 1 0 1 0-1.009-1.727M24 17.5a1 1 0 0 1 2 0a3.494 3.494 0 0 1-3.358 3.486c.223.459.358.969.358 1.514a1 1 0 0 1-2 0a1.5 1.5 0 0 0-1.5-1.5h-6.182a1 1 0 0 1 0-2H15.5a1.503 1.503 0 0 0 1.5-1.5a1 1 0 0 1 2 0c0 .539-.132 1.044-.35 1.5h3.85a1.503 1.503 0 0 0 1.5-1.5',
-  'M32 16.711c0-.628-.045-1.236-.114-1.826C30.979 7.067 24.348 1.002 16.289 1h-1.232C6.74 1.001.001 7.74 0 16.057A5.943 5.943 0 0 0 5.943 22h1.241a6.494 6.494 0 0 0 6.316 5h7.104l3.116 3.116a.75.75 0 0 0 1.28-.53v-2.669a7.99 7.99 0 0 0 6.664-5.631c.143-.478.225-.982.277-1.495l.003-.008c.028-.092.056-.183.056-.283q-.001-.092-.008-.182l-.007-.115q.001-.048.007-.093Q32 19.055 32 19zm-2.252 4.004A6 6 0 0 1 24 25H13.5a4.5 4.5 0 0 1-4.479-4.09l-.006-.064A4.974 4.974 0 0 1 14 16a1 1 0 0 0 0-2a7 7 0 0 0-3.36.859a4 4 0 0 0-.812-1.188a.999.999 0 1 0-1.414 1.414c.284.285.477.65.55 1.059A7 7 0 0 0 7.08 20H5.943a3.93 3.93 0 0 1-2.789-1.155A3.93 3.93 0 0 1 2 16.057c0-3.609 1.46-6.867 3.824-9.233A13 13 0 0 1 15.057 3h1.232c6.69-.002 12.246 4.8 13.451 11.139a7.5 7.5 0 0 0-4.03-2.033c.503-.922.79-1.981.79-3.106a1 1 0 0 0-2 0a4.48 4.48 0 0 1-1.318 3.182A4.48 4.48 0 0 1 20 13.5a1 1 0 0 0 0 2a6.47 6.47 0 0 0 4.215-1.558l.016.005A1 1 0 0 0 24.5 14c1.522 0 2.891.614 3.889 1.611a5.48 5.48 0 0 1 1.596 3.592a6 6 0 0 1-.237 1.512',
+const hash = (value: number) => {
+  const sine = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
+  return sine - Math.floor(sine);
+};
+
+type PageConfig = {
+  masthead: string;
+  section: string;
+  issue: string;
+  family: string;
+  lineSize: number;
+  lineWeight: number;
+  italic?: boolean;
+  accent: string;
+  rows: [string, string, string, string];
+  leadIn: string;
+  leadOut: string;
+  deck: string;
+  byline: string;
+  topics: [string, string, string, string];
+};
+
+type TitleVariant = {
+  label: string;
+  family: string;
+  size: number;
+  weight: number;
+  italic?: boolean;
+  tracking: string;
+  scaleX: number;
+  decoration?: 'rule' | 'double-rule' | 'small-caps';
+};
+
+const pages: PageConfig[] = [
+  {
+    masthead: 'Cyber Business',
+    section: 'NEWS · ANALYSIS · REPORTS',
+    issue: 'THURSDAY / VOL. 07 / NO. 24',
+    family: 'Arial, Helvetica, sans-serif',
+    lineSize: 48,
+    lineWeight: 760,
+    accent: '#628d8d',
+    rows: [
+      'INTELLIGENT SYSTEMS ARE REWRITING THE GLOBAL ECONOMY',
+      'FROM RESEARCH LABS TO FACTORIES, A NEW ERA TAKES SHAPE',
+      'HUMAN JUDGMENT REMAINS AT THE HEART OF RESPONSIBLE DESIGN',
+      'DATA, SECURITY AND CULTURE NOW MOVE THROUGH ONE NETWORK',
+    ],
+    leadIn: 'THE RAPID RISE OF',
+    leadOut: 'IS CHANGING HOW WE WORK',
+    deck:
+      'A field report on the models, people and institutions shaping the next industrial chapter.',
+    byline: 'ANALYSIS DESK · GLOBAL TECHNOLOGY',
+    topics: ['THE BIG PICTURE', 'WORK & INDUSTRY', 'TRUST & SAFETY', 'NEXT SIGNAL'],
+  },
+  {
+    masthead: 'DIGITAL REPORT',
+    section: 'VISION / LANGUAGE / COMPUTATION',
+    issue: 'RESEARCH FILE 02 · SYSTEMS EDITION',
+    family: 'Trebuchet MS, Arial, Helvetica, sans-serif',
+    lineSize: 46,
+    lineWeight: 700,
+    accent: '#6e8487',
+    rows: [
+      'NEURAL SYSTEMS ANALYZE LANGUAGE, VISION AND COMPLEX DATA',
+      'THE MACHINE LEARNS PATTERNS AT UNPRECEDENTED SCALE',
+      'NEW CAPABILITIES MOVE FROM THE LAB INTO DAILY PRACTICE',
+      'CLEAR GOVERNANCE TURNS COMPUTATION INTO USEFUL PROGRESS',
+    ],
+    leadIn: 'THE NEW LANGUAGE OF',
+    leadOut: 'NOW CONNECTS EVERY FIELD',
+    deck:
+      'Inside the converging technologies that translate information into decisions, discoveries and tools.',
+    byline: 'SYSTEMS EDITOR · MACHINE LEARNING',
+    topics: ['LANGUAGE', 'COMPUTER VISION', 'REASONING', 'APPLICATIONS'],
+  },
+  {
+    masthead: 'AI REPORT',
+    section: 'MACHINE INTELLIGENCE / FIELD NOTES',
+    issue: 'JOURNAL 07 · FUTURE SYSTEMS',
+    family: 'Georgia, Times New Roman, serif',
+    lineSize: 49,
+    lineWeight: 500,
+    italic: true,
+    accent: WARM,
+    rows: [
+      'COMPLEX ENGINEERING TURNS INFORMATION INTO NEW KNOWLEDGE',
+      'MODELS LEARN PATTERNS ACROSS LANGUAGE, SCIENCE AND DESIGN',
+      'HUMAN QUESTIONS GUIDE THE NEXT GENERATION OF USEFUL TOOLS',
+      'TRANSPARENT SYSTEMS MAKE AUTOMATED DECISIONS EASIER TO TRUST',
+    ],
+    leadIn: 'THE PUBLIC STORY OF',
+    leadOut: 'IS STILL BEING WRITTEN',
+    deck:
+      'Researchers and communities define what intelligent tools should do, whom they serve and how they are judged.',
+    byline: 'FIELD NOTES · SCIENCE & SOCIETY',
+    topics: ['RESEARCH', 'PUBLIC LIFE', 'GOVERNANCE', 'DESIGN'],
+  },
+  {
+    masthead: 'THE TECHNOLOGY REVIEW',
+    section: 'RESEARCH · INDUSTRY · SOCIETY',
+    issue: 'SPECIAL EDITION / JULY 2026',
+    family: 'Georgia, Times New Roman, serif',
+    lineSize: 47,
+    lineWeight: 590,
+    accent: '#9b8669',
+    rows: [
+      'HUMAN SYSTEMS EVOLVE AS COMPUTATION RESHAPES DECISIONS',
+      'RESPONSIBLE MODELS TURN COMPLEX DATA INTO USEFUL INSIGHT',
+      'SCIENCE, MEDICINE AND PRODUCTION ENTER A NEW DIGITAL ERA',
+      'AUTOMATION AND HUMAN CREATIVITY MOVE FORWARD TOGETHER',
+    ],
+    leadIn: 'A PRACTICAL ERA OF',
+    leadOut: 'HAS ALREADY BEGUN',
+    deck:
+      'Beyond the headline: how a general-purpose technology is becoming infrastructure for modern life.',
+    byline: 'EDITORIAL BOARD · SPECIAL REPORT',
+    topics: ['THE LAB', 'THE ECONOMY', 'THE HUMAN FACTOR', 'THE FUTURE'],
+  },
+  {
+    masthead: 'NEW SYSTEMS INDEX',
+    section: 'DATA / NETWORKS / AUTOMATION',
+    issue: 'INDEX 05 · CONNECTED KNOWLEDGE',
+    family: 'Courier New, Courier, monospace',
+    lineSize: 43,
+    lineWeight: 700,
+    accent: '#718784',
+    rows: [
+      'CYBER · ROBOTICS · LANGUAGE · VISION · NEURAL NETWORKS',
+      'SCIENCE · MEDICINE · ENERGY · BUSINESS · COMPUTATION',
+      'ALGORITHMS · DATA · INDUSTRY 4.0 · DIGITAL CULTURE',
+      'HUMAN DIRECTION · MACHINE SCALE · SHARED FUTURES',
+    ],
+    leadIn: 'THE ACTIVE INDEX OF',
+    leadOut: 'EXPANDS IN REAL TIME',
+    deck:
+      'A live taxonomy of the disciplines, markets and public questions now converging around intelligent systems.',
+    byline: 'SIGNAL INDEX · EDITION 05',
+    topics: ['NETWORKS', 'KNOWLEDGE', 'AUTOMATION', 'CULTURE'],
+  },
 ];
 
-// Solid outer silhouette (outer contour of the brain), used for clip + body fill
-const SOLID_BRAIN = BRAIN_PATHS[1].split('z')[0] + 'z';
-
-// Brain placement in 1920x1080
-const BS = 20; // scale
-const BTX = 640;
-const BTY = 180;
-const CX = 960;
-const CY = 500;
-const BRAIN_TRANSFORM = `translate(${BTX},${BTY}) scale(${BS})`;
-
-const eOut = Easing.out(Easing.cubic);
-const eExpo = Easing.bezier(0.16, 1, 0.3, 1);
-const eInOut = Easing.inOut(Easing.cubic);
-
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const ease = (f: number, a: number, b: number, e = eExpo) =>
-  interpolate(f, [a, b], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: e});
-
-const mulberry32 = (a: number) => () => {
-  a |= 0;
-  a = (a + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
-
-/* ---- node + edge generation (deterministic) ------------------------------ */
-type Node = {x: number; y: number; z: number; d: number; seed: number};
-const NODES: Node[] = (() => {
-  const r = mulberry32(7133);
-  const bx: [number, number] = [672, 1248];
-  const by: [number, number] = [216, 812];
-  const out: Node[] = [];
-  for (let i = 0; i < 118; i++) {
-    const x = bx[0] + r() * (bx[1] - bx[0]);
-    const y = by[0] + r() * (by[1] - by[0]);
-    out.push({x, y, z: r() * 2 - 1, d: Math.hypot(x - CX, y - CY), seed: r()});
-  }
-  return out;
-})();
-type Edge = {a: number; b: number; len: number; mid: number; phase: number};
-const EDGES: Edge[] = (() => {
-  const r = mulberry32(9021);
-  const out: Edge[] = [];
-  for (let i = 0; i < NODES.length; i++) {
-    const near: [number, number][] = [];
-    for (let j = 0; j < NODES.length; j++) {
-      if (i === j) continue;
-      const dd = Math.hypot(NODES[i].x - NODES[j].x, NODES[i].y - NODES[j].y);
-      if (dd < 118) near.push([dd, j]);
-    }
-    near.sort((p, q) => p[0] - q[0]);
-    near.slice(0, 3).forEach(([dd, j]) => {
-      if (i < j) {
-        const mid = (NODES[i].d + NODES[j].d) / 2;
-        out.push({a: i, b: j, len: dd, mid, phase: r()});
-      }
-    });
-  }
-  return out;
-})();
-const MAXD = Math.max(...NODES.map((n) => n.d));
-
-/* ---- particles streaming into the core ----------------------------------- */
-const PARTS = (() => {
-  const r = mulberry32(555);
-  return Array.from({length: 30}, () => {
-    const ang = r() * Math.PI * 2;
-    const rad = 430 + r() * 260;
-    return {sx: CX + Math.cos(ang) * rad, sy: CY + Math.sin(ang) * rad * 0.8, phase: r(), speed: 0.6 + r() * 0.7};
-  });
-})();
-
-/* ---- starfield ----------------------------------------------------------- */
-const STARS = (() => {
-  const r = mulberry32(4242);
-  return Array.from({length: 70}, () => ({x: r() * 1920, y: r() * 1080, s: 0.6 + r() * 1.8, ph: r() * 6.28, sp: 0.4 + r() * 0.8}));
-})();
-
-const LABELS = [
-  {x: 812, y: 388, t: 'activation 0.94'},
-  {x: 1096, y: 372, t: 'layer 07'},
-  {x: 1150, y: 560, t: 'inference'},
-  {x: 772, y: 556, t: 'synapse'},
-  {x: 960, y: 300, t: 'processing'},
+const titleVariants: TitleVariant[] = [
+  {
+    label: 'ARTIFICIAL INTELLIGENCE',
+    family: 'Arial Black, Arial, Helvetica, sans-serif',
+    size: 64,
+    weight: 900,
+    tracking: '-0.052em',
+    scaleX: 0.84,
+  },
+  {
+    label: 'ARTIFICIAL INTELLIGENCE',
+    family: 'Trebuchet MS, Arial, Helvetica, sans-serif',
+    size: 60,
+    weight: 800,
+    tracking: '-0.028em',
+    scaleX: 0.91,
+    decoration: 'rule',
+  },
+  {
+    label: 'Artificial Intelligence',
+    family: 'Times New Roman, Times, serif',
+    size: 72,
+    weight: 500,
+    italic: true,
+    tracking: '-0.047em',
+    scaleX: 0.95,
+  },
+  {
+    label: 'ARTIFICIAL INTELLIGENCE',
+    family: 'Georgia, Times New Roman, serif',
+    size: 61,
+    weight: 700,
+    tracking: '-0.047em',
+    scaleX: 0.9,
+    decoration: 'double-rule',
+  },
+  {
+    label: 'ARTIFICIAL INTELLIGENCE',
+    family: 'Courier New, Courier, monospace',
+    size: 49,
+    weight: 700,
+    tracking: '-0.035em',
+    scaleX: 1,
+    decoration: 'small-caps',
+  },
 ];
 
-const T = {
-  auraIn: 4,
-  outlineDraw: 24,
-  outlineEnd: 150,
-  bodyIn: 92,
-  nodesStart: 128,
-  edgesStart: 168,
-  edgesEnd: 336,
-  coreIgnite: 250,
-  signalsStart: 300,
-  actStart: 360,
-  actEnd: 520,
-  settle: 742,
-};
+const storyCopy = [
+  'Machine learning has moved from a specialist discipline into a general-purpose layer of modern production. The important story is no longer a single model, but the people, data and decisions surrounding every deployment.',
+  'New systems can recognize patterns across language, images and complex streams of information. Their value depends on careful evaluation, clear limits and the expertise of the teams that put them to work.',
+  'Public trust grows when automated decisions can be understood, questioned and improved. Governance is not separate from innovation; it is part of the engineering that makes useful systems durable.',
+  'The next chapter will be measured by practical outcomes: better tools for science, medicine, education, security and creative work, guided by human judgment at every important boundary.',
+];
 
-/* camera parallax angle */
-const camAngle = (f: number) => Math.sin(f / 150) + Math.sin(f / 380) * 0.4;
-const nodeDisp = (n: Node, f: number) => {
-  const cam = camAngle(f);
-  return {x: n.x + n.z * 30 * cam, y: n.y + n.z * 10 * Math.sin(f / 210)};
-};
-// activation wave: expands from core through the layers, repeats during activation
-const waveBoost = (d: number, f: number) => {
-  if (f < T.signalsStart) return 0;
-  const t = (f - T.signalsStart) / 150;
-  let boost = 0;
-  for (let k = 0; k < 3; k++) {
-    const wp = ((t + k * 0.4) % 1.35) * MAXD;
-    const dist = Math.abs(d - wp);
-    boost = Math.max(boost, Math.exp(-(dist * dist) / (2 * 60 * 60)));
+const FineRule: React.FC<{
+  color?: string;
+  opacity?: number;
+  vertical?: boolean;
+}> = ({color = PAPER, opacity = 0.2, vertical = false}) => (
+  <div
+    style={{
+      width: vertical ? 1 : '100%',
+      height: vertical ? '100%' : 1,
+      flexShrink: 0,
+      backgroundColor: color,
+      opacity,
+    }}
+  />
+);
+
+const MetaLabel: React.FC<{
+  children: React.ReactNode;
+  align?: 'left' | 'center' | 'right';
+  color?: string;
+  opacity?: number;
+}> = ({children, align = 'left', color = MID, opacity = 0.62}) => (
+  <div
+    style={{
+      color,
+      opacity,
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: 11,
+      fontWeight: 800,
+      letterSpacing: '0.2em',
+      lineHeight: 1.2,
+      textAlign: align,
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {children}
+  </div>
+);
+
+const PageHeader: React.FC<{pageIndex: number}> = ({pageIndex}) => {
+  const page = pages[pageIndex];
+
+  if (pageIndex === 0) {
+    return (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 62,
+            height: 142,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 80px',
+            boxSizing: 'border-box',
+            borderTop: '1px solid rgba(216,215,209,0.16)',
+            borderBottom: '1px solid rgba(216,215,209,0.22)',
+            background:
+              'linear-gradient(90deg, rgba(216,215,209,0.035), rgba(216,215,209,0.105), rgba(216,215,209,0.035))',
+          }}
+        >
+          <div
+            style={{
+              color: PAPER,
+              opacity: 0.72,
+              fontFamily: 'Arial Black, Arial, Helvetica, sans-serif',
+              fontSize: 78,
+              fontWeight: 900,
+              letterSpacing: '-0.06em',
+            }}
+          >
+            {page.masthead}
+          </div>
+          <MetaLabel align="right">{page.section}</MetaLabel>
+        </div>
+        <div style={{position: 'absolute', left: 80, right: 80, top: 224, display: 'flex', gap: 18}}>
+          <MetaLabel color={page.accent}>{page.issue}</MetaLabel>
+          <FineRule opacity={0.13} />
+          <MetaLabel align="right">INDEPENDENT TECHNOLOGY JOURNAL</MetaLabel>
+        </div>
+      </>
+    );
   }
-  const intensity = f >= T.actStart && f <= T.actEnd ? 1 : f < T.actStart ? 0.5 : 0.62;
-  return boost * intensity;
-};
 
-/* ============================================================================
-   BACKGROUND
-   ========================================================================== */
-const Background: React.FC = () => {
-  const frame = useCurrentFrame();
-  const aura = ease(frame, T.auraIn, 80, eOut);
-  const breathe = 0.5 + 0.5 * Math.sin(frame / 40);
-  const actGlow = ease(frame, T.actStart, T.actStart + 60, eOut) * (1 - ease(frame, T.actEnd, T.actEnd + 120, eOut)) * 0.5;
+  if (pageIndex === 1) {
+    return (
+      <>
+        <div style={{position: 'absolute', left: 80, right: 80, top: 80, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end'}}>
+          <div>
+            <MetaLabel color={page.accent}>EMERGING SYSTEMS</MetaLabel>
+            <div style={{marginTop: 18}}>
+              <MetaLabel>{page.issue}</MetaLabel>
+            </div>
+          </div>
+          <div
+            style={{
+              color: PAPER,
+              opacity: 0.7,
+              fontFamily: 'Arial Black, Arial, Helvetica, sans-serif',
+              fontSize: 76,
+              fontWeight: 900,
+              letterSpacing: '-0.055em',
+              lineHeight: 0.9,
+            }}
+          >
+            {page.masthead}
+          </div>
+        </div>
+        <div style={{position: 'absolute', left: 80, right: 80, top: 204}}>
+          <FineRule opacity={0.22} />
+          <div style={{marginTop: 14, display: 'flex', justifyContent: 'space-between'}}>
+            <MetaLabel>{page.section}</MetaLabel>
+            <MetaLabel align="right">REPORT / 02</MetaLabel>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (pageIndex === 2) {
+    return (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            right: 82,
+            top: 75,
+            color: PAPER,
+            opacity: 0.72,
+            textAlign: 'right',
+            fontFamily: 'Georgia, Times New Roman, serif',
+          }}
+        >
+          <div style={{fontSize: 91, lineHeight: 0.9, letterSpacing: '-0.057em'}}>{page.masthead}</div>
+          <div style={{marginTop: 17}}>
+            <MetaLabel align="right" color={page.accent}>{page.section}</MetaLabel>
+          </div>
+        </div>
+        <div style={{position: 'absolute', left: 81, top: 85, height: 139, display: 'flex', gap: 18, alignItems: 'stretch'}}>
+          <FineRule color={page.accent} opacity={0.44} vertical />
+          <div style={{display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
+            <MetaLabel color={page.accent}>FIELD NOTES</MetaLabel>
+            <MetaLabel>{page.issue}</MetaLabel>
+            <MetaLabel>SCIENCE · CULTURE · POLICY</MetaLabel>
+          </div>
+        </div>
+        <div style={{position: 'absolute', left: 80, right: 80, top: 236}}><FineRule opacity={0.18} /></div>
+      </>
+    );
+  }
+
+  if (pageIndex === 3) {
+    return (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            left: 78,
+            top: 75,
+            color: PAPER,
+            opacity: 0.72,
+            fontFamily: 'Georgia, Times New Roman, serif',
+            fontSize: 83,
+            fontWeight: 600,
+            letterSpacing: '-0.058em',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {page.masthead}
+        </div>
+        <div style={{position: 'absolute', left: 80, right: 80, top: 197}}>
+          <FineRule opacity={0.22} />
+          <div style={{marginTop: 15, display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 24}}>
+            <MetaLabel>{page.issue}</MetaLabel>
+            <MetaLabel align="center" color={page.accent}>{page.section}</MetaLabel>
+            <MetaLabel align="right">SPECIAL REPORT · 07</MetaLabel>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <AbsoluteFill style={{background: 'radial-gradient(130% 100% at 50% 46%, #0B1734 0%, #070C1E 46%, #04060F 100%)'}} />
-      {/* nebula glows */}
-      {[
-        {c: '#1E5BFF', s: 1300, x: 640, y: 360, a: 0.22, sp: 1},
-        {c: '#8B5CF6', s: 1100, x: 1320, y: 560, a: 0.2, sp: 1.5},
-        {c: '#12C8E0', s: 900, x: 980, y: 860, a: 0.14, sp: 1.1},
-      ].map((b, i) => {
-        const dx = Math.sin(frame / (200 * b.sp) + i) * 40;
-        return <div key={i} style={{position: 'absolute', left: b.x - b.s / 2 + dx, top: b.y - b.s / 2, width: b.s, height: b.s, borderRadius: '50%', background: `radial-gradient(circle at 50% 50%, ${b.c} 0%, rgba(0,0,0,0) 70%)`, opacity: b.a}} />;
-      })}
-      {/* central aura behind brain */}
-      <div style={{position: 'absolute', left: CX - 520, top: CY - 520, width: 1040, height: 1040, borderRadius: '50%', background: `radial-gradient(circle at 50% 50%, rgba(64,150,255,${0.16 + breathe * 0.08 + actGlow}) 0%, rgba(120,90,255,0.06) 38%, rgba(0,0,0,0) 66%)`, opacity: aura}} />
-      {/* starfield */}
-      <svg width="1920" height="1080" style={{position: 'absolute'}}>
-        {STARS.map((s, i) => (
-          <circle key={i} cx={s.x} cy={s.y} r={s.s} fill="#BcD4FF" opacity={(0.15 + 0.5 * (0.5 + 0.5 * Math.sin(frame / 20 * s.sp + s.ph))) * aura} />
-        ))}
-      </svg>
+      <div style={{position: 'absolute', left: 80, right: 80, top: 68, height: 129, display: 'grid', gridTemplateColumns: '1fr 170px 1fr', alignItems: 'center', borderTop: '1px solid rgba(216,215,209,0.18)', borderBottom: '1px solid rgba(216,215,209,0.2)'}}>
+        <div>
+          <MetaLabel color={page.accent}>SIGNAL / TAXONOMY / NEWSWIRE</MetaLabel>
+          <div style={{marginTop: 17, color: PAPER, opacity: 0.67, fontFamily: 'Courier New, Courier, monospace', fontSize: 39, fontWeight: 700, letterSpacing: '-0.04em'}}>{page.masthead}</div>
+        </div>
+        <div style={{height: 82, borderLeft: '1px solid rgba(216,215,209,0.16)', borderRight: '1px solid rgba(216,215,209,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: PAPER, opacity: 0.45, fontFamily: 'Georgia, serif', fontSize: 69}}>05</div>
+        <div style={{textAlign: 'right'}}>
+          <MetaLabel align="right">{page.issue}</MetaLabel>
+          <div style={{marginTop: 19}}><MetaLabel align="right" color={page.accent}>{page.section}</MetaLabel></div>
+        </div>
+      </div>
+      <div style={{position: 'absolute', left: 80, right: 80, top: 220, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 28}}>
+        {page.topics.map((topic, index) => <MetaLabel key={topic} align={index === 0 ? 'left' : index === 3 ? 'right' : 'center'}>{`0${index + 1} · ${topic}`}</MetaLabel>)}
+      </div>
     </>
   );
 };
 
-/* ============================================================================
-   BRAIN + NETWORK
-   ========================================================================== */
-const BrainNetwork: React.FC = () => {
-  const frame = useCurrentFrame();
-
-  const outline = ease(frame, T.outlineDraw, T.outlineEnd, eInOut);
-  const body = ease(frame, T.bodyIn, T.bodyIn + 80, eOut) * 0.5;
-
-  // base edges path (all)
-  let basePath = '';
-  const hotSegs: string[] = [];
-  const cam = camAngle(frame);
-  EDGES.forEach((e) => {
-    const na = nodeDisp(NODES[e.a], frame);
-    const nb = nodeDisp(NODES[e.b], frame);
-    const seg = `M${na.x.toFixed(1)} ${na.y.toFixed(1)}L${nb.x.toFixed(1)} ${nb.y.toFixed(1)}`;
-    const rev = ease(frame, T.edgesStart + e.mid / MAXD * 90, T.edgesStart + e.mid / MAXD * 90 + 40, eOut);
-    if (rev > 0.5) basePath += seg;
-    const wb = waveBoost(e.mid, frame);
-    if (wb > 0.28) hotSegs.push(seg);
+const EditorialLine: React.FC<{
+  text: string;
+  top: number;
+  index: number;
+  pageIndex: number;
+  localFrame: number;
+}> = ({text, top, index, pageIndex, localFrame}) => {
+  const page = pages[pageIndex];
+  const settle = interpolate(localFrame, [0, 6], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
   });
-
-  const edgesOp = ease(frame, T.edgesStart, T.edgesEnd, eOut);
-
-  // signals traveling along a subset of edges
-  const signalOn = ease(frame, T.signalsStart, T.signalsStart + 40, eOut);
-  const nSig = 46;
+  const direction = index % 2 === 0 ? -1 : 1;
+  const offsets = [-54, 26, -22, 38];
 
   return (
-    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
-      <defs>
-        <linearGradient id="brainStroke" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#5AC8FF" />
-          <stop offset="55%" stopColor="#6E8CFF" />
-          <stop offset="100%" stopColor="#B48CFF" />
-        </linearGradient>
-        <radialGradient id="brainFill" cx="50%" cy="42%" r="60%">
-          <stop offset="0%" stopColor="#173A7A" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="#0A1636" stopOpacity="0.5" />
-        </radialGradient>
-        <radialGradient id="coreG" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="26%" stopColor="#8FD6FF" />
-          <stop offset="60%" stopColor="#3E86FF" stopOpacity="0.6" />
-          <stop offset="100%" stopColor="#3E86FF" stopOpacity="0" />
-        </radialGradient>
-        <clipPath id="brainClip">
-          <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} />
-        </clipPath>
-      </defs>
-
-      {/* brain body fill (solid silhouette) */}
-      <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} fill="url(#brainFill)" opacity={body} />
-      <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} fill="#0A1838" opacity={body * 0.7} />
-
-      {/* network clipped to brain */}
-      <g clipPath="url(#brainClip)">
-        {/* base edges */}
-        <path d={basePath} stroke="#4C8FE8" strokeWidth={1.4} opacity={0.5 * edgesOp} fill="none" />
-        <path d={basePath} stroke="#9AC6FF" strokeWidth={0.7} opacity={0.7 * edgesOp} fill="none" />
-        {/* hot edges (activation wave) */}
-        <path d={hotSegs.join('')} stroke="#9BE8FF" strokeWidth={2} opacity={0.9} fill="none" style={{filter: 'drop-shadow(0 0 4px #6EC8FF)'}} />
-
-        {/* nodes */}
-        {NODES.map((n, i) => {
-          const appear = ease(frame, T.nodesStart + (n.d / MAXD) * 120, T.nodesStart + (n.d / MAXD) * 120 + 26, eOut);
-          if (appear <= 0.01) return null;
-          const p = nodeDisp(n, frame);
-          const tw = 0.6 + 0.4 * Math.sin(frame / 12 + n.seed * 20);
-          const wb = waveBoost(n.d, frame);
-          const r = (2.1 + n.seed * 1.9) * (1 + wb * 1.1) * appear;
-          const bright = clamp(0.62 + tw * 0.28 + wb * 0.9, 0, 1);
-          return (
-            <g key={i}>
-              <circle cx={p.x} cy={p.y} r={r * 3.4} fill="#5AA8FF" opacity={0.14 * bright * appear} />
-              <circle cx={p.x} cy={p.y} r={r} fill={wb > 0.4 ? '#EAF6FF' : '#AEDBFF'} opacity={bright * appear} />
-            </g>
-          );
-        })}
-
-        {/* traveling signals */}
-        {EDGES.slice(0, nSig).map((e, i) => {
-          const na = nodeDisp(NODES[e.a], frame);
-          const nb = nodeDisp(NODES[e.b], frame);
-          const per = 42 + (i % 5) * 10;
-          const fr = ((frame * 0.9 + e.phase * per * 3) % per) / per;
-          const x = lerp(na.x, nb.x, fr);
-          const y = lerp(na.y, nb.y, fr);
-          const op = signalOn * (0.5 + waveBoost(e.mid, frame));
-          return <circle key={i} cx={x} cy={y} r={2.4} fill="#EAF9FF" opacity={clamp(op, 0, 1)} style={{filter: 'drop-shadow(0 0 3px #7DD8FF)'}} />;
-        })}
-      </g>
-
-      {/* brain outline stroke (draws in, then glows) */}
-      <g transform={BRAIN_TRANSFORM}>
-        {BRAIN_PATHS.map((d, i) => (
-          <path
-            key={i}
-            d={d}
-            fill="none"
-            stroke="url(#brainStroke)"
-            strokeWidth={0.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            pathLength={1}
-            strokeDasharray={1}
-            strokeDashoffset={1 - clamp(outline * 1.05 - i * 0.04, 0, 1)}
-            style={{filter: 'drop-shadow(0 0 2px #6EA8FF)'}}
-          />
-        ))}
-      </g>
-    </svg>
-  );
-};
-
-/* ============================================================================
-   CORE + RINGS + PARTICLES
-   ========================================================================== */
-const Core: React.FC = () => {
-  const frame = useCurrentFrame();
-  const ignite = ease(frame, T.coreIgnite, T.coreIgnite + 40, eOut);
-  const pulse = 0.5 + 0.5 * Math.sin(frame / 15);
-  const actBoost = (frame >= T.actStart && frame <= T.actEnd ? 1 : 0.55) * ignite;
-  const coreR = (58 + pulse * 12) * (0.6 + 0.4 * ignite) * (1 + actBoost * 0.15);
-
-  return (
-    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
-      {/* particles streaming into core */}
-      {PARTS.map((p, i) => {
-        const per = 90;
-        const fr = ((frame * p.speed + p.phase * per) % per) / per;
-        const x = lerp(p.sx, CX, ease(fr, 0, 1, eInOut));
-        const y = lerp(p.sy, CY, ease(fr, 0, 1, eInOut));
-        const op = (1 - fr) * 0.8 * ease(frame, T.signalsStart, T.signalsStart + 40, eOut);
-        const tx = lerp(p.sx, CX, ease(Math.max(0, fr - 0.03), 0, 1, eInOut));
-        const ty = lerp(p.sy, CY, ease(Math.max(0, fr - 0.03), 0, 1, eInOut));
-        return (
-          <g key={i}>
-            <line x1={tx} y1={ty} x2={x} y2={y} stroke="#7FD8FF" strokeWidth={1.4} opacity={op * 0.6} />
-            <circle cx={x} cy={y} r={2} fill="#EAF9FF" opacity={op} />
-          </g>
-        );
-      })}
-
-      {/* expanding rings on ignite + periodic */}
-      {[0, 1, 2].map((k) => {
-        const t = ((frame - T.coreIgnite) / 70 - k * 0.5);
-        if (t < 0) return null;
-        const tt = t % 2.2;
-        const rr = tt * 150 + 40;
-        const op = clamp((1 - tt / 2.2) * 0.5 * ignite, 0, 1);
-        return <circle key={k} cx={CX} cy={CY} r={rr} fill="none" stroke="#6EC4FF" strokeWidth={2} opacity={op} />;
-      })}
-
-      {/* core glow */}
-      <circle cx={CX} cy={CY} r={coreR * 2.4} fill="url(#coreG)" opacity={0.5 * ignite} />
-      <circle cx={CX} cy={CY} r={coreR} fill="url(#coreG)" opacity={ignite} />
-      <circle cx={CX} cy={CY} r={coreR * 0.4} fill="#FFFFFF" opacity={(0.8 + actBoost * 0.2) * ignite} />
-    </svg>
-  );
-};
-
-/* ============================================================================
-   LABELS
-   ========================================================================== */
-const Labels: React.FC = () => {
-  const frame = useCurrentFrame();
-  return (
-    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
-      {LABELS.map((l, i) => {
-        const start = 400 + i * 44;
-        const op = interpolate(frame, [start, start + 24, start + 200, start + 240], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}) * (frame < T.settle ? 1 : interpolate(frame, [T.settle, T.settle + 40], [1, 0.5], {extrapolateRight: 'clamp'}));
-        if (op <= 0.01) return null;
-        const dir = l.x > CX ? 1 : -1;
-        return (
-          <g key={i} opacity={op}>
-            <circle cx={l.x} cy={l.y} r={3} fill="#EAF6FF" />
-            <line x1={l.x} y1={l.y} x2={l.x + dir * 30} y2={l.y - 18} stroke="#6EA8FF" strokeWidth={1} opacity={0.6} />
-            <line x1={l.x + dir * 30} y1={l.y - 18} x2={l.x + dir * 120} y2={l.y - 18} stroke="#6EA8FF" strokeWidth={1} opacity={0.6} />
-            <text x={l.x + dir * 36} y={l.y - 24} textAnchor={dir > 0 ? 'start' : 'start'} fontFamily={FONT} fontSize={16} fontWeight={600} fill="#CFE4FF" style={NUM}>
-              {l.t}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-};
-
-/* ============================================================================
-   TITLE (lower third)
-   ========================================================================== */
-const Title: React.FC = () => {
-  const frame = useCurrentFrame();
-  const op = interpolate(frame, [560, 600, 860, 892], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  if (op <= 0.01) return null;
-  return (
-    <div style={{position: 'absolute', left: 0, right: 0, top: 902, textAlign: 'center', opacity: op}}>
-      <div style={{fontFamily: FONT, fontSize: 40, fontWeight: 800, letterSpacing: 2, color: '#EAF3FF'}}>ARTIFICIAL INTELLIGENCE</div>
-      <div style={{fontFamily: FONT, fontSize: 20, fontWeight: 500, letterSpacing: 6, color: '#7FA8E0', marginTop: 8}}>NEURAL PROCESSING CORE</div>
+    <div
+      style={{
+        position: 'absolute',
+        left: offsets[index],
+        top,
+        width: 1920 - offsets[index] + 58,
+        overflow: 'hidden',
+        color: PAPER,
+        opacity: (0.45 - index * 0.025) * (0.88 + settle * 0.12),
+        fontFamily: page.family,
+        fontSize: page.lineSize,
+        fontWeight: page.lineWeight,
+        fontStyle: page.italic && index % 2 === 1 ? 'italic' : 'normal',
+        letterSpacing: pageIndex === 4 ? '-0.045em' : '-0.036em',
+        lineHeight: 1,
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        transform: `translate3d(${direction * (1 - settle) * 15}px, 0, 0)`,
+      }}
+    >
+      {text}
     </div>
   );
 };
 
-/* ============================================================================
-   MAIN
-   ========================================================================== */
-export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-  const [handle] = useState(() => delayRender('Loading Inter font'));
-  useEffect(() => {
-    const id = 'motion-inter-font';
-    if (!document.getElementById(id)) {
-      const link = document.createElement('link');
-      link.id = id;
-      link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
-      document.head.appendChild(link);
-    }
-    let done = false;
-    const finish = () => {
-      if (!done) {
-        done = true;
-        continueRender(handle);
-      }
-    };
-    const anyDoc = document as unknown as {fonts: {load: (s: string) => Promise<unknown>; ready: Promise<unknown>}};
-    Promise.all([anyDoc.fonts.load('500 1em Inter'), anyDoc.fonts.load('600 1em Inter'), anyDoc.fonts.load('800 1em Inter')])
-      .then(() => anyDoc.fonts.ready)
-      .then(finish)
-      .catch(finish);
-    const t = setTimeout(finish, 3000);
-    return () => clearTimeout(t);
-  }, [handle]);
-
-  // camera: push-in at activation, gentle pull-back, subtle breathing + tilt
-  const push = interpolate(frame, [T.actStart, 470, 660, 782], [0, 1, 1, 0.15], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: eInOut});
-  const breathe = 1 + 0.006 * Math.sin(frame / 70);
-  const scale = (1 + push * 0.09) * breathe;
-  const tilt = Math.sin(frame / 200) * 1.1;
+const InlineHeadline: React.FC<{
+  pageIndex: number;
+  localFrame: number;
+}> = ({pageIndex, localFrame}) => {
+  const page = pages[pageIndex];
+  const variant = titleVariants[pageIndex];
+  const settle = interpolate(localFrame, [0, 6], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
 
   return (
-    <AbsoluteFill style={{background: '#04060F', fontFamily: FONT}}>
-      <Background />
-      <AbsoluteFill style={{transform: `scale(${scale}) rotate(${tilt}deg)`, transformOrigin: `${CX}px ${CY}px`}}>
-        <BrainNetwork />
-        <Core />
-        <Labels />
-      </AbsoluteFill>
-      <Title />
-      <AbsoluteFill style={{pointerEvents: 'none', boxShadow: 'inset 0 0 340px rgba(0,0,0,0.6)'}} />
+    <div
+      style={{
+        position: 'absolute',
+        left: 80,
+        right: 80,
+        top: 540,
+        height: 96,
+        transform: 'translateY(-50%)',
+        display: 'grid',
+        gridTemplateColumns: '1fr 860px 1fr',
+        columnGap: 18,
+        alignItems: 'center',
+        overflow: 'hidden',
+        opacity: 0.9 + settle * 0.1,
+      }}
+    >
+      <div
+        style={{
+          overflow: 'hidden',
+          color: PAPER,
+          opacity: 0.56,
+          fontFamily: page.family,
+          fontSize: pageIndex === 4 ? 28 : 34,
+          fontWeight: page.lineWeight,
+          fontStyle: page.italic ? 'italic' : 'normal',
+          letterSpacing: pageIndex === 4 ? '-0.04em' : '-0.03em',
+          lineHeight: 1,
+          textAlign: 'right',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {page.leadIn}
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          height: 96,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: BRIGHT,
+          opacity: 0.94,
+          overflow: 'visible',
+        }}
+      >
+        {variant.decoration === 'rule' ? (
+          <span style={{position: 'absolute', left: 116, right: 116, bottom: 10, height: 1, backgroundColor: page.accent, opacity: 0.52}} />
+        ) : null}
+        {variant.decoration === 'double-rule' ? (
+          <>
+            <span style={{position: 'absolute', left: 100, right: 100, top: 5, height: 1, backgroundColor: PAPER, opacity: 0.2}} />
+            <span style={{position: 'absolute', left: 172, right: 172, bottom: 5, height: 1, backgroundColor: page.accent, opacity: 0.48}} />
+          </>
+        ) : null}
+        {variant.decoration === 'small-caps' ? (
+          <span style={{position: 'absolute', left: 58, right: 58, bottom: 7, borderBottom: `1px dotted ${page.accent}`, opacity: 0.46}} />
+        ) : null}
+        <span
+          style={{
+            display: 'inline-block',
+            fontFamily: variant.family,
+            fontSize: variant.size,
+            fontWeight: variant.weight,
+            fontStyle: variant.italic ? 'italic' : 'normal',
+            fontVariantCaps: variant.decoration === 'small-caps' ? 'all-small-caps' : undefined,
+            letterSpacing: variant.tracking,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            transform: `scaleX(${variant.scaleX}) scale(${1.012 - settle * 0.012})`,
+            transformOrigin: '50% 50%',
+          }}
+        >
+          {variant.label}
+        </span>
+      </div>
+
+      <div
+        style={{
+          overflow: 'hidden',
+          color: PAPER,
+          opacity: 0.56,
+          fontFamily: page.family,
+          fontSize: pageIndex === 4 ? 28 : 34,
+          fontWeight: page.lineWeight,
+          fontStyle: page.italic ? 'italic' : 'normal',
+          letterSpacing: pageIndex === 4 ? '-0.04em' : '-0.03em',
+          lineHeight: 1,
+          textAlign: 'left',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {page.leadOut}
+      </div>
+    </div>
+  );
+};
+
+const CentralArticle: React.FC<{
+  pageIndex: number;
+  localFrame: number;
+}> = ({pageIndex, localFrame}) => {
+  const page = pages[pageIndex];
+  const tops = [304, 382, 620, 696];
+
+  return (
+    <>
+      {page.rows.map((row, index) => (
+        <EditorialLine
+          key={row}
+          text={row}
+          top={tops[index]}
+          index={index}
+          pageIndex={pageIndex}
+          localFrame={localFrame}
+        />
+      ))}
+      <InlineHeadline pageIndex={pageIndex} localFrame={localFrame} />
+      <div
+        style={{
+          position: 'absolute',
+          left: 360,
+          right: 360,
+          top: 580,
+          color: PAPER,
+          opacity: 0.42,
+          fontFamily: page.family,
+          fontSize: 18,
+          fontStyle: page.italic ? 'italic' : 'normal',
+          letterSpacing: '0.012em',
+          lineHeight: 1.25,
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+        }}
+      >
+        {page.deck}
+      </div>
+      <div style={{position: 'absolute', left: 760, right: 760, top: 606}}>
+        <FineRule color={page.accent} opacity={0.38} />
+      </div>
+    </>
+  );
+};
+
+const StoryColumns: React.FC<{pageIndex: number}> = ({pageIndex}) => {
+  const page = pages[pageIndex];
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 80,
+        right: 80,
+        top: 774,
+        height: 206,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        columnGap: 29,
+        overflow: 'hidden',
+      }}
+    >
+      {page.topics.map((topic, index) => (
+        <div
+          key={topic}
+          style={{
+            position: 'relative',
+            paddingLeft: index === 0 ? 0 : 28,
+            borderLeft: index === 0 ? 'none' : '1px solid rgba(216,215,209,0.14)',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+            <MetaLabel color={index === 0 ? page.accent : MID}>{`0${index + 1}`}</MetaLabel>
+            <FineRule color={index === 0 ? page.accent : PAPER} opacity={index === 0 ? 0.38 : 0.13} />
+          </div>
+          <div
+            style={{
+              marginTop: 13,
+              color: PAPER,
+              opacity: 0.56,
+              fontFamily: page.family,
+              fontSize: 17,
+              fontWeight: page.lineWeight,
+              fontStyle: page.italic && index === 1 ? 'italic' : 'normal',
+              letterSpacing: '-0.018em',
+              lineHeight: 1.1,
+            }}
+          >
+            {topic}
+          </div>
+          <div
+            style={{
+              marginTop: 10,
+              color: PAPER,
+              opacity: 0.33,
+              fontFamily: pageIndex === 4 ? 'Georgia, Times New Roman, serif' : page.family,
+              fontSize: 12.5,
+              fontWeight: 400,
+              fontStyle: 'normal',
+              letterSpacing: '0.005em',
+              lineHeight: 1.35,
+              textAlign: 'justify',
+            }}
+          >
+            {storyCopy[(pageIndex + index) % storyCopy.length]}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const PageFurniture: React.FC<{pageIndex: number}> = ({pageIndex}) => {
+  const page = pages[pageIndex];
+  return (
+    <>
+      <div style={{position: 'absolute', left: 26, top: 270, bottom: 92, width: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14}}>
+        <MetaLabel color={page.accent}>●</MetaLabel>
+        <FineRule opacity={0.13} vertical />
+        <div style={{color: MID, opacity: 0.42, fontFamily: 'Arial, sans-serif', fontSize: 9, fontWeight: 800, letterSpacing: '0.2em', writingMode: 'vertical-rl', transform: 'rotate(180deg)'}}>SIGNAL INDEX / 07</div>
+      </div>
+      <div style={{position: 'absolute', right: 26, top: 270, bottom: 92, width: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14}}>
+        <div style={{color: MID, opacity: 0.38, fontFamily: 'Arial, sans-serif', fontSize: 9, fontWeight: 800, letterSpacing: '0.2em', writingMode: 'vertical-rl'}}>INDEPENDENT REPORTING</div>
+        <FineRule opacity={0.13} vertical />
+        <MetaLabel>{`0${pageIndex + 1}`}</MetaLabel>
+      </div>
+      <div style={{position: 'absolute', left: 80, right: 80, bottom: 41, display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 20}}>
+        <MetaLabel color={page.accent}>{page.byline}</MetaLabel>
+        <FineRule opacity={0.16} />
+        <MetaLabel align="right">{`${pageIndex + 1} / 05 · REAL-TIME EDITION`}</MetaLabel>
+      </div>
+    </>
+  );
+};
+
+const PagePlate: React.FC<{
+  pageIndex: number;
+  localFrame: number;
+}> = ({pageIndex, localFrame}) => (
+  <AbsoluteFill>
+    <PageHeader pageIndex={pageIndex} />
+    <CentralArticle pageIndex={pageIndex} localFrame={localFrame} />
+    <StoryColumns pageIndex={pageIndex} />
+    <PageFurniture pageIndex={pageIndex} />
+  </AbsoluteFill>
+);
+
+const PrintBase: React.FC<{frame: number}> = ({frame}) => {
+  const sweepY = ((frame * 4.1) % 1240) - 90;
+  return (
+    <>
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(circle at 50% 45%, #111615 0%, #090c0c 45%, #030404 88%)',
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: 0.13,
+          backgroundImage:
+            'radial-gradient(circle at 1px 1px, rgba(216,215,209,0.18) 0.8px, transparent 0.9px)',
+          backgroundSize: '6px 6px',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: sweepY,
+          height: 72,
+          background:
+            'linear-gradient(180deg, transparent, rgba(216,215,209,0.024), transparent)',
+        }}
+      />
+    </>
+  );
+};
+
+const PrintSurface: React.FC = () => (
+  <AbsoluteFill style={{zIndex: 40, pointerEvents: 'none'}}>
+    <svg
+      width="1920"
+      height="1080"
+      viewBox="0 0 1920 1080"
+      style={{position: 'absolute', inset: 0, opacity: 0.085, mixBlendMode: 'screen'}}
+    >
+      <filter id="editorial-grain">
+        <feTurbulence type="fractalNoise" baseFrequency="0.64" numOctaves="3" seed="27" stitchTiles="stitch" />
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer>
+          <feFuncA type="table" tableValues="0 0.42" />
+        </feComponentTransfer>
+      </filter>
+      <rect width="1920" height="1080" filter="url(#editorial-grain)" />
+    </svg>
+    <AbsoluteFill
+      style={{
+        opacity: 0.08,
+        backgroundImage:
+          'repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(241,240,233,0.12) 4px)',
+        mixBlendMode: 'screen',
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        boxShadow:
+          'inset 0 0 210px rgba(0,0,0,0.84), inset 0 0 48px rgba(0,0,0,0.58)',
+      }}
+    />
+  </AbsoluteFill>
+);
+
+const GlitchTransition: React.FC<{
+  frame: number;
+  strength: number;
+  phase: number;
+  pageIndex: number;
+  nextPageIndex: number;
+  pageScale: number;
+}> = ({frame, strength, phase, pageIndex, nextPageIndex, pageScale}) => {
+  if (strength <= 0) {
+    return null;
+  }
+
+  const tick = Math.floor(frame * 1.7);
+  const reveal = interpolate(phase, [0.28, 0.94], [0, 1], clamp);
+  const masks = [
+    'repeating-linear-gradient(180deg, transparent 0px, transparent 29px, #000 29px, #000 45px, transparent 45px, transparent 82px)',
+    'repeating-linear-gradient(180deg, transparent 0px, transparent 53px, #000 53px, #000 62px, transparent 62px, transparent 111px)',
+    'repeating-linear-gradient(180deg, transparent 0px, transparent 18px, #000 18px, #000 23px, transparent 23px, transparent 57px)',
+  ];
+  const hues = [165, 332, 220];
+
+  return (
+    <AbsoluteFill style={{zIndex: 24, pointerEvents: 'none'}}>
+      {masks.map((mask, index) => {
+        const useNextPage = index > 0 || phase > 0.57;
+        const direction = index % 2 === 0 ? 1 : -1;
+        const shift = direction * (10 + hash(tick * 17 + index * 31) * 66) * strength;
+        return (
+          <div
+            key={mask}
+            style={{
+              position: 'absolute',
+              inset: -22,
+              opacity: strength * (0.16 + reveal * (0.12 + index * 0.07)),
+              transform: `translate3d(${shift}px, ${(hash(tick * 11 + index) - 0.5) * 8}px, 0) scale(${pageScale})`,
+              transformOrigin: '50% 50%',
+              filter: `sepia(1) saturate(${4.8 + strength * 3}) hue-rotate(${hues[index]}deg) contrast(${1.05 + strength * 0.42})`,
+              WebkitMaskImage: mask,
+              maskImage: mask,
+              mixBlendMode: 'screen',
+            }}
+          >
+            <PagePlate pageIndex={useNextPage ? nextPageIndex : pageIndex} localFrame={useNextPage ? 0 : 59} />
+          </div>
+        );
+      })}
+
+      {Array.from({length: 20}).map((_, index) => {
+        const top = 12 + hash(tick * 47 + index * 23) * 1044;
+        const height = 1 + Math.floor(hash(tick * 71 + index * 19) * 7);
+        const width = 90 + hash(tick * 37 + index * 43) * 1820;
+        const left = -70 + hash(tick * 29 + index * 17) * 560;
+        const colors = [CYAN, RED, BLUE, BRIGHT];
+        const color = colors[index % colors.length];
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left,
+              top,
+              width,
+              height,
+              opacity: strength * (index % 6 === 0 ? 0.62 : 0.22),
+              background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
+              mixBlendMode: 'screen',
+            }}
+          />
+        );
+      })}
+
+      <AbsoluteFill
+        style={{
+          opacity: strength * 0.13,
+          backgroundImage:
+            'repeating-linear-gradient(0deg, transparent 0px, transparent 7px, rgba(241,240,233,0.3) 8px, transparent 9px)',
+          transform: `translateY(${(hash(tick * 91) - 0.5) * 12}px)`,
+          mixBlendMode: 'screen',
+        }}
+      />
+
+      {phase > 0.7 ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 255 + hash(tick * 109) * 520,
+            height: 5 + hash(tick * 113) * 13,
+            backgroundColor: DEEP_INK,
+            opacity: strength * 0.72,
+            boxShadow: '0 -1px 0 rgba(53,219,230,0.3), 0 1px 0 rgba(255,53,92,0.28)',
+          }}
+        />
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps, width, height} = useVideoConfig();
+
+  // The 10-second reference contains two seamless passes through five plates.
+  // Each plate is readable for roughly 0.73 s, then glitches into the next one.
+  const pageFrames = Math.max(1, Math.round(fps));
+  const glitchFrames = Math.min(
+    Math.max(1, pageFrames - 1),
+    Math.max(8, Math.round(fps * 0.27)),
+  );
+  const absolutePage = Math.floor(frame / pageFrames);
+  const pageIndex = absolutePage % pages.length;
+  const nextPageIndex = (pageIndex + 1) % pages.length;
+  const localFrame = frame - absolutePage * pageFrames;
+  const glitchStart = pageFrames - glitchFrames;
+  const glitchPhase = interpolate(
+    localFrame,
+    [glitchStart, Math.max(glitchStart + 1, pageFrames - 1)],
+    [0, 1],
+    clamp,
+  );
+  const glitchTick = Math.floor(frame * 1.7);
+  const glitchPulse = 0.55 + hash(glitchTick * 5.7) * 0.45;
+  const glitchStrength =
+    localFrame >= glitchStart
+      ? Math.min(1, (0.2 + glitchPhase * 0.9) * glitchPulse)
+      : 0;
+
+  const pageScale = interpolate(
+    localFrame,
+    [0, Math.max(1, pageFrames - 1)],
+    [1.032, 1],
+    clamp,
+  );
+  const settle = interpolate(localFrame, [0, Math.max(1, Math.round(fps * 0.075))], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const jitterX = glitchStrength > 0 ? (hash(glitchTick * 13) - 0.5) * 34 * glitchStrength : 0;
+  const jitterY = glitchStrength > 0 ? (hash(glitchTick * 29) - 0.5) * 9 * glitchStrength : 0;
+  const skew = glitchStrength > 0 ? (hash(glitchTick * 47) - 0.5) * 0.8 * glitchStrength : 0;
+
+  const stageScale = Math.min(width / 1920, height / 1080);
+  const stageLeft = (width - 1920 * stageScale) / 2;
+  const stageTop = (height - 1080 * stageScale) / 2;
+
+  return (
+    <AbsoluteFill style={{backgroundColor: DEEP_INK, overflow: 'hidden'}}>
+      <div
+        style={{
+          position: 'absolute',
+          left: stageLeft,
+          top: stageTop,
+          width: 1920,
+          height: 1080,
+          overflow: 'hidden',
+          transform: `scale(${stageScale})`,
+          transformOrigin: 'top left',
+          backgroundColor: INK,
+        }}
+      >
+        <PrintBase frame={frame} />
+
+        <div
+          style={{
+            position: 'absolute',
+            inset: -22,
+            opacity: 0.9 + settle * 0.1,
+            filter: `blur(${(1 - settle) * 0.55}px) contrast(${1.01 + glitchStrength * 0.12})`,
+            transform: `translate3d(${jitterX}px, ${jitterY}px, 0) scale(${pageScale}) skewX(${skew}deg)`,
+            transformOrigin: '50% 50%',
+            willChange: 'transform, filter, opacity',
+          }}
+        >
+          <PagePlate pageIndex={pageIndex} localFrame={localFrame} />
+        </div>
+
+        <GlitchTransition
+          frame={frame}
+          strength={glitchStrength}
+          phase={glitchPhase}
+          pageIndex={pageIndex}
+          nextPageIndex={nextPageIndex}
+          pageScale={pageScale}
+        />
+
+        <PrintSurface />
+      </div>
     </AbsoluteFill>
   );
 };
