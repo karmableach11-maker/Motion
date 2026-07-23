@@ -2,505 +2,387 @@ import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 
 /**
- * MOTION — "System Failure | Virus Code Glitch • Cyber Attack Warning"
- * 1920x1080 • 60 fps • 1200 frames (20 s)
+ * MOTION — "Artificial Intelligence | Keyword Highlight News Titles"
+ * 1920x1080 • 60 fps • 608 frames (10.13 s) — set durationInFrames={608}
  *
- * Direkonstruksi dari analisa frame-by-frame video referensi (20 s, 30 fps):
- * - Fase 1 (0–3.5 s)  : terminal gelap penuh log compiler/error, progress bar
- *                       cyan naik 0%→100% dengan lompatan tidak rata.
- * - Fase 2 (3.55–4 s) : layar "meledak" kuning penuh dengan smear horizontal.
- * - Fase 3 (4–5.6 s)  : wash biru berat, lalu tenang sejenak.
- * - Fase 4 (5.65–20 s): badge WARNING! merah ber-panah terkunci di pusat,
- *                       terus di-glitch (jitter, flip warna, dobel), teks
- *                       besar samar CYBER ATTACK muncul di burst tertentu.
- * - Sistem glitch: slice horizontal tergeser + RGB split, bar warna solid,
- *   wash biru berpita. State berganti patah-patah ~15 Hz (bukan halus).
+ * Direkonstruksi dari analisa frame-by-frame video referensi:
+ * - Frasa "artificial intelligence" TERKUNCI di pusat frame sepanjang video.
+ *   Marker highlight merah crimson menyapu dari kiri (0→penuh dalam ~4 s)
+ *   lalu bertahan sampai akhir.
+ * - Latar hitam: 6 desain halaman berita (word cloud, Technology Review,
+ *   Digital Report, Cyber Business, AI Report) bergulir vertikal patah-patah
+ *   (11 langkah, slide ~0.38 s + hold) dengan ghosting motion blur saat slide.
+ *   Keyword tertanam dalam kalimat tiap halaman, font mengikuti halamannya.
+ * - Kamera push-in + roll perlahan sepanjang durasi (zoom ~1.3x, miring ~7°).
+ * - Teks jauh dari pusat lebih redup & lembut (DOF + vignette).
  *
- * Seluruh keacakan deterministik (hash seeded per-frame) — aman untuk
- * render multi-thread Remotion. Timeline dinormalisasi ke durasi komposisi,
- * jadi tetap benar bila durationInFrames diubah. Set komposisi ke 1200
- * frame @60fps untuk durasi 20 s sesuai referensi.
+ * Mandiri — hanya butuh 'remotion'. Pengukuran teks pakai Canvas measureText.
+ * Timeline dinormalisasi ke durasi komposisi.
  */
 
 // ---------------------------------------------------------------------------
-// Deterministic pseudo-random
+// Konstanta
 // ---------------------------------------------------------------------------
 
-const fract = (x: number) => x - Math.floor(x);
-const hash = (n: number) => fract(Math.sin(n * 127.1 + 43.7) * 43758.5453123);
-const hash2 = (a: number, b: number) => hash(a * 57.31 + b * 911.7);
+const KW = 'artificial intelligence';
+const CX = 960;
+const CY = 540;
+const REF_DUR = 10.13; // durasi referensi (detik)
+
+const BG = '#0b0b0c';
+const RED = '#d91a55';
+const TXT = '#e6e6e6';
+const TXT_DIM = '#b9b9b9';
+
+const SANS = "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+const GROT = 'Verdana, Geneva, Arial, sans-serif';
+const SERIF_NEWS = "'Times New Roman', Times, Georgia, serif";
+const SERIF_OLD = "Georgia, 'Times New Roman', serif";
+const NBSP = ' ';
+
+// ---------------------------------------------------------------------------
+// Pengukur teks mandiri (Canvas 2D — tersedia di Chrome renderer Remotion)
+// ---------------------------------------------------------------------------
+
+const _getMeasureCtx = (() => {
+  let ctx: CanvasRenderingContext2D | null | undefined;
+  return (): CanvasRenderingContext2D | null => {
+    if (ctx !== undefined) return ctx;
+    ctx =
+      typeof document !== 'undefined'
+        ? document.createElement('canvas').getContext('2d')
+        : null;
+    return ctx;
+  };
+})();
+
+const textW = (
+  text: string,
+  font: string,
+  size: number,
+  weight: string | number = 400,
+): number => {
+  const ctx = _getMeasureCtx();
+  if (!ctx) return text.length * size * 0.5;
+  ctx.font = `${weight} ${size}px ${font}`;
+  return ctx.measureText(text).width;
+};
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const smooth = (a: number, b: number, x: number) => {
   const t = clamp01((x - a) / (b - a));
   return t * t * (3 - 2 * t);
 };
+const easeInOut = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 // ---------------------------------------------------------------------------
-// Palette & typography
+// Gaya per-baris: makin jauh dari pusat makin redup & lembut (DOF)
 // ---------------------------------------------------------------------------
 
-const MONO = "Consolas, 'Courier New', Menlo, monospace";
-const SANS = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
-
-const BG = '#04070a';
-const CODE_DIM = '#8fa398';
-const CODE_FAINT = '#5c6e64';
-const C_ERROR = '#e0524a';
-const C_WARN = '#e8c04a';
-const C_PATH = '#6fd3c3';
-const C_BUILD = '#5fdd7a';
-const C_NOTE = '#7f9fe0';
-const C_ADDR = '#b48fe0';
-const C_MARK = '#3fe07f';
-
-// ---------------------------------------------------------------------------
-// Fake compiler / crash log (dekoratif, meniru gaya referensi)
-// ---------------------------------------------------------------------------
-
-type LogLine = {t: string; c: string};
-
-const L = (t: string, c: string = CODE_DIM): LogLine => ({t, c});
-
-const LOG: LogLine[] = [
-  L('In file included from C:/Users/dev/projects/kernel_core/src/main.cpp:14:', CODE_FAINT),
-  L('C:/Users/dev/projects/kernel_core/include/net/socket_layer.h:212:37: error: no member named', C_ERROR),
-  L("      'bind_addr' in 'net::SocketConfig'; did you mean 'bound_addr'?", C_ERROR),
-  L('      if (cfg.bind_addr && !cfg.reuse_port) {', CODE_DIM),
-  L('          ~~~~~~~~~~~~~ ^~~~~~~~~~~~~~~~~~', C_MARK),
-  L('C:/PROGRA~1/LLVM/include/c++/v1/type_traits:1523:8: note: candidate template ignored:', C_NOTE),
-  L("      could not match 'integral_constant' against 'net::PacketHeader'", C_NOTE),
-  L('  [ 47%] Building CXX object modules/CMakeFiles/payload.dir/src/inject_stub.cpp.obj', C_BUILD),
-  L('warning C4996: strcpy: This function or variable may be unsafe. Consider strcpy_s.', C_WARN),
-  L('  0x00007FFA3B2E19D4  ntdll!RtlRaiseException + 0x3d4', C_ADDR),
-  L('  0x00007FFA3B1A88F1  KERNELBASE!UnhandledExceptionFilter + 0x1f1', C_ADDR),
-  L('C:/Users/dev/projects/kernel_core/src/heap_guard.cpp:88:19: error: use of undeclared', C_ERROR),
-  L("      identifier '__guard_page'; did you mean '__guard_zone'?", C_ERROR),
-  L('    verify(__guard_page != nullptr && "heap guard missing");', CODE_DIM),
-  L('           ^~~~~~~~~~~~', C_MARK),
-  L('  [ 52%] Linking CXX shared library bin/libtelemetry_core.dll', C_BUILD),
-  L('In file included from C:/Users/dev/projects/kernel_core/src/sched/ring.cpp:9:', CODE_FAINT),
-  L('C:/Users/dev/projects/kernel_core/include/sched/ring.h:301:5: warning: field priority', C_WARN),
-  L('      will be initialized after field quantum_ns [-Wreorder-ctor]', C_WARN),
-  L('    ring_scheduler(uint32_t slots) : priority(0), quantum_ns(250000) {}', CODE_DIM),
-  L('fatal error LNK1120: 3 unresolved externals -- target injector_svc', C_ERROR),
-  L('==> BUILD FAILED: process exited with code 0xC0000005 (ACCESS_VIOLATION)', C_ERROR),
-  L('Check dependencies: libcrypto-3-x64.dll not found in search PATH', C_WARN),
-  L('Stack overflow detected in thread 0x1A44 -- dumping core to crash_1a44.dmp', C_ERROR),
-  L('  #12 0x0000000140011F02 in packet_reassembler::flush(std::span<uint8_t>) ring.cpp:412', C_ADDR),
-  L('  #13 0x000000014000C4B7 in event_pump::drain() event_pump.cpp:117', C_ADDR),
-  L('C:/Users/dev/projects/kernel_core/src/crypto/chain.cpp:56:23: error: static assertion', C_ERROR),
-  L("      failed: block size must be a power of two", C_ERROR),
-  L('    static_assert((BLOCK & (BLOCK - 1)) == 0, "block size must be a power of two");', CODE_DIM),
-  L('                  ^~~~~~~~~~~~~~~~~~~~~~~~~~', C_MARK),
-  L('  [ 61%] Building CXX object modules/CMakeFiles/observer.dir/src/watchdog.cpp.obj', C_BUILD),
-  L('note: in instantiation of member function hash_ring<64>::rebalance requested here', C_NOTE),
-  L('  retrying handshake (2/5): ETIMEDOUT after 30000 ms -- peer 10.0.14.88:8443', C_WARN),
-  L('  retrying handshake (3/5): ECONNRESET -- peer 10.0.14.88:8443', C_WARN),
-  L('C:/Users/dev/projects/kernel_core/src/io/mmap_pool.cpp:174:9: error: cannot initialize', C_ERROR),
-  L("      a member subobject of type 'std::atomic<page_state>' with an rvalue", C_ERROR),
-  L('    : pages_{page_state::cold}, high_water_(limit) {', CODE_DIM),
-  L('      ^~~~~~', C_MARK),
-  L('  0x00007FFA39D144A0  ucrtbase!abort + 0x50', C_ADDR),
-  L('  [ 64%] Building CXX object modules/CMakeFiles/net.dir/src/tls_shim.cpp.obj', C_BUILD),
-  L('warning: unchecked cast from volatile uint8_t* to dma_descriptor* [-Wcast-qual]', C_WARN),
-  L('==> WHILE NATIVE TARGET OF PROJECT block_tools WITH THE DEFAULT CONFIGURATION default ==', CODE_FAINT),
-  L('verifying signature chain............FAILED (certificate revoked 2024-11-02)', C_ERROR),
-  L('  #14 0x0000000140002E11 in main crt0.c:288', C_ADDR),
-  L('In file included from C:/Users/dev/projects/kernel_core/src/svc/daemon.cpp:31:', CODE_FAINT),
-  L('C:/Users/dev/projects/kernel_core/include/svc/daemon.h:77:14: warning: daemon_loop', C_WARN),
-  L('      hides overloaded virtual function [-Woverloaded-virtual]', C_WARN),
-  L('  [ 68%] Linking CXX executable bin/injector_svc.exe', C_BUILD),
-];
-
-// ---------------------------------------------------------------------------
-// Burst schedule (detik referensi 0..20) — dari timeline bukti
-// ---------------------------------------------------------------------------
-
-type Burst = {s: number; e: number; v: number; c?: string};
-
-const BURSTS: Burst[] = [
-  {s: 0.85, e: 1.05, v: 0.5, c: 'blue'},
-  {s: 1.05, e: 2.5, v: 0.85, c: 'blue'},
-  {s: 2.9, e: 3.35, v: 0.55},
-  {s: 3.55, e: 4.0, v: 1.0, c: 'yellow'},
-  {s: 4.0, e: 4.45, v: 0.9, c: 'olive'},
-  {s: 4.45, e: 5.0, v: 0.85, c: 'blue'},
-  {s: 5.6, e: 5.9, v: 0.35},
-  {s: 6.6, e: 7.1, v: 0.45},
-  {s: 7.4, e: 7.75, v: 0.6, c: 'green'},
-  {s: 8.05, e: 9.6, v: 0.85, c: 'blue'},
-  {s: 9.9, e: 10.15, v: 0.45},
-  {s: 10.4, e: 12.0, v: 0.9, c: 'blue'},
-  {s: 12.55, e: 12.9, v: 0.5},
-  {s: 13.6, e: 13.85, v: 0.5, c: 'magenta'},
-  {s: 14.05, e: 14.6, v: 0.55, c: 'amber'},
-  {s: 15.3, e: 16.0, v: 0.5, c: 'green'},
-  {s: 16.55, e: 17.6, v: 0.8, c: 'blue'},
-  {s: 17.9, e: 18.3, v: 0.7, c: 'blue'},
-  {s: 19.15, e: 20.0, v: 0.9, c: 'blue'},
-];
-
-const EDGE = 0.12; // ramp masuk/keluar burst (detik)
-
-const burstAt = (t: number): {lvl: number; color: string} => {
-  let lvl = 0.06;
-  let color = 'none';
-  for (const b of BURSTS) {
-    const env =
-      smooth(b.s - EDGE, b.s + EDGE, t) * (1 - smooth(b.e - EDGE, b.e + EDGE, t));
-    const v = b.v * env;
-    if (v > lvl) {
-      lvl = v;
-      color = b.c ?? 'none';
-    }
-  }
-  return {lvl, color};
-};
-
-// Progress bar: persentase per keyframe (detik, %) — lompatan tidak rata
-const PCT: Array<[number, number]> = [
-  [0, 0], [0.6, 0], [0.75, 7], [0.9, 19], [1.1, 24], [1.3, 33], [1.5, 38],
-  [1.8, 46], [2.05, 49], [2.25, 57], [2.5, 64], [2.8, 71], [2.95, 82],
-  [3.15, 89], [3.35, 96], [3.5, 100], [99, 100],
-];
-
-const pctAt = (t: number) => {
-  let p = 0;
-  for (const [kt, kv] of PCT) {
-    if (t >= kt) p = kv;
-    else break;
-  }
-  return p;
-};
-
-// Jendela kemunculan CYBER ATTACK (detik referensi)
-const CYBER_WINDOWS: Array<[number, number]> = [
-  [6.55, 7.15], [10.8, 11.35], [16.8, 17.35], [19.2, 19.95],
-];
-
-const WASH_COLORS: Record<string, string> = {
-  blue: '#1f35e8',
-  yellow: '#ffe81a',
-  olive: '#9aa023',
-  green: '#19c94f',
-  magenta: '#ff2bd1',
-  amber: '#ffb400',
-};
-
-// ---------------------------------------------------------------------------
-// Content layers
-// ---------------------------------------------------------------------------
-
-const CodeWall: React.FC<{t: number; epoch: number}> = ({t, epoch}) => {
-  // Log tampil hampir penuh sejak awal; sesekali "melompat" (scroll patah)
-  const jump = hash(epoch * 7.13) < 0.12 ? Math.floor(hash(epoch * 3.7) * 6) : 0;
-  const visible = Math.min(LOG.length, 34 + Math.floor(t * 1.2));
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 46,
-        top: 18 - jump * 23,
-        fontFamily: MONO,
-        fontSize: 17,
-        lineHeight: '23px',
-        whiteSpace: 'pre',
-        opacity: 0.92,
-      }}
-    >
-      {LOG.slice(0, visible).map((ln, i) => {
-        const flick =
-          hash2(epoch, i) < 0.04 ? 0.25 : 1; // baris sesekali redup
-        return (
-          <div key={i} style={{color: ln.c, opacity: flick}}>
-            {ln.t}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const ProgressBar: React.FC<{t: number; lvl: number; epoch: number}> = ({
-  t,
-  lvl,
-  epoch,
-}) => {
-  if (t > 4.15) return null;
-  const pct = pctAt(t);
-  const x = 320;
-  const y = 238;
-  const w = 900;
-  const h = 18;
-  const fills = ['#35e0d6', '#c8ff3d', '#ff4fd8', '#ffd23d'];
-  const fill =
-    lvl > 0.5 ? fills[Math.floor(hash(epoch * 5.21) * fills.length)] : fills[0];
-  const isYellowPhase = t >= 3.55;
-  const barColor = isYellowPhase ? '#ffffff' : fill;
-  return (
-    <div style={{position: 'absolute', left: 0, top: 0}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: x,
-          top: y,
-          width: w,
-          height: h,
-          border: '2px solid rgba(210,255,252,0.55)',
-          background: 'rgba(16,34,38,0.55)',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            left: 2,
-            top: 2,
-            bottom: 2,
-            width: `${Math.max(0.5, pct * 0.99)}%`,
-            background: barColor,
-            boxShadow: `0 0 14px ${barColor}`,
-          }}
-        />
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: x + w + 26,
-          top: y - 8,
-          fontFamily: MONO,
-          fontSize: 28,
-          fontWeight: 700,
-          color: isYellowPhase ? '#ffffff' : '#dffcff',
-        }}
-      >
-        {pct}%
-      </div>
-    </div>
-  );
-};
-
-const Tri: React.FC<{dir: 1 | -1; color: string}> = ({dir, color}) => {
-  const style: React.CSSProperties = {
-    width: 0,
-    height: 0,
-    borderTop: '16px solid transparent',
-    borderBottom: '16px solid transparent',
+const lineStyle = (y: number): React.CSSProperties => {
+  const d = Math.abs(y - CY) / CY; // 0 di pusat → 1 di tepi
+  return {
+    opacity: 0.95 - d * 0.5,
+    filter: d > 0.55 ? 'blur(1.6px)' : d > 0.25 ? 'blur(0.7px)' : undefined,
   };
-  if (dir === 1) style.borderLeft = `26px solid ${color}`;
-  else style.borderRight = `26px solid ${color}`;
-  return <div style={style} />;
 };
 
-const WarningBadge: React.FC<{t: number; lvl: number; epoch: number}> = ({
-  t,
-  lvl,
-  epoch,
-}) => {
-  if (t < 5.65) return null;
-  const born = smooth(5.65, 6.05, t);
-  const flicker =
-    born < 1 ? (hash(epoch * 9.77) < 0.5 ? 0.15 : 1) : hash(epoch * 9.77) < 0.05 ? 0.3 : 1;
-  const jx = lvl > 0.2 ? (hash(epoch * 3.31) - 0.5) * 60 * lvl : 0;
-  const jy = lvl > 0.45 ? (hash(epoch * 8.17) - 0.5) * 26 * lvl : 0;
-  const hues = [0, 300, 120, 185];
-  const hue =
-    lvl > 0.35 ? hues[Math.floor(hash(epoch * 2.71) * hues.length)] : 0;
-  const doubled = lvl > 0.4 && hash(epoch * 6.43) < 0.3;
-
-  const badge = (dy: number, op: number, key: string) => (
-    <div
-      key={key}
-      style={{
-        position: 'absolute',
-        left: 960 + jx,
-        top: 520 + dy + jy,
-        transform: 'translate(-50%, -50%)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 34,
-        opacity: op * flicker,
-        filter: hue ? `hue-rotate(${hue}deg) saturate(1.3)` : undefined,
-      }}
-    >
-      <Tri dir={1} color="#ff2222" />
-      <div
-        style={{
-          border: '3px solid #ff2222',
-          background: 'rgba(64,0,10,0.6)',
-          color: '#ffe9e9',
-          fontFamily: SANS,
-          fontWeight: 800,
-          fontSize: 36,
-          letterSpacing: 6,
-          padding: '14px 46px',
-          textShadow: '0 0 18px rgba(255,40,40,0.9)',
-          boxShadow: '0 0 26px rgba(255,30,30,0.35)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        WARNING!
-      </div>
-      <Tri dir={-1} color="#ff2222" />
-    </div>
-  );
-
-  return (
-    <div style={{position: 'absolute', inset: 0}}>
-      {badge(0, 1, 'a')}
-      {doubled ? badge(102, 0.65, 'b') : null}
-    </div>
-  );
-};
-
-const CyberAttack: React.FC<{t: number; lvl: number; epoch: number}> = ({
-  t,
-  lvl,
-  epoch,
-}) => {
-  const inWindow = CYBER_WINDOWS.some(([s, e]) => t >= s && t <= e);
-  const surprise = t > 6.4 && lvl > 0.75 && hash(epoch * 4.99) < 0.35;
-  if (!inWindow && !surprise) return null;
-  const op = 0.16 + 0.1 * hash(epoch * 1.37);
-  const jx = (hash(epoch * 2.03) - 0.5) * 40;
-  const base: React.CSSProperties = {
-    position: 'absolute',
-    left: '50%',
-    top: 430,
-    transform: `translateX(-50%) translateX(${jx}px)`,
-    fontFamily: SANS,
-    fontWeight: 900,
-    fontSize: 168,
-    letterSpacing: 34,
-    whiteSpace: 'nowrap',
-    color: 'rgba(205,220,255,0.09)',
-    WebkitTextStroke: '2px rgba(205,225,255,0.30)',
-  };
-  return (
-    <div style={{position: 'absolute', inset: 0, opacity: op / 0.2}}>
-      <div style={{...base, color: 'rgba(255,60,180,0.10)', transform: `translateX(-50%) translateX(${jx - 8}px)`}}>
-        CYBER ATTACK
-      </div>
-      <div style={{...base, color: 'rgba(60,220,255,0.10)', transform: `translateX(-50%) translateX(${jx + 8}px)`}}>
-        CYBER ATTACK
-      </div>
-      <div style={base}>CYBER ATTACK</div>
-    </div>
-  );
-};
-
-// Semua konten "layar" digabung — sumber untuk salinan slice/tint
-const Content: React.FC<{t: number; lvl: number; epoch: number}> = ({
-  t,
-  lvl,
-  epoch,
-}) => (
-  <AbsoluteFill style={{background: BG}}>
-    <CodeWall t={t} epoch={epoch} />
-    <CyberAttack t={t} lvl={lvl} epoch={epoch} />
-    <ProgressBar t={t} lvl={lvl} epoch={epoch} />
-    <WarningBadge t={t} lvl={lvl} epoch={epoch} />
-  </AbsoluteFill>
+const Line: React.FC<{
+  y: number;
+  font: string;
+  size: number;
+  weight?: string | number;
+  color?: string;
+  dx?: number;
+  children: React.ReactNode;
+}> = ({y, font, size, weight = 400, color = TXT_DIM, dx = 0, children}) => (
+  <div
+    style={{
+      position: 'absolute',
+      left: '50%',
+      top: y,
+      transform: `translate(-50%, -50%) translateX(${dx}px)`,
+      fontFamily: font,
+      fontSize: size,
+      fontWeight: weight as never,
+      color,
+      whiteSpace: 'nowrap',
+      ...lineStyle(y),
+    }}
+  >
+    {children}
+  </div>
 );
 
 // ---------------------------------------------------------------------------
-// Glitch overlays
+// Keyword adalah LAYER TERKUNCI di pusat (tidak ikut scroll) — bukti:
+// frame mid-slide referensi menunjukkan keyword tetap di tengah & tajam.
+// Halaman hanya merender kalimatnya dengan CELAH selebar keyword, sehingga
+// pre/post "menjajarkan diri" ke keyword saat halaman settle.
 // ---------------------------------------------------------------------------
 
-const BandedWash: React.FC<{color: string; lvl: number; epoch: number}> = ({
-  color,
-  lvl,
-  epoch,
-}) => {
-  // Wash berpita horizontal: pita-pita dengan alpha berbeda (seeded)
-  const bands = 14;
-  const stops: string[] = [];
-  for (let i = 0; i < bands; i++) {
-    const a = 0.1 + hash2(epoch, i) * 0.85;
-    const y0 = (i / bands) * 100;
-    const y1 = ((i + 1) / bands) * 100;
-    stops.push(`${hexA(color, a)} ${y0.toFixed(1)}% ${y1.toFixed(1)}%`);
-  }
+type KwSpec = {
+  font: string;
+  size: number;
+  weight: string | number;
+  pre?: string;
+  post?: string;
+};
+
+// Baris pre/post milik halaman: teks di kiri/kanan celah keyword
+const PrePostLine: React.FC<{spec: KwSpec}> = ({spec}) => {
+  const {font, size, weight, pre = '', post = ''} = spec;
+  if (!pre && !post) return null;
+  const kwW = textW(KW, font, size, weight);
+  const preW = pre ? textW(pre, font, size, weight) : 0;
+  const left = CX - preW - kwW / 2;
+  const lineH = size * 1.25;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left,
+        top: CY - lineH / 2,
+        height: lineH,
+        fontFamily: font,
+        fontSize: size,
+        fontWeight: weight as never,
+        lineHeight: `${lineH}px`,
+        whiteSpace: 'nowrap',
+        color: TXT_DIM,
+      }}
+    >
+      {pre}
+      <span style={{display: 'inline-block', width: kwW}} />
+      {post}
+    </div>
+  );
+};
+
+// Overlay keyword + marker merah, terkunci di (960, 540)
+const KwOverlay: React.FC<{spec: KwSpec; sweep: number}> = ({spec, sweep}) => {
+  const {font, size, weight} = spec;
+  const kwW = textW(KW, font, size, weight);
+  const pad = 20;
+  const boxW = Math.max(0, sweep * (kwW + pad * 2));
+  const lineH = size * 1.25;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: CX - kwW / 2,
+        top: CY - lineH / 2,
+        height: lineH,
+        fontFamily: font,
+        fontSize: size,
+        fontWeight: weight as never,
+        lineHeight: `${lineH}px`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {/* Marker merah — di belakang teks, sedikit miring (gaya stabilo) */}
+      {boxW > 1 ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: -pad,
+            top: -0.08 * size,
+            width: boxW,
+            height: lineH + 0.16 * size,
+            background: RED,
+            transform: 'rotate(-1.4deg)',
+            boxShadow: '0 0 24px rgba(217,26,85,0.35)',
+          }}
+        />
+      ) : null}
+      <span style={{position: 'relative', color: '#ffffff'}}>{KW}</span>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Enam desain halaman (1920x1080, latar hitam, teks bleed di tepi)
+// ---------------------------------------------------------------------------
+
+type PageProps = Record<string, never>;
+
+// Spesifikasi keyword per desain (font mengikuti halaman aktif)
+const KW_SPECS: KwSpec[] = [
+  {font: SANS, size: 88, weight: 800}, // WordCloud — berdiri sendiri
+  {font: SANS, size: 80, weight: 700, pre: `Does the${NBSP}`, post: `${NBSP}algorithms`}, // CyberBiz
+  {font: SERIF_NEWS, size: 82, weight: 400, pre: `work with${NBSP}`, post: `${NBSP}decision`}, // TechReview
+  {font: SERIF_OLD, size: 78, weight: 400, pre: `advanced${NBSP}`, post: `${NBSP}products`}, // AiReport
+  {font: SANS, size: 88, weight: 800}, // WordCloud (muncul dua kali per siklus)
+  {font: GROT, size: 74, weight: 700, pre: `levels of${NBSP}`, post: `${NBSP}and high`}, // DigitalReport
+];
+
+const PageWordCloud: React.FC<PageProps> = () => {
+  const words: Array<
+    [string, number, number, number, string, number]
+  > = [
+    // [kata, x, y, size, font, weight]
+    ['energy', 120, 70, 46, SERIF_OLD, 400],
+    ['cyber', 460, 62, 42, SANS, 700],
+    ['advanced', 780, 58, 40, GROT, 400],
+    ['modern', 1310, 48, 46, SERIF_NEWS, 400],
+    ['new', 1120, 150, 40, SANS, 600],
+    ['behavior', 1560, 130, 36, SERIF_OLD, 400],
+    ['engineering', 90, 170, 44, SERIF_NEWS, 400],
+    ['self-driving car', 430, 175, 42, SANS, 600],
+    ['ai', 860, 180, 46, GROT, 700],
+    ['algorithms', 1370, 210, 42, SERIF_OLD, 400],
+    ['deep learning', 110, 290, 42, GROT, 400],
+    ['neural networks', 560, 300, 48, SERIF_NEWS, 400],
+    ['ChatBot', 1500, 320, 40, SANS, 700],
+    ['cyber', 140, 400, 40, SERIF_OLD, 700],
+    ['machine learning', 1090, 430, 44, SERIF_NEWS, 400],
+    ['digital', 60, 500, 38, SANS, 400],
+    ['industry 4.0', 500, 640, 50, GROT, 700],
+    ['science', 60, 690, 38, SERIF_NEWS, 400],
+    ['digital', 1330, 700, 62, SERIF_OLD, 700],
+    ['business', 330, 780, 42, SANS, 600],
+    ['technology', 830, 770, 46, SERIF_OLD, 400],
+    ['automation', 120, 890, 42, GROT, 400],
+    ['medicine', 620, 900, 38, SERIF_NEWS, 400],
+    ['economy', 1130, 910, 44, SERIF_OLD, 400],
+    ['data', 1650, 880, 40, SANS, 600],
+  ];
   return (
     <>
-      <AbsoluteFill
-        style={{
-          background: `linear-gradient(180deg, ${stops.join(', ')})`,
-          mixBlendMode: 'screen',
-          opacity: Math.min(1, lvl * 1.05),
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background: color,
-          mixBlendMode: 'overlay',
-          opacity: lvl * 0.55,
-        }}
-      />
+      {words.map(([w, x, y, s, f, wt], i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: x,
+            top: y,
+            fontFamily: f,
+            fontSize: s,
+            fontWeight: wt as never,
+            color: TXT_DIM,
+            whiteSpace: 'nowrap',
+            ...lineStyle(y),
+          }}
+        >
+          {w}
+        </div>
+      ))}
     </>
   );
 };
 
-function hexA(hex: string, a: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a.toFixed(3)})`;
-}
+const PageTechReview: React.FC<PageProps> = () => (
+  <>
+    <Line y={72} font={SERIF_NEWS} size={92} weight={700} color={TXT}>
+      TECHNOLOGY REVIEW
+    </Line>
+    <Line y={172} font={SERIF_NEWS} size={30} color="#9a9a9a">
+      ● business&nbsp;&nbsp;&nbsp;● industry&nbsp;&nbsp;&nbsp;● trade&nbsp;&nbsp;&nbsp;online information
+    </Line>
+    <PrePostLine spec={KW_SPECS[2]} />
+    <Line y={700} font={SERIF_NEWS} size={78} dx={-60}>
+      managing in the absence of all data of all
+    </Line>
+    <Line y={860} font={SERIF_NEWS} size={78} dx={40}>
+      industry, trade, factory future of production
+    </Line>
+    <Line y={1010} font={SERIF_NEWS} size={78} dx={-30}>
+      that and automation process neural nets
+    </Line>
+  </>
+);
 
-const BAR_COLORS = [
-  '#ff2bd1', '#00e0ff', '#ffe600', '#28ff5c', '#ff2d55', '#2743ff', '#ff8a00',
+const PageDigitalReport: React.FC<PageProps> = () => (
+  <>
+    <Line y={50} font={GROT} size={88} weight={700} color={TXT}>
+      DIGITAL REPORT
+    </Line>
+    <Line y={220} font={GROT} size={72} weight={700} dx={-50}>
+      artificial neural networks and large scale
+    </Line>
+    <Line y={380} font={GROT} size={72} weight={700} dx={30}>
+      speech recognition and natural language
+    </Line>
+    <PrePostLine spec={KW_SPECS[5]} />
+    <Line y={700} font={GROT} size={72} weight={700} dx={-40}>
+      machine learning and big data growth
+    </Line>
+    <Line y={860} font={GROT} size={72} weight={700} dx={50}>
+      artificial general intelligence benefits
+    </Line>
+    <Line y={1010} font={GROT} size={72} weight={700} dx={-20}>
+      for the corporation business and science
+    </Line>
+  </>
+);
+
+const PageCyberBiz: React.FC<PageProps> = () => (
+  <>
+    <Line y={66} font={SANS} size={80} weight={800} color={TXT}>
+      Cyber business
+    </Line>
+    <Line y={158} font={SANS} size={32} color="#9a9a9a">
+      news&nbsp;&nbsp;·&nbsp;&nbsp;analysis&nbsp;&nbsp;·&nbsp;&nbsp;reports&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;748,720
+      followers&nbsp;&nbsp;&nbsp;information
+    </Line>
+    <PrePostLine spec={KW_SPECS[1]} />
+    <Line y={700} font={SANS} size={76} weight={700} dx={-40}>
+      technology and robotics in the near future
+    </Line>
+    <Line y={860} font={SANS} size={76} weight={700} dx={30}>
+      impact on employment internet work
+    </Line>
+    <Line y={1010} font={SANS} size={76} weight={700} dx={-60}>
+      evolution future of business and deep
+    </Line>
+  </>
+);
+
+const PageAiReport: React.FC<PageProps> = () => (
+  <>
+    <Line y={60} font={SERIF_OLD} size={84} weight={700} color={TXT}>
+      AI REPORT
+    </Line>
+    <Line y={380} font={SERIF_OLD} size={74} dx={-50}>
+      complex engineering, medicine, technology
+    </Line>
+    <PrePostLine spec={KW_SPECS[3]} />
+    <Line y={700} font={SERIF_OLD} size={74} dx={40}>
+      creating images illustrations and video
+    </Line>
+    <Line y={860} font={SERIF_OLD} size={74} dx={-30}>
+      dialogue in the natural language models
+    </Line>
+    <Line y={1010} font={SERIF_OLD} size={74} dx={20}>
+      generative networks for the industry
+    </Line>
+  </>
+);
+
+// Urutan siklus halaman (sesuai observasi referensi)
+const CYCLE: Array<React.FC<PageProps>> = [
+  PageWordCloud,
+  PageCyberBiz,
+  PageTechReview,
+  PageAiReport,
+  PageWordCloud,
+  PageDigitalReport,
 ];
 
-const BURST_BAR_HUES: Record<string, string> = {
-  magenta: '#ff2bd1',
-  amber: '#ffe600',
-  green: '#28ff5c',
-};
+// ---------------------------------------------------------------------------
+// Jadwal scroll (detik referensi) — 11 langkah, slide 0.38 s
+// ---------------------------------------------------------------------------
 
-const ColorBars: React.FC<{lvl: number; epoch: number; burstColor: string}> = ({
-  lvl,
-  epoch,
-  burstColor,
-}) => {
-  const hueLock = BURST_BAR_HUES[burstColor]; // burst berwarna = event bar, bukan wash
-  const rare = lvl <= 0.3 && hash(epoch * 11.3) < 0.08; // streak tunggal langka
-  let count =
-    lvl > 0.45
-      ? Math.round(lvl * 3 + hash(epoch * 1.91) * 1.5)
-      : rare
-        ? 1
-        : 0;
-  if (hueLock) count = Math.max(count, 2);
-  if (count === 0) return null;
-  return (
-    <AbsoluteFill>
-      {Array.from({length: count}, (_, i) => {
-        const pick =
-          hueLock && hash2(epoch * 9 + 4, i) < 0.6
-            ? hueLock
-            : BAR_COLORS[Math.floor(hash2(epoch * 3 + 1, i) * BAR_COLORS.length)];
-        const top = hash2(epoch * 5 + 2, i) * 1030;
-        const h = 5 + hash2(epoch * 7 + 3, i) * 42 * Math.max(lvl, 0.4);
-        return (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              left: 0,
-              width: '100%',
-              top,
-              height: h,
-              background: pick,
-              backgroundImage:
-                'repeating-linear-gradient(90deg, rgba(0,0,0,0.3) 0 1px, transparent 1px 23px)',
-              opacity: 0.92,
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
-  );
+const STEPS = [0.75, 1.75, 2.75, 3.7, 4.45, 5.4, 6.15, 7.1, 7.85, 8.8, 9.55];
+const SLIDE = 0.38;
+
+const scrollPos = (t: number): number => {
+  let p = 0;
+  for (const s of STEPS) {
+    p += easeInOut(clamp01((t - s) / SLIDE));
+  }
+  return p;
 };
 
 // ---------------------------------------------------------------------------
@@ -511,104 +393,117 @@ export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
 
-  // Normalisasi ke "detik referensi" 0..20 agar timeline tetap benar
-  // untuk durasi komposisi berapa pun.
-  const t = (frame / durationInFrames) * 20;
-  const epoch = Math.floor((frame / fps) * 15); // state glitch ~15 Hz
+  // Normalisasi ke detik referensi 0..10.13
+  const t = (frame / durationInFrames) * REF_DUR;
+  const tPrev = ((frame - 1) / durationInFrames) * REF_DUR;
 
-  const {lvl, color} = burstAt(t);
-  // Hanya blue/yellow/olive yang menjadi wash layar penuh;
-  // magenta/amber/green adalah event bar warna (sesuai referensi).
-  const washColor =
-    color === 'blue' || color === 'yellow' || color === 'olive'
-      ? WASH_COLORS[color]
-      : undefined;
+  // Sapuan marker merah — kurva piecewise mengikuti bukti referensi:
+  // t=1.0s ≈ 45% (menutup "artificial"), t=2.1s ≈ 62%, t=3.2s ≈ 88%, penuh di 3.9s
+  const SWEEP_KF: Array<[number, number]> = [
+    [0.2, 0], [1.0, 0.45], [2.1, 0.62], [3.2, 0.88], [3.9, 1],
+  ];
+  let sweep = 0;
+  if (t <= SWEEP_KF[0][0]) sweep = 0;
+  else if (t >= SWEEP_KF[SWEEP_KF.length - 1][0]) sweep = 1;
+  else {
+    for (let i = 1; i < SWEEP_KF.length; i++) {
+      const [t1, v1] = SWEEP_KF[i];
+      const [t0, v0] = SWEEP_KF[i - 1];
+      if (t <= t1) {
+        sweep = v0 + ((t - t0) / (t1 - t0)) * (v1 - v0);
+        break;
+      }
+    }
+  }
 
-  // Slice displacement — salinan konten terpotong & tergeser
-  const sliceCount = lvl > 0.14 ? Math.round(2 + lvl * 8) : 0;
-  const slices = Array.from({length: sliceCount}, (_, i) => {
-    const s = epoch * 13.7 + i * 3.1;
-    const top = hash(s + 0.1) * 1040;
-    const h = 8 + hash(s + 0.2) * 110 * lvl;
-    const dx = (hash(s + 0.3) - 0.5) * 320 * lvl;
-    const hue = (hash(s + 0.4) - 0.5) * 90;
-    return {top, h, dx, hue};
-  });
+  // Posisi scroll & kecepatan (untuk ghost motion blur)
+  const p = scrollPos(t);
+  const v = (p - scrollPos(tPrev)) * fps; // halaman per detik
+  const ghost = Math.min(1, Math.abs(v) / 3);
 
-  // Getar global + kedip kecerahan
-  const gx = lvl > 0.25 ? (hash(epoch * 1.13) - 0.5) * 18 * lvl : 0;
-  const gy = lvl > 0.5 && hash(epoch * 2.61) < 0.3 ? (hash(epoch * 3.3) - 0.5) * 56 * lvl : 0;
-  const flicker = 1 + (hash(epoch * 4.47) - 0.5) * 0.06 * (1 + lvl);
+  // Kamera: push-in + roll perlahan sepanjang durasi
+  const prog = t / REF_DUR;
+  const camScale = 1.03 + 0.3 * prog;
+  const camRot = -7.2 * prog;
+  const camX = -34 * prog;
 
-  const content = <Content t={t} lvl={lvl} epoch={epoch} />;
+  const first = Math.floor(p);
+  const visible = [first, first + 1];
+
+  // Font keyword mengikuti halaman yang sedang/akan berada di pusat
+  const curIdx = Math.round(p);
+  const kwSpec = KW_SPECS[curIdx % KW_SPECS.length];
+
+  const Stack: React.FC<{dy: number; opacity: number}> = ({dy, opacity}) => (
+    <AbsoluteFill style={{opacity}}>
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: -p * 1080 + dy,
+          width: 1920,
+          height: 1080 * (first + 2),
+        }}
+      >
+        {visible.map((i) => {
+          const Page = CYCLE[i % CYCLE.length];
+          return (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: i * 1080,
+                width: 1920,
+                height: 1080,
+                overflow: 'hidden',
+                background: BG,
+              }}
+            >
+              <Page />
+            </div>
+          );
+        })}
+      </div>
+    </AbsoluteFill>
+  );
 
   return (
-    <AbsoluteFill style={{background: BG, filter: `brightness(${flicker})`}}>
-      {/* Konten dasar */}
-      <AbsoluteFill style={{transform: `translate(${gx}px, ${gy}px)`}}>
-        {content}
+    <AbsoluteFill style={{background: BG}}>
+      <AbsoluteFill
+        style={{
+          transform: `translateX(${camX}px) scale(${camScale}) rotate(${camRot}deg)`,
+          transformOrigin: '50% 50%',
+        }}
+      >
+        {/* Ghost trails saat slide (motion blur vertikal) */}
+        {ghost > 0.12 ? (
+          <>
+            <Stack dy={-v * 9} opacity={0.28 * ghost} />
+            <Stack dy={v * 9} opacity={0.28 * ghost} />
+          </>
+        ) : null}
+        <Stack dy={0} opacity={1} />
+
+        {/* Keyword + marker TERKUNCI di pusat — tidak ikut scroll */}
+        {ghost > 0.12 ? (
+          <>
+            <div style={{position: 'absolute', inset: 0, transform: 'translateY(-14px)', opacity: 0.3 * ghost}}>
+              <KwOverlay spec={kwSpec} sweep={sweep} />
+            </div>
+            <div style={{position: 'absolute', inset: 0, transform: 'translateY(14px)', opacity: 0.3 * ghost}}>
+              <KwOverlay spec={kwSpec} sweep={sweep} />
+            </div>
+          </>
+        ) : null}
+        <KwOverlay spec={kwSpec} sweep={sweep} />
       </AbsoluteFill>
 
-      {/* Salinan slice tergeser (glitch utama) */}
-      {slices.map((sl, i) => (
-        <AbsoluteFill
-          key={i}
-          style={{
-            transform: `translate(${gx + sl.dx}px, ${gy}px)`,
-            clipPath: `inset(${sl.top}px 0 ${Math.max(0, 1080 - sl.top - sl.h)}px 0)`,
-            filter: `hue-rotate(${sl.hue}deg) saturate(1.35)`,
-          }}
-        >
-          {content}
-        </AbsoluteFill>
-      ))}
-
-      {/* RGB split saat burst berat */}
-      {lvl > 0.45 ? (
-        <>
-          <AbsoluteFill
-            style={{
-              transform: `translateX(${-11 * lvl}px)`,
-              mixBlendMode: 'screen',
-              opacity: 0.32,
-              filter: 'sepia(1) saturate(7) hue-rotate(-45deg) brightness(1.05)',
-            }}
-          >
-            {content}
-          </AbsoluteFill>
-          <AbsoluteFill
-            style={{
-              transform: `translateX(${11 * lvl}px)`,
-              mixBlendMode: 'screen',
-              opacity: 0.32,
-              filter: 'sepia(1) saturate(7) hue-rotate(140deg) brightness(1.05)',
-            }}
-          >
-            {content}
-          </AbsoluteFill>
-        </>
-      ) : null}
-
-      {/* Wash warna berpita */}
-      {washColor && lvl > 0.2 ? (
-        <BandedWash color={washColor} lvl={lvl} epoch={epoch} />
-      ) : null}
-
-      {/* Bar warna solid */}
-      <ColorBars lvl={lvl} epoch={epoch} burstColor={color} />
-
-      {/* Scanlines + vignette */}
+      {/* Vignette — tepi lebih gelap, pusat bersih */}
       <AbsoluteFill
         style={{
           background:
-            'repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 2px, transparent 2px 4px)',
-          pointerEvents: 'none',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%)',
+            'radial-gradient(ellipse 62% 58% at 50% 50%, transparent 46%, rgba(0,0,0,0.55) 82%, rgba(0,0,0,0.8) 100%)',
           pointerEvents: 'none',
         }}
       />
