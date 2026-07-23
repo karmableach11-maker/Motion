@@ -1,563 +1,639 @@
-import React, {useEffect, useState} from 'react';
+import React from "react";
 import {
   AbsoluteFill,
-  useCurrentFrame,
-  useVideoConfig,
+  Easing,
   interpolate,
   spring,
-  Easing,
-  delayRender,
-  continueRender,
-} from 'remotion';
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
 
-/* ============================================================================
-   BTC / USD LIVE TRADING TERMINAL
-   Premium microstock motion graphic. 1920x1080 @ 60fps, 900 frames (15s).
-   BTC-only (trademark-safe). Self-contained: core Remotion + SVG + CSS.
-   ========================================================================== */
+const DESIGN_WIDTH = 1920;
+const DESIGN_HEIGHT = 1080;
 
-const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-const NUM = {fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"'} as const;
+const fract = (value: number) => value - Math.floor(value);
 
-const C = {
-  bg0: '#05070E',
-  bg1: '#0A0F1C',
-  panel: 'rgba(255,255,255,0.04)',
-  panelBorder: 'rgba(255,255,255,0.09)',
-  text: '#EAF0FF',
-  sub: '#828FB2',
-  faint: '#55628A',
-  grid: 'rgba(255,255,255,0.05)',
-  up: '#26D07C',
-  down: '#FF5C72',
-  btc: '#F7931A',
-  blue: '#3E86FF',
-  cyan: '#22D3EE',
+const seeded = (index: number, salt = 0) =>
+  fract(Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453);
+
+const clamp = {
+  extrapolateLeft: "clamp" as const,
+  extrapolateRight: "clamp" as const,
 };
 
-const eOut = Easing.out(Easing.cubic);
-const eExpo = Easing.bezier(0.16, 1, 0.3, 1);
-const eInOut = Easing.inOut(Easing.cubic);
+const TOKENS = [
+  "101",
+  "742",
+  "197",
+  "011",
+  "NET",
+  "7F",
+  "128",
+  "0101",
+  "AI",
+  "64",
+  "ML",
+  "∞",
+];
 
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmt = (v: number, dec: number) => {
-  const f = v.toFixed(dec);
-  const parts = f.split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return parts.join('.');
-};
-const ease = (frame: number, a: number, b: number, easing = eExpo) =>
-  interpolate(frame, [a, b], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing});
+const lanes = Array.from({length: 22}, (_, index) => ({
+  y: -120 + index * 67,
+  width: 0.7 + seeded(index, 1) * 2.2,
+  opacity: 0.09 + seeded(index, 2) * 0.28,
+  speed: 2.4 + seeded(index, 3) * 7.6,
+  dash: 70 + seeded(index, 4) * 330,
+  gap: 55 + seeded(index, 5) * 180,
+  phase: seeded(index, 6) * 900,
+  color: index % 5 === 0 ? "#ef2477" : index % 3 === 0 ? "#8b5cff" : "#58b9ff",
+}));
 
-// deterministic RNG
-const mulberry32 = (a: number) => () => {
-  a |= 0;
-  a = (a + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
+const particles = Array.from({length: 118}, (_, index) => ({
+  x: seeded(index, 11) * 2300 - 190,
+  y: seeded(index, 12) * 1350 - 135,
+  radius: 0.8 + seeded(index, 13) * 3.6,
+  opacity: 0.15 + seeded(index, 14) * 0.68,
+  depth: 0.25 + seeded(index, 15) * 1.2,
+  phase: seeded(index, 16) * Math.PI * 2,
+}));
 
-/* ---- candle data (module scope, deterministic) --------------------------- */
-type Candle = {open: number; high: number; low: number; close: number; vol: number; up: boolean};
-const N = 46;
-const CANDLES: Candle[] = (() => {
-  const r = mulberry32(778931);
-  const out: Candle[] = [];
-  let price = 61200;
-  for (let i = 0; i < N; i++) {
-    let bias;
-    if (i < 17) bias = 95;
-    else if (i < 29) bias = -28;
-    else bias = 250;
-    const open = price;
-    const close = open + bias + (r() - 0.5) * 430;
-    const high = Math.max(open, close) + r() * 240 + 40;
-    const low = Math.min(open, close) - (r() * 240 + 40);
-    const vol = 0.35 + r() * 0.8 + (i >= 29 ? 0.55 : 0);
-    out.push({open, high, low, close, vol, up: close >= open});
-    price = close;
-  }
-  return out;
-})();
-const P_MIN = Math.min(...CANDLES.map((c) => c.low)) - 200;
-const P_MAX = Math.max(...CANDLES.map((c) => c.high)) + 200;
-const VOL_MAX = Math.max(...CANDLES.map((c) => c.vol));
-const LAST_CLOSE = CANDLES[N - 1].close;
-const REF24 = 63180;
+const glyphs = Array.from({length: 54}, (_, index) => ({
+  x: seeded(index, 21) * 2260 - 170,
+  y: seeded(index, 22) * 1240 - 80,
+  size: 14 + seeded(index, 23) * 34,
+  opacity: 0.16 + seeded(index, 24) * 0.55,
+  speed: 0.18 + seeded(index, 25) * 0.72,
+  phase: seeded(index, 26) * Math.PI * 2,
+  token: TOKENS[Math.floor(seeded(index, 27) * TOKENS.length)],
+}));
 
-/* ---- order book base (module scope) -------------------------------------- */
-const OB = 9;
-const askBase = (() => {
-  const r = mulberry32(1212);
-  return Array.from({length: OB}, () => 0.25 + r() * 2.4);
-})();
-const bidBase = (() => {
-  const r = mulberry32(9931);
-  return Array.from({length: OB}, () => 0.25 + r() * 2.4);
-})();
+const boxes = Array.from({length: 44}, (_, index) => ({
+  x: seeded(index, 31) * 2280 - 180,
+  y: seeded(index, 32) * 1280 - 100,
+  size: 7 + seeded(index, 33) * 20,
+  opacity: 0.22 + seeded(index, 34) * 0.62,
+  speed: 0.35 + seeded(index, 35) * 1.25,
+  phase: seeded(index, 36) * Math.PI * 2,
+  nested: seeded(index, 37) > 0.62,
+}));
 
-/* ============================================================================
-   TIMELINE
-   ========================================================================== */
-const T = {
-  shellIn: 4,
-  topBar: 8,
-  countStart: 52,
-  countEnd: 240,
-  candleStart: 100,
-  candleEnd: 372,
-  obStart: 150,
-  depthStart: 250,
-  depthEnd: 430,
-  posStart: 240,
-  posEnd: 430,
-  pushStart: 440,
-  pushEnd: 700,
-};
+const hexagons = Array.from({length: 21}, (_, index) => ({
+  x: seeded(index, 41) * 2240 - 160,
+  y: seeded(index, 42) * 1260 - 90,
+  radius: 17 + seeded(index, 43) * 52,
+  opacity: 0.08 + seeded(index, 44) * 0.26,
+  speed: 0.08 + seeded(index, 45) * 0.22,
+  phase: seeded(index, 46) * Math.PI * 2,
+}));
 
-const L = {
-  cx: 60,
-  kpiY: 162,
-  kpiH: 146,
-  kpiGap: 26.7,
-  kpiW: 430,
-  mainY: 330,
-  mainH: 378,
-  leftW: 1180,
-  rightX: 1266,
-  rightW: 594,
-  botY: 732,
-  botH: 280,
-};
+const circuitSegments = Array.from({length: 18}, (_, index) => ({
+  x: seeded(index, 51) * 1900 - 100,
+  y: seeded(index, 52) * 1120 - 20,
+  length: 90 + seeded(index, 53) * 320,
+  step: 16 + seeded(index, 54) * 45,
+  opacity: 0.05 + seeded(index, 55) * 0.16,
+}));
 
-/* live price after build completes */
-const useLivePrice = (frame: number) => {
-  const prog = ease(frame, T.candleStart, T.candleEnd, Easing.linear);
-  const vis = Math.max(1, Math.min(N, Math.floor(prog * N) + 1));
-  if (prog < 1) return {price: CANDLES[vis - 1].close, vis, building: true};
-  const osc = Math.sin(frame / 8) * 26 + Math.sin(frame / 21) * 18;
-  return {price: LAST_CLOSE + osc, vis: N, building: false};
-};
+const hexPoints = (x: number, y: number, radius: number, rotation: number) =>
+  Array.from({length: 6}, (_, index) => {
+    const angle = rotation + (Math.PI * 2 * index) / 6;
+    return `${x + Math.cos(angle) * radius},${y + Math.sin(angle) * radius}`;
+  }).join(" ");
 
-/* ============================================================================
-   BACKGROUND
-   ========================================================================== */
-const Background: React.FC = () => {
-  const frame = useCurrentFrame();
+const SubtitleSlices: React.FC<{
+  frame: number;
+  fps: number;
+  reveal: number;
+}> = ({frame, fps, reveal}) => {
+  const sliceCount = 8;
+
   return (
-    <>
-      <AbsoluteFill style={{background: `radial-gradient(120% 90% at 22% 4%, #0E1A33 0%, ${C.bg1} 44%, ${C.bg0} 100%)`}} />
-      {[
-        {c: '#1E5BFF', s: 1000, x: 220, y: 100, a: 0.22, sp: 1},
-        {c: '#F7931A', s: 780, x: 1650, y: 220, a: 0.12, sp: 1.4},
-        {c: '#12C8E0', s: 760, x: 1500, y: 1000, a: 0.12, sp: 1.1},
-      ].map((b, i) => {
-        const dx = Math.sin(frame / (170 * b.sp) + i) * 44;
-        const dy = Math.cos(frame / (190 * b.sp) + i) * 36;
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: 104,
+        marginTop: 22,
+      }}
+    >
+      {Array.from({length: sliceCount}, (_, index) => {
+        const localReveal = interpolate(
+          frame,
+          [fps * 0.94 + index * 1.25, fps * 1.36 + index * 1.1],
+          [0, 1],
+          {
+            ...clamp,
+            easing: Easing.bezier(0.16, 0.84, 0.22, 1),
+          },
+        );
+        const top = (index / sliceCount) * 100;
+        const bottom = 100 - ((index + 1) / sliceCount) * 100;
+        const direction = index % 2 === 0 ? -1 : 1;
+        const burst = Math.sin(frame * (0.72 + index * 0.09) + index * 1.7);
+        const offset = direction * (1 - localReveal) * (190 + index * 19) + burst * (1 - reveal) * 11;
+
         return (
-          <div key={i} style={{position: 'absolute', left: b.x - b.s / 2 + dx, top: b.y - b.s / 2 + dy, width: b.s, height: b.s, borderRadius: '50%', background: `radial-gradient(circle at 50% 50%, ${b.c} 0%, rgba(0,0,0,0) 68%)`, opacity: b.a, filter: 'blur(22px)'}} />
+          <React.Fragment key={index}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                clipPath: `inset(${top}% 0 ${bottom}% 0)`,
+                transform: `translateX(${offset + 15}px)`,
+                opacity: (1 - reveal) * 0.68,
+                color: "#f01862",
+                fontSize: 80,
+                lineHeight: 1,
+                fontWeight: 900,
+                letterSpacing: -1.7,
+                whiteSpace: "nowrap",
+                textShadow: "0 0 22px rgba(255, 18, 104, 0.86)",
+              }}
+            >
+              (ARTIFICIAL INTELLIGENCE)
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                clipPath: `inset(${top}% 0 ${bottom}% 0)`,
+                transform: `translateX(${offset}px)`,
+                opacity: localReveal,
+                color: "#fbfbff",
+                fontSize: 80,
+                lineHeight: 1,
+                fontWeight: 900,
+                letterSpacing: -1.7,
+                whiteSpace: "nowrap",
+                textShadow:
+                  "0 3px 0 rgba(72, 26, 108, 0.42), 0 0 24px rgba(255, 255, 255, 0.18)",
+              }}
+            >
+              (ARTIFICIAL INTELLIGENCE)
+            </div>
+          </React.Fragment>
         );
       })}
-      <AbsoluteFill style={{opacity: 0.5}}>
-        <svg width="1920" height="1080">
-          <defs>
-            <pattern id="grid" width="46" height="46" patternUnits="userSpaceOnUse">
-              <path d="M46 0 L0 0 0 46" fill="none" stroke="rgba(255,255,255,0.028)" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="1920" height="1080" fill="url(#grid)" />
-        </svg>
-      </AbsoluteFill>
-    </>
-  );
-};
-
-/* ============================================================================
-   PANEL
-   ========================================================================== */
-const Panel: React.FC<{x: number; y: number; w: number; h: number; delay: number; children?: React.ReactNode}> = ({x, y, w, h, delay, children}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const s = spring({frame: frame - T.shellIn - delay, fps, config: {damping: 20, mass: 0.8, stiffness: 110}});
-  return (
-    <div style={{position: 'absolute', left: x, top: y, width: w, height: h, opacity: interpolate(s, [0, 1], [0, 1]), transform: `translateY(${interpolate(s, [0, 1], [26, 0])}px) scale(${interpolate(s, [0, 1], [0.985, 1])})`, transformOrigin: 'center', borderRadius: 20, background: C.panel, border: `1px solid ${C.panelBorder}`, boxShadow: '0 30px 70px -30px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.05)', backdropFilter: 'blur(8px)'}}>{children}</div>
-  );
-};
-const PanelTitle: React.FC<{children: React.ReactNode; sub?: string; subColor?: string}> = ({children, sub, subColor}) => (
-  <div style={{position: 'absolute', top: 22, left: 26, right: 26, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between'}}>
-    <span style={{fontFamily: FONT, fontSize: 19, fontWeight: 600, color: C.text, letterSpacing: 0.2}}>{children}</span>
-    {sub ? <span style={{fontFamily: FONT, fontSize: 14, fontWeight: 600, color: subColor || C.faint}}>{sub}</span> : null}
-  </div>
-);
-
-/* ============================================================================
-   TOP BAR
-   ========================================================================== */
-const TopBar: React.FC = () => {
-  const frame = useCurrentFrame();
-  const op = ease(frame, T.topBar, T.topBar + 24, eOut);
-  const {price} = useLivePrice(frame);
-  const shown = price;
-  const chg = ((price - REF24) / REF24) * 100;
-  const chgShown = chg;
-  const tfs = ['1m', '5m', '15m', '1H', '4H', '1D'];
-  const pulse = 0.5 + 0.5 * Math.sin(frame / 14);
-  return (
-    <div style={{position: 'absolute', left: 60, top: 48, width: 1800, height: 96, opacity: op, transform: `translateY(${interpolate(op, [0, 1], [-14, 0])}px)`, display: 'flex', alignItems: 'center'}}>
-      <div style={{width: 44, height: 44, borderRadius: 12, background: `linear-gradient(145deg,${C.btc},#C56A00)`, boxShadow: `0 8px 22px -6px ${C.btc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT, fontSize: 26, fontWeight: 700, color: '#fff'}}>₿</div>
-      <span style={{fontFamily: FONT, fontSize: 22, fontWeight: 700, color: C.text, marginLeft: 14}}>Meridian</span>
-      <div style={{width: 1, height: 30, background: 'rgba(255,255,255,0.12)', margin: '0 24px'}} />
-      <span style={{fontFamily: FONT, fontSize: 22, fontWeight: 700, color: C.text}}>BTC<span style={{color: C.faint}}>/USD</span></span>
-      <span style={{fontFamily: FONT, fontSize: 34, fontWeight: 800, color: C.text, marginLeft: 22, letterSpacing: -0.5, ...NUM}}>${fmt(shown, 2)}</span>
-      <div style={{display: 'flex', alignItems: 'center', gap: 5, marginLeft: 16, padding: '6px 12px', borderRadius: 10, background: chg >= 0 ? 'rgba(38,208,124,0.14)' : 'rgba(255,92,114,0.14)'}}>
-        <svg width="12" height="12" viewBox="0 0 12 12" style={{transform: chg >= 0 ? 'none' : 'rotate(180deg)'}}><path d="M6 2 L10 8 L2 8 Z" fill={chg >= 0 ? C.up : C.down} /></svg>
-        <span style={{fontFamily: FONT, fontSize: 17, fontWeight: 700, color: chg >= 0 ? C.up : C.down, ...NUM}}>{chgShown >= 0 ? '+' : ''}{chgShown.toFixed(2)}%</span>
-      </div>
-
-      <div style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16}}>
-        <div style={{display: 'flex', padding: 4, borderRadius: 12, background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.panelBorder}`}}>
-          {tfs.map((r) => {
-            const active = r === '1H';
-            return <div key={r} style={{padding: '7px 14px', borderRadius: 9, fontFamily: FONT, fontSize: 14, fontWeight: 600, color: active ? '#fff' : C.faint, background: active ? `linear-gradient(145deg,${C.blue},#2A5FD0)` : 'transparent'}}>{r}</div>;
-          })}
-        </div>
-        <div style={{display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderRadius: 20, background: 'rgba(38,208,124,0.12)', border: `1px solid rgba(38,208,124,0.3)`}}>
-          <div style={{width: 8, height: 8, borderRadius: 4, background: C.up, opacity: 0.5 + pulse * 0.5, boxShadow: `0 0 ${6 + pulse * 8}px ${C.up}`}} />
-          <span style={{fontFamily: FONT, fontSize: 14, fontWeight: 700, color: C.up, letterSpacing: 0.5}}>LIVE</span>
-        </div>
-      </div>
     </div>
   );
 };
 
-/* ============================================================================
-   STAT TILES
-   ========================================================================== */
-const STATS = [
-  {label: '24h High', prefix: '$', value: 68540, dec: 2, sub: '≈ 2h ago', subColor: C.sub},
-  {label: '24h Low', prefix: '$', value: 61020, dec: 2, sub: '≈ 9h ago', subColor: C.sub},
-  {label: '24h Volume', prefix: '$', value: 2.41, dec: 2, suffix: 'B', sub: '142,380 BTC', subColor: C.sub},
-  {label: 'Market Cap', prefix: '$', value: 1.33, dec: 2, suffix: 'T', sub: 'Dominance 54.2%', subColor: C.btc},
-];
-const StatTile: React.FC<{i: number; d: (typeof STATS)[number]; x: number}> = ({i, d, x}) => {
-  const frame = useCurrentFrame();
-  const v = d.value * ease(frame, T.countStart + i * 6, T.countEnd, eExpo);
-  const subOp = ease(frame, T.countStart + i * 6 + 24, T.countStart + i * 6 + 48, eOut);
-  return (
-    <Panel x={x} y={L.kpiY} w={L.kpiW} h={L.kpiH} delay={6 + i * 5}>
-      <div style={{position: 'absolute', inset: 0, padding: '0 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
-        <span style={{fontFamily: FONT, fontSize: 15, fontWeight: 500, color: C.sub}}>{d.label}</span>
-        <span style={{marginTop: 11, fontFamily: FONT, fontSize: 33, fontWeight: 700, color: C.text, letterSpacing: -0.6, ...NUM}}>
-          {d.prefix}{fmt(v, d.dec)}{(d as {suffix?: string}).suffix || ''}
-        </span>
-        <span style={{marginTop: 9, fontFamily: FONT, fontSize: 14, fontWeight: 500, color: d.subColor, opacity: subOp}}>{d.sub}</span>
-      </div>
-    </Panel>
-  );
-};
-
-/* ============================================================================
-   CANDLESTICK CHART
-   ========================================================================== */
-const CandleChart: React.FC = () => {
-  const frame = useCurrentFrame();
-  const W = L.leftW;
-  const PH = L.mainH;
-  const svgTop = 60;
-  const VBH = 306;
-  const plotL = 16;
-  const plotR = W - 96;
-  const plotW = plotR - plotL;
-  const pTop = 14;
-  const pBot = 214;
-  const volTop = 236;
-  const volBot = 286;
-
-  const {price: live, vis, building} = useLivePrice(frame);
-  const y = (p: number) => pTop + (P_MAX - p) / (P_MAX - P_MIN) * (pBot - pTop);
-  const slot = plotW / N;
-  const cw = slot * 0.62;
-
-  const lastY = y(live);
-  const flash = interpolate(frame, [314, 326, 372, 392], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-
-  const gridP = [0, 0.25, 0.5, 0.75, 1].map((g) => P_MIN + g * (P_MAX - P_MIN));
-
-  return (
-    <Panel x={L.cx} y={L.mainY} w={W} h={PH} delay={10}>
-      <PanelTitle sub="1H · Bitfeed" subColor={C.faint}>BTC / USD · Candles</PanelTitle>
-      <svg width={W} height={VBH} viewBox={`0 0 ${W} ${VBH}`} style={{position: 'absolute', top: svgTop, left: 0, overflow: 'visible'}}>
-        {/* gridlines + right price axis */}
-        {gridP.map((p, i) => (
-          <g key={i}>
-            <line x1={plotL} y1={y(p)} x2={plotR} y2={y(p)} stroke={C.grid} strokeWidth={1} strokeDasharray="2 6" />
-            <text x={plotR + 10} y={y(p) + 4} fontFamily={FONT} fontSize={12.5} fill={C.faint}>{fmt(p, 0)}</text>
-          </g>
-        ))}
-
-        {/* candles */}
-        {CANDLES.map((c, i) => {
-          if (i >= vis) return null;
-          const appear = ease(frame, T.candleStart + (i / N) * (T.candleEnd - T.candleStart), T.candleStart + (i / N) * (T.candleEnd - T.candleStart) + 6, eOut);
-          const cx = plotL + i * slot + slot / 2;
-          const isLast = i === vis - 1;
-          const cl = isLast && !building ? live : c.close;
-          const col = cl >= c.open ? C.up : C.down;
-          const bodyTop = y(Math.max(c.open, cl));
-          const bodyBot = y(Math.min(c.open, cl));
-          const hi = isLast && !building ? Math.max(c.high, cl) : c.high;
-          const lo = isLast && !building ? Math.min(c.low, cl) : c.low;
-          const vh = (c.vol / VOL_MAX) * (volBot - volTop);
-          return (
-            <g key={i} opacity={appear}>
-              <line x1={cx} y1={y(hi)} x2={cx} y2={y(lo)} stroke={col} strokeWidth={1.4} />
-              <rect x={cx - cw / 2} y={bodyTop} width={cw} height={Math.max(1.5, bodyBot - bodyTop)} rx={1.5} fill={col} />
-              <rect x={cx - cw / 2} y={volBot - vh} width={cw} height={vh} rx={1} fill={col} opacity={0.32} />
-            </g>
-          );
-        })}
-
-        {/* last price line + tag */}
-        <line x1={plotL} y1={lastY} x2={plotR} y2={lastY} stroke={C.btc} strokeWidth={1.4} strokeDasharray="5 5" opacity={0.9} />
-        <g>
-          <rect x={plotR + 2} y={lastY - 15} width={92} height={30} rx={6} fill={C.btc} opacity={0.16 + flash * 0.5} />
-          <rect x={plotR + 2} y={lastY - 15} width={92} height={30} rx={6} fill="none" stroke={C.btc} strokeWidth={1} opacity={0.8} />
-          <text x={plotR + 48} y={lastY + 5} textAnchor="middle" fontFamily={FONT} fontSize={14} fontWeight={700} fill={C.btc} style={NUM}>{fmt(live, 0)}</text>
-        </g>
-      </svg>
-    </Panel>
-  );
-};
-
-/* ============================================================================
-   ORDER BOOK
-   ========================================================================== */
-const OrderBook: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {price: mid} = useLivePrice(frame);
-  const W = L.rightW;
-  const PH = L.mainH;
-  const DISP = 6;
-  const rowH = 18;
-  const step = 6.5;
-  const topY = 84;
-  const spreadH = 40;
-
-  const asks = askBase.map((b, i) => {
-    const sz = b * (0.82 + 0.32 * (0.5 + 0.5 * Math.sin(frame / 6 + i * 1.3)));
-    return {price: mid + 2.5 + (i + 1) * step, size: sz};
-  });
-  const bids = bidBase.map((b, i) => {
-    const sz = b * (0.82 + 0.32 * (0.5 + 0.5 * Math.cos(frame / 6.5 + i * 1.1)));
-    return {price: mid - 2.5 - (i + 1) * step, size: sz};
-  });
-  let ac = 0;
-  const askCum = asks.map((a) => (ac += a.size));
-  let bc = 0;
-  const bidCum = bids.map((b) => (bc += b.size));
-  const maxCum = Math.max(askCum[DISP - 1], bidCum[DISP - 1]);
-  const rowsIn = (i: number) => ease(frame, T.obStart + i * 3, T.obStart + i * 3 + 16, eOut);
-
-  const spread = asks[0].price - bids[0].price;
-
-  return (
-    <Panel x={L.rightX} y={L.mainY} w={W} h={PH} delay={16}>
-      <PanelTitle sub="Size (BTC)" subColor={C.faint}>Order Book</PanelTitle>
-      <div style={{position: 'absolute', top: topY - 24, left: 26, right: 26, display: 'flex', justifyContent: 'space-between', fontFamily: FONT, fontSize: 12, color: C.faint, fontWeight: 600, letterSpacing: 0.4}}>
-        <span>PRICE (USD)</span><span>SIZE</span><span>TOTAL</span>
-      </div>
-      {/* asks (reversed: best ask nearest spread) */}
-      {asks.slice(0, DISP).reverse().map((a, ri) => {
-        const i = DISP - 1 - ri;
-        const yy = topY + ri * rowH;
-        const w = (askCum[i] / maxCum) * (W - 52);
-        return (
-          <div key={'a' + i} style={{position: 'absolute', top: yy, left: 26, width: W - 52, height: rowH, opacity: rowsIn(i)}}>
-            <div style={{position: 'absolute', right: 0, top: 2, width: w, height: rowH - 4, background: 'rgba(255,92,114,0.12)', borderRadius: 3}} />
-            <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT, fontSize: 14, ...NUM}}>
-              <span style={{color: C.down, fontWeight: 600}}>{fmt(a.price, 1)}</span>
-              <span style={{color: C.sub}}>{a.size.toFixed(3)}</span>
-              <span style={{color: C.faint}}>{askCum[i].toFixed(2)}</span>
-            </div>
-          </div>
-        );
-      })}
-      {/* spread */}
-      <div style={{position: 'absolute', top: topY + DISP * rowH + 6, left: 26, right: 26, height: spreadH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: `1px solid ${C.panelBorder}`, borderBottom: `1px solid ${C.panelBorder}`}}>
-        <span style={{fontFamily: FONT, fontSize: 23, fontWeight: 700, color: mid >= REF24 ? C.up : C.down, ...NUM}}>{fmt(mid, 2)}</span>
-        <span style={{fontFamily: FONT, fontSize: 13, color: C.faint, ...NUM}}>Spread {spread.toFixed(1)}</span>
-      </div>
-      {/* bids */}
-      {bids.slice(0, DISP).map((b, i) => {
-        const yy = topY + DISP * rowH + 6 + spreadH + 8 + i * rowH;
-        const w = (bidCum[i] / maxCum) * (W - 52);
-        return (
-          <div key={'b' + i} style={{position: 'absolute', top: yy, left: 26, width: W - 52, height: rowH, opacity: rowsIn(i)}}>
-            <div style={{position: 'absolute', right: 0, top: 2, width: w, height: rowH - 4, background: 'rgba(38,208,124,0.12)', borderRadius: 3}} />
-            <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: FONT, fontSize: 14, ...NUM}}>
-              <span style={{color: C.up, fontWeight: 600}}>{fmt(b.price, 1)}</span>
-              <span style={{color: C.sub}}>{b.size.toFixed(3)}</span>
-              <span style={{color: C.faint}}>{bidCum[i].toFixed(2)}</span>
-            </div>
-          </div>
-        );
-      })}
-    </Panel>
-  );
-};
-
-/* ============================================================================
-   MARKET DEPTH
-   ========================================================================== */
-const Depth: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {price: mid} = useLivePrice(frame);
-  const W = L.leftW;
-  const svgTop = 58;
-  const VBH = 196;
-  const midX = W / 2;
-  const step = 6.5;
-  const spanX = (W / 2) - 60;
-  const base = 168;
-  const topPad = 16;
-
-  const bidCumArr: number[] = [];
-  let bc = 0;
-  bidBase.forEach((b) => bidCumArr.push((bc += b)));
-  const askCumArr: number[] = [];
-  let ac = 0;
-  askBase.forEach((a) => askCumArr.push((ac += a)));
-  const maxCum = Math.max(bidCumArr[OB - 1], askCumArr[OB - 1]);
-
-  const yv = (c: number) => base - (c / maxCum) * (base - topPad);
-  // bids: from mid going left
-  let bidPath = `M ${midX} ${base}`;
-  bidCumArr.forEach((c, i) => {
-    const x = midX - ((i + 1) / OB) * spanX;
-    bidPath += ` L ${midX - (i / OB) * spanX} ${yv(c)} L ${x} ${yv(c)}`;
-  });
-  bidPath += ` L ${midX - spanX} ${base} Z`;
-  let askPath = `M ${midX} ${base}`;
-  askCumArr.forEach((c, i) => {
-    const x = midX + ((i + 1) / OB) * spanX;
-    askPath += ` L ${midX + (i / OB) * spanX} ${yv(c)} L ${x} ${yv(c)}`;
-  });
-  askPath += ` L ${midX + spanX} ${base} Z`;
-
-  const rev = ease(frame, T.depthStart, T.depthEnd, eOut);
-
-  return (
-    <Panel x={L.cx} y={L.botY} w={W} h={L.botH} delay={20}>
-      <PanelTitle sub="Cumulative bids / asks" subColor={C.faint}>Market Depth</PanelTitle>
-      <svg width={W} height={VBH} viewBox={`0 0 ${W} ${VBH}`} style={{position: 'absolute', top: svgTop, left: 0, overflow: 'visible'}}>
-        <defs>
-          <linearGradient id="bidG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.up} stopOpacity="0.5" /><stop offset="100%" stopColor={C.up} stopOpacity="0.04" /></linearGradient>
-          <linearGradient id="askG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.down} stopOpacity="0.5" /><stop offset="100%" stopColor={C.down} stopOpacity="0.04" /></linearGradient>
-          <clipPath id="depthClip"><rect x="0" y={base - rev * (base - topPad) - 4} width={W} height={rev * (base - topPad) + 8} /></clipPath>
-        </defs>
-        <g clipPath="url(#depthClip)">
-          <path d={bidPath} fill="url(#bidG)" stroke={C.up} strokeWidth={2} />
-          <path d={askPath} fill="url(#askG)" stroke={C.down} strokeWidth={2} />
-        </g>
-        <line x1={midX} y1={topPad - 8} x2={midX} y2={base} stroke="rgba(247,147,26,0.6)" strokeWidth={1.4} strokeDasharray="4 4" />
-        <text x={midX} y={base + 22} textAnchor="middle" fontFamily={FONT} fontSize={13} fontWeight={600} fill={C.btc} style={NUM}>{fmt(mid, 0)}</text>
-        <text x={midX - spanX} y={base + 22} textAnchor="middle" fontFamily={FONT} fontSize={12} fill={C.up}>Bids</text>
-        <text x={midX + spanX} y={base + 22} textAnchor="middle" fontFamily={FONT} fontSize={12} fill={C.down}>Asks</text>
-      </svg>
-    </Panel>
-  );
-};
-
-/* ============================================================================
-   POSITION PANEL
-   ========================================================================== */
-const Position: React.FC = () => {
-  const frame = useCurrentFrame();
-  const g = ease(frame, T.posStart, T.posEnd, eExpo);
-  const pv = 215480 * g;
-  const pnl = 12840 * g;
-  const pnlPct = 6.34 * g;
-  const rows = [
-    {k: 'BTC Holdings', v: `${(3.214).toFixed(4)} BTC`, c: C.text},
-    {k: 'Avg. Entry', v: `$${fmt(58220, 2)}`, c: C.text},
-    {k: "Today's PnL", v: `+$${fmt(pnl, 0)}`, c: C.up},
-  ];
-  return (
-    <Panel x={L.rightX} y={L.botY} w={L.rightW} h={L.botH} delay={24}>
-      <PanelTitle sub="Spot" subColor={C.faint}>Your Position</PanelTitle>
-      <div style={{position: 'absolute', top: 66, left: 26, right: 26}}>
-        <div style={{fontFamily: FONT, fontSize: 14, color: C.sub, fontWeight: 500}}>Portfolio Value</div>
-        <div style={{marginTop: 4, display: 'flex', alignItems: 'baseline', gap: 10}}>
-          <span style={{fontFamily: FONT, fontSize: 38, fontWeight: 800, color: C.text, letterSpacing: -0.8, ...NUM}}>${fmt(pv, 2)}</span>
-          <span style={{fontFamily: FONT, fontSize: 16, fontWeight: 700, color: C.up, ...NUM}}>▲ {pnlPct.toFixed(2)}%</span>
-        </div>
-        <div style={{marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12}}>
-          {rows.map((r, i) => (
-            <div key={i} style={{display: 'flex', justifyContent: 'space-between', opacity: ease(frame, T.posStart + 20 + i * 10, T.posStart + 44 + i * 10, eOut)}}>
-              <span style={{fontFamily: FONT, fontSize: 15, color: C.sub}}>{r.k}</span>
-              <span style={{fontFamily: FONT, fontSize: 15, fontWeight: 600, color: r.c, ...NUM}}>{r.v}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop: 20, display: 'flex', gap: 12}}>
-          <div style={{flex: 1, height: 44, borderRadius: 12, background: `linear-gradient(145deg,${C.up},#159A5B)`, boxShadow: `0 8px 18px -6px ${C.up}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT, fontSize: 16, fontWeight: 700, color: '#062015'}}>Buy</div>
-          <div style={{flex: 1, height: 44, borderRadius: 12, background: 'rgba(255,92,114,0.14)', border: `1px solid rgba(255,92,114,0.4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT, fontSize: 16, fontWeight: 700, color: C.down}}>Sell</div>
-        </div>
-      </div>
-    </Panel>
-  );
-};
-
-/* ============================================================================
-   MAIN
-   ========================================================================== */
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const [handle] = useState(() => delayRender('Loading Inter font'));
-  useEffect(() => {
-    const id = 'motion-inter-font';
-    if (!document.getElementById(id)) {
-      const link = document.createElement('link');
-      link.id = id;
-      link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
-      document.head.appendChild(link);
-    }
-    let done = false;
-    const finish = () => {
-      if (!done) {
-        done = true;
-        continueRender(handle);
-      }
-    };
-    const anyDoc = document as unknown as {fonts: {load: (s: string) => Promise<unknown>; ready: Promise<unknown>}};
-    Promise.all([anyDoc.fonts.load('400 1em Inter'), anyDoc.fonts.load('500 1em Inter'), anyDoc.fonts.load('600 1em Inter'), anyDoc.fonts.load('700 1em Inter'), anyDoc.fonts.load('800 1em Inter')])
-      .then(() => anyDoc.fonts.ready)
-      .then(finish)
-      .catch(finish);
-    const t = setTimeout(finish, 3000);
-    return () => clearTimeout(t);
-  }, [handle]);
+  const {fps, durationInFrames, width, height} = useVideoConfig();
 
-  const push = interpolate(frame, [T.pushStart, T.pushEnd], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: eInOut});
-  const scale = 1 + push * 0.036;
+  const designScale = Math.max(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+  const cycle = frame / Math.max(1, durationInFrames);
+  const backgroundIn = interpolate(frame, [fps * 0.12, fps * 0.78], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const reveal = interpolate(frame, [fps * 0.86, fps * 1.48], [0, 1], {
+    ...clamp,
+    easing: Easing.bezier(0.15, 0.88, 0.22, 1),
+  });
+  const titleSpring = spring({
+    frame: frame - fps * 0.83,
+    fps,
+    config: {damping: 15, stiffness: 125, mass: 0.7},
+    durationInFrames: Math.round(fps * 0.9),
+  });
+  const titleScale = interpolate(titleSpring, [0, 1], [1.23, 1], clamp);
+  const titleY = interpolate(titleSpring, [0, 1], [46, 0], clamp);
+  const fieldX = Math.sin(cycle * Math.PI * 2) * 22;
+  const fieldY = Math.cos(cycle * Math.PI * 2) * 11;
+  const cameraScale = 1.025 + cycle * 0.035 + Math.sin(frame / (fps * 1.9)) * 0.004;
+  const energy = 0.78 + Math.sin(frame / (fps * 0.43)) * 0.12;
+  const glitchWindow = interpolate(
+    frame,
+    [fps * 0.86, fps * 1.02, fps * 1.34, fps * 1.52],
+    [0, 1, 0.42, 0],
+    clamp,
+  );
+  const titleJitter = glitchWindow * Math.sin(frame * 2.87) * 8;
+  const titlePulse = 1 + Math.sin(frame / (fps * 0.82)) * 0.006 * reveal;
+  const glowPulse = 0.84 + Math.sin(frame / (fps * 0.31)) * 0.1;
+
+  const rootTransform = `translate(${width / 2}px, ${height / 2}px) scale(${designScale}) translate(${-DESIGN_WIDTH / 2}px, ${-DESIGN_HEIGHT / 2}px)`;
 
   return (
-    <AbsoluteFill style={{background: C.bg0, fontFamily: FONT}}>
-      <Background />
-      <AbsoluteFill style={{transform: `scale(${scale}) translateY(${push * -8}px)`, transformOrigin: '40% 50%'}}>
-        <TopBar />
-        {STATS.map((d, i) => (
-          <StatTile key={i} i={i} d={d} x={L.cx + i * (L.kpiW + L.kpiGap)} />
-        ))}
-        <CandleChart />
-        <OrderBook />
-        <Depth />
-        <Position />
-      </AbsoluteFill>
-      <AbsoluteFill style={{pointerEvents: 'none', boxShadow: 'inset 0 0 320px rgba(0,0,0,0.6)'}} />
+    <AbsoluteFill
+      style={{
+        overflow: "hidden",
+        backgroundColor: "#03021f",
+        fontFamily: '"Arial Black", "Helvetica Neue", Arial, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          width: DESIGN_WIDTH,
+          height: DESIGN_HEIGHT,
+          transformOrigin: "0 0",
+          transform: rootTransform,
+        }}
+      >
+        <svg
+          width={DESIGN_WIDTH}
+          height={DESIGN_HEIGHT}
+          viewBox={`0 0 ${DESIGN_WIDTH} ${DESIGN_HEIGHT}`}
+          style={{position: "absolute", inset: 0}}
+        >
+          <defs>
+            <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#02011d" />
+              <stop offset="0.38" stopColor="#0b0649" />
+              <stop offset="0.72" stopColor="#11105b" />
+              <stop offset="1" stopColor="#030225" />
+            </linearGradient>
+            <radialGradient id="magentaHaze">
+              <stop offset="0" stopColor="#e01967" stopOpacity="0.55" />
+              <stop offset="0.34" stopColor="#8e176d" stopOpacity="0.26" />
+              <stop offset="1" stopColor="#25074e" stopOpacity="0" />
+            </radialGradient>
+            <radialGradient id="blueHaze">
+              <stop offset="0" stopColor="#344eff" stopOpacity="0.35" />
+              <stop offset="1" stopColor="#15115e" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#4a42ff" stopOpacity="0" />
+              <stop offset="0.28" stopColor="#5f83ff" stopOpacity="0.75" />
+              <stop offset="0.52" stopColor="#ff277f" stopOpacity="0.95" />
+              <stop offset="0.76" stopColor="#88c9ff" stopOpacity="0.58" />
+              <stop offset="1" stopColor="#5328df" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="heroBeam" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#6721ff" stopOpacity="0" />
+              <stop offset="0.38" stopColor="#ed1e6d" stopOpacity="0.18" />
+              <stop offset="0.5" stopColor="#ff2b74" stopOpacity="0.72" />
+              <stop offset="0.62" stopColor="#7d3aff" stopOpacity="0.2" />
+              <stop offset="1" stopColor="#2514a2" stopOpacity="0" />
+            </linearGradient>
+            <pattern id="microGrid" width="54" height="54" patternUnits="userSpaceOnUse">
+              <path d="M 54 0 L 0 0 0 54" fill="none" stroke="#92b9ff" strokeWidth="0.65" opacity="0.2" />
+              <circle cx="0" cy="0" r="1.5" fill="#9cd8ff" opacity="0.42" />
+            </pattern>
+            <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="10" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="bloom" x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur stdDeviation="24" />
+            </filter>
+            <filter id="grain" x="0" y="0" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="3" seed="17" stitchTiles="stitch" />
+              <feColorMatrix type="saturate" values="0" />
+              <feComponentTransfer>
+                <feFuncA type="table" tableValues="0 0.07" />
+              </feComponentTransfer>
+            </filter>
+          </defs>
+
+          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} fill="url(#background)" />
+          <ellipse
+            cx={1050 + Math.sin(frame / (fps * 3.1)) * 55}
+            cy={600 + Math.cos(frame / (fps * 2.7)) * 24}
+            rx="800"
+            ry="570"
+            fill="url(#magentaHaze)"
+            opacity={backgroundIn * glowPulse}
+          />
+          <ellipse
+            cx={390 + Math.cos(frame / (fps * 2.4)) * 45}
+            cy={310 + Math.sin(frame / (fps * 2.8)) * 32}
+            rx="670"
+            ry="480"
+            fill="url(#blueHaze)"
+            opacity={backgroundIn * 0.92}
+          />
+
+          <g
+            opacity={backgroundIn}
+            transform={`translate(${fieldX} ${fieldY}) rotate(-10.8 960 540) scale(${cameraScale})`}
+            style={{transformOrigin: "960px 540px"}}
+          >
+            <rect x="-240" y="-180" width="2400" height="1440" fill="url(#microGrid)" opacity="0.12" />
+
+            <rect x="-360" y="230" width="2680" height="118" fill="url(#beam)" opacity={0.13 + energy * 0.06} />
+            <rect x="-360" y="710" width="2680" height="82" fill="url(#beam)" opacity={0.12 + energy * 0.05} />
+            <rect x="-360" y="470" width="2680" height="210" fill="url(#heroBeam)" opacity={0.22 + reveal * 0.2} />
+
+            {lanes.map((lane, index) => (
+              <line
+                key={`lane-${index}`}
+                x1="-340"
+                x2="2300"
+                y1={lane.y}
+                y2={lane.y}
+                stroke={lane.color}
+                strokeWidth={lane.width}
+                strokeOpacity={lane.opacity * energy}
+                strokeDasharray={`${lane.dash} ${lane.gap}`}
+                strokeDashoffset={-frame * lane.speed - lane.phase}
+                filter={index % 7 === 0 ? "url(#softGlow)" : undefined}
+              />
+            ))}
+
+            {circuitSegments.map((segment, index) => {
+              const pulse = 0.65 + Math.sin(frame / 19 + index * 0.8) * 0.35;
+              return (
+                <path
+                  key={`circuit-${index}`}
+                  d={`M ${segment.x} ${segment.y} h ${segment.length * 0.35} l ${segment.step} ${segment.step} h ${segment.length * 0.65}`}
+                  fill="none"
+                  stroke={index % 4 === 0 ? "#ff4f9a" : "#72b8ff"}
+                  strokeWidth="1.2"
+                  strokeOpacity={segment.opacity * pulse}
+                  strokeDasharray="9 11"
+                  strokeDashoffset={-frame * (0.65 + index * 0.025)}
+                />
+              );
+            })}
+
+            {glyphs.map((glyph, index) => {
+              const x = ((glyph.x + frame * glyph.speed + 220) % 2380) - 220;
+              const y = glyph.y + Math.sin(frame * 0.018 + glyph.phase) * 10;
+              const flicker = 0.68 + Math.sin(frame * 0.11 + glyph.phase) * 0.32;
+              return (
+                <text
+                  key={`glyph-${index}`}
+                  x={x}
+                  y={y}
+                  fill={index % 6 === 0 ? "#ff77b4" : "#b5d8ff"}
+                  fillOpacity={glyph.opacity * flicker}
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+                  fontSize={glyph.size}
+                  fontWeight={index % 5 === 0 ? 700 : 400}
+                >
+                  {glyph.token}
+                </text>
+              );
+            })}
+
+            {hexagons.map((hexagon, index) => {
+              const x = ((hexagon.x + frame * hexagon.speed + 180) % 2300) - 180;
+              const y = hexagon.y + Math.cos(frame * 0.012 + hexagon.phase) * 13;
+              return (
+                <polygon
+                  key={`hex-${index}`}
+                  points={hexPoints(x, y, hexagon.radius, frame * 0.0015 * (index % 2 === 0 ? 1 : -1))}
+                  fill="none"
+                  stroke={index % 4 === 0 ? "#f157a4" : "#739dff"}
+                  strokeWidth={1 + (index % 3) * 0.35}
+                  strokeOpacity={hexagon.opacity * (0.76 + Math.sin(frame * 0.045 + index) * 0.24)}
+                />
+              );
+            })}
+
+            {boxes.map((box, index) => {
+              const x = ((box.x + frame * box.speed + 190) % 2380) - 190;
+              const y = box.y + Math.sin(frame * 0.024 + box.phase) * 12;
+              const flicker = 0.66 + Math.sin(frame * 0.17 + box.phase) * 0.34;
+              return (
+                <g key={`box-${index}`} opacity={box.opacity * flicker}>
+                  <rect
+                    x={x - box.size / 2}
+                    y={y - box.size / 2}
+                    width={box.size}
+                    height={box.size}
+                    fill={index % 8 === 0 ? "#ff5da7" : "none"}
+                    stroke={index % 8 === 0 ? "#ff7bb8" : "#b5ddff"}
+                    strokeWidth={1.4}
+                  />
+                  {box.nested ? (
+                    <rect
+                      x={x - box.size * 0.18}
+                      y={y - box.size * 0.18}
+                      width={box.size * 0.36}
+                      height={box.size * 0.36}
+                      fill="#dff2ff"
+                    />
+                  ) : null}
+                </g>
+              );
+            })}
+
+            {particles.map((particle, index) => {
+              const x = ((particle.x + frame * particle.depth * 0.42 + 190) % 2380) - 190;
+              const y = particle.y + Math.sin(frame * 0.025 * particle.depth + particle.phase) * 8;
+              const twinkle = 0.55 + Math.sin(frame * 0.12 + particle.phase) * 0.45;
+              return (
+                <circle
+                  key={`particle-${index}`}
+                  cx={x}
+                  cy={y}
+                  r={particle.radius}
+                  fill={index % 9 === 0 ? "#ff7eb9" : "#c8e4ff"}
+                  fillOpacity={particle.opacity * twinkle}
+                />
+              );
+            })}
+          </g>
+
+          <ellipse
+            cx="960"
+            cy="585"
+            rx={320 + reveal * 150}
+            ry={145 + reveal * 42}
+            fill="#f21b65"
+            opacity={reveal * 0.19 * glowPulse}
+            filter="url(#bloom)"
+            transform="rotate(-10.8 960 585)"
+          />
+          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} filter="url(#grain)" opacity="0.75" />
+        </svg>
+
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "53%",
+            width: 1540,
+            height: 470,
+            transform: `translate(-50%, -50%) rotate(-10.8deg) translate(${titleJitter}px, ${titleY}px) scale(${titleScale * titlePulse})`,
+            transformOrigin: "50% 50%",
+            opacity: reveal,
+            filter: `blur(${(1 - reveal) * 7}px)`,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: 205,
+              width: 1290,
+              height: 5,
+              transform: `translateX(-50%) scaleX(${reveal})`,
+              transformOrigin: "50% 50%",
+              background:
+                "linear-gradient(90deg, transparent 0%, #6e5cff 16%, #ff2a76 48%, #78bdff 82%, transparent 100%)",
+              boxShadow: "0 0 26px rgba(247, 37, 116, 0.72)",
+              opacity: 0.72,
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: 5,
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "center",
+              gap: 17,
+              color: "#abd8ff",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize: 17,
+              fontWeight: 700,
+              letterSpacing: 6,
+              whiteSpace: "nowrap",
+              opacity: interpolate(reveal, [0.45, 1], [0, 0.82], clamp),
+            }}
+          >
+            <span style={{width: 74, height: 1, background: "#f04b9a"}} />
+            NEURAL SYSTEM // MACHINE LEARNING
+            <span style={{width: 74, height: 1, background: "#6fbfff"}} />
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              top: 50,
+              left: "50%",
+              height: 190,
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              color: "#fcfbff",
+              fontSize: 258,
+              lineHeight: 0.75,
+              fontWeight: 900,
+              letterSpacing: -28,
+              textShadow:
+                "15px 9px 0 rgba(232, 21, 91, 0.62), -4px -2px 0 rgba(84, 137, 255, 0.22), 0 0 46px rgba(255,255,255,0.12)",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                transform: `translateX(${interpolate(reveal, [0, 1], [-105, 0], clamp)}px) rotate(${interpolate(
+                  reveal,
+                  [0, 1],
+                  [-8, 0],
+                  clamp,
+                )}deg)`,
+              }}
+            >
+              A
+            </span>
+            <span
+              style={{
+                display: "inline-block",
+                transform: `translateX(${interpolate(reveal, [0, 1], [112, 0], clamp)}px) rotate(${interpolate(
+                  reveal,
+                  [0, 1],
+                  [7, 0],
+                  clamp,
+                )}deg)`,
+              }}
+            >
+              I
+            </span>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: 202,
+              width: 1420,
+              transform: "translateX(-50%)",
+            }}
+          >
+            <SubtitleSlices frame={frame} fps={fps} reveal={reveal} />
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: 356,
+              width: 880,
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              color: "rgba(196, 223, 255, 0.76)",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: 4.2,
+              opacity: interpolate(reveal, [0.72, 1], [0, 1], clamp),
+            }}
+          >
+            <span>DEEP LEARNING</span>
+            <span style={{width: 7, height: 7, border: "1px solid #ff5c9f", transform: "rotate(45deg)"}} />
+            <span>AUTOMATION</span>
+            <span style={{width: 7, height: 7, border: "1px solid #68baff", transform: "rotate(45deg)"}} />
+            <span>DATA NETWORK</span>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 86,
+              top: 257,
+              width: 58,
+              height: 15,
+              background: "#ec236d",
+              boxShadow: "0 0 16px rgba(236,35,109,0.68)",
+              transform: `scaleX(${reveal})`,
+              transformOrigin: "right center",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              right: 86,
+              top: 304,
+              width: 58,
+              height: 5,
+              background: "#72c4ff",
+              boxShadow: "0 0 15px rgba(114,196,255,0.65)",
+              transform: `scaleX(${reveal})`,
+              transformOrigin: "left center",
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            boxShadow:
+              "inset 0 0 170px 54px rgba(1, 1, 23, 0.88), inset 0 0 45px 8px rgba(2, 2, 28, 0.82)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            background:
+              "linear-gradient(180deg, rgba(3,2,31,0.26) 0%, transparent 18%, transparent 82%, rgba(3,2,31,0.38) 100%)",
+          }}
+        />
+      </div>
     </AbsoluteFill>
   );
 };
