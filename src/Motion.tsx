@@ -1,232 +1,377 @@
 import React from "react";
-import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  spring,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+import {AbsoluteFill, useCurrentFrame, useVideoConfig} from "remotion";
 
 const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 1080;
+const CENTER_X = DESIGN_WIDTH / 2;
+const CENTER_Y = DESIGN_HEIGHT / 2;
+const TAU = Math.PI * 2;
 
 const fract = (value: number) => value - Math.floor(value);
 
 const seeded = (index: number, salt = 0) =>
-  fract(Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453);
+  fract(Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453123);
 
-const clamp = {
-  extrapolateLeft: "clamp" as const,
-  extrapolateRight: "clamp" as const,
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const smoothstep = (from: number, to: number, value: number) => {
+  const normalized = clamp01((value - from) / Math.max(0.00001, to - from));
+  return normalized * normalized * (3 - 2 * normalized);
 };
 
-const TOKENS = [
-  "101",
-  "742",
-  "197",
-  "011",
-  "NET",
-  "7F",
-  "128",
-  "0101",
-  "AI",
-  "64",
-  "ML",
-  "∞",
+const mix = (from: number, to: number, progress: number) =>
+  from + (to - from) * progress;
+
+const circlePath = (x: number, y: number, radius: number) => {
+  const safeRadius = Math.max(0.12, radius);
+  const diameter = safeRadius * 2;
+  return `M ${x.toFixed(2)} ${y.toFixed(2)} m ${(-safeRadius).toFixed(
+    2,
+  )} 0 a ${safeRadius.toFixed(2)} ${safeRadius.toFixed(
+    2,
+  )} 0 1 0 ${diameter.toFixed(2)} 0 a ${safeRadius.toFixed(
+    2,
+  )} ${safeRadius.toFixed(2)} 0 1 0 ${(-diameter).toFixed(2)} 0`;
+};
+
+type NetworkNode = {
+  x: number;
+  y: number;
+  radius: number;
+  radial: number;
+  depth: number;
+  phase: number;
+  ring: number;
+};
+
+type NetworkEdge = {
+  from: number;
+  to: number;
+  radial: number;
+  phase: number;
+  accent: boolean;
+};
+
+const RING_COUNTS = [12, 16, 20, 24, 28];
+const RING_RADII = [250, 385, 535, 705, 900];
+const RING_OFFSETS: number[] = [];
+const NETWORK_NODES: NetworkNode[] = [];
+
+let nodeOffset = 0;
+for (let ring = 0; ring < RING_COUNTS.length; ring++) {
+  RING_OFFSETS.push(nodeOffset);
+  const count = RING_COUNTS[ring];
+
+  for (let position = 0; position < count; position++) {
+    const index = nodeOffset + position;
+    const angle =
+      (position / count) * TAU +
+      ring * 0.173 +
+      (seeded(index, 3) - 0.5) * 0.18;
+    const radius = RING_RADII[ring] * (0.93 + seeded(index, 4) * 0.14);
+    const depth = 0.35 + ((Math.sin(angle) + 1) / 2) * 0.5 + seeded(index, 5) * 0.15;
+
+    NETWORK_NODES.push({
+      x: CENTER_X + Math.cos(angle) * radius + (seeded(index, 6) - 0.5) * 38,
+      y:
+        CENTER_Y +
+        Math.sin(angle) * radius * 0.63 +
+        (seeded(index, 7) - 0.5) * 34,
+      radius: 1.6 + seeded(index, 8) * 4.2,
+      radial: radius / RING_RADII[RING_RADII.length - 1],
+      depth,
+      phase: seeded(index, 9) * TAU,
+      ring,
+    });
+  }
+
+  nodeOffset += count;
+}
+
+const NETWORK_EDGES: NetworkEdge[] = [];
+
+for (let ring = 0; ring < RING_COUNTS.length; ring++) {
+  const count = RING_COUNTS[ring];
+  const offset = RING_OFFSETS[ring];
+
+  for (let position = 0; position < count; position++) {
+    const from = offset + position;
+    const around = offset + ((position + 1) % count);
+    NETWORK_EDGES.push({
+      from,
+      to: around,
+      radial: NETWORK_NODES[from].radial,
+      phase: seeded(from, 40),
+      accent: (from + ring) % 7 === 0,
+    });
+
+    if (ring < RING_COUNTS.length - 1) {
+      const nextCount = RING_COUNTS[ring + 1];
+      const nextOffset = RING_OFFSETS[ring + 1];
+      const mapped =
+        Math.round(
+          (position / count) * nextCount + (seeded(from, 41) - 0.5) * 1.4,
+        ) % nextCount;
+      const to = nextOffset + (mapped + nextCount) % nextCount;
+
+      NETWORK_EDGES.push({
+        from,
+        to,
+        radial: Math.max(NETWORK_NODES[from].radial, NETWORK_NODES[to].radial),
+        phase: seeded(from, 42),
+        accent: (from + position) % 5 === 0,
+      });
+
+      if (position % 4 === ring % 4) {
+        const fork = nextOffset + ((mapped + 2 + nextCount) % nextCount);
+        NETWORK_EDGES.push({
+          from,
+          to: fork,
+          radial: Math.max(
+            NETWORK_NODES[from].radial,
+            NETWORK_NODES[fork].radial,
+          ),
+          phase: seeded(from, 43),
+          accent: false,
+        });
+      }
+    }
+  }
+}
+
+const NETWORK_BASE_PATH = NETWORK_EDGES.map((edge) => {
+  const from = NETWORK_NODES[edge.from];
+  const to = NETWORK_NODES[edge.to];
+  return `M ${from.x.toFixed(2)} ${from.y.toFixed(2)} L ${to.x.toFixed(
+    2,
+  )} ${to.y.toFixed(2)}`;
+}).join(" ");
+
+const BACKGROUND_STARS = Array.from({length: 190}, (_, index) => ({
+  x: seeded(index, 60) * DESIGN_WIDTH,
+  y: seeded(index, 61) * DESIGN_HEIGHT,
+  radius: 0.45 + seeded(index, 62) * 1.8,
+  opacity: 0.12 + seeded(index, 63) * 0.46,
+  phase: seeded(index, 64) * TAU,
+  cycles: 1 + (index % 3),
+  color: index % 13 === 0 ? "#8b6dff" : index % 7 === 0 ? "#35dfff" : "#b9d9ff",
+}));
+
+type SphereParticle = {
+  sphereX: number;
+  sphereY: number;
+  sphereZ: number;
+  scatterX: number;
+  scatterY: number;
+  size: number;
+  delay: number;
+  color: number;
+  phase: number;
+};
+
+const SPHERE_PARTICLE_COUNT = 1500;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const SPHERE_PARTICLES: SphereParticle[] = Array.from(
+  {length: SPHERE_PARTICLE_COUNT},
+  (_, index) => {
+    const sphereY = 1 - (2 * (index + 0.5)) / SPHERE_PARTICLE_COUNT;
+    const ringRadius = Math.sqrt(Math.max(0, 1 - sphereY * sphereY));
+    const theta = index * GOLDEN_ANGLE + seeded(index, 72) * 0.24;
+    const scatterAngle = seeded(index, 73) * TAU;
+    const scatterRadius = 285 + seeded(index, 74) * 690;
+    const scatterDepth = 0.48 + seeded(index, 75) * 0.52;
+
+    return {
+      sphereX: Math.cos(theta) * ringRadius,
+      sphereY,
+      sphereZ: Math.sin(theta) * ringRadius,
+      scatterX:
+        CENTER_X +
+        Math.cos(scatterAngle) * scatterRadius +
+        (seeded(index, 76) - 0.5) * 110,
+      scatterY:
+        CENTER_Y +
+        Math.sin(scatterAngle) * scatterRadius * 0.58 +
+        (seeded(index, 77) - 0.5) * 82,
+      size: (0.55 + seeded(index, 78) * 1.75) * scatterDepth,
+      delay: seeded(index, 79),
+      color: index % 17 === 0 ? 2 : index % 5 === 0 ? 1 : 0,
+      phase: seeded(index, 80) * TAU,
+    };
+  },
+);
+
+const CORONA_PARTICLES = Array.from({length: 220}, (_, index) => ({
+  angle: seeded(index, 90) * TAU,
+  radius: 190 + seeded(index, 91) * 285,
+  ellipse: 0.36 + seeded(index, 92) * 0.34,
+  size: 0.65 + seeded(index, 93) * 2.35,
+  speed: (index % 2 === 0 ? 1 : -1) * (0.35 + seeded(index, 94) * 0.9),
+  phase: seeded(index, 95) * TAU,
+  color: index % 9 === 0 ? 2 : index % 4 === 0 ? 1 : 0,
+}));
+
+const TITLE_SLICES = Array.from({length: 14}, (_, index) => ({
+  dx: (seeded(index, 110) - 0.5) * 250,
+  dy: (seeded(index, 111) - 0.5) * 90,
+  skew: (seeded(index, 112) - 0.5) * 16,
+}));
+
+const TITLE_DUST = Array.from({length: 260}, (_, index) => {
+  const x = CENTER_X + (seeded(index, 120) - 0.5) * 1160;
+  const y = CENTER_Y + (seeded(index, 121) - 0.5) * 112;
+  const horizontalDirection = Math.sign(x - CENTER_X || 1);
+
+  return {
+    x,
+    y,
+    dx:
+      horizontalDirection * (70 + seeded(index, 122) * 260) +
+      (seeded(index, 123) - 0.5) * 100,
+    dy: (seeded(index, 124) - 0.5) * 210,
+    width: 1.2 + seeded(index, 125) * 8.5,
+    height: 0.7 + seeded(index, 126) * 2.1,
+    phase: seeded(index, 127) * TAU,
+    color: index % 11 === 0 ? 2 : index % 4 === 0 ? 1 : 0,
+  };
+});
+
+const PULSES = [
+  {start: 0.285, duration: 0.22, strength: 0.48},
+  {start: 0.43, duration: 0.21, strength: 0.72},
+  {start: 0.565, duration: 0.24, strength: 1},
 ];
 
-const lanes = Array.from({length: 22}, (_, index) => ({
-  y: -120 + index * 67,
-  width: 0.7 + seeded(index, 1) * 2.2,
-  opacity: 0.09 + seeded(index, 2) * 0.28,
-  speed: 2.4 + seeded(index, 3) * 7.6,
-  dash: 70 + seeded(index, 4) * 330,
-  gap: 55 + seeded(index, 5) * 180,
-  phase: seeded(index, 6) * 900,
-  color: index % 5 === 0 ? "#ef2477" : index % 3 === 0 ? "#8b5cff" : "#58b9ff",
-}));
-
-const particles = Array.from({length: 118}, (_, index) => ({
-  x: seeded(index, 11) * 2300 - 190,
-  y: seeded(index, 12) * 1350 - 135,
-  radius: 0.8 + seeded(index, 13) * 3.6,
-  opacity: 0.15 + seeded(index, 14) * 0.68,
-  depth: 0.25 + seeded(index, 15) * 1.2,
-  phase: seeded(index, 16) * Math.PI * 2,
-}));
-
-const glyphs = Array.from({length: 54}, (_, index) => ({
-  x: seeded(index, 21) * 2260 - 170,
-  y: seeded(index, 22) * 1240 - 80,
-  size: 14 + seeded(index, 23) * 34,
-  opacity: 0.16 + seeded(index, 24) * 0.55,
-  speed: 0.18 + seeded(index, 25) * 0.72,
-  phase: seeded(index, 26) * Math.PI * 2,
-  token: TOKENS[Math.floor(seeded(index, 27) * TOKENS.length)],
-}));
-
-const boxes = Array.from({length: 44}, (_, index) => ({
-  x: seeded(index, 31) * 2280 - 180,
-  y: seeded(index, 32) * 1280 - 100,
-  size: 7 + seeded(index, 33) * 20,
-  opacity: 0.22 + seeded(index, 34) * 0.62,
-  speed: 0.35 + seeded(index, 35) * 1.25,
-  phase: seeded(index, 36) * Math.PI * 2,
-  nested: seeded(index, 37) > 0.62,
-}));
-
-const hexagons = Array.from({length: 21}, (_, index) => ({
-  x: seeded(index, 41) * 2240 - 160,
-  y: seeded(index, 42) * 1260 - 90,
-  radius: 17 + seeded(index, 43) * 52,
-  opacity: 0.08 + seeded(index, 44) * 0.26,
-  speed: 0.08 + seeded(index, 45) * 0.22,
-  phase: seeded(index, 46) * Math.PI * 2,
-}));
-
-const circuitSegments = Array.from({length: 18}, (_, index) => ({
-  x: seeded(index, 51) * 1900 - 100,
-  y: seeded(index, 52) * 1120 - 20,
-  length: 90 + seeded(index, 53) * 320,
-  step: 16 + seeded(index, 54) * 45,
-  opacity: 0.05 + seeded(index, 55) * 0.16,
-}));
-
-const hexPoints = (x: number, y: number, radius: number, rotation: number) =>
-  Array.from({length: 6}, (_, index) => {
-    const angle = rotation + (Math.PI * 2 * index) / 6;
-    return `${x + Math.cos(angle) * radius},${y + Math.sin(angle) * radius}`;
-  }).join(" ");
-
-const SubtitleSlices: React.FC<{
-  frame: number;
-  fps: number;
-  reveal: number;
-}> = ({frame, fps, reveal}) => {
-  const sliceCount = 8;
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        height: 104,
-        marginTop: 22,
-      }}
-    >
-      {Array.from({length: sliceCount}, (_, index) => {
-        const localReveal = interpolate(
-          frame,
-          [fps * 0.94 + index * 1.25, fps * 1.36 + index * 1.1],
-          [0, 1],
-          {
-            ...clamp,
-            easing: Easing.bezier(0.16, 0.84, 0.22, 1),
-          },
-        );
-        const top = (index / sliceCount) * 100;
-        const bottom = 100 - ((index + 1) / sliceCount) * 100;
-        const direction = index % 2 === 0 ? -1 : 1;
-        const burst = Math.sin(frame * (0.72 + index * 0.09) + index * 1.7);
-        const offset = direction * (1 - localReveal) * (190 + index * 19) + burst * (1 - reveal) * 11;
-
-        return (
-          <React.Fragment key={index}>
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                clipPath: `inset(${top}% 0 ${bottom}% 0)`,
-                transform: `translateX(${offset + 15}px)`,
-                opacity: (1 - reveal) * 0.68,
-                color: "#f01862",
-                fontSize: 80,
-                lineHeight: 1,
-                fontWeight: 900,
-                letterSpacing: -1.7,
-                whiteSpace: "nowrap",
-                textShadow: "0 0 22px rgba(255, 18, 104, 0.86)",
-              }}
-            >
-              (ARTIFICIAL INTELLIGENCE)
-            </div>
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                clipPath: `inset(${top}% 0 ${bottom}% 0)`,
-                transform: `translateX(${offset}px)`,
-                opacity: localReveal,
-                color: "#fbfbff",
-                fontSize: 80,
-                lineHeight: 1,
-                fontWeight: 900,
-                letterSpacing: -1.7,
-                whiteSpace: "nowrap",
-                textShadow:
-                  "0 3px 0 rgba(72, 26, 108, 0.42), 0 0 24px rgba(255, 255, 255, 0.18)",
-              }}
-            >
-              (ARTIFICIAL INTELLIGENCE)
-            </div>
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-};
+const CORE_COLORS = ["#53e7ff", "#5f82ff", "#9c62ff"];
+const TITLE_DUST_COLORS = ["#eafcff", "#43e4ff", "#9a6cff"];
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps, durationInFrames, width, height} = useVideoConfig();
+  const {durationInFrames, width, height} = useVideoConfig();
+  const t = frame / Math.max(1, durationInFrames);
+  const loopAngle = t * TAU;
 
   const designScale = Math.max(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
-  const cycle = frame / Math.max(1, durationInFrames);
-  const backgroundIn = interpolate(frame, [fps * 0.12, fps * 0.78], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const reveal = interpolate(frame, [fps * 0.86, fps * 1.48], [0, 1], {
-    ...clamp,
-    easing: Easing.bezier(0.15, 0.88, 0.22, 1),
-  });
-  const titleSpring = spring({
-    frame: frame - fps * 0.83,
-    fps,
-    config: {damping: 15, stiffness: 125, mass: 0.7},
-    durationInFrames: Math.round(fps * 0.9),
-  });
-  const titleScale = interpolate(titleSpring, [0, 1], [1.23, 1], clamp);
-  const titleY = interpolate(titleSpring, [0, 1], [46, 0], clamp);
-  const fieldX = Math.sin(cycle * Math.PI * 2) * 22;
-  const fieldY = Math.cos(cycle * Math.PI * 2) * 11;
-  const cameraScale = 1.025 + cycle * 0.035 + Math.sin(frame / (fps * 1.9)) * 0.004;
-  const energy = 0.78 + Math.sin(frame / (fps * 0.43)) * 0.12;
-  const glitchWindow = interpolate(
-    frame,
-    [fps * 0.86, fps * 1.02, fps * 1.34, fps * 1.52],
-    [0, 1, 0.42, 0],
-    clamp,
-  );
-  const titleJitter = glitchWindow * Math.sin(frame * 2.87) * 8;
-  const titlePulse = 1 + Math.sin(frame / (fps * 0.82)) * 0.006 * reveal;
-  const glowPulse = 0.84 + Math.sin(frame / (fps * 0.31)) * 0.1;
+  const rootTransform = `translate(${width / 2}px, ${height / 2}px) scale(${designScale}) translate(${-CENTER_X}px, ${-CENTER_Y}px)`;
 
-  const rootTransform = `translate(${width / 2}px, ${height / 2}px) scale(${designScale}) translate(${-DESIGN_WIDTH / 2}px, ${-DESIGN_HEIGHT / 2}px)`;
+  const cameraBell = Math.pow(Math.sin(Math.PI * t), 2);
+  const orbitEnvelope =
+    smoothstep(0.34, 0.5, t) * (1 - smoothstep(0.69, 0.88, t));
+  const cameraScale = 1 + cameraBell * 0.112;
+  const cameraX = Math.sin((t - 0.36) * TAU) * orbitEnvelope * 24;
+  const cameraY = Math.sin((t - 0.42) * TAU * 2) * orbitEnvelope * 9;
+  const cameraRoll = Math.sin((t - 0.39) * TAU) * orbitEnvelope * 1.55;
+  const sceneTransform = `translate(${cameraX.toFixed(2)} ${cameraY.toFixed(
+    2,
+  )}) rotate(${cameraRoll.toFixed(3)} ${CENTER_X} ${CENTER_Y}) translate(${CENTER_X} ${CENTER_Y}) scale(${cameraScale.toFixed(
+    5,
+  )}) translate(${-CENTER_X} ${-CENTER_Y})`;
+
+  const particlePresence =
+    smoothstep(0.035, 0.13, t) * (1 - smoothstep(0.91, 0.998, t));
+  const coreStrength =
+    smoothstep(0.115, 0.34, t) * (1 - smoothstep(0.79, 0.965, t));
+  const networkEnergy =
+    smoothstep(0.2, 0.59, t) * (1 - smoothstep(0.73, 0.96, t));
+  const peakEnergy =
+    smoothstep(0.49, 0.61, t) * (1 - smoothstep(0.69, 0.78, t));
+
+  const rotationY = t * TAU * 1.58 + coreStrength * 0.72;
+  const rotationX = Math.sin(t * Math.PI) * 0.3 + Math.sin(t * TAU * 1.5) * 0.08;
+  const cosY = Math.cos(rotationY);
+  const sinY = Math.sin(rotationY);
+  const cosX = Math.cos(rotationX);
+  const sinX = Math.sin(rotationX);
+
+  const particleBuckets = Array.from({length: 12}, () => [] as string[]);
+
+  SPHERE_PARTICLES.forEach((particle, index) => {
+    const inStart = 0.055 + particle.delay * 0.115;
+    const inEnd = 0.235 + particle.delay * 0.085;
+    const outStart = 0.775 + particle.delay * 0.045;
+    const outEnd = 0.93 + particle.delay * 0.055;
+    const formation =
+      smoothstep(inStart, inEnd, t) * (1 - smoothstep(outStart, outEnd, t));
+
+    const rotatedX = particle.sphereX * cosY + particle.sphereZ * sinY;
+    const rotatedZ = -particle.sphereX * sinY + particle.sphereZ * cosY;
+    const rotatedY = particle.sphereY * cosX - rotatedZ * sinX;
+    const finalZ = particle.sphereY * sinX + rotatedZ * cosX;
+    const perspective = 1 / (1.42 - finalZ * 0.29);
+    const sphereX = CENTER_X + rotatedX * 305 * perspective;
+    const sphereY = CENTER_Y + rotatedY * 305 * perspective;
+
+    const spiral = Math.sin(formation * Math.PI) * (1 - formation);
+    const spiralAngle = particle.phase + formation * TAU * (1.2 + particle.delay);
+    const x =
+      mix(particle.scatterX, sphereX, formation) +
+      Math.cos(spiralAngle) * spiral * (38 + particle.delay * 65);
+    const y =
+      mix(particle.scatterY, sphereY, formation) +
+      Math.sin(spiralAngle) * spiral * (24 + particle.delay * 42);
+
+    const twinkle = 0.86 + Math.sin(loopAngle * (1 + (index % 3)) + particle.phase) * 0.14;
+    const radius =
+      particle.size *
+      mix(0.42, 1.14, formation) *
+      mix(0.88, 1.2, perspective) *
+      twinkle;
+    const depthBucket = Math.min(3, Math.max(0, Math.floor(((finalZ + 1) / 2) * 4)));
+    const bucket = particle.color * 4 + depthBucket;
+    particleBuckets[bucket].push(circlePath(x, y, radius));
+  });
+
+  const coronaBuckets = Array.from({length: 3}, () => [] as string[]);
+  CORONA_PARTICLES.forEach((particle, index) => {
+    const angle =
+      particle.angle +
+      t * TAU * particle.speed +
+      Math.sin(loopAngle + particle.phase) * 0.08;
+    const breathe = 1 + Math.sin(loopAngle * (1 + (index % 2)) + particle.phase) * 0.06;
+    const x = CENTER_X + Math.cos(angle) * particle.radius * breathe;
+    const y =
+      CENTER_Y +
+      Math.sin(angle) * particle.radius * particle.ellipse * breathe;
+    coronaBuckets[particle.color].push(
+      circlePath(x, y, particle.size * (0.75 + coreStrength * 0.45)),
+    );
+  });
+
+  const titleScan = smoothstep(0.392, 0.485, t);
+  const titleDissolve = smoothstep(0.7, 0.805, t);
+  const titleLife = titleScan * (1 - titleDissolve);
+  const titleDustLife =
+    smoothstep(0.69, 0.745, t) * (1 - smoothstep(0.825, 0.91, t));
+  const titleDustBuckets = Array.from({length: 3}, () => [] as string[]);
+
+  TITLE_DUST.forEach((particle, index) => {
+    const progress = titleDissolve;
+    const turbulence = Math.sin(progress * Math.PI) * Math.sin(loopAngle * 2 + particle.phase);
+    const x = particle.x + particle.dx * progress + turbulence * 14;
+    const y = particle.y + particle.dy * progress + turbulence * 9;
+    const widthNow = particle.width * (1 + progress * 1.3);
+    const heightNow = particle.height * (1 - progress * 0.35);
+    titleDustBuckets[particle.color].push(
+      `M ${(x - widthNow / 2).toFixed(2)} ${(y - heightNow / 2).toFixed(
+        2,
+      )} h ${widthNow.toFixed(2)} v ${heightNow.toFixed(
+        2,
+      )} h ${(-widthNow).toFixed(2)} Z`,
+    );
+  });
+
+  const scanBeamOpacity =
+    Math.sin(Math.PI * titleScan) * (1 - titleDissolve) * 0.9;
+  const scanBeamX = mix(CENTER_X - 650, CENTER_X + 650, titleScan);
+  const ambientPulse = 0.88 + Math.sin(loopAngle * 2) * 0.12;
 
   return (
     <AbsoluteFill
       style={{
         overflow: "hidden",
-        backgroundColor: "#03021f",
-        fontFamily: '"Arial Black", "Helvetica Neue", Arial, sans-serif',
+        backgroundColor: "#02040b",
+        fontFamily: '"Nimbus Sans", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif',
       }}
     >
       <div
@@ -236,6 +381,7 @@ export const Motion: React.FC = () => {
           height: DESIGN_HEIGHT,
           transformOrigin: "0 0",
           transform: rootTransform,
+          overflow: "hidden",
         }}
       >
         <svg
@@ -245,372 +391,413 @@ export const Motion: React.FC = () => {
           style={{position: "absolute", inset: 0}}
         >
           <defs>
-            <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#02011d" />
-              <stop offset="0.38" stopColor="#0b0649" />
-              <stop offset="0.72" stopColor="#11105b" />
-              <stop offset="1" stopColor="#030225" />
-            </linearGradient>
-            <radialGradient id="magentaHaze">
-              <stop offset="0" stopColor="#e01967" stopOpacity="0.55" />
-              <stop offset="0.34" stopColor="#8e176d" stopOpacity="0.26" />
-              <stop offset="1" stopColor="#25074e" stopOpacity="0" />
+            <radialGradient id="deep-space" cx="50%" cy="50%" r="72%">
+              <stop offset="0" stopColor="#0a1c35" />
+              <stop offset="0.34" stopColor="#061326" />
+              <stop offset="0.72" stopColor="#030914" />
+              <stop offset="1" stopColor="#010207" />
             </radialGradient>
-            <radialGradient id="blueHaze">
-              <stop offset="0" stopColor="#344eff" stopOpacity="0.35" />
-              <stop offset="1" stopColor="#15115e" stopOpacity="0" />
+            <radialGradient id="cyan-nebula" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stopColor="#2bdfff" stopOpacity="0.23" />
+              <stop offset="0.32" stopColor="#356dff" stopOpacity="0.1" />
+              <stop offset="0.72" stopColor="#693cff" stopOpacity="0.035" />
+              <stop offset="1" stopColor="#060712" stopOpacity="0" />
             </radialGradient>
-            <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#4a42ff" stopOpacity="0" />
-              <stop offset="0.28" stopColor="#5f83ff" stopOpacity="0.75" />
-              <stop offset="0.52" stopColor="#ff277f" stopOpacity="0.95" />
-              <stop offset="0.76" stopColor="#88c9ff" stopOpacity="0.58" />
-              <stop offset="1" stopColor="#5328df" stopOpacity="0" />
+            <radialGradient id="core-halo" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stopColor="#f5feff" stopOpacity="0.96" />
+              <stop offset="0.08" stopColor="#9ff5ff" stopOpacity="0.88" />
+              <stop offset="0.24" stopColor="#35dfff" stopOpacity="0.52" />
+              <stop offset="0.52" stopColor="#4e70ff" stopOpacity="0.18" />
+              <stop offset="0.76" stopColor="#8b55ff" stopOpacity="0.07" />
+              <stop offset="1" stopColor="#8b55ff" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="edge-spectrum" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#32dcff" />
+              <stop offset="0.52" stopColor="#5681ff" />
+              <stop offset="1" stopColor="#9b5dff" />
             </linearGradient>
-            <linearGradient id="heroBeam" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#6721ff" stopOpacity="0" />
-              <stop offset="0.38" stopColor="#ed1e6d" stopOpacity="0.18" />
-              <stop offset="0.5" stopColor="#ff2b74" stopOpacity="0.72" />
-              <stop offset="0.62" stopColor="#7d3aff" stopOpacity="0.2" />
-              <stop offset="1" stopColor="#2514a2" stopOpacity="0" />
+            <linearGradient id="title-rule" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#41e6ff" stopOpacity="0" />
+              <stop offset="0.22" stopColor="#41e6ff" stopOpacity="0.9" />
+              <stop offset="0.5" stopColor="#e9fdff" stopOpacity="1" />
+              <stop offset="0.78" stopColor="#8b6cff" stopOpacity="0.9" />
+              <stop offset="1" stopColor="#8b6cff" stopOpacity="0" />
             </linearGradient>
-            <pattern id="microGrid" width="54" height="54" patternUnits="userSpaceOnUse">
-              <path d="M 54 0 L 0 0 0 54" fill="none" stroke="#92b9ff" strokeWidth="0.65" opacity="0.2" />
-              <circle cx="0" cy="0" r="1.5" fill="#9cd8ff" opacity="0.42" />
+            <pattern id="micro-grid" width="72" height="72" patternUnits="userSpaceOnUse">
+              <path
+                d="M 72 0 L 0 0 0 72"
+                fill="none"
+                stroke="#6ebeff"
+                strokeWidth="0.55"
+                opacity="0.2"
+              />
+              <circle cx="0" cy="0" r="1.1" fill="#70dfff" opacity="0.22" />
             </pattern>
-            <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="10" result="blur" />
+            <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <filter id="bloom" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="24" />
-            </filter>
-            <filter id="grain" x="0" y="0" width="100%" height="100%">
-              <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="3" seed="17" stitchTiles="stitch" />
-              <feColorMatrix type="saturate" values="0" />
-              <feComponentTransfer>
-                <feFuncA type="table" tableValues="0 0.07" />
-              </feComponentTransfer>
+            <filter id="wide-glow" x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur stdDeviation="32" />
             </filter>
           </defs>
 
-          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} fill="url(#background)" />
+          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} fill="url(#deep-space)" />
           <ellipse
-            cx={1050 + Math.sin(frame / (fps * 3.1)) * 55}
-            cy={600 + Math.cos(frame / (fps * 2.7)) * 24}
-            rx="800"
-            ry="570"
-            fill="url(#magentaHaze)"
-            opacity={backgroundIn * glowPulse}
+            cx={CENTER_X}
+            cy={CENTER_Y}
+            rx="980"
+            ry="610"
+            fill="url(#cyan-nebula)"
+            opacity={0.58 + coreStrength * 0.42}
           />
-          <ellipse
-            cx={390 + Math.cos(frame / (fps * 2.4)) * 45}
-            cy={310 + Math.sin(frame / (fps * 2.8)) * 32}
-            rx="670"
-            ry="480"
-            fill="url(#blueHaze)"
-            opacity={backgroundIn * 0.92}
+          <rect
+            x="-80"
+            y="-80"
+            width="2080"
+            height="1240"
+            fill="url(#micro-grid)"
+            opacity={0.055 + networkEnergy * 0.035}
+            transform={`rotate(-3 ${CENTER_X} ${CENTER_Y})`}
           />
 
-          <g
-            opacity={backgroundIn}
-            transform={`translate(${fieldX} ${fieldY}) rotate(-10.8 960 540) scale(${cameraScale})`}
-            style={{transformOrigin: "960px 540px"}}
-          >
-            <rect x="-240" y="-180" width="2400" height="1440" fill="url(#microGrid)" opacity="0.12" />
-
-            <rect x="-360" y="230" width="2680" height="118" fill="url(#beam)" opacity={0.13 + energy * 0.06} />
-            <rect x="-360" y="710" width="2680" height="82" fill="url(#beam)" opacity={0.12 + energy * 0.05} />
-            <rect x="-360" y="470" width="2680" height="210" fill="url(#heroBeam)" opacity={0.22 + reveal * 0.2} />
-
-            {lanes.map((lane, index) => (
-              <line
-                key={`lane-${index}`}
-                x1="-340"
-                x2="2300"
-                y1={lane.y}
-                y2={lane.y}
-                stroke={lane.color}
-                strokeWidth={lane.width}
-                strokeOpacity={lane.opacity * energy}
-                strokeDasharray={`${lane.dash} ${lane.gap}`}
-                strokeDashoffset={-frame * lane.speed - lane.phase}
-                filter={index % 7 === 0 ? "url(#softGlow)" : undefined}
+          {BACKGROUND_STARS.map((star, index) => {
+            const twinkle =
+              0.65 + Math.sin(loopAngle * star.cycles + star.phase) * 0.35;
+            return (
+              <circle
+                key={`star-${index}`}
+                cx={star.x}
+                cy={star.y}
+                r={star.radius * (0.88 + twinkle * 0.12)}
+                fill={star.color}
+                fillOpacity={star.opacity * twinkle}
               />
-            ))}
+            );
+          })}
 
-            {circuitSegments.map((segment, index) => {
-              const pulse = 0.65 + Math.sin(frame / 19 + index * 0.8) * 0.35;
+          <g transform={sceneTransform}>
+            <path
+              d={NETWORK_BASE_PATH}
+              fill="none"
+              stroke="#4a88b9"
+              strokeWidth="0.8"
+              strokeOpacity={0.08 + networkEnergy * 0.07}
+            />
+
+            {NETWORK_EDGES.map((edge, index) => {
+              const from = NETWORK_NODES[edge.from];
+              const to = NETWORK_NODES[edge.to];
+              const activationStart = 0.245 + edge.radial * 0.22;
+              const activation =
+                smoothstep(activationStart, activationStart + 0.095, t) *
+                (1 - smoothstep(0.72 + (1 - edge.radial) * 0.07, 0.95, t));
+              const pulseHit = PULSES.reduce((maximum, pulse) => {
+                const arrival = pulse.start + edge.radial * pulse.duration * 0.78;
+                const distance = (t - arrival) / 0.032;
+                return Math.max(maximum, Math.exp(-distance * distance) * pulse.strength);
+              }, 0);
+              const opacity =
+                activation * (edge.accent ? 0.24 : 0.15) +
+                pulseHit * (edge.accent ? 0.82 : 0.52);
+
               return (
-                <path
-                  key={`circuit-${index}`}
-                  d={`M ${segment.x} ${segment.y} h ${segment.length * 0.35} l ${segment.step} ${segment.step} h ${segment.length * 0.65}`}
-                  fill="none"
-                  stroke={index % 4 === 0 ? "#ff4f9a" : "#72b8ff"}
-                  strokeWidth="1.2"
-                  strokeOpacity={segment.opacity * pulse}
-                  strokeDasharray="9 11"
-                  strokeDashoffset={-frame * (0.65 + index * 0.025)}
+                <line
+                  key={`edge-${index}`}
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={edge.accent ? "#74efff" : "url(#edge-spectrum)"}
+                  strokeWidth={edge.accent ? 1.5 : 1.05}
+                  strokeOpacity={opacity}
+                  strokeDasharray="2 94"
+                  strokeDashoffset={-96 * (3 * t + edge.phase)}
+                  filter={pulseHit > 0.45 && edge.accent ? "url(#soft-glow)" : undefined}
                 />
               );
             })}
 
-            {glyphs.map((glyph, index) => {
-              const x = ((glyph.x + frame * glyph.speed + 220) % 2380) - 220;
-              const y = glyph.y + Math.sin(frame * 0.018 + glyph.phase) * 10;
-              const flicker = 0.68 + Math.sin(frame * 0.11 + glyph.phase) * 0.32;
-              return (
-                <text
-                  key={`glyph-${index}`}
-                  x={x}
-                  y={y}
-                  fill={index % 6 === 0 ? "#ff77b4" : "#b5d8ff"}
-                  fillOpacity={glyph.opacity * flicker}
-                  fontFamily="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-                  fontSize={glyph.size}
-                  fontWeight={index % 5 === 0 ? 700 : 400}
-                >
-                  {glyph.token}
-                </text>
-              );
-            })}
+            {NETWORK_NODES.map((node, index) => {
+              const activationStart = 0.245 + node.radial * 0.22;
+              const activation =
+                smoothstep(activationStart, activationStart + 0.09, t) *
+                (1 - smoothstep(0.72 + (1 - node.radial) * 0.07, 0.955, t));
+              const pulseHit = PULSES.reduce((maximum, pulse) => {
+                const arrival = pulse.start + node.radial * pulse.duration * 0.8;
+                const distance = (t - arrival) / 0.028;
+                return Math.max(maximum, Math.exp(-distance * distance) * pulse.strength);
+              }, 0);
+              const twinkle =
+                0.76 + Math.sin(loopAngle * (1 + (index % 3)) + node.phase) * 0.24;
+              const size =
+                node.radius *
+                mix(0.78, 1.17, node.depth) *
+                (1 + pulseHit * 0.95 + activation * 0.18);
+              const opacity =
+                (0.13 + activation * 0.58 + pulseHit * 0.78) * twinkle;
 
-            {hexagons.map((hexagon, index) => {
-              const x = ((hexagon.x + frame * hexagon.speed + 180) % 2300) - 180;
-              const y = hexagon.y + Math.cos(frame * 0.012 + hexagon.phase) * 13;
               return (
-                <polygon
-                  key={`hex-${index}`}
-                  points={hexPoints(x, y, hexagon.radius, frame * 0.0015 * (index % 2 === 0 ? 1 : -1))}
-                  fill="none"
-                  stroke={index % 4 === 0 ? "#f157a4" : "#739dff"}
-                  strokeWidth={1 + (index % 3) * 0.35}
-                  strokeOpacity={hexagon.opacity * (0.76 + Math.sin(frame * 0.045 + index) * 0.24)}
-                />
-              );
-            })}
-
-            {boxes.map((box, index) => {
-              const x = ((box.x + frame * box.speed + 190) % 2380) - 190;
-              const y = box.y + Math.sin(frame * 0.024 + box.phase) * 12;
-              const flicker = 0.66 + Math.sin(frame * 0.17 + box.phase) * 0.34;
-              return (
-                <g key={`box-${index}`} opacity={box.opacity * flicker}>
-                  <rect
-                    x={x - box.size / 2}
-                    y={y - box.size / 2}
-                    width={box.size}
-                    height={box.size}
-                    fill={index % 8 === 0 ? "#ff5da7" : "none"}
-                    stroke={index % 8 === 0 ? "#ff7bb8" : "#b5ddff"}
-                    strokeWidth={1.4}
+                <g key={`node-${index}`}>
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={size * 3.8}
+                    fill="#31dcff"
+                    fillOpacity={(activation * 0.05 + pulseHit * 0.18) * twinkle}
+                    filter={pulseHit > 0.42 && index % 4 === 0 ? "url(#wide-glow)" : undefined}
                   />
-                  {box.nested ? (
-                    <rect
-                      x={x - box.size * 0.18}
-                      y={y - box.size * 0.18}
-                      width={box.size * 0.36}
-                      height={box.size * 0.36}
-                      fill="#dff2ff"
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={size}
+                    fill={index % 9 === 0 ? "#a778ff" : index % 5 === 0 ? "#eaffff" : "#54e8ff"}
+                    fillOpacity={opacity}
+                  />
+                  {node.radius > 4.2 ? (
+                    <circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={size * 2.25}
+                      fill="none"
+                      stroke="#65eaff"
+                      strokeWidth="0.7"
+                      strokeOpacity={activation * 0.3 + pulseHit * 0.48}
                     />
                   ) : null}
                 </g>
               );
             })}
 
-            {particles.map((particle, index) => {
-              const x = ((particle.x + frame * particle.depth * 0.42 + 190) % 2380) - 190;
-              const y = particle.y + Math.sin(frame * 0.025 * particle.depth + particle.phase) * 8;
-              const twinkle = 0.55 + Math.sin(frame * 0.12 + particle.phase) * 0.45;
+            {PULSES.map((pulse, index) => {
+              const progress = (t - pulse.start) / pulse.duration;
+              if (progress < 0 || progress > 1) {
+                return null;
+              }
+
+              const eased = smoothstep(0, 1, progress);
+              const opacity = Math.sin(progress * Math.PI) * pulse.strength;
               return (
-                <circle
-                  key={`particle-${index}`}
-                  cx={x}
-                  cy={y}
-                  r={particle.radius}
-                  fill={index % 9 === 0 ? "#ff7eb9" : "#c8e4ff"}
-                  fillOpacity={particle.opacity * twinkle}
+                <ellipse
+                  key={`pulse-${index}`}
+                  cx={CENTER_X}
+                  cy={CENTER_Y}
+                  rx={205 + eased * 930}
+                  ry={(205 + eased * 930) * 0.63}
+                  fill="none"
+                  stroke={index === 2 ? "#d6fbff" : index === 1 ? "#6b82ff" : "#37dfff"}
+                  strokeWidth={1.4 + pulse.strength * 2.3}
+                  strokeOpacity={opacity * 0.52}
+                  filter="url(#soft-glow)"
                 />
               );
             })}
+
+            <ellipse
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              rx={300 + peakEnergy * 85}
+              ry={300 + peakEnergy * 85}
+              fill="url(#core-halo)"
+              opacity={coreStrength * (0.58 + peakEnergy * 0.28) * ambientPulse}
+              filter="url(#wide-glow)"
+            />
+            <ellipse
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              rx={232 + peakEnergy * 24}
+              ry={(232 + peakEnergy * 24) * 0.34}
+              fill="none"
+              stroke="#54eaff"
+              strokeWidth="1.5"
+              strokeDasharray="8 18"
+              strokeDashoffset={-78 * t}
+              strokeOpacity={coreStrength * 0.45}
+              transform={`rotate(${(t * 145).toFixed(3)} ${CENTER_X} ${CENTER_Y})`}
+              filter="url(#soft-glow)"
+            />
+            <ellipse
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              rx={218 + peakEnergy * 28}
+              ry={(218 + peakEnergy * 28) * 0.47}
+              fill="none"
+              stroke="#8f6dff"
+              strokeWidth="1.05"
+              strokeDasharray="3 16"
+              strokeDashoffset={72 * t}
+              strokeOpacity={coreStrength * 0.38}
+              transform={`rotate(${(-58 - t * 110).toFixed(3)} ${CENTER_X} ${CENTER_Y})`}
+            />
+
+            {coronaBuckets.map((bucket, index) => (
+              <path
+                key={`corona-${index}`}
+                d={bucket.join(" ")}
+                fill={CORE_COLORS[index]}
+                fillOpacity={coreStrength * (0.22 + index * 0.06)}
+              />
+            ))}
+
+            {particleBuckets.map((bucket, index) => {
+              const colorIndex = Math.floor(index / 4);
+              const depthIndex = index % 4;
+              return (
+                <path
+                  key={`core-particles-${index}`}
+                  d={bucket.join(" ")}
+                  fill={CORE_COLORS[colorIndex]}
+                  fillOpacity={
+                    particlePresence *
+                    (0.12 + coreStrength * 0.48) *
+                    (0.48 + depthIndex * 0.19)
+                  }
+                />
+              );
+            })}
+
+            <circle
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              r={34 + peakEnergy * 12}
+              fill="#edfeff"
+              fillOpacity={coreStrength * (0.5 + peakEnergy * 0.35)}
+              filter="url(#soft-glow)"
+            />
+            <circle
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              r={8 + peakEnergy * 4}
+              fill="#ffffff"
+              fillOpacity={coreStrength * 0.96}
+            />
           </g>
 
-          <ellipse
-            cx="960"
-            cy="585"
-            rx={320 + reveal * 150}
-            ry={145 + reveal * 42}
-            fill="#f21b65"
-            opacity={reveal * 0.19 * glowPulse}
-            filter="url(#bloom)"
-            transform="rotate(-10.8 960 585)"
+          {titleDustBuckets.map((bucket, index) => (
+            <path
+              key={`title-dust-${index}`}
+              d={bucket.join(" ")}
+              fill={TITLE_DUST_COLORS[index]}
+              fillOpacity={titleDustLife * (0.68 + index * 0.1)}
+              filter={index === 1 ? "url(#soft-glow)" : undefined}
+            />
+          ))}
+
+          <rect
+            x={scanBeamX - 2}
+            y={CENTER_Y - 93}
+            width="4"
+            height="186"
+            fill="#e8feff"
+            opacity={scanBeamOpacity}
+            filter="url(#soft-glow)"
           />
-          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} filter="url(#grain)" opacity="0.75" />
+          <rect
+            x={scanBeamX - 54}
+            y={CENTER_Y - 91}
+            width="108"
+            height="182"
+            fill="url(#title-rule)"
+            opacity={scanBeamOpacity * 0.13}
+          />
         </svg>
 
         <div
           style={{
             position: "absolute",
-            left: "50%",
-            top: "53%",
-            width: 1540,
-            height: 470,
-            transform: `translate(-50%, -50%) rotate(-10.8deg) translate(${titleJitter}px, ${titleY}px) scale(${titleScale * titlePulse})`,
-            transformOrigin: "50% 50%",
-            opacity: reveal,
-            filter: `blur(${(1 - reveal) * 7}px)`,
+            left: CENTER_X,
+            top: CENTER_Y,
+            width: 1480,
+            height: 150,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
           }}
         >
-          <div
+          {TITLE_SLICES.map((slice, index) => {
+            const localReveal = smoothstep(
+              0.392 + index * 0.0028,
+              0.457 + index * 0.0028,
+              t,
+            );
+            const localOut = smoothstep(
+              0.7 + index * 0.0022,
+              0.786 + index * 0.0012,
+              t,
+            );
+            const top = (index / TITLE_SLICES.length) * 100;
+            const bottom = 100 - ((index + 1) / TITLE_SLICES.length) * 100;
+            const dissolveKick = Math.sin(Math.PI * localOut);
+
+            return (
+              <div
+                key={`title-slice-${index}`}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  clipPath: `inset(${top}% ${100 - localReveal * 100}% ${bottom}% 0)`,
+                  transform: `translate(${(slice.dx * localOut).toFixed(2)}px, ${(
+                    slice.dy * localOut
+                  ).toFixed(2)}px) skewX(${(slice.skew * dissolveKick).toFixed(2)}deg)`,
+                  opacity: localReveal * (1 - localOut),
+                  filter: `blur(${(localOut * 4.5).toFixed(2)}px)`,
+                  color: "#f2fdff",
+                  fontSize: 108,
+                  lineHeight: 1,
+                  fontWeight: 800,
+                  letterSpacing: 15,
+                  whiteSpace: "nowrap",
+                  textIndent: 15,
+                  textShadow:
+                    "-4px 0 0 rgba(49,223,255,0.30), 4px 0 0 rgba(139,92,246,0.24), 0 0 14px rgba(126,236,255,0.48), 0 0 38px rgba(54,126,255,0.24)",
+                }}
+              >
+                NEURAL NETWORK
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: CENTER_X,
+            top: CENTER_Y - 104,
+            transform: `translateX(-50%) translateY(${((1 - titleScan) * 16).toFixed(
+              2,
+            )}px)`,
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            opacity: titleLife * 0.88,
+            color: "#8eeeff",
+            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: 5.2,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span
             style={{
-              position: "absolute",
-              left: "50%",
-              top: 205,
-              width: 1290,
-              height: 5,
-              transform: `translateX(-50%) scaleX(${reveal})`,
-              transformOrigin: "50% 50%",
-              background:
-                "linear-gradient(90deg, transparent 0%, #6e5cff 16%, #ff2a76 48%, #78bdff 82%, transparent 100%)",
-              boxShadow: "0 0 26px rgba(247, 37, 116, 0.72)",
-              opacity: 0.72,
+              display: "block",
+              width: 92,
+              height: 1,
+              background: "linear-gradient(90deg, transparent, #43e7ff)",
             }}
           />
-
-          <div
+          SYNAPTIC ENGINE // CORE ONLINE
+          <span
             style={{
-              position: "absolute",
-              left: "50%",
-              top: 5,
-              transform: "translateX(-50%)",
-              display: "flex",
-              alignItems: "center",
-              gap: 17,
-              color: "#abd8ff",
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              fontSize: 17,
-              fontWeight: 700,
-              letterSpacing: 6,
-              whiteSpace: "nowrap",
-              opacity: interpolate(reveal, [0.45, 1], [0, 0.82], clamp),
-            }}
-          >
-            <span style={{width: 74, height: 1, background: "#f04b9a"}} />
-            NEURAL SYSTEM // MACHINE LEARNING
-            <span style={{width: 74, height: 1, background: "#6fbfff"}} />
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              top: 50,
-              left: "50%",
-              height: 190,
-              transform: "translateX(-50%)",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              color: "#fcfbff",
-              fontSize: 258,
-              lineHeight: 0.75,
-              fontWeight: 900,
-              letterSpacing: -28,
-              textShadow:
-                "15px 9px 0 rgba(232, 21, 91, 0.62), -4px -2px 0 rgba(84, 137, 255, 0.22), 0 0 46px rgba(255,255,255,0.12)",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                transform: `translateX(${interpolate(reveal, [0, 1], [-105, 0], clamp)}px) rotate(${interpolate(
-                  reveal,
-                  [0, 1],
-                  [-8, 0],
-                  clamp,
-                )}deg)`,
-              }}
-            >
-              A
-            </span>
-            <span
-              style={{
-                display: "inline-block",
-                transform: `translateX(${interpolate(reveal, [0, 1], [112, 0], clamp)}px) rotate(${interpolate(
-                  reveal,
-                  [0, 1],
-                  [7, 0],
-                  clamp,
-                )}deg)`,
-              }}
-            >
-              I
-            </span>
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: 202,
-              width: 1420,
-              transform: "translateX(-50%)",
-            }}
-          >
-            <SubtitleSlices frame={frame} fps={fps} reveal={reveal} />
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: 356,
-              width: 880,
-              transform: "translateX(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              color: "rgba(196, 223, 255, 0.76)",
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              fontSize: 14,
-              fontWeight: 700,
-              letterSpacing: 4.2,
-              opacity: interpolate(reveal, [0.72, 1], [0, 1], clamp),
-            }}
-          >
-            <span>DEEP LEARNING</span>
-            <span style={{width: 7, height: 7, border: "1px solid #ff5c9f", transform: "rotate(45deg)"}} />
-            <span>AUTOMATION</span>
-            <span style={{width: 7, height: 7, border: "1px solid #68baff", transform: "rotate(45deg)"}} />
-            <span>DATA NETWORK</span>
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              left: 86,
-              top: 257,
-              width: 58,
-              height: 15,
-              background: "#ec236d",
-              boxShadow: "0 0 16px rgba(236,35,109,0.68)",
-              transform: `scaleX(${reveal})`,
-              transformOrigin: "right center",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              right: 86,
-              top: 304,
-              width: 58,
-              height: 5,
-              background: "#72c4ff",
-              boxShadow: "0 0 15px rgba(114,196,255,0.65)",
-              transform: `scaleX(${reveal})`,
-              transformOrigin: "left center",
+              display: "block",
+              width: 92,
+              height: 1,
+              background: "linear-gradient(90deg, #8c69ff, transparent)",
             }}
           />
         </div>
@@ -618,10 +805,52 @@ export const Motion: React.FC = () => {
         <div
           style={{
             position: "absolute",
+            left: CENTER_X,
+            top: CENTER_Y + 94,
+            width: 1000,
+            height: 2,
+            transform: `translateX(-50%) scaleX(${titleLife.toFixed(4)})`,
+            transformOrigin: "50% 50%",
+            background:
+              "linear-gradient(90deg, transparent 0%, #43e7ff 22%, #edfefe 50%, #8c69ff 78%, transparent 100%)",
+            opacity: titleLife * 0.75,
+            boxShadow: "0 0 18px rgba(56, 222, 255, 0.48)",
+          }}
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            left: CENTER_X,
+            top: CENTER_Y + 119,
+            width: 780,
+            transform: "translateX(-50%)",
+            display: "flex",
+            justifyContent: "space-between",
+            opacity: titleLife * 0.68,
+            color: "#9dc7df",
+            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: 3.2,
+          }}
+        >
+          <span>NODE MATRIX 100%</span>
+          <span style={{color: "#48e4ff"}}>●</span>
+          <span>PULSE SYNC {Math.round(82 + peakEnergy * 18)}%</span>
+          <span style={{color: "#9a73ff"}}>●</span>
+          <span>LINK STATE ACTIVE</span>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
             inset: 0,
             pointerEvents: "none",
-            boxShadow:
-              "inset 0 0 170px 54px rgba(1, 1, 23, 0.88), inset 0 0 45px 8px rgba(2, 2, 28, 0.82)",
+            opacity: 0.16,
+            backgroundImage:
+              "repeating-linear-gradient(180deg, rgba(157,232,255,0.10) 0px, rgba(157,232,255,0.10) 1px, transparent 1px, transparent 4px)",
+            mixBlendMode: "screen",
           }}
         />
         <div
@@ -630,7 +859,9 @@ export const Motion: React.FC = () => {
             inset: 0,
             pointerEvents: "none",
             background:
-              "linear-gradient(180deg, rgba(3,2,31,0.26) 0%, transparent 18%, transparent 82%, rgba(3,2,31,0.38) 100%)",
+              "radial-gradient(circle at 50% 50%, transparent 48%, rgba(1,3,10,0.28) 73%, rgba(0,1,5,0.88) 100%)",
+            boxShadow:
+              "inset 0 0 120px 22px rgba(0,2,10,0.64), inset 0 0 34px rgba(0,0,0,0.55)",
           }}
         />
       </div>
