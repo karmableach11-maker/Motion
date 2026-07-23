@@ -1,214 +1,626 @@
-import React from "react";
+import React, {type CSSProperties} from "react";
 import {
   AbsoluteFill,
-  Easing,
-  interpolate,
-  spring,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
-type Lane = "top" | "bottom" | "left" | "right";
+const TAU = Math.PI * 2;
 
-type Palette = {
-  background: string;
-  primary: string;
-  secondary: string;
-  glow: string;
+const clamp = (value: number, min = 0, max = 1) =>
+  Math.min(max, Math.max(min, value));
+
+const smootherStep = (edge0: number, edge1: number, value: number) => {
+  const x = clamp((value - edge0) / (edge1 - edge0));
+  return x * x * x * (x * (x * 6 - 15) + 10);
 };
 
-type WordSlot = {
-  lane: Lane;
+type Palette = {
+  face: string;
+  highlight: string;
+  shadow: string;
+  glow: string;
+  accent: string;
+};
+
+const PALETTES: readonly Palette[] = [
+  {
+    face: "#F13A87",
+    highlight: "#FF8FC2",
+    shadow: "#74163F",
+    glow: "rgba(255, 40, 145, 0.66)",
+    accent: "#FF5AA5",
+  },
+  {
+    face: "#9BF044",
+    highlight: "#D8FF82",
+    shadow: "#365F16",
+    glow: "rgba(137, 255, 55, 0.56)",
+    accent: "#B3FF50",
+  },
+  {
+    face: "#6379F5",
+    highlight: "#B8C3FF",
+    shadow: "#273379",
+    glow: "rgba(80, 103, 255, 0.62)",
+    accent: "#6C8BFF",
+  },
+  {
+    face: "#F2F7FF",
+    highlight: "#FFFFFF",
+    shadow: "#546176",
+    glow: "rgba(202, 225, 255, 0.48)",
+    accent: "#D9E9FF",
+  },
+  {
+    face: "#FFC928",
+    highlight: "#FFF19A",
+    shadow: "#87520A",
+    glow: "rgba(255, 184, 25, 0.64)",
+    accent: "#FFE23D",
+  },
+  {
+    face: "#ED347F",
+    highlight: "#FF8AC0",
+    shadow: "#73163F",
+    glow: "rgba(244, 42, 136, 0.62)",
+    accent: "#FF4FA0",
+  },
+] as const;
+
+const WORD_COLORS = [
+  "#6A7EFF",
+  "#F03B8A",
+  "#93F04A",
+  "#EAF4FF",
+  "#43DFFF",
+  "#FFD33D",
+] as const;
+
+type Wave = {
+  words: readonly string[];
+  palette: number;
+  slotRotation: number;
+  turn: number;
+  grid: number;
+};
+
+const WAVES: readonly Wave[] = [
+  {
+    words: [
+      "MACHINE",
+      "ROBOT",
+      "COMPUTER",
+      "DEEP LEARNING",
+      "NEURAL NETWORKS",
+      "INFORMATION",
+      "BRAIN",
+      "DIGITAL",
+      "CYBER",
+    ],
+    palette: 0,
+    slotRotation: 0,
+    turn: -1,
+    grid: 0.08,
+  },
+  {
+    words: [
+      "ROBOT",
+      "DEEP LEARNING",
+      "MACHINE",
+      "BRAIN",
+      "INFORMATION",
+      "CYBER",
+      "COMPUTER",
+      "NEURAL NETWORKS",
+      "DIGITAL",
+    ],
+    palette: 1,
+    slotRotation: 2,
+    turn: 1,
+    grid: 0.12,
+  },
+  {
+    words: [
+      "INFORMATION",
+      "MACHINE",
+      "DIGITAL",
+      "ROBOT",
+      "CYBER",
+      "NEURAL NETWORKS",
+      "DEEP LEARNING",
+      "BRAIN",
+      "COMPUTER",
+    ],
+    palette: 2,
+    slotRotation: 5,
+    turn: -1,
+    grid: 0.16,
+  },
+  {
+    words: [
+      "COMPUTER",
+      "NEURAL NETWORKS",
+      "BRAIN",
+      "DIGITAL",
+      "MACHINE",
+      "INFORMATION",
+      "CYBER",
+      "ROBOT",
+      "DEEP LEARNING",
+    ],
+    palette: 3,
+    slotRotation: 7,
+    turn: 1,
+    grid: 0.22,
+  },
+  {
+    words: [
+      "MACHINE",
+      "INFORMATION",
+      "COMPUTER",
+      "CYBER",
+      "BRAIN",
+      "ROBOT",
+      "DIGITAL",
+      "DEEP LEARNING",
+      "NEURAL NETWORKS",
+    ],
+    palette: 4,
+    slotRotation: 4,
+    turn: -1,
+    grid: 1,
+  },
+  {
+    words: [
+      "NEURAL NETWORKS",
+      "DIGITAL",
+      "ROBOT",
+      "INFORMATION",
+      "DEEP LEARNING",
+      "MACHINE",
+      "BRAIN",
+      "COMPUTER",
+      "CYBER",
+    ],
+    palette: 5,
+    slotRotation: 1,
+    turn: 1,
+    grid: 0.18,
+  },
+] as const;
+
+type Slot = {
   x: number;
   y: number;
-  size: number;
   width: number;
-  align: "left" | "center" | "right";
-  rotation?: number;
+  rotation: number;
+  align: CSSProperties["textAlign"];
+  size: number;
+  depth: number;
+  enterX: number;
+  enterY: number;
   opacity: number;
 };
 
-const LOOP_FRAMES = 540;
-const PHASE_FRAMES = 60;
-const CENTER_SAFE = {
-  left: 430,
-  top: 330,
-  width: 1060,
-  height: 420,
-};
-
-const WORDS = [
-  "MACHINE",
-  "ROBOT",
-  "DEEP LEARNING",
-  "INFORMATION",
-  "COMPUTER",
-  "NEURAL NETWORKS",
-  "BRAIN",
-  "DIGITAL",
-  "CYBER",
-  "INTELLIGENCE",
+const SLOTS: readonly Slot[] = [
+  {
+    x: 400,
+    y: 144,
+    width: 670,
+    rotation: -4,
+    align: "left",
+    size: 1.08,
+    depth: 0.25,
+    enterX: -250,
+    enterY: -70,
+    opacity: 0.9,
+  },
+  {
+    x: 960,
+    y: 112,
+    width: 780,
+    rotation: 2,
+    align: "center",
+    size: 0.96,
+    depth: -0.2,
+    enterX: 50,
+    enterY: -210,
+    opacity: 0.78,
+  },
+  {
+    x: 1520,
+    y: 168,
+    width: 690,
+    rotation: -5,
+    align: "right",
+    size: 1.04,
+    depth: 0.15,
+    enterX: 260,
+    enterY: -90,
+    opacity: 0.86,
+  },
+  {
+    x: 88,
+    y: 535,
+    width: 650,
+    rotation: -90,
+    align: "center",
+    size: 0.94,
+    depth: -0.1,
+    enterX: -220,
+    enterY: 40,
+    opacity: 0.72,
+  },
+  {
+    x: 1832,
+    y: 540,
+    width: 650,
+    rotation: 90,
+    align: "center",
+    size: 0.92,
+    depth: 0.05,
+    enterX: 220,
+    enterY: -40,
+    opacity: 0.7,
+  },
+  {
+    x: 400,
+    y: 846,
+    width: 690,
+    rotation: 4,
+    align: "left",
+    size: 1.08,
+    depth: 0.3,
+    enterX: -250,
+    enterY: 110,
+    opacity: 0.9,
+  },
+  {
+    x: 960,
+    y: 956,
+    width: 810,
+    rotation: -2,
+    align: "center",
+    size: 0.95,
+    depth: -0.25,
+    enterX: -30,
+    enterY: 220,
+    opacity: 0.76,
+  },
+  {
+    x: 1520,
+    y: 852,
+    width: 700,
+    rotation: -4,
+    align: "right",
+    size: 1.06,
+    depth: 0.2,
+    enterX: 250,
+    enterY: 120,
+    opacity: 0.88,
+  },
+  {
+    x: 960,
+    y: 294,
+    width: 720,
+    rotation: 0,
+    align: "center",
+    size: 0.82,
+    depth: -0.35,
+    enterX: 0,
+    enterY: -160,
+    opacity: 0.68,
+  },
 ] as const;
 
-const PALETTES: readonly Palette[] = [
-  {background: "#03070a", primary: "#f1f6f8", secondary: "#7b8790", glow: "#c8f4ff"},
-  {background: "#00150c", primary: "#b9ff72", secondary: "#28b96d", glow: "#62ffae"},
-  {background: "#210014", primary: "#ff83c1", secondary: "#9c2b67", glow: "#ff4ca6"},
-  {background: "#03070a", primary: "#f5f7f8", secondary: "#737c84", glow: "#d9f5ff"},
-  {background: "#00142b", primary: "#75d3ff", secondary: "#1676b7", glow: "#28aaff"},
-  {background: "#240013", primary: "#ff73bb", secondary: "#a32464", glow: "#ff3f9d"},
-  {background: "#211b00", primary: "#ffea52", secondary: "#a98f16", glow: "#ffe21d"},
-  {background: "#200013", primary: "#ff58a9", secondary: "#9b1959", glow: "#ff2c8c"},
-  {background: "#00160b", primary: "#8dff6f", secondary: "#21a957", glow: "#54ff93"},
-] as const;
-
-// All secondary words live in four clipped rails. None of these rectangles can
-// enter CENTER_SAFE, including while entering or exiting the frame.
-const SLOTS: readonly WordSlot[] = [
-  {lane: "top", x: 58, y: 52, size: 70, width: 540, align: "left", opacity: 0.72},
-  {lane: "top", x: 670, y: 190, size: 38, width: 520, align: "center", opacity: 0.52},
-  {lane: "top", x: 1350, y: 74, size: 58, width: 510, align: "right", opacity: 0.66},
-  {lane: "bottom", x: 62, y: 822, size: 48, width: 530, align: "left", opacity: 0.54},
-  {lane: "bottom", x: 645, y: 938, size: 68, width: 650, align: "center", opacity: 0.72},
-  {lane: "bottom", x: 1390, y: 824, size: 42, width: 470, align: "right", opacity: 0.5},
-  {lane: "left", x: 118, y: 366, size: 48, width: 270, align: "left", opacity: 0.66},
-  {lane: "left", x: 118, y: 638, size: 36, width: 270, align: "left", opacity: 0.46},
-  {lane: "left", x: 54, y: 350, size: 40, width: 350, align: "left", rotation: 90, opacity: 0.56},
-  {lane: "right", x: 1534, y: 366, size: 44, width: 260, align: "right", opacity: 0.58},
-  {lane: "right", x: 1536, y: 642, size: 38, width: 258, align: "right", opacity: 0.48},
-  {lane: "right", x: 1870, y: 350, size: 40, width: 350, align: "left", rotation: 90, opacity: 0.54},
-] as const;
-
-const clamp = {
-  extrapolateLeft: "clamp" as const,
-  extrapolateRight: "clamp" as const,
+const keywordSize = (word: string, slot: Slot) => {
+  const base = word.length > 15 ? 43 : word.length > 10 ? 50 : 64;
+  return Math.round(base * slot.size);
 };
 
-const phaseWord = (slotIndex: number, phase: number) =>
-  WORDS[(slotIndex + phase * 3) % WORDS.length];
+const titleShadow = (palette: Palette) => {
+  const extrusion = Array.from({length: 12}, (_, index) => {
+    const step = index + 1;
+    return `${(step * 0.72).toFixed(1)}px ${(step * 1.18).toFixed(1)}px 0 ${palette.shadow}`;
+  });
 
-const laneEntry = (lane: Lane, amount: number) => {
-  if (lane === "top") return `translateY(${-amount}px)`;
-  if (lane === "bottom") return `translateY(${amount}px)`;
-  if (lane === "left") return `translateX(${-amount}px)`;
-  return `translateX(${amount}px)`;
+  return [
+    `0 -1px 0 ${palette.highlight}`,
+    ...extrusion,
+    `0 18px 34px ${palette.glow}`,
+    `0 34px 66px rgba(0, 0, 0, 0.78)`,
+  ].join(", ");
 };
 
-const BackgroundTexture: React.FC<{
+const BackgroundAtmosphere: React.FC<{
   phase: number;
-  localFrame: number;
-  palette: Palette;
-}> = ({phase, localFrame, palette}) => {
-  const scan = (localFrame * 14 + phase * 97) % 1080;
-  const gridOpacity = phase === 6 ? 0.22 : 0.09;
-  const ringScale = 0.86 + 0.08 * Math.sin((localFrame / PHASE_FRAMES) * Math.PI * 2);
+  currentPalette: Palette;
+  nextPalette: Palette;
+  blend: number;
+}> = ({phase, currentPalette, nextPalette, blend}) => {
+  const driftX = Math.sin(phase * TAU) * 8;
+  const driftY = Math.cos(phase * TAU) * 5;
 
   return (
-    <AbsoluteFill style={{overflow: "hidden"}}>
+    <AbsoluteFill
+      style={{
+        overflow: "hidden",
+        background:
+          "radial-gradient(circle at 50% 50%, #0B1830 0%, #050B18 42%, #01040B 100%)",
+      }}
+    >
       <AbsoluteFill
         style={{
-          backgroundImage: `linear-gradient(${palette.secondary}55 1px, transparent 1px), linear-gradient(90deg, ${palette.secondary}55 1px, transparent 1px)`,
-          backgroundSize: phase === 6 ? "96px 96px" : "160px 160px",
-          opacity: gridOpacity,
-          transform: `perspective(900px) rotateX(${phase === 7 ? 9 : 0}deg) scale(1.08)`,
+          opacity: 1 - blend,
+          transform: `translate3d(${driftX}%, ${driftY}%, 0) scale(1.18)`,
+          background: `radial-gradient(circle at 36% 42%, ${currentPalette.glow} 0%, transparent 38%)`,
         }}
       />
-
-      {[0, 1, 2].map((index) => (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left: 960 - (390 + index * 190),
-            top: 540 - (390 + index * 190),
-            width: (390 + index * 190) * 2,
-            height: (390 + index * 190) * 2,
-            border: `1px solid ${palette.secondary}`,
-            borderRadius: "50%",
-            opacity: phase === 8 ? 0.16 - index * 0.03 : 0.035,
-            transform: `scale(${ringScale + index * 0.015})`,
-          }}
-        />
-      ))}
-
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: scan,
-          width: "100%",
-          height: 2,
-          background: `linear-gradient(90deg, transparent, ${palette.glow}, transparent)`,
-          boxShadow: `0 0 22px ${palette.glow}`,
-          opacity: phase === 4 || phase === 8 ? 0.28 : 0.1,
-        }}
-      />
-
       <AbsoluteFill
         style={{
-          background:
-            "repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 5px)",
-          mixBlendMode: "screen",
+          opacity: blend,
+          transform: `translate3d(${-driftY}%, ${driftX * 0.55}%, 0) scale(1.2)`,
+          background: `radial-gradient(circle at 65% 56%, ${nextPalette.glow} 0%, transparent 40%)`,
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: 0.32,
+          backgroundImage:
+            "linear-gradient(115deg, transparent 0%, rgba(75, 130, 255, 0.05) 42%, rgba(77, 225, 255, 0.1) 50%, rgba(244, 45, 143, 0.05) 58%, transparent 100%)",
+          transform: `translateX(${Math.sin(phase * TAU) * 7}%)`,
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const PeripheralWords: React.FC<{
+const GridWorld: React.FC<{
   phase: number;
-  localFrame: number;
-  palette: Palette;
-}> = ({phase, localFrame, palette}) => {
-  const phaseIn = interpolate(localFrame, [2, 13], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const phaseOut = interpolate(localFrame, [47, 57], [0, 1], {
-    ...clamp,
-    easing: Easing.in(Easing.cubic),
-  });
+  intensity: number;
+  transitionEnergy: number;
+}> = ({phase, intensity, transitionEnergy}) => {
+  const gridX = Math.sin(phase * TAU) * 90;
+  const gridY = Math.cos(phase * TAU) * 60;
+  const pitch = 54 + Math.sin(phase * TAU) * 4 + transitionEnergy * 8;
+  const yaw = -7 + Math.sin(phase * TAU * 2) * 1.8;
+  const scale = 1.08 + transitionEnergy * 0.12;
+  const scanX = 50 + Math.sin(phase * TAU) * 43;
 
   return (
-    <AbsoluteFill style={{overflow: "hidden", zIndex: 2}}>
-      {SLOTS.map((slot, index) => {
-        const word = phaseWord(index, phase);
-        const fittedSize = Math.min(slot.size, (slot.width - 12) / (word.length * 0.6));
-        const delayedFrame = Math.max(0, localFrame - ((index * 3) % 12));
-        const entrance = spring({
-          frame: delayedFrame,
-          fps: 60,
-          durationInFrames: 22,
-          config: {damping: 18, mass: 0.72, stiffness: 150},
-        });
-        const drift = Math.sin((localFrame + index * 13 + phase * 17) * 0.075) * 5;
-        const entryAmount = (1 - entrance) * 82;
-        const exitAmount = phaseOut * 42;
-        const laneShift = laneEntry(slot.lane, entryAmount + exitAmount);
-        const rotation = slot.rotation ?? ((index + phase) % 3 - 1) * 1.2;
-        const scale = phase === 8 ? 0.96 + entrance * 0.04 : 1;
+    <AbsoluteFill
+      style={{
+        perspective: 1500,
+        perspectiveOrigin: "50% 50%",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: 2850,
+          height: 1900,
+          transformOrigin: "50% 50%",
+          transform: `translate(-50%, -50%) rotateX(${pitch}deg) rotateZ(${yaw}deg) scale(${scale})`,
+          backgroundImage:
+            "linear-gradient(rgba(55, 223, 255, 0.26) 1px, transparent 1px), linear-gradient(90deg, rgba(55, 223, 255, 0.26) 1px, transparent 1px), linear-gradient(rgba(255, 46, 146, 0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 46, 146, 0.13) 1px, transparent 1px)",
+          backgroundSize: "110px 110px, 110px 110px, 550px 550px, 550px 550px",
+          backgroundPosition: `${gridX}px ${gridY}px, ${gridX}px ${gridY}px, ${gridX * 0.5}px ${gridY * 0.5}px, ${gridX * 0.5}px ${gridY * 0.5}px`,
+          opacity: 0.13 + intensity * 0.24,
+          filter: `drop-shadow(0 0 ${10 + intensity * 16}px rgba(50, 218, 255, 0.18))`,
+          WebkitMaskImage:
+            "radial-gradient(ellipse at center, #000 18%, rgba(0,0,0,.9) 48%, transparent 84%)",
+          maskImage:
+            "radial-gradient(ellipse at center, #000 18%, rgba(0,0,0,.9) 48%, transparent 84%)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: `${scanX}%`,
+          width: 3,
+          opacity: intensity * 0.42,
+          background:
+            "linear-gradient(180deg, transparent, rgba(80, 235, 255, .9), transparent)",
+          boxShadow: "0 0 24px rgba(70, 220, 255, .65)",
+          transform: "skewX(-11deg)",
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const GHOST_TERMS = [
+  "MACHINE",
+  "ARTIFICIAL INTELLIGENCE",
+  "DEEP LEARNING",
+  "COMPUTER",
+  "ROBOT",
+  "INFORMATION",
+  "NEURAL NETWORKS",
+  "DIGITAL",
+  "CYBER",
+  "BRAIN",
+] as const;
+
+const GhostPlane: React.FC<{
+  phase: number;
+  transitionEnergy: number;
+}> = ({phase, transitionEnergy}) => {
+  const turn = -7 + Math.sin(phase * TAU) * 2.2;
+  const travel = Math.sin(phase * TAU) * 76;
+
+  return (
+    <AbsoluteFill
+      style={{
+        perspective: 1500,
+        overflow: "hidden",
+        opacity: 0.58,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: 2660,
+          height: 1560,
+          transformStyle: "preserve-3d",
+          transform: `translate(-50%, -50%) translateY(${travel}px) rotateX(${46 + transitionEnergy * 12}deg) rotateZ(${turn}deg) scale(${1.04 + transitionEnergy * 0.16})`,
+          WebkitMaskImage:
+            "radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,.2) 24%, #000 62%, transparent 100%)",
+          maskImage:
+            "radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,.2) 24%, #000 62%, transparent 100%)",
+        }}
+      >
+        {Array.from({length: 30}, (_, index) => {
+          const column = index % 6;
+          const row = Math.floor(index / 6);
+          const word = GHOST_TERMS[(index * 3 + row) % GHOST_TERMS.length];
+          const color = WORD_COLORS[(index + row * 2) % WORD_COLORS.length];
+          const x = 70 + column * 500 + Math.sin(phase * TAU + index) * 24;
+          const y = 100 + row * 330 + Math.cos(phase * TAU + index * 0.7) * 18;
+          const rotation = ((index % 5) - 2) * 4;
+
+          return (
+            <div
+              key={`${word}-${index}`}
+              style={{
+                position: "absolute",
+                left: x,
+                top: y,
+                color,
+                fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+                fontSize: 22 + (index % 4) * 4,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                whiteSpace: "nowrap",
+                opacity: 0.1 + (index % 3) * 0.025,
+                transform: `rotate(${rotation}deg) translateZ(${(index % 4) * -70}px)`,
+                textShadow: `0 0 12px ${color}`,
+              }}
+            >
+              {word}
+            </div>
+          );
+        })}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+const AmbientStreaks: React.FC<{phase: number}> = ({phase}) => (
+  <AbsoluteFill style={{overflow: "hidden", opacity: 0.5}}>
+    {Array.from({length: 24}, (_, index) => {
+      const angle = -10 + (index % 5) * 2.4;
+      const left =
+        ((index * 193) % 1900) + Math.sin(phase * TAU + index * 0.72) * 86;
+      const top =
+        ((index * 127) % 1080) + Math.cos(phase * TAU + index * 0.51) * 38;
+      const width = 42 + (index % 6) * 34;
+      const color = WORD_COLORS[index % WORD_COLORS.length];
+
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left,
+            top,
+            width,
+            height: index % 4 === 0 ? 3 : 2,
+            borderRadius: 999,
+            background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
+            opacity: 0.08 + (index % 3) * 0.025,
+            transform: `rotate(${angle}deg)`,
+            filter: `blur(${index % 4 === 0 ? 0 : 0.6}px)`,
+            boxShadow: `0 0 10px ${color}`,
+          }}
+        />
+      );
+    })}
+  </AbsoluteFill>
+);
+
+const KineticWordLayer: React.FC<{
+  wave: Wave;
+  opacity: number;
+  blend: number;
+  incoming: boolean;
+  phase: number;
+  transitionEnergy: number;
+}> = ({wave, opacity, blend, incoming, phase, transitionEnergy}) => {
+  const transitionOffset = incoming ? 1 - blend : blend;
+  const travelDirection = incoming ? -1 : 1;
+
+  return (
+    <AbsoluteFill
+      style={{
+        perspective: 1350,
+        transformStyle: "preserve-3d",
+        opacity,
+      }}
+    >
+      {wave.words.map((word, index) => {
+        const slot = SLOTS[(index + wave.slotRotation) % SLOTS.length];
+        const driftX =
+          Math.sin(phase * TAU + index * 1.17 + wave.slotRotation) *
+          (11 + Math.abs(slot.depth) * 24);
+        const driftY =
+          Math.cos(phase * TAU + index * 0.83 + wave.slotRotation) *
+          (7 + Math.abs(slot.depth) * 18);
+        const rush = transitionEnergy * slot.depth * 120 * wave.turn;
+        const x =
+          slot.x +
+          driftX +
+          travelDirection * slot.enterX * transitionOffset +
+          rush;
+        const y =
+          slot.y +
+          driftY +
+          travelDirection * slot.enterY * transitionOffset +
+          rush * 0.28;
+        const z =
+          slot.depth * 220 +
+          travelDirection * transitionOffset * 280 +
+          transitionEnergy * slot.depth * 180;
+        const rotation =
+          slot.rotation +
+          Math.sin(phase * TAU + index) * 0.9 +
+          transitionEnergy * wave.turn * (2 + Math.abs(slot.depth) * 6);
+        const scale =
+          1 + slot.depth * 0.055 + transitionEnergy * (0.04 + Math.abs(slot.depth) * 0.12);
+        const blur = transitionOffset * 11 + transitionEnergy * 1.8;
+        const color =
+          WORD_COLORS[(index + wave.palette * 2 + wave.slotRotation) % WORD_COLORS.length];
 
         return (
           <div
-            key={`${phase}-${index}`}
+            key={`${wave.palette}-${word}-${index}`}
             style={{
               position: "absolute",
-              left: slot.x,
-              top: slot.y,
+              left: x,
+              top: y,
               width: slot.width,
-              color: index % 3 === 0 ? palette.primary : palette.secondary,
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontWeight: index % 3 === 0 ? 700 : 500,
-              fontSize: fittedSize,
-              lineHeight: 1,
-              letterSpacing: index % 2 === 0 ? 1.5 : 3,
+              color,
+              fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+              fontSize: keywordSize(word, slot),
+              fontWeight: 700,
+              lineHeight: 0.95,
+              letterSpacing: "0.075em",
               textAlign: slot.align,
               whiteSpace: "nowrap",
-              overflow: "hidden",
-              opacity: phaseIn * (1 - phaseOut) * slot.opacity,
-              textShadow: `0 0 10px ${palette.glow}26`,
-              transformOrigin: "left top",
-              transform: `${laneShift} translate(${slot.lane === "top" || slot.lane === "bottom" ? drift : 0}px, ${slot.lane === "left" || slot.lane === "right" ? drift : 0}px) rotate(${rotation}deg) scale(${scale})`,
+              opacity: slot.opacity,
+              transformOrigin: "50% 50%",
+              transform: `translate(-50%, -50%) translateZ(${z}px) rotateZ(${rotation}deg) scale(${scale})`,
+              filter: `blur(${blur.toFixed(2)}px) drop-shadow(0 0 15px ${color}55)`,
+              textShadow: `0 2px 0 rgba(0,0,0,.72), 0 0 18px ${color}44`,
+              WebkitFontSmoothing: "antialiased",
             }}
           >
             {word}
@@ -219,193 +631,273 @@ const PeripheralWords: React.FC<{
   );
 };
 
-const HeroWords: React.FC<{
+const TitleLayer: React.FC<{
   palette: Palette;
-  localFrame: number;
-  phase: number;
-  ghost?: "cyan" | "magenta";
-  clipTop?: number;
-  clipBottom?: number;
-}> = ({palette, localFrame, phase, ghost, clipTop = 0, clipBottom = 0}) => {
-  const boundaryDistance = Math.min(localFrame, PHASE_FRAMES - localFrame);
-  const glitch = interpolate(boundaryDistance, [0, 3], [1, 0], clamp);
-  const ghostShift = ghost === "cyan" ? -6 : ghost === "magenta" ? 6 : 0;
-  const ghostColor = ghost === "cyan" ? "#39ddff" : "#ff3d9f";
+  opacity: number;
+}> = ({palette, opacity}) => (
+  <div
+    style={{
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      opacity,
+      color: palette.face,
+      WebkitTextStroke: `1.2px ${palette.highlight}`,
+      textShadow: titleShadow(palette),
+      filter: `drop-shadow(0 0 22px ${palette.glow})`,
+    }}
+  >
+    <div style={{fontSize: 114, lineHeight: 0.86}}>ARTIFICIAL</div>
+    <div style={{fontSize: 121, lineHeight: 0.88}}>INTELLIGENCE</div>
+  </div>
+);
+
+const TransitionEchoes: React.FC<{
+  palette: Palette;
+  energy: number;
+  turn: number;
+}> = ({palette, energy, turn}) => {
+  if (energy < 0.001) {
+    return null;
+  }
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: CENTER_SAFE.left,
-        top: CENTER_SAFE.top,
-        width: CENTER_SAFE.width,
-        height: CENTER_SAFE.height,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        overflow: "hidden",
-        clipPath: `inset(${clipTop}% 0 ${clipBottom}% 0)`,
-        color: ghost ? ghostColor : palette.primary,
-        opacity: ghost ? glitch * 0.16 : 1,
-        transform: `translateX(${ghostShift * glitch}px)`,
-        zIndex: ghost ? 5 : 6,
-      }}
-    >
-      <div
-        style={{
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 128,
-          fontWeight: 800,
-          lineHeight: 0.98,
-          letterSpacing: 8,
-          whiteSpace: "nowrap",
-          textShadow: ghost ? "none" : `0 0 18px ${palette.glow}26`,
-        }}
-      >
-        ARTIFICIAL
-      </div>
-      <div
-        style={{
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 116,
-          fontWeight: 800,
-          lineHeight: 1,
-          letterSpacing: 6,
-          whiteSpace: "nowrap",
-          textShadow: ghost ? "none" : `0 0 18px ${palette.glow}26`,
-        }}
-      >
-        INTELLIGENCE
-      </div>
-      {!ghost && (
+    <AbsoluteFill style={{pointerEvents: "none"}}>
+      {[1, 2, 3, 4].map((index) => (
         <div
+          key={index}
           style={{
             position: "absolute",
-            left: 118,
-            right: 118,
-            bottom: 58,
-            height: 2,
-            background: `linear-gradient(90deg, transparent, ${palette.primary}, transparent)`,
-            opacity: 0.58 + Math.sin((localFrame + phase * 11) * 0.1) * 0.12,
+            left: "50%",
+            top: "50%",
+            width: 1280,
+            textAlign: "center",
+            color: palette.face,
+            fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+            fontWeight: 900,
+            fontSize: 106,
+            lineHeight: 0.88,
+            letterSpacing: "0.025em",
+            whiteSpace: "nowrap",
+            opacity: energy * (0.075 / index),
+            filter: `blur(${index * 2.2}px)`,
+            transform: `translate(-50%, -50%) rotate(${turn * index * energy * 1.2}deg) scale(${1 + index * energy * 0.075})`,
+            textShadow: `0 0 24px ${palette.glow}`,
           }}
-        />
-      )}
-    </div>
+        >
+          ARTIFICIAL
+          <br />
+          INTELLIGENCE
+        </div>
+      ))}
+    </AbsoluteFill>
   );
 };
 
-const TransitionSlices: React.FC<{
-  localFrame: number;
-  palette: Palette;
+const CentralTitle: React.FC<{
   phase: number;
-}> = ({localFrame, palette, phase}) => {
-  const boundaryDistance = Math.min(localFrame, PHASE_FRAMES - localFrame);
-  const strength = interpolate(boundaryDistance, [0, 5], [1, 0], clamp);
-
-  if (strength <= 0) return null;
+  currentPalette: Palette;
+  nextPalette: Palette;
+  blend: number;
+  transitionEnergy: number;
+  turn: number;
+}> = ({
+  phase,
+  currentPalette,
+  nextPalette,
+  blend,
+  transitionEnergy,
+  turn,
+}) => {
+  const breathe = 1 + Math.sin(phase * TAU) * 0.008;
+  const scale = breathe + transitionEnergy * 0.045;
+  const tilt = -1.4 + Math.sin(phase * TAU) * 0.55 + transitionEnergy * turn * 2.2;
+  const pitch = 8 + transitionEnergy * 4;
+  const bracketPulse = 0.55 + Math.sin(phase * TAU * 2) * 0.12;
 
   return (
-    <AbsoluteFill style={{zIndex: 10, pointerEvents: "none", overflow: "hidden"}}>
-      {Array.from({length: 7}).map((_, index) => {
-        const top = 112 + index * 136 + ((phase * 29 + index * 17) % 44);
-        const width = 440 + ((phase * 137 + index * 211) % 980);
-        const left = ((phase * 191 + index * 277) % 1540) - 80;
-        const height = 2 + ((index + phase) % 3) * 2;
-        const direction = index % 2 === 0 ? 1 : -1;
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: 190,
+          top: "50%",
+          width: 260,
+          height: 2,
+          opacity: bracketPulse,
+          background:
+            "linear-gradient(90deg, transparent, rgba(92,220,255,.75))",
+          boxShadow: "0 0 16px rgba(74,216,255,.4)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          right: 190,
+          top: "50%",
+          width: 260,
+          height: 2,
+          opacity: bracketPulse,
+          background:
+            "linear-gradient(90deg, rgba(92,220,255,.75), transparent)",
+          boxShadow: "0 0 16px rgba(74,216,255,.4)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: 1280,
+          height: 282,
+          transformStyle: "preserve-3d",
+          transform: `translate(-50%, -50%) perspective(1500px) rotateX(${pitch}deg) rotateZ(${tilt}deg) scale(${scale})`,
+          transformOrigin: "50% 50%",
+          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+          fontWeight: 900,
+          letterSpacing: "0.025em",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          WebkitFontSmoothing: "antialiased",
+        }}
+      >
+        <TitleLayer palette={currentPalette} opacity={1 - blend} />
+        <TitleLayer palette={nextPalette} opacity={blend} />
+      </div>
+    </>
+  );
+};
 
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left,
-              top,
-              width,
-              height,
-              background: index % 2 === 0 ? palette.primary : palette.glow,
-              boxShadow: `0 0 12px ${palette.glow}`,
-              opacity: strength * (0.18 + index * 0.025),
-              transform: `translateX(${direction * strength * (18 + index * 6)}px)`,
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
+const EdgeLabels: React.FC<{phase: number}> = ({phase}) => {
+  const opacity = 0.22 + Math.sin(phase * TAU) * 0.04;
+  return (
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: 42,
+          bottom: 36,
+          color: "#65CFFF",
+          opacity,
+          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+          fontSize: 13,
+          fontWeight: 700,
+          letterSpacing: "0.24em",
+        }}
+      >
+        MACHINE · DIGITAL · INFORMATION
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 42,
+          top: 36,
+          color: "#FF4A9C",
+          opacity,
+          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+          fontSize: 13,
+          fontWeight: 700,
+          letterSpacing: "0.24em",
+          textAlign: "right",
+        }}
+      >
+        NEURAL NETWORKS · DEEP LEARNING
+      </div>
+    </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const loopFrame = ((frame % LOOP_FRAMES) + LOOP_FRAMES) % LOOP_FRAMES;
-  const phase = Math.floor(loopFrame / PHASE_FRAMES);
-  const localFrame = loopFrame % PHASE_FRAMES;
-  const palette = PALETTES[phase];
-  const slowPush = interpolate(localFrame, [0, PHASE_FRAMES], [1.015, 1.035], clamp);
-  const pulse = 0.72 + 0.05 * Math.sin((frame / fps) * Math.PI * 2);
+  const {durationInFrames} = useVideoConfig();
+
+  // Duplicating the first visual state on the final frame guarantees a clean loop.
+  const normalizedFrame = frame >= durationInFrames - 1 ? 0 : frame;
+  const phase = normalizedFrame / Math.max(1, durationInFrames - 1);
+  const wavePosition = phase * WAVES.length;
+  const wholeWave = Math.floor(wavePosition);
+  const localWave = wavePosition - wholeWave;
+  const currentIndex = wholeWave % WAVES.length;
+  const nextIndex = (currentIndex + 1) % WAVES.length;
+  const blend = smootherStep(0.64, 1, localWave);
+  const transitionEnergy = Math.sin(blend * Math.PI);
+  const currentWave = WAVES[currentIndex];
+  const nextWave = WAVES[nextIndex];
+  const currentPalette = PALETTES[currentWave.palette];
+  const nextPalette = PALETTES[nextWave.palette];
+  const gridIntensity =
+    currentWave.grid * (1 - blend) + nextWave.grid * blend;
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: palette.background,
         overflow: "hidden",
-        isolation: "isolate",
+        backgroundColor: "#01040B",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: -30,
-          transform: `scale(${slowPush})`,
-          transformOrigin: "center",
-        }}
-      >
-        <BackgroundTexture phase={phase} localFrame={localFrame} palette={palette} />
-        <PeripheralWords phase={phase} localFrame={localFrame} palette={palette} />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: CENTER_SAFE.left - 145,
-          top: CENTER_SAFE.top - 90,
-          width: CENTER_SAFE.width + 290,
-          height: CENTER_SAFE.height + 180,
-          background: `radial-gradient(ellipse at center, ${palette.background} 0%, ${palette.background}f0 46%, ${palette.background}70 70%, transparent 82%)`,
-          opacity: pulse,
-          zIndex: 4,
-          pointerEvents: "none",
-        }}
-      />
-
-      <HeroWords palette={palette} localFrame={localFrame} phase={phase} />
-      <HeroWords
-        palette={palette}
-        localFrame={localFrame}
+      <BackgroundAtmosphere
         phase={phase}
-        ghost="cyan"
-        clipTop={12}
-        clipBottom={72}
+        currentPalette={currentPalette}
+        nextPalette={nextPalette}
+        blend={blend}
       />
-      <HeroWords
-        palette={palette}
-        localFrame={localFrame}
+      <GridWorld
         phase={phase}
-        ghost="magenta"
-        clipTop={67}
-        clipBottom={13}
+        intensity={gridIntensity}
+        transitionEnergy={transitionEnergy}
+      />
+      <GhostPlane phase={phase} transitionEnergy={transitionEnergy} />
+      <AmbientStreaks phase={phase} />
+
+      <KineticWordLayer
+        wave={currentWave}
+        opacity={1 - blend}
+        blend={blend}
+        incoming={false}
+        phase={phase}
+        transitionEnergy={transitionEnergy}
+      />
+      <KineticWordLayer
+        wave={nextWave}
+        opacity={blend}
+        blend={blend}
+        incoming
+        phase={phase}
+        transitionEnergy={transitionEnergy}
       />
 
-      <TransitionSlices localFrame={localFrame} palette={palette} phase={phase} />
+      <TransitionEchoes
+        palette={nextPalette}
+        energy={transitionEnergy}
+        turn={nextWave.turn}
+      />
+      <CentralTitle
+        phase={phase}
+        currentPalette={currentPalette}
+        nextPalette={nextPalette}
+        blend={blend}
+        transitionEnergy={transitionEnergy}
+        turn={nextWave.turn}
+      />
+      <EdgeLabels phase={phase} />
 
       <AbsoluteFill
         style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 38%, rgba(0,0,0,0.18) 68%, rgba(0,0,0,0.74) 100%)",
-          zIndex: 12,
           pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at center, transparent 42%, rgba(0, 3, 12, .2) 68%, rgba(0, 2, 9, .76) 100%)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          opacity: 0.12,
+          backgroundImage:
+            "repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(115, 190, 255, .08) 4px)",
+          mixBlendMode: "screen",
         }}
       />
     </AbsoluteFill>
