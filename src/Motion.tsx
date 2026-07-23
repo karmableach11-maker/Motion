@@ -1,870 +1,439 @@
-import React from "react";
-import {AbsoluteFill, useCurrentFrame, useVideoConfig} from "remotion";
+import React, {useEffect, useState} from 'react';
+import {
+  AbsoluteFill,
+  useCurrentFrame,
+  useVideoConfig,
+  interpolate,
+  spring,
+  Easing,
+  delayRender,
+  continueRender,
+} from 'remotion';
 
-const DESIGN_WIDTH = 1920;
-const DESIGN_HEIGHT = 1080;
-const CENTER_X = DESIGN_WIDTH / 2;
-const CENTER_Y = DESIGN_HEIGHT / 2;
-const TAU = Math.PI * 2;
+/* ============================================================================
+   AI NEURAL NETWORK — THINKING CORE
+   Premium microstock motion graphic. 1920x1080 @ 60fps, 900 frames (15s).
+   Brain silhouette: Fluent Emoji (Microsoft) high-contrast "brain", MIT license.
+   Self-contained: brain path inlined; core Remotion + SVG + CSS only.
+   ========================================================================== */
 
-const fract = (value: number) => value - Math.floor(value);
+const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const NUM = {fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"'} as const;
 
-const seeded = (index: number, salt = 0) =>
-  fract(Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453123);
-
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-const smoothstep = (from: number, to: number, value: number) => {
-  const normalized = clamp01((value - from) / Math.max(0.00001, to - from));
-  return normalized * normalized * (3 - 2 * normalized);
-};
-
-const mix = (from: number, to: number, progress: number) =>
-  from + (to - from) * progress;
-
-const circlePath = (x: number, y: number, radius: number) => {
-  const safeRadius = Math.max(0.12, radius);
-  const diameter = safeRadius * 2;
-  return `M ${x.toFixed(2)} ${y.toFixed(2)} m ${(-safeRadius).toFixed(
-    2,
-  )} 0 a ${safeRadius.toFixed(2)} ${safeRadius.toFixed(
-    2,
-  )} 0 1 0 ${diameter.toFixed(2)} 0 a ${safeRadius.toFixed(
-    2,
-  )} ${safeRadius.toFixed(2)} 0 1 0 ${(-diameter).toFixed(2)} 0`;
-};
-
-type NetworkNode = {
-  x: number;
-  y: number;
-  radius: number;
-  radial: number;
-  depth: number;
-  phase: number;
-  ring: number;
-};
-
-type NetworkEdge = {
-  from: number;
-  to: number;
-  radial: number;
-  phase: number;
-  accent: boolean;
-};
-
-const RING_COUNTS = [12, 16, 20, 24, 28];
-const RING_RADII = [250, 385, 535, 705, 900];
-const RING_OFFSETS: number[] = [];
-const NETWORK_NODES: NetworkNode[] = [];
-
-let nodeOffset = 0;
-for (let ring = 0; ring < RING_COUNTS.length; ring++) {
-  RING_OFFSETS.push(nodeOffset);
-  const count = RING_COUNTS[ring];
-
-  for (let position = 0; position < count; position++) {
-    const index = nodeOffset + position;
-    const angle =
-      (position / count) * TAU +
-      ring * 0.173 +
-      (seeded(index, 3) - 0.5) * 0.18;
-    const radius = RING_RADII[ring] * (0.93 + seeded(index, 4) * 0.14);
-    const depth = 0.35 + ((Math.sin(angle) + 1) / 2) * 0.5 + seeded(index, 5) * 0.15;
-
-    NETWORK_NODES.push({
-      x: CENTER_X + Math.cos(angle) * radius + (seeded(index, 6) - 0.5) * 38,
-      y:
-        CENTER_Y +
-        Math.sin(angle) * radius * 0.63 +
-        (seeded(index, 7) - 0.5) * 34,
-      radius: 1.6 + seeded(index, 8) * 4.2,
-      radial: radius / RING_RADII[RING_RADII.length - 1],
-      depth,
-      phase: seeded(index, 9) * TAU,
-      ring,
-    });
-  }
-
-  nodeOffset += count;
-}
-
-const NETWORK_EDGES: NetworkEdge[] = [];
-
-for (let ring = 0; ring < RING_COUNTS.length; ring++) {
-  const count = RING_COUNTS[ring];
-  const offset = RING_OFFSETS[ring];
-
-  for (let position = 0; position < count; position++) {
-    const from = offset + position;
-    const around = offset + ((position + 1) % count);
-    NETWORK_EDGES.push({
-      from,
-      to: around,
-      radial: NETWORK_NODES[from].radial,
-      phase: seeded(from, 40),
-      accent: (from + ring) % 7 === 0,
-    });
-
-    if (ring < RING_COUNTS.length - 1) {
-      const nextCount = RING_COUNTS[ring + 1];
-      const nextOffset = RING_OFFSETS[ring + 1];
-      const mapped =
-        Math.round(
-          (position / count) * nextCount + (seeded(from, 41) - 0.5) * 1.4,
-        ) % nextCount;
-      const to = nextOffset + (mapped + nextCount) % nextCount;
-
-      NETWORK_EDGES.push({
-        from,
-        to,
-        radial: Math.max(NETWORK_NODES[from].radial, NETWORK_NODES[to].radial),
-        phase: seeded(from, 42),
-        accent: (from + position) % 5 === 0,
-      });
-
-      if (position % 4 === ring % 4) {
-        const fork = nextOffset + ((mapped + 2 + nextCount) % nextCount);
-        NETWORK_EDGES.push({
-          from,
-          to: fork,
-          radial: Math.max(
-            NETWORK_NODES[from].radial,
-            NETWORK_NODES[fork].radial,
-          ),
-          phase: seeded(from, 43),
-          accent: false,
-        });
-      }
-    }
-  }
-}
-
-const NETWORK_BASE_PATH = NETWORK_EDGES.map((edge) => {
-  const from = NETWORK_NODES[edge.from];
-  const to = NETWORK_NODES[edge.to];
-  return `M ${from.x.toFixed(2)} ${from.y.toFixed(2)} L ${to.x.toFixed(
-    2,
-  )} ${to.y.toFixed(2)}`;
-}).join(" ");
-
-const BACKGROUND_STARS = Array.from({length: 190}, (_, index) => ({
-  x: seeded(index, 60) * DESIGN_WIDTH,
-  y: seeded(index, 61) * DESIGN_HEIGHT,
-  radius: 0.45 + seeded(index, 62) * 1.8,
-  opacity: 0.12 + seeded(index, 63) * 0.46,
-  phase: seeded(index, 64) * TAU,
-  cycles: 1 + (index % 3),
-  color: index % 13 === 0 ? "#8b6dff" : index % 7 === 0 ? "#35dfff" : "#b9d9ff",
-}));
-
-type SphereParticle = {
-  sphereX: number;
-  sphereY: number;
-  sphereZ: number;
-  scatterX: number;
-  scatterY: number;
-  size: number;
-  delay: number;
-  color: number;
-  phase: number;
-};
-
-const SPHERE_PARTICLE_COUNT = 1500;
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
-const SPHERE_PARTICLES: SphereParticle[] = Array.from(
-  {length: SPHERE_PARTICLE_COUNT},
-  (_, index) => {
-    const sphereY = 1 - (2 * (index + 0.5)) / SPHERE_PARTICLE_COUNT;
-    const ringRadius = Math.sqrt(Math.max(0, 1 - sphereY * sphereY));
-    const theta = index * GOLDEN_ANGLE + seeded(index, 72) * 0.24;
-    const scatterAngle = seeded(index, 73) * TAU;
-    const scatterRadius = 285 + seeded(index, 74) * 690;
-    const scatterDepth = 0.48 + seeded(index, 75) * 0.52;
-
-    return {
-      sphereX: Math.cos(theta) * ringRadius,
-      sphereY,
-      sphereZ: Math.sin(theta) * ringRadius,
-      scatterX:
-        CENTER_X +
-        Math.cos(scatterAngle) * scatterRadius +
-        (seeded(index, 76) - 0.5) * 110,
-      scatterY:
-        CENTER_Y +
-        Math.sin(scatterAngle) * scatterRadius * 0.58 +
-        (seeded(index, 77) - 0.5) * 82,
-      size: (0.55 + seeded(index, 78) * 1.75) * scatterDepth,
-      delay: seeded(index, 79),
-      color: index % 17 === 0 ? 2 : index % 5 === 0 ? 1 : 0,
-      phase: seeded(index, 80) * TAU,
-    };
-  },
-);
-
-const CORONA_PARTICLES = Array.from({length: 220}, (_, index) => ({
-  angle: seeded(index, 90) * TAU,
-  radius: 190 + seeded(index, 91) * 285,
-  ellipse: 0.36 + seeded(index, 92) * 0.34,
-  size: 0.65 + seeded(index, 93) * 2.35,
-  speed: (index % 2 === 0 ? 1 : -1) * (0.35 + seeded(index, 94) * 0.9),
-  phase: seeded(index, 95) * TAU,
-  color: index % 9 === 0 ? 2 : index % 4 === 0 ? 1 : 0,
-}));
-
-const TITLE_SLICES = Array.from({length: 14}, (_, index) => ({
-  dx: (seeded(index, 110) - 0.5) * 250,
-  dy: (seeded(index, 111) - 0.5) * 90,
-  skew: (seeded(index, 112) - 0.5) * 16,
-}));
-
-const TITLE_DUST = Array.from({length: 260}, (_, index) => {
-  const x = CENTER_X + (seeded(index, 120) - 0.5) * 1160;
-  const y = CENTER_Y + (seeded(index, 121) - 0.5) * 112;
-  const horizontalDirection = Math.sign(x - CENTER_X || 1);
-
-  return {
-    x,
-    y,
-    dx:
-      horizontalDirection * (70 + seeded(index, 122) * 260) +
-      (seeded(index, 123) - 0.5) * 100,
-    dy: (seeded(index, 124) - 0.5) * 210,
-    width: 1.2 + seeded(index, 125) * 8.5,
-    height: 0.7 + seeded(index, 126) * 2.1,
-    phase: seeded(index, 127) * TAU,
-    color: index % 11 === 0 ? 2 : index % 4 === 0 ? 1 : 0,
-  };
-});
-
-const PULSES = [
-  {start: 0.285, duration: 0.22, strength: 0.48},
-  {start: 0.43, duration: 0.21, strength: 0.72},
-  {start: 0.565, duration: 0.24, strength: 1},
+// Fluent Emoji high-contrast "brain" (MIT) — viewBox 0 0 32 32
+const BRAIN_PATHS = [
+  'M20.505 7.286a1 1 0 0 1-1.414 0A2.94 2.94 0 0 0 17 6.421c-.82 0-1.553.329-2.091.865a.999.999 0 1 1-1.414-1.414A4.95 4.95 0 0 1 17 4.421a4.95 4.95 0 0 1 3.505 1.451a1 1 0 0 1 0 1.414M8.894 6.331a10 10 0 0 0-2.369 1.923l-.001.001a10 10 0 0 0-1.683 2.558a9.9 9.9 0 0 0-.835 3.028a1 1 0 1 0 1.988.22a8 8 0 0 1 .667-2.418a8 8 0 0 1 3.242-3.585a1 1 0 1 0-1.009-1.727M24 17.5a1 1 0 0 1 2 0a3.494 3.494 0 0 1-3.358 3.486c.223.459.358.969.358 1.514a1 1 0 0 1-2 0a1.5 1.5 0 0 0-1.5-1.5h-6.182a1 1 0 0 1 0-2H15.5a1.503 1.503 0 0 0 1.5-1.5a1 1 0 0 1 2 0c0 .539-.132 1.044-.35 1.5h3.85a1.503 1.503 0 0 0 1.5-1.5',
+  'M32 16.711c0-.628-.045-1.236-.114-1.826C30.979 7.067 24.348 1.002 16.289 1h-1.232C6.74 1.001.001 7.74 0 16.057A5.943 5.943 0 0 0 5.943 22h1.241a6.494 6.494 0 0 0 6.316 5h7.104l3.116 3.116a.75.75 0 0 0 1.28-.53v-2.669a7.99 7.99 0 0 0 6.664-5.631c.143-.478.225-.982.277-1.495l.003-.008c.028-.092.056-.183.056-.283q-.001-.092-.008-.182l-.007-.115q.001-.048.007-.093Q32 19.055 32 19zm-2.252 4.004A6 6 0 0 1 24 25H13.5a4.5 4.5 0 0 1-4.479-4.09l-.006-.064A4.974 4.974 0 0 1 14 16a1 1 0 0 0 0-2a7 7 0 0 0-3.36.859a4 4 0 0 0-.812-1.188a.999.999 0 1 0-1.414 1.414c.284.285.477.65.55 1.059A7 7 0 0 0 7.08 20H5.943a3.93 3.93 0 0 1-2.789-1.155A3.93 3.93 0 0 1 2 16.057c0-3.609 1.46-6.867 3.824-9.233A13 13 0 0 1 15.057 3h1.232c6.69-.002 12.246 4.8 13.451 11.139a7.5 7.5 0 0 0-4.03-2.033c.503-.922.79-1.981.79-3.106a1 1 0 0 0-2 0a4.48 4.48 0 0 1-1.318 3.182A4.48 4.48 0 0 1 20 13.5a1 1 0 0 0 0 2a6.47 6.47 0 0 0 4.215-1.558l.016.005A1 1 0 0 0 24.5 14c1.522 0 2.891.614 3.889 1.611a5.48 5.48 0 0 1 1.596 3.592a6 6 0 0 1-.237 1.512',
 ];
 
-const CORE_COLORS = ["#53e7ff", "#5f82ff", "#9c62ff"];
-const TITLE_DUST_COLORS = ["#eafcff", "#43e4ff", "#9a6cff"];
+// Solid outer silhouette (outer contour of the brain), used for clip + body fill
+const SOLID_BRAIN = BRAIN_PATHS[1].split('z')[0] + 'z';
 
-export const Motion: React.FC = () => {
+// Brain placement in 1920x1080
+const BS = 20; // scale
+const BTX = 640;
+const BTY = 180;
+const CX = 960;
+const CY = 500;
+const BRAIN_TRANSFORM = `translate(${BTX},${BTY}) scale(${BS})`;
+
+const eOut = Easing.out(Easing.cubic);
+const eExpo = Easing.bezier(0.16, 1, 0.3, 1);
+const eInOut = Easing.inOut(Easing.cubic);
+
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const ease = (f: number, a: number, b: number, e = eExpo) =>
+  interpolate(f, [a, b], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: e});
+
+const mulberry32 = (a: number) => () => {
+  a |= 0;
+  a = (a + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/* ---- node + edge generation (deterministic) ------------------------------ */
+type Node = {x: number; y: number; z: number; d: number; seed: number};
+const NODES: Node[] = (() => {
+  const r = mulberry32(7133);
+  const bx: [number, number] = [672, 1248];
+  const by: [number, number] = [216, 812];
+  const out: Node[] = [];
+  for (let i = 0; i < 118; i++) {
+    const x = bx[0] + r() * (bx[1] - bx[0]);
+    const y = by[0] + r() * (by[1] - by[0]);
+    out.push({x, y, z: r() * 2 - 1, d: Math.hypot(x - CX, y - CY), seed: r()});
+  }
+  return out;
+})();
+type Edge = {a: number; b: number; len: number; mid: number; phase: number};
+const EDGES: Edge[] = (() => {
+  const r = mulberry32(9021);
+  const out: Edge[] = [];
+  for (let i = 0; i < NODES.length; i++) {
+    const near: [number, number][] = [];
+    for (let j = 0; j < NODES.length; j++) {
+      if (i === j) continue;
+      const dd = Math.hypot(NODES[i].x - NODES[j].x, NODES[i].y - NODES[j].y);
+      if (dd < 118) near.push([dd, j]);
+    }
+    near.sort((p, q) => p[0] - q[0]);
+    near.slice(0, 3).forEach(([dd, j]) => {
+      if (i < j) {
+        const mid = (NODES[i].d + NODES[j].d) / 2;
+        out.push({a: i, b: j, len: dd, mid, phase: r()});
+      }
+    });
+  }
+  return out;
+})();
+const MAXD = Math.max(...NODES.map((n) => n.d));
+
+/* ---- particles streaming into the core ----------------------------------- */
+const PARTS = (() => {
+  const r = mulberry32(555);
+  return Array.from({length: 30}, () => {
+    const ang = r() * Math.PI * 2;
+    const rad = 430 + r() * 260;
+    return {sx: CX + Math.cos(ang) * rad, sy: CY + Math.sin(ang) * rad * 0.8, phase: r(), speed: 0.6 + r() * 0.7};
+  });
+})();
+
+/* ---- starfield ----------------------------------------------------------- */
+const STARS = (() => {
+  const r = mulberry32(4242);
+  return Array.from({length: 70}, () => ({x: r() * 1920, y: r() * 1080, s: 0.6 + r() * 1.8, ph: r() * 6.28, sp: 0.4 + r() * 0.8}));
+})();
+
+const LABELS = [
+  {x: 812, y: 388, t: 'activation 0.94'},
+  {x: 1096, y: 372, t: 'layer 07'},
+  {x: 1150, y: 560, t: 'inference'},
+  {x: 772, y: 556, t: 'synapse'},
+  {x: 960, y: 300, t: 'processing'},
+];
+
+const T = {
+  auraIn: 4,
+  outlineDraw: 24,
+  outlineEnd: 150,
+  bodyIn: 92,
+  nodesStart: 128,
+  edgesStart: 168,
+  edgesEnd: 336,
+  coreIgnite: 250,
+  signalsStart: 300,
+  actStart: 360,
+  actEnd: 520,
+  settle: 742,
+};
+
+/* camera parallax angle */
+const camAngle = (f: number) => Math.sin(f / 150) + Math.sin(f / 380) * 0.4;
+const nodeDisp = (n: Node, f: number) => {
+  const cam = camAngle(f);
+  return {x: n.x + n.z * 30 * cam, y: n.y + n.z * 10 * Math.sin(f / 210)};
+};
+// activation wave: expands from core through the layers, repeats during activation
+const waveBoost = (d: number, f: number) => {
+  if (f < T.signalsStart) return 0;
+  const t = (f - T.signalsStart) / 150;
+  let boost = 0;
+  for (let k = 0; k < 3; k++) {
+    const wp = ((t + k * 0.4) % 1.35) * MAXD;
+    const dist = Math.abs(d - wp);
+    boost = Math.max(boost, Math.exp(-(dist * dist) / (2 * 60 * 60)));
+  }
+  const intensity = f >= T.actStart && f <= T.actEnd ? 1 : f < T.actStart ? 0.5 : 0.62;
+  return boost * intensity;
+};
+
+/* ============================================================================
+   BACKGROUND
+   ========================================================================== */
+const Background: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames, width, height} = useVideoConfig();
-  const t = frame / Math.max(1, durationInFrames);
-  const loopAngle = t * TAU;
+  const aura = ease(frame, T.auraIn, 80, eOut);
+  const breathe = 0.5 + 0.5 * Math.sin(frame / 40);
+  const actGlow = ease(frame, T.actStart, T.actStart + 60, eOut) * (1 - ease(frame, T.actEnd, T.actEnd + 120, eOut)) * 0.5;
+  return (
+    <>
+      <AbsoluteFill style={{background: 'radial-gradient(130% 100% at 50% 46%, #0B1734 0%, #070C1E 46%, #04060F 100%)'}} />
+      {/* nebula glows */}
+      {[
+        {c: '#1E5BFF', s: 1300, x: 640, y: 360, a: 0.22, sp: 1},
+        {c: '#8B5CF6', s: 1100, x: 1320, y: 560, a: 0.2, sp: 1.5},
+        {c: '#12C8E0', s: 900, x: 980, y: 860, a: 0.14, sp: 1.1},
+      ].map((b, i) => {
+        const dx = Math.sin(frame / (200 * b.sp) + i) * 40;
+        return <div key={i} style={{position: 'absolute', left: b.x - b.s / 2 + dx, top: b.y - b.s / 2, width: b.s, height: b.s, borderRadius: '50%', background: `radial-gradient(circle at 50% 50%, ${b.c} 0%, rgba(0,0,0,0) 70%)`, opacity: b.a}} />;
+      })}
+      {/* central aura behind brain */}
+      <div style={{position: 'absolute', left: CX - 520, top: CY - 520, width: 1040, height: 1040, borderRadius: '50%', background: `radial-gradient(circle at 50% 50%, rgba(64,150,255,${0.16 + breathe * 0.08 + actGlow}) 0%, rgba(120,90,255,0.06) 38%, rgba(0,0,0,0) 66%)`, opacity: aura}} />
+      {/* starfield */}
+      <svg width="1920" height="1080" style={{position: 'absolute'}}>
+        {STARS.map((s, i) => (
+          <circle key={i} cx={s.x} cy={s.y} r={s.s} fill="#BcD4FF" opacity={(0.15 + 0.5 * (0.5 + 0.5 * Math.sin(frame / 20 * s.sp + s.ph))) * aura} />
+        ))}
+      </svg>
+    </>
+  );
+};
 
-  const designScale = Math.max(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
-  const rootTransform = `translate(${width / 2}px, ${height / 2}px) scale(${designScale}) translate(${-CENTER_X}px, ${-CENTER_Y}px)`;
+/* ============================================================================
+   BRAIN + NETWORK
+   ========================================================================== */
+const BrainNetwork: React.FC = () => {
+  const frame = useCurrentFrame();
 
-  const cameraBell = Math.pow(Math.sin(Math.PI * t), 2);
-  const orbitEnvelope =
-    smoothstep(0.34, 0.5, t) * (1 - smoothstep(0.69, 0.88, t));
-  const cameraScale = 1 + cameraBell * 0.112;
-  const cameraX = Math.sin((t - 0.36) * TAU) * orbitEnvelope * 24;
-  const cameraY = Math.sin((t - 0.42) * TAU * 2) * orbitEnvelope * 9;
-  const cameraRoll = Math.sin((t - 0.39) * TAU) * orbitEnvelope * 1.55;
-  const sceneTransform = `translate(${cameraX.toFixed(2)} ${cameraY.toFixed(
-    2,
-  )}) rotate(${cameraRoll.toFixed(3)} ${CENTER_X} ${CENTER_Y}) translate(${CENTER_X} ${CENTER_Y}) scale(${cameraScale.toFixed(
-    5,
-  )}) translate(${-CENTER_X} ${-CENTER_Y})`;
+  const outline = ease(frame, T.outlineDraw, T.outlineEnd, eInOut);
+  const body = ease(frame, T.bodyIn, T.bodyIn + 80, eOut) * 0.5;
 
-  const particlePresence =
-    smoothstep(0.035, 0.13, t) * (1 - smoothstep(0.91, 0.998, t));
-  const coreStrength =
-    smoothstep(0.115, 0.34, t) * (1 - smoothstep(0.79, 0.965, t));
-  const networkEnergy =
-    smoothstep(0.2, 0.59, t) * (1 - smoothstep(0.73, 0.96, t));
-  const peakEnergy =
-    smoothstep(0.49, 0.61, t) * (1 - smoothstep(0.69, 0.78, t));
-
-  const rotationY = t * TAU * 1.58 + coreStrength * 0.72;
-  const rotationX = Math.sin(t * Math.PI) * 0.3 + Math.sin(t * TAU * 1.5) * 0.08;
-  const cosY = Math.cos(rotationY);
-  const sinY = Math.sin(rotationY);
-  const cosX = Math.cos(rotationX);
-  const sinX = Math.sin(rotationX);
-
-  const particleBuckets = Array.from({length: 12}, () => [] as string[]);
-
-  SPHERE_PARTICLES.forEach((particle, index) => {
-    const inStart = 0.055 + particle.delay * 0.115;
-    const inEnd = 0.235 + particle.delay * 0.085;
-    const outStart = 0.775 + particle.delay * 0.045;
-    const outEnd = 0.93 + particle.delay * 0.055;
-    const formation =
-      smoothstep(inStart, inEnd, t) * (1 - smoothstep(outStart, outEnd, t));
-
-    const rotatedX = particle.sphereX * cosY + particle.sphereZ * sinY;
-    const rotatedZ = -particle.sphereX * sinY + particle.sphereZ * cosY;
-    const rotatedY = particle.sphereY * cosX - rotatedZ * sinX;
-    const finalZ = particle.sphereY * sinX + rotatedZ * cosX;
-    const perspective = 1 / (1.42 - finalZ * 0.29);
-    const sphereX = CENTER_X + rotatedX * 305 * perspective;
-    const sphereY = CENTER_Y + rotatedY * 305 * perspective;
-
-    const spiral = Math.sin(formation * Math.PI) * (1 - formation);
-    const spiralAngle = particle.phase + formation * TAU * (1.2 + particle.delay);
-    const x =
-      mix(particle.scatterX, sphereX, formation) +
-      Math.cos(spiralAngle) * spiral * (38 + particle.delay * 65);
-    const y =
-      mix(particle.scatterY, sphereY, formation) +
-      Math.sin(spiralAngle) * spiral * (24 + particle.delay * 42);
-
-    const twinkle = 0.86 + Math.sin(loopAngle * (1 + (index % 3)) + particle.phase) * 0.14;
-    const radius =
-      particle.size *
-      mix(0.42, 1.14, formation) *
-      mix(0.88, 1.2, perspective) *
-      twinkle;
-    const depthBucket = Math.min(3, Math.max(0, Math.floor(((finalZ + 1) / 2) * 4)));
-    const bucket = particle.color * 4 + depthBucket;
-    particleBuckets[bucket].push(circlePath(x, y, radius));
+  // base edges path (all)
+  let basePath = '';
+  const hotSegs: string[] = [];
+  const cam = camAngle(frame);
+  EDGES.forEach((e) => {
+    const na = nodeDisp(NODES[e.a], frame);
+    const nb = nodeDisp(NODES[e.b], frame);
+    const seg = `M${na.x.toFixed(1)} ${na.y.toFixed(1)}L${nb.x.toFixed(1)} ${nb.y.toFixed(1)}`;
+    const rev = ease(frame, T.edgesStart + e.mid / MAXD * 90, T.edgesStart + e.mid / MAXD * 90 + 40, eOut);
+    if (rev > 0.5) basePath += seg;
+    const wb = waveBoost(e.mid, frame);
+    if (wb > 0.28) hotSegs.push(seg);
   });
 
-  const coronaBuckets = Array.from({length: 3}, () => [] as string[]);
-  CORONA_PARTICLES.forEach((particle, index) => {
-    const angle =
-      particle.angle +
-      t * TAU * particle.speed +
-      Math.sin(loopAngle + particle.phase) * 0.08;
-    const breathe = 1 + Math.sin(loopAngle * (1 + (index % 2)) + particle.phase) * 0.06;
-    const x = CENTER_X + Math.cos(angle) * particle.radius * breathe;
-    const y =
-      CENTER_Y +
-      Math.sin(angle) * particle.radius * particle.ellipse * breathe;
-    coronaBuckets[particle.color].push(
-      circlePath(x, y, particle.size * (0.75 + coreStrength * 0.45)),
-    );
-  });
+  const edgesOp = ease(frame, T.edgesStart, T.edgesEnd, eOut);
 
-  const titleScan = smoothstep(0.392, 0.485, t);
-  const titleDissolve = smoothstep(0.7, 0.805, t);
-  const titleLife = titleScan * (1 - titleDissolve);
-  const titleDustLife =
-    smoothstep(0.69, 0.745, t) * (1 - smoothstep(0.825, 0.91, t));
-  const titleDustBuckets = Array.from({length: 3}, () => [] as string[]);
-
-  TITLE_DUST.forEach((particle, index) => {
-    const progress = titleDissolve;
-    const turbulence = Math.sin(progress * Math.PI) * Math.sin(loopAngle * 2 + particle.phase);
-    const x = particle.x + particle.dx * progress + turbulence * 14;
-    const y = particle.y + particle.dy * progress + turbulence * 9;
-    const widthNow = particle.width * (1 + progress * 1.3);
-    const heightNow = particle.height * (1 - progress * 0.35);
-    titleDustBuckets[particle.color].push(
-      `M ${(x - widthNow / 2).toFixed(2)} ${(y - heightNow / 2).toFixed(
-        2,
-      )} h ${widthNow.toFixed(2)} v ${heightNow.toFixed(
-        2,
-      )} h ${(-widthNow).toFixed(2)} Z`,
-    );
-  });
-
-  const scanBeamOpacity =
-    Math.sin(Math.PI * titleScan) * (1 - titleDissolve) * 0.9;
-  const scanBeamX = mix(CENTER_X - 650, CENTER_X + 650, titleScan);
-  const ambientPulse = 0.88 + Math.sin(loopAngle * 2) * 0.12;
+  // signals traveling along a subset of edges
+  const signalOn = ease(frame, T.signalsStart, T.signalsStart + 40, eOut);
+  const nSig = 46;
 
   return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        backgroundColor: "#02040b",
-        fontFamily: '"Nimbus Sans", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif',
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          width: DESIGN_WIDTH,
-          height: DESIGN_HEIGHT,
-          transformOrigin: "0 0",
-          transform: rootTransform,
-          overflow: "hidden",
-        }}
-      >
-        <svg
-          width={DESIGN_WIDTH}
-          height={DESIGN_HEIGHT}
-          viewBox={`0 0 ${DESIGN_WIDTH} ${DESIGN_HEIGHT}`}
-          style={{position: "absolute", inset: 0}}
-        >
-          <defs>
-            <radialGradient id="deep-space" cx="50%" cy="50%" r="72%">
-              <stop offset="0" stopColor="#0a1c35" />
-              <stop offset="0.34" stopColor="#061326" />
-              <stop offset="0.72" stopColor="#030914" />
-              <stop offset="1" stopColor="#010207" />
-            </radialGradient>
-            <radialGradient id="cyan-nebula" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="#2bdfff" stopOpacity="0.23" />
-              <stop offset="0.32" stopColor="#356dff" stopOpacity="0.1" />
-              <stop offset="0.72" stopColor="#693cff" stopOpacity="0.035" />
-              <stop offset="1" stopColor="#060712" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="core-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="#f5feff" stopOpacity="0.96" />
-              <stop offset="0.08" stopColor="#9ff5ff" stopOpacity="0.88" />
-              <stop offset="0.24" stopColor="#35dfff" stopOpacity="0.52" />
-              <stop offset="0.52" stopColor="#4e70ff" stopOpacity="0.18" />
-              <stop offset="0.76" stopColor="#8b55ff" stopOpacity="0.07" />
-              <stop offset="1" stopColor="#8b55ff" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="edge-spectrum" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#32dcff" />
-              <stop offset="0.52" stopColor="#5681ff" />
-              <stop offset="1" stopColor="#9b5dff" />
-            </linearGradient>
-            <linearGradient id="title-rule" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#41e6ff" stopOpacity="0" />
-              <stop offset="0.22" stopColor="#41e6ff" stopOpacity="0.9" />
-              <stop offset="0.5" stopColor="#e9fdff" stopOpacity="1" />
-              <stop offset="0.78" stopColor="#8b6cff" stopOpacity="0.9" />
-              <stop offset="1" stopColor="#8b6cff" stopOpacity="0" />
-            </linearGradient>
-            <pattern id="micro-grid" width="72" height="72" patternUnits="userSpaceOnUse">
-              <path
-                d="M 72 0 L 0 0 0 72"
-                fill="none"
-                stroke="#6ebeff"
-                strokeWidth="0.55"
-                opacity="0.2"
-              />
-              <circle cx="0" cy="0" r="1.1" fill="#70dfff" opacity="0.22" />
-            </pattern>
-            <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="5" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="wide-glow" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="32" />
-            </filter>
-          </defs>
+    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
+      <defs>
+        <linearGradient id="brainStroke" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#5AC8FF" />
+          <stop offset="55%" stopColor="#6E8CFF" />
+          <stop offset="100%" stopColor="#B48CFF" />
+        </linearGradient>
+        <radialGradient id="brainFill" cx="50%" cy="42%" r="60%">
+          <stop offset="0%" stopColor="#173A7A" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#0A1636" stopOpacity="0.5" />
+        </radialGradient>
+        <radialGradient id="coreG" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="26%" stopColor="#8FD6FF" />
+          <stop offset="60%" stopColor="#3E86FF" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#3E86FF" stopOpacity="0" />
+        </radialGradient>
+        <clipPath id="brainClip">
+          <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} />
+        </clipPath>
+      </defs>
 
-          <rect width={DESIGN_WIDTH} height={DESIGN_HEIGHT} fill="url(#deep-space)" />
-          <ellipse
-            cx={CENTER_X}
-            cy={CENTER_Y}
-            rx="980"
-            ry="610"
-            fill="url(#cyan-nebula)"
-            opacity={0.58 + coreStrength * 0.42}
+      {/* brain body fill (solid silhouette) */}
+      <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} fill="url(#brainFill)" opacity={body} />
+      <path d={SOLID_BRAIN} transform={BRAIN_TRANSFORM} fill="#0A1838" opacity={body * 0.7} />
+
+      {/* network clipped to brain */}
+      <g clipPath="url(#brainClip)">
+        {/* base edges */}
+        <path d={basePath} stroke="#4C8FE8" strokeWidth={1.4} opacity={0.5 * edgesOp} fill="none" />
+        <path d={basePath} stroke="#9AC6FF" strokeWidth={0.7} opacity={0.7 * edgesOp} fill="none" />
+        {/* hot edges (activation wave) */}
+        <path d={hotSegs.join('')} stroke="#9BE8FF" strokeWidth={2} opacity={0.9} fill="none" style={{filter: 'drop-shadow(0 0 4px #6EC8FF)'}} />
+
+        {/* nodes */}
+        {NODES.map((n, i) => {
+          const appear = ease(frame, T.nodesStart + (n.d / MAXD) * 120, T.nodesStart + (n.d / MAXD) * 120 + 26, eOut);
+          if (appear <= 0.01) return null;
+          const p = nodeDisp(n, frame);
+          const tw = 0.6 + 0.4 * Math.sin(frame / 12 + n.seed * 20);
+          const wb = waveBoost(n.d, frame);
+          const r = (2.1 + n.seed * 1.9) * (1 + wb * 1.1) * appear;
+          const bright = clamp(0.62 + tw * 0.28 + wb * 0.9, 0, 1);
+          return (
+            <g key={i}>
+              <circle cx={p.x} cy={p.y} r={r * 3.4} fill="#5AA8FF" opacity={0.14 * bright * appear} />
+              <circle cx={p.x} cy={p.y} r={r} fill={wb > 0.4 ? '#EAF6FF' : '#AEDBFF'} opacity={bright * appear} />
+            </g>
+          );
+        })}
+
+        {/* traveling signals */}
+        {EDGES.slice(0, nSig).map((e, i) => {
+          const na = nodeDisp(NODES[e.a], frame);
+          const nb = nodeDisp(NODES[e.b], frame);
+          const per = 42 + (i % 5) * 10;
+          const fr = ((frame * 0.9 + e.phase * per * 3) % per) / per;
+          const x = lerp(na.x, nb.x, fr);
+          const y = lerp(na.y, nb.y, fr);
+          const op = signalOn * (0.5 + waveBoost(e.mid, frame));
+          return <circle key={i} cx={x} cy={y} r={2.4} fill="#EAF9FF" opacity={clamp(op, 0, 1)} style={{filter: 'drop-shadow(0 0 3px #7DD8FF)'}} />;
+        })}
+      </g>
+
+      {/* brain outline stroke (draws in, then glows) */}
+      <g transform={BRAIN_TRANSFORM}>
+        {BRAIN_PATHS.map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke="url(#brainStroke)"
+            strokeWidth={0.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pathLength={1}
+            strokeDasharray={1}
+            strokeDashoffset={1 - clamp(outline * 1.05 - i * 0.04, 0, 1)}
+            style={{filter: 'drop-shadow(0 0 2px #6EA8FF)'}}
           />
-          <rect
-            x="-80"
-            y="-80"
-            width="2080"
-            height="1240"
-            fill="url(#micro-grid)"
-            opacity={0.055 + networkEnergy * 0.035}
-            transform={`rotate(-3 ${CENTER_X} ${CENTER_Y})`}
-          />
+        ))}
+      </g>
+    </svg>
+  );
+};
 
-          {BACKGROUND_STARS.map((star, index) => {
-            const twinkle =
-              0.65 + Math.sin(loopAngle * star.cycles + star.phase) * 0.35;
-            return (
-              <circle
-                key={`star-${index}`}
-                cx={star.x}
-                cy={star.y}
-                r={star.radius * (0.88 + twinkle * 0.12)}
-                fill={star.color}
-                fillOpacity={star.opacity * twinkle}
-              />
-            );
-          })}
+/* ============================================================================
+   CORE + RINGS + PARTICLES
+   ========================================================================== */
+const Core: React.FC = () => {
+  const frame = useCurrentFrame();
+  const ignite = ease(frame, T.coreIgnite, T.coreIgnite + 40, eOut);
+  const pulse = 0.5 + 0.5 * Math.sin(frame / 15);
+  const actBoost = (frame >= T.actStart && frame <= T.actEnd ? 1 : 0.55) * ignite;
+  const coreR = (58 + pulse * 12) * (0.6 + 0.4 * ignite) * (1 + actBoost * 0.15);
 
-          <g transform={sceneTransform}>
-            <path
-              d={NETWORK_BASE_PATH}
-              fill="none"
-              stroke="#4a88b9"
-              strokeWidth="0.8"
-              strokeOpacity={0.08 + networkEnergy * 0.07}
-            />
-
-            {NETWORK_EDGES.map((edge, index) => {
-              const from = NETWORK_NODES[edge.from];
-              const to = NETWORK_NODES[edge.to];
-              const activationStart = 0.245 + edge.radial * 0.22;
-              const activation =
-                smoothstep(activationStart, activationStart + 0.095, t) *
-                (1 - smoothstep(0.72 + (1 - edge.radial) * 0.07, 0.95, t));
-              const pulseHit = PULSES.reduce((maximum, pulse) => {
-                const arrival = pulse.start + edge.radial * pulse.duration * 0.78;
-                const distance = (t - arrival) / 0.032;
-                return Math.max(maximum, Math.exp(-distance * distance) * pulse.strength);
-              }, 0);
-              const opacity =
-                activation * (edge.accent ? 0.24 : 0.15) +
-                pulseHit * (edge.accent ? 0.82 : 0.52);
-
-              return (
-                <line
-                  key={`edge-${index}`}
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={edge.accent ? "#74efff" : "url(#edge-spectrum)"}
-                  strokeWidth={edge.accent ? 1.5 : 1.05}
-                  strokeOpacity={opacity}
-                  strokeDasharray="2 94"
-                  strokeDashoffset={-96 * (3 * t + edge.phase)}
-                  filter={pulseHit > 0.45 && edge.accent ? "url(#soft-glow)" : undefined}
-                />
-              );
-            })}
-
-            {NETWORK_NODES.map((node, index) => {
-              const activationStart = 0.245 + node.radial * 0.22;
-              const activation =
-                smoothstep(activationStart, activationStart + 0.09, t) *
-                (1 - smoothstep(0.72 + (1 - node.radial) * 0.07, 0.955, t));
-              const pulseHit = PULSES.reduce((maximum, pulse) => {
-                const arrival = pulse.start + node.radial * pulse.duration * 0.8;
-                const distance = (t - arrival) / 0.028;
-                return Math.max(maximum, Math.exp(-distance * distance) * pulse.strength);
-              }, 0);
-              const twinkle =
-                0.76 + Math.sin(loopAngle * (1 + (index % 3)) + node.phase) * 0.24;
-              const size =
-                node.radius *
-                mix(0.78, 1.17, node.depth) *
-                (1 + pulseHit * 0.95 + activation * 0.18);
-              const opacity =
-                (0.13 + activation * 0.58 + pulseHit * 0.78) * twinkle;
-
-              return (
-                <g key={`node-${index}`}>
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={size * 3.8}
-                    fill="#31dcff"
-                    fillOpacity={(activation * 0.05 + pulseHit * 0.18) * twinkle}
-                    filter={pulseHit > 0.42 && index % 4 === 0 ? "url(#wide-glow)" : undefined}
-                  />
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={size}
-                    fill={index % 9 === 0 ? "#a778ff" : index % 5 === 0 ? "#eaffff" : "#54e8ff"}
-                    fillOpacity={opacity}
-                  />
-                  {node.radius > 4.2 ? (
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={size * 2.25}
-                      fill="none"
-                      stroke="#65eaff"
-                      strokeWidth="0.7"
-                      strokeOpacity={activation * 0.3 + pulseHit * 0.48}
-                    />
-                  ) : null}
-                </g>
-              );
-            })}
-
-            {PULSES.map((pulse, index) => {
-              const progress = (t - pulse.start) / pulse.duration;
-              if (progress < 0 || progress > 1) {
-                return null;
-              }
-
-              const eased = smoothstep(0, 1, progress);
-              const opacity = Math.sin(progress * Math.PI) * pulse.strength;
-              return (
-                <ellipse
-                  key={`pulse-${index}`}
-                  cx={CENTER_X}
-                  cy={CENTER_Y}
-                  rx={205 + eased * 930}
-                  ry={(205 + eased * 930) * 0.63}
-                  fill="none"
-                  stroke={index === 2 ? "#d6fbff" : index === 1 ? "#6b82ff" : "#37dfff"}
-                  strokeWidth={1.4 + pulse.strength * 2.3}
-                  strokeOpacity={opacity * 0.52}
-                  filter="url(#soft-glow)"
-                />
-              );
-            })}
-
-            <ellipse
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              rx={300 + peakEnergy * 85}
-              ry={300 + peakEnergy * 85}
-              fill="url(#core-halo)"
-              opacity={coreStrength * (0.58 + peakEnergy * 0.28) * ambientPulse}
-              filter="url(#wide-glow)"
-            />
-            <ellipse
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              rx={232 + peakEnergy * 24}
-              ry={(232 + peakEnergy * 24) * 0.34}
-              fill="none"
-              stroke="#54eaff"
-              strokeWidth="1.5"
-              strokeDasharray="8 18"
-              strokeDashoffset={-78 * t}
-              strokeOpacity={coreStrength * 0.45}
-              transform={`rotate(${(t * 145).toFixed(3)} ${CENTER_X} ${CENTER_Y})`}
-              filter="url(#soft-glow)"
-            />
-            <ellipse
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              rx={218 + peakEnergy * 28}
-              ry={(218 + peakEnergy * 28) * 0.47}
-              fill="none"
-              stroke="#8f6dff"
-              strokeWidth="1.05"
-              strokeDasharray="3 16"
-              strokeDashoffset={72 * t}
-              strokeOpacity={coreStrength * 0.38}
-              transform={`rotate(${(-58 - t * 110).toFixed(3)} ${CENTER_X} ${CENTER_Y})`}
-            />
-
-            {coronaBuckets.map((bucket, index) => (
-              <path
-                key={`corona-${index}`}
-                d={bucket.join(" ")}
-                fill={CORE_COLORS[index]}
-                fillOpacity={coreStrength * (0.22 + index * 0.06)}
-              />
-            ))}
-
-            {particleBuckets.map((bucket, index) => {
-              const colorIndex = Math.floor(index / 4);
-              const depthIndex = index % 4;
-              return (
-                <path
-                  key={`core-particles-${index}`}
-                  d={bucket.join(" ")}
-                  fill={CORE_COLORS[colorIndex]}
-                  fillOpacity={
-                    particlePresence *
-                    (0.12 + coreStrength * 0.48) *
-                    (0.48 + depthIndex * 0.19)
-                  }
-                />
-              );
-            })}
-
-            <circle
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              r={34 + peakEnergy * 12}
-              fill="#edfeff"
-              fillOpacity={coreStrength * (0.5 + peakEnergy * 0.35)}
-              filter="url(#soft-glow)"
-            />
-            <circle
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              r={8 + peakEnergy * 4}
-              fill="#ffffff"
-              fillOpacity={coreStrength * 0.96}
-            />
+  return (
+    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
+      {/* particles streaming into core */}
+      {PARTS.map((p, i) => {
+        const per = 90;
+        const fr = ((frame * p.speed + p.phase * per) % per) / per;
+        const x = lerp(p.sx, CX, ease(fr, 0, 1, eInOut));
+        const y = lerp(p.sy, CY, ease(fr, 0, 1, eInOut));
+        const op = (1 - fr) * 0.8 * ease(frame, T.signalsStart, T.signalsStart + 40, eOut);
+        const tx = lerp(p.sx, CX, ease(Math.max(0, fr - 0.03), 0, 1, eInOut));
+        const ty = lerp(p.sy, CY, ease(Math.max(0, fr - 0.03), 0, 1, eInOut));
+        return (
+          <g key={i}>
+            <line x1={tx} y1={ty} x2={x} y2={y} stroke="#7FD8FF" strokeWidth={1.4} opacity={op * 0.6} />
+            <circle cx={x} cy={y} r={2} fill="#EAF9FF" opacity={op} />
           </g>
+        );
+      })}
 
-          {titleDustBuckets.map((bucket, index) => (
-            <path
-              key={`title-dust-${index}`}
-              d={bucket.join(" ")}
-              fill={TITLE_DUST_COLORS[index]}
-              fillOpacity={titleDustLife * (0.68 + index * 0.1)}
-              filter={index === 1 ? "url(#soft-glow)" : undefined}
-            />
-          ))}
+      {/* expanding rings on ignite + periodic */}
+      {[0, 1, 2].map((k) => {
+        const t = ((frame - T.coreIgnite) / 70 - k * 0.5);
+        if (t < 0) return null;
+        const tt = t % 2.2;
+        const rr = tt * 150 + 40;
+        const op = clamp((1 - tt / 2.2) * 0.5 * ignite, 0, 1);
+        return <circle key={k} cx={CX} cy={CY} r={rr} fill="none" stroke="#6EC4FF" strokeWidth={2} opacity={op} />;
+      })}
 
-          <rect
-            x={scanBeamX - 2}
-            y={CENTER_Y - 93}
-            width="4"
-            height="186"
-            fill="#e8feff"
-            opacity={scanBeamOpacity}
-            filter="url(#soft-glow)"
-          />
-          <rect
-            x={scanBeamX - 54}
-            y={CENTER_Y - 91}
-            width="108"
-            height="182"
-            fill="url(#title-rule)"
-            opacity={scanBeamOpacity * 0.13}
-          />
-        </svg>
+      {/* core glow */}
+      <circle cx={CX} cy={CY} r={coreR * 2.4} fill="url(#coreG)" opacity={0.5 * ignite} />
+      <circle cx={CX} cy={CY} r={coreR} fill="url(#coreG)" opacity={ignite} />
+      <circle cx={CX} cy={CY} r={coreR * 0.4} fill="#FFFFFF" opacity={(0.8 + actBoost * 0.2) * ignite} />
+    </svg>
+  );
+};
 
-        <div
-          style={{
-            position: "absolute",
-            left: CENTER_X,
-            top: CENTER_Y,
-            width: 1480,
-            height: 150,
-            transform: "translate(-50%, -50%)",
-            pointerEvents: "none",
-          }}
-        >
-          {TITLE_SLICES.map((slice, index) => {
-            const localReveal = smoothstep(
-              0.392 + index * 0.0028,
-              0.457 + index * 0.0028,
-              t,
-            );
-            const localOut = smoothstep(
-              0.7 + index * 0.0022,
-              0.786 + index * 0.0012,
-              t,
-            );
-            const top = (index / TITLE_SLICES.length) * 100;
-            const bottom = 100 - ((index + 1) / TITLE_SLICES.length) * 100;
-            const dissolveKick = Math.sin(Math.PI * localOut);
+/* ============================================================================
+   LABELS
+   ========================================================================== */
+const Labels: React.FC = () => {
+  const frame = useCurrentFrame();
+  return (
+    <svg width="1920" height="1080" style={{position: 'absolute', overflow: 'visible'}}>
+      {LABELS.map((l, i) => {
+        const start = 400 + i * 44;
+        const op = interpolate(frame, [start, start + 24, start + 200, start + 240], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}) * (frame < T.settle ? 1 : interpolate(frame, [T.settle, T.settle + 40], [1, 0.5], {extrapolateRight: 'clamp'}));
+        if (op <= 0.01) return null;
+        const dir = l.x > CX ? 1 : -1;
+        return (
+          <g key={i} opacity={op}>
+            <circle cx={l.x} cy={l.y} r={3} fill="#EAF6FF" />
+            <line x1={l.x} y1={l.y} x2={l.x + dir * 30} y2={l.y - 18} stroke="#6EA8FF" strokeWidth={1} opacity={0.6} />
+            <line x1={l.x + dir * 30} y1={l.y - 18} x2={l.x + dir * 120} y2={l.y - 18} stroke="#6EA8FF" strokeWidth={1} opacity={0.6} />
+            <text x={l.x + dir * 36} y={l.y - 24} textAnchor={dir > 0 ? 'start' : 'start'} fontFamily={FONT} fontSize={16} fontWeight={600} fill="#CFE4FF" style={NUM}>
+              {l.t}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
 
-            return (
-              <div
-                key={`title-slice-${index}`}
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  clipPath: `inset(${top}% ${100 - localReveal * 100}% ${bottom}% 0)`,
-                  transform: `translate(${(slice.dx * localOut).toFixed(2)}px, ${(
-                    slice.dy * localOut
-                  ).toFixed(2)}px) skewX(${(slice.skew * dissolveKick).toFixed(2)}deg)`,
-                  opacity: localReveal * (1 - localOut),
-                  filter: `blur(${(localOut * 4.5).toFixed(2)}px)`,
-                  color: "#f2fdff",
-                  fontSize: 108,
-                  lineHeight: 1,
-                  fontWeight: 800,
-                  letterSpacing: 15,
-                  whiteSpace: "nowrap",
-                  textIndent: 15,
-                  textShadow:
-                    "-4px 0 0 rgba(49,223,255,0.30), 4px 0 0 rgba(139,92,246,0.24), 0 0 14px rgba(126,236,255,0.48), 0 0 38px rgba(54,126,255,0.24)",
-                }}
-              >
-                NEURAL NETWORK
-              </div>
-            );
-          })}
-        </div>
+/* ============================================================================
+   TITLE (lower third)
+   ========================================================================== */
+const Title: React.FC = () => {
+  const frame = useCurrentFrame();
+  const op = interpolate(frame, [560, 600, 860, 892], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  if (op <= 0.01) return null;
+  return (
+    <div style={{position: 'absolute', left: 0, right: 0, top: 902, textAlign: 'center', opacity: op}}>
+      <div style={{fontFamily: FONT, fontSize: 40, fontWeight: 800, letterSpacing: 2, color: '#EAF3FF'}}>ARTIFICIAL INTELLIGENCE</div>
+      <div style={{fontFamily: FONT, fontSize: 20, fontWeight: 500, letterSpacing: 6, color: '#7FA8E0', marginTop: 8}}>NEURAL PROCESSING CORE</div>
+    </div>
+  );
+};
 
-        <div
-          style={{
-            position: "absolute",
-            left: CENTER_X,
-            top: CENTER_Y - 104,
-            transform: `translateX(-50%) translateY(${((1 - titleScan) * 16).toFixed(
-              2,
-            )}px)`,
-            display: "flex",
-            alignItems: "center",
-            gap: 18,
-            opacity: titleLife * 0.88,
-            color: "#8eeeff",
-            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: 5.2,
-            whiteSpace: "nowrap",
-          }}
-        >
-          <span
-            style={{
-              display: "block",
-              width: 92,
-              height: 1,
-              background: "linear-gradient(90deg, transparent, #43e7ff)",
-            }}
-          />
-          SYNAPTIC ENGINE // CORE ONLINE
-          <span
-            style={{
-              display: "block",
-              width: 92,
-              height: 1,
-              background: "linear-gradient(90deg, #8c69ff, transparent)",
-            }}
-          />
-        </div>
+/* ============================================================================
+   MAIN
+   ========================================================================== */
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const [handle] = useState(() => delayRender('Loading Inter font'));
+  useEffect(() => {
+    const id = 'motion-inter-font';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+      document.head.appendChild(link);
+    }
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        continueRender(handle);
+      }
+    };
+    const anyDoc = document as unknown as {fonts: {load: (s: string) => Promise<unknown>; ready: Promise<unknown>}};
+    Promise.all([anyDoc.fonts.load('500 1em Inter'), anyDoc.fonts.load('600 1em Inter'), anyDoc.fonts.load('800 1em Inter')])
+      .then(() => anyDoc.fonts.ready)
+      .then(finish)
+      .catch(finish);
+    const t = setTimeout(finish, 3000);
+    return () => clearTimeout(t);
+  }, [handle]);
 
-        <div
-          style={{
-            position: "absolute",
-            left: CENTER_X,
-            top: CENTER_Y + 94,
-            width: 1000,
-            height: 2,
-            transform: `translateX(-50%) scaleX(${titleLife.toFixed(4)})`,
-            transformOrigin: "50% 50%",
-            background:
-              "linear-gradient(90deg, transparent 0%, #43e7ff 22%, #edfefe 50%, #8c69ff 78%, transparent 100%)",
-            opacity: titleLife * 0.75,
-            boxShadow: "0 0 18px rgba(56, 222, 255, 0.48)",
-          }}
-        />
+  // camera: push-in at activation, gentle pull-back, subtle breathing + tilt
+  const push = interpolate(frame, [T.actStart, 470, 660, 782], [0, 1, 1, 0.15], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: eInOut});
+  const breathe = 1 + 0.006 * Math.sin(frame / 70);
+  const scale = (1 + push * 0.09) * breathe;
+  const tilt = Math.sin(frame / 200) * 1.1;
 
-        <div
-          style={{
-            position: "absolute",
-            left: CENTER_X,
-            top: CENTER_Y + 119,
-            width: 780,
-            transform: "translateX(-50%)",
-            display: "flex",
-            justifyContent: "space-between",
-            opacity: titleLife * 0.68,
-            color: "#9dc7df",
-            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: 3.2,
-          }}
-        >
-          <span>NODE MATRIX 100%</span>
-          <span style={{color: "#48e4ff"}}>●</span>
-          <span>PULSE SYNC {Math.round(82 + peakEnergy * 18)}%</span>
-          <span style={{color: "#9a73ff"}}>●</span>
-          <span>LINK STATE ACTIVE</span>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            opacity: 0.16,
-            backgroundImage:
-              "repeating-linear-gradient(180deg, rgba(157,232,255,0.10) 0px, rgba(157,232,255,0.10) 1px, transparent 1px, transparent 4px)",
-            mixBlendMode: "screen",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at 50% 50%, transparent 48%, rgba(1,3,10,0.28) 73%, rgba(0,1,5,0.88) 100%)",
-            boxShadow:
-              "inset 0 0 120px 22px rgba(0,2,10,0.64), inset 0 0 34px rgba(0,0,0,0.55)",
-          }}
-        />
-      </div>
+  return (
+    <AbsoluteFill style={{background: '#04060F', fontFamily: FONT}}>
+      <Background />
+      <AbsoluteFill style={{transform: `scale(${scale}) rotate(${tilt}deg)`, transformOrigin: `${CX}px ${CY}px`}}>
+        <BrainNetwork />
+        <Core />
+        <Labels />
+      </AbsoluteFill>
+      <Title />
+      <AbsoluteFill style={{pointerEvents: 'none', boxShadow: 'inset 0 0 340px rgba(0,0,0,0.6)'}} />
     </AbsoluteFill>
   );
 };
