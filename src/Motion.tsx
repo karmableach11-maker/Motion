@@ -1,810 +1,738 @@
-import React, {type CSSProperties} from "react";
+import React from 'react';
 import {
   AbsoluteFill,
+  Easing,
+  interpolate,
   useCurrentFrame,
   useVideoConfig,
-} from "remotion";
+} from 'remotion';
 
-const TAU = Math.PI * 2;
+const INK = '#000000';
+const PAPER = '#eef4f3';
+const MUTED = '#8f9b9c';
+const ACCENT = '#88d9e7';
+const WARM = '#b79a78';
 
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.min(max, Math.max(min, value));
-
-const smootherStep = (edge0: number, edge1: number, value: number) => {
-  const x = clamp((value - edge0) / (edge1 - edge0));
-  return x * x * x * (x * (x * 6 - 15) + 10);
+const clamp = {
+  extrapolateLeft: 'clamp' as const,
+  extrapolateRight: 'clamp' as const,
 };
 
-type Palette = {
-  face: string;
-  highlight: string;
-  shadow: string;
-  glow: string;
-  accent: string;
+type SceneProps = {
+  localFrame: number;
+  sceneFrames: number;
+  sceneIndex: number;
 };
 
-const PALETTES: readonly Palette[] = [
-  {
-    face: "#F13A87",
-    highlight: "#FF8FC2",
-    shadow: "#74163F",
-    glow: "rgba(255, 40, 145, 0.66)",
-    accent: "#FF5AA5",
-  },
-  {
-    face: "#9BF044",
-    highlight: "#D8FF82",
-    shadow: "#365F16",
-    glow: "rgba(137, 255, 55, 0.56)",
-    accent: "#B3FF50",
-  },
-  {
-    face: "#6379F5",
-    highlight: "#B8C3FF",
-    shadow: "#273379",
-    glow: "rgba(80, 103, 255, 0.62)",
-    accent: "#6C8BFF",
-  },
-  {
-    face: "#F2F7FF",
-    highlight: "#FFFFFF",
-    shadow: "#546176",
-    glow: "rgba(202, 225, 255, 0.48)",
-    accent: "#D9E9FF",
-  },
-  {
-    face: "#FFC928",
-    highlight: "#FFF19A",
-    shadow: "#87520A",
-    glow: "rgba(255, 184, 25, 0.64)",
-    accent: "#FFE23D",
-  },
-  {
-    face: "#ED347F",
-    highlight: "#FF8AC0",
-    shadow: "#73163F",
-    glow: "rgba(244, 42, 136, 0.62)",
-    accent: "#FF4FA0",
-  },
-] as const;
-
-const WORD_COLORS = [
-  "#6A7EFF",
-  "#F03B8A",
-  "#93F04A",
-  "#EAF4FF",
-  "#43DFFF",
-  "#FFD33D",
-] as const;
-
-type Wave = {
-  words: readonly string[];
-  palette: number;
-  slotRotation: number;
-  turn: number;
-  grid: number;
-};
-
-const WAVES: readonly Wave[] = [
-  {
-    words: [
-      "MACHINE",
-      "ROBOT",
-      "COMPUTER",
-      "DEEP LEARNING",
-      "NEURAL NETWORKS",
-      "INFORMATION",
-      "BRAIN",
-      "DIGITAL",
-      "CYBER",
-    ],
-    palette: 0,
-    slotRotation: 0,
-    turn: -1,
-    grid: 0.08,
-  },
-  {
-    words: [
-      "ROBOT",
-      "DEEP LEARNING",
-      "MACHINE",
-      "BRAIN",
-      "INFORMATION",
-      "CYBER",
-      "COMPUTER",
-      "NEURAL NETWORKS",
-      "DIGITAL",
-    ],
-    palette: 1,
-    slotRotation: 2,
-    turn: 1,
-    grid: 0.12,
-  },
-  {
-    words: [
-      "INFORMATION",
-      "MACHINE",
-      "DIGITAL",
-      "ROBOT",
-      "CYBER",
-      "NEURAL NETWORKS",
-      "DEEP LEARNING",
-      "BRAIN",
-      "COMPUTER",
-    ],
-    palette: 2,
-    slotRotation: 5,
-    turn: -1,
-    grid: 0.16,
-  },
-  {
-    words: [
-      "COMPUTER",
-      "NEURAL NETWORKS",
-      "BRAIN",
-      "DIGITAL",
-      "MACHINE",
-      "INFORMATION",
-      "CYBER",
-      "ROBOT",
-      "DEEP LEARNING",
-    ],
-    palette: 3,
-    slotRotation: 7,
-    turn: 1,
-    grid: 0.22,
-  },
-  {
-    words: [
-      "MACHINE",
-      "INFORMATION",
-      "COMPUTER",
-      "CYBER",
-      "BRAIN",
-      "ROBOT",
-      "DIGITAL",
-      "DEEP LEARNING",
-      "NEURAL NETWORKS",
-    ],
-    palette: 4,
-    slotRotation: 4,
-    turn: -1,
-    grid: 1,
-  },
-  {
-    words: [
-      "NEURAL NETWORKS",
-      "DIGITAL",
-      "ROBOT",
-      "INFORMATION",
-      "DEEP LEARNING",
-      "MACHINE",
-      "BRAIN",
-      "COMPUTER",
-      "CYBER",
-    ],
-    palette: 5,
-    slotRotation: 1,
-    turn: 1,
-    grid: 0.18,
-  },
-] as const;
-
-type Slot = {
-  x: number;
-  y: number;
-  width: number;
-  rotation: number;
-  align: CSSProperties["textAlign"];
-  size: number;
-  depth: number;
-  enterX: number;
-  enterY: number;
-  opacity: number;
-};
-
-const SLOTS: readonly Slot[] = [
-  {
-    x: 400,
-    y: 144,
-    width: 670,
-    rotation: -4,
-    align: "left",
-    size: 1.08,
-    depth: 0.25,
-    enterX: -250,
-    enterY: -70,
-    opacity: 0.9,
-  },
-  {
-    x: 960,
-    y: 112,
-    width: 780,
-    rotation: 2,
-    align: "center",
-    size: 0.96,
-    depth: -0.2,
-    enterX: 50,
-    enterY: -210,
-    opacity: 0.78,
-  },
-  {
-    x: 1520,
-    y: 168,
-    width: 690,
-    rotation: -5,
-    align: "right",
-    size: 1.04,
-    depth: 0.15,
-    enterX: 260,
-    enterY: -90,
-    opacity: 0.86,
-  },
-  {
-    x: 88,
-    y: 535,
-    width: 650,
-    rotation: -90,
-    align: "center",
-    size: 0.94,
-    depth: -0.1,
-    enterX: -220,
-    enterY: 40,
-    opacity: 0.72,
-  },
-  {
-    x: 1832,
-    y: 540,
-    width: 650,
-    rotation: 90,
-    align: "center",
-    size: 0.92,
-    depth: 0.05,
-    enterX: 220,
-    enterY: -40,
-    opacity: 0.7,
-  },
-  {
-    x: 400,
-    y: 846,
-    width: 690,
-    rotation: 4,
-    align: "left",
-    size: 1.08,
-    depth: 0.3,
-    enterX: -250,
-    enterY: 110,
-    opacity: 0.9,
-  },
-  {
-    x: 960,
-    y: 956,
-    width: 810,
-    rotation: -2,
-    align: "center",
-    size: 0.95,
-    depth: -0.25,
-    enterX: -30,
-    enterY: 220,
-    opacity: 0.76,
-  },
-  {
-    x: 1520,
-    y: 852,
-    width: 700,
-    rotation: -4,
-    align: "right",
-    size: 1.06,
-    depth: 0.2,
-    enterX: 250,
-    enterY: 120,
-    opacity: 0.88,
-  },
-  {
-    x: 960,
-    y: 294,
-    width: 720,
-    rotation: 0,
-    align: "center",
-    size: 0.82,
-    depth: -0.35,
-    enterX: 0,
-    enterY: -160,
-    opacity: 0.68,
-  },
-] as const;
-
-const keywordSize = (word: string, slot: Slot) => {
-  const base = word.length > 15 ? 43 : word.length > 10 ? 50 : 64;
-  return Math.round(base * slot.size);
-};
-
-const titleShadow = (palette: Palette) => {
-  const extrusion = Array.from({length: 12}, (_, index) => {
-    const step = index + 1;
-    return `${(step * 0.72).toFixed(1)}px ${(step * 1.18).toFixed(1)}px 0 ${palette.shadow}`;
-  });
-
-  return [
-    `0 -1px 0 ${palette.highlight}`,
-    ...extrusion,
-    `0 18px 34px ${palette.glow}`,
-    `0 34px 66px rgba(0, 0, 0, 0.78)`,
-  ].join(", ");
-};
-
-const BackgroundAtmosphere: React.FC<{
-  phase: number;
-  currentPalette: Palette;
-  nextPalette: Palette;
-  blend: number;
-}> = ({phase, currentPalette, nextPalette, blend}) => {
-  const driftX = Math.sin(phase * TAU) * 8;
-  const driftY = Math.cos(phase * TAU) * 5;
-
-  return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 50%, #0B1830 0%, #050B18 42%, #01040B 100%)",
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          opacity: 1 - blend,
-          transform: `translate3d(${driftX}%, ${driftY}%, 0) scale(1.18)`,
-          background: `radial-gradient(circle at 36% 42%, ${currentPalette.glow} 0%, transparent 38%)`,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: blend,
-          transform: `translate3d(${-driftY}%, ${driftX * 0.55}%, 0) scale(1.2)`,
-          background: `radial-gradient(circle at 65% 56%, ${nextPalette.glow} 0%, transparent 40%)`,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: 0.32,
-          backgroundImage:
-            "linear-gradient(115deg, transparent 0%, rgba(75, 130, 255, 0.05) 42%, rgba(77, 225, 255, 0.1) 50%, rgba(244, 45, 143, 0.05) 58%, transparent 100%)",
-          transform: `translateX(${Math.sin(phase * TAU) * 7}%)`,
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const GridWorld: React.FC<{
-  phase: number;
-  intensity: number;
-  transitionEnergy: number;
-}> = ({phase, intensity, transitionEnergy}) => {
-  const gridX = Math.sin(phase * TAU) * 90;
-  const gridY = Math.cos(phase * TAU) * 60;
-  const pitch = 54 + Math.sin(phase * TAU) * 4 + transitionEnergy * 8;
-  const yaw = -7 + Math.sin(phase * TAU * 2) * 1.8;
-  const scale = 1.08 + transitionEnergy * 0.12;
-  const scanX = 50 + Math.sin(phase * TAU) * 43;
-
-  return (
-    <AbsoluteFill
-      style={{
-        perspective: 1500,
-        perspectiveOrigin: "50% 50%",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 2850,
-          height: 1900,
-          transformOrigin: "50% 50%",
-          transform: `translate(-50%, -50%) rotateX(${pitch}deg) rotateZ(${yaw}deg) scale(${scale})`,
-          backgroundImage:
-            "linear-gradient(rgba(55, 223, 255, 0.26) 1px, transparent 1px), linear-gradient(90deg, rgba(55, 223, 255, 0.26) 1px, transparent 1px), linear-gradient(rgba(255, 46, 146, 0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 46, 146, 0.13) 1px, transparent 1px)",
-          backgroundSize: "110px 110px, 110px 110px, 550px 550px, 550px 550px",
-          backgroundPosition: `${gridX}px ${gridY}px, ${gridX}px ${gridY}px, ${gridX * 0.5}px ${gridY * 0.5}px, ${gridX * 0.5}px ${gridY * 0.5}px`,
-          opacity: 0.13 + intensity * 0.24,
-          filter: `drop-shadow(0 0 ${10 + intensity * 16}px rgba(50, 218, 255, 0.18))`,
-          WebkitMaskImage:
-            "radial-gradient(ellipse at center, #000 18%, rgba(0,0,0,.9) 48%, transparent 84%)",
-          maskImage:
-            "radial-gradient(ellipse at center, #000 18%, rgba(0,0,0,.9) 48%, transparent 84%)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          left: `${scanX}%`,
-          width: 3,
-          opacity: intensity * 0.42,
-          background:
-            "linear-gradient(180deg, transparent, rgba(80, 235, 255, .9), transparent)",
-          boxShadow: "0 0 24px rgba(70, 220, 255, .65)",
-          transform: "skewX(-11deg)",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const GHOST_TERMS = [
-  "MACHINE",
-  "ARTIFICIAL INTELLIGENCE",
-  "DEEP LEARNING",
-  "COMPUTER",
-  "ROBOT",
-  "INFORMATION",
-  "NEURAL NETWORKS",
-  "DIGITAL",
-  "CYBER",
-  "BRAIN",
-] as const;
-
-const GhostPlane: React.FC<{
-  phase: number;
-  transitionEnergy: number;
-}> = ({phase, transitionEnergy}) => {
-  const turn = -7 + Math.sin(phase * TAU) * 2.2;
-  const travel = Math.sin(phase * TAU) * 76;
-
-  return (
-    <AbsoluteFill
-      style={{
-        perspective: 1500,
-        overflow: "hidden",
-        opacity: 0.58,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 2660,
-          height: 1560,
-          transformStyle: "preserve-3d",
-          transform: `translate(-50%, -50%) translateY(${travel}px) rotateX(${46 + transitionEnergy * 12}deg) rotateZ(${turn}deg) scale(${1.04 + transitionEnergy * 0.16})`,
-          WebkitMaskImage:
-            "radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,.2) 24%, #000 62%, transparent 100%)",
-          maskImage:
-            "radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,.2) 24%, #000 62%, transparent 100%)",
-        }}
-      >
-        {Array.from({length: 30}, (_, index) => {
-          const column = index % 6;
-          const row = Math.floor(index / 6);
-          const word = GHOST_TERMS[(index * 3 + row) % GHOST_TERMS.length];
-          const color = WORD_COLORS[(index + row * 2) % WORD_COLORS.length];
-          const x = 70 + column * 500 + Math.sin(phase * TAU + index) * 24;
-          const y = 100 + row * 330 + Math.cos(phase * TAU + index * 0.7) * 18;
-          const rotation = ((index % 5) - 2) * 4;
-
-          return (
-            <div
-              key={`${word}-${index}`}
-              style={{
-                position: "absolute",
-                left: x,
-                top: y,
-                color,
-                fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
-                fontSize: 22 + (index % 4) * 4,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                whiteSpace: "nowrap",
-                opacity: 0.1 + (index % 3) * 0.025,
-                transform: `rotate(${rotation}deg) translateZ(${(index % 4) * -70}px)`,
-                textShadow: `0 0 12px ${color}`,
-              }}
-            >
-              {word}
-            </div>
-          );
-        })}
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-const AmbientStreaks: React.FC<{phase: number}> = ({phase}) => (
-  <AbsoluteFill style={{overflow: "hidden", opacity: 0.5}}>
-    {Array.from({length: 24}, (_, index) => {
-      const angle = -10 + (index % 5) * 2.4;
-      const left =
-        ((index * 193) % 1900) + Math.sin(phase * TAU + index * 0.72) * 86;
-      const top =
-        ((index * 127) % 1080) + Math.cos(phase * TAU + index * 0.51) * 38;
-      const width = 42 + (index % 6) * 34;
-      const color = WORD_COLORS[index % WORD_COLORS.length];
-
-      return (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left,
-            top,
-            width,
-            height: index % 4 === 0 ? 3 : 2,
-            borderRadius: 999,
-            background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
-            opacity: 0.08 + (index % 3) * 0.025,
-            transform: `rotate(${angle}deg)`,
-            filter: `blur(${index % 4 === 0 ? 0 : 0.6}px)`,
-            boxShadow: `0 0 10px ${color}`,
-          }}
-        />
-      );
-    })}
-  </AbsoluteFill>
-);
-
-const KineticWordLayer: React.FC<{
-  wave: Wave;
-  opacity: number;
-  blend: number;
-  incoming: boolean;
-  phase: number;
-  transitionEnergy: number;
-}> = ({wave, opacity, blend, incoming, phase, transitionEnergy}) => {
-  const transitionOffset = incoming ? 1 - blend : blend;
-  const travelDirection = incoming ? -1 : 1;
-
-  return (
-    <AbsoluteFill
-      style={{
-        perspective: 1350,
-        transformStyle: "preserve-3d",
-        opacity,
-      }}
-    >
-      {wave.words.map((word, index) => {
-        const slot = SLOTS[(index + wave.slotRotation) % SLOTS.length];
-        const driftX =
-          Math.sin(phase * TAU + index * 1.17 + wave.slotRotation) *
-          (11 + Math.abs(slot.depth) * 24);
-        const driftY =
-          Math.cos(phase * TAU + index * 0.83 + wave.slotRotation) *
-          (7 + Math.abs(slot.depth) * 18);
-        const rush = transitionEnergy * slot.depth * 120 * wave.turn;
-        const x =
-          slot.x +
-          driftX +
-          travelDirection * slot.enterX * transitionOffset +
-          rush;
-        const y =
-          slot.y +
-          driftY +
-          travelDirection * slot.enterY * transitionOffset +
-          rush * 0.28;
-        const z =
-          slot.depth * 220 +
-          travelDirection * transitionOffset * 280 +
-          transitionEnergy * slot.depth * 180;
-        const rotation =
-          slot.rotation +
-          Math.sin(phase * TAU + index) * 0.9 +
-          transitionEnergy * wave.turn * (2 + Math.abs(slot.depth) * 6);
-        const scale =
-          1 + slot.depth * 0.055 + transitionEnergy * (0.04 + Math.abs(slot.depth) * 0.12);
-        const blur = transitionOffset * 11 + transitionEnergy * 1.8;
-        const color =
-          WORD_COLORS[(index + wave.palette * 2 + wave.slotRotation) % WORD_COLORS.length];
-
-        return (
-          <div
-            key={`${wave.palette}-${word}-${index}`}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width: slot.width,
-              color,
-              fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
-              fontSize: keywordSize(word, slot),
-              fontWeight: 700,
-              lineHeight: 0.95,
-              letterSpacing: "0.075em",
-              textAlign: slot.align,
-              whiteSpace: "nowrap",
-              opacity: slot.opacity,
-              transformOrigin: "50% 50%",
-              transform: `translate(-50%, -50%) translateZ(${z}px) rotateZ(${rotation}deg) scale(${scale})`,
-              filter: `blur(${blur.toFixed(2)}px) drop-shadow(0 0 15px ${color}55)`,
-              textShadow: `0 2px 0 rgba(0,0,0,.72), 0 0 18px ${color}44`,
-              WebkitFontSmoothing: "antialiased",
-            }}
-          >
-            {word}
-          </div>
-        );
-      })}
-    </AbsoluteFill>
-  );
-};
-
-const TitleLayer: React.FC<{
-  palette: Palette;
-  opacity: number;
-}> = ({palette, opacity}) => (
+const FineRule: React.FC<{
+  width?: number | string;
+  opacity?: number;
+  color?: string;
+}> = ({width = '100%', opacity = 0.24, color = PAPER}) => (
   <div
     style={{
-      position: "absolute",
-      inset: 0,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
+      width,
+      height: 1,
+      backgroundColor: color,
       opacity,
-      color: palette.face,
-      WebkitTextStroke: `1.2px ${palette.highlight}`,
-      textShadow: titleShadow(palette),
-      filter: `drop-shadow(0 0 22px ${palette.glow})`,
     }}
-  >
-    <div style={{fontSize: 114, lineHeight: 0.86}}>ARTIFICIAL</div>
-    <div style={{fontSize: 121, lineHeight: 0.88}}>INTELLIGENCE</div>
-  </div>
+  />
 );
 
-const TransitionEchoes: React.FC<{
-  palette: Palette;
-  energy: number;
-  turn: number;
-}> = ({palette, energy, turn}) => {
-  if (energy < 0.001) {
-    return null;
-  }
+const Soft: React.FC<{
+  children: React.ReactNode;
+  opacity?: number;
+  blur?: number;
+  style?: React.CSSProperties;
+}> = ({children, opacity = 0.3, blur = 1.6, style}) => (
+  <span
+    style={{
+      display: 'inline-block',
+      color: PAPER,
+      opacity,
+      filter: `blur(${blur}px)`,
+      ...style,
+    }}
+  >
+    {children}
+  </span>
+);
+
+const Focus: React.FC<{
+  children?: React.ReactNode;
+  compact?: boolean;
+  underline?: boolean;
+  style?: React.CSSProperties;
+}> = ({
+  children = 'ARTIFICIAL INTELLIGENCE',
+  compact = false,
+  underline = true,
+  style,
+}) => {
+  const frame = useCurrentFrame();
+  const glow = 0.15 + Math.sin(frame * 0.11) * 0.04;
 
   return (
-    <AbsoluteFill style={{pointerEvents: "none"}}>
-      {[1, 2, 3, 4].map((index) => (
-        <div
-          key={index}
+    <span
+      style={{
+        display: 'inline-block',
+        position: 'relative',
+        color: '#fbffff',
+        fontWeight: 650,
+        letterSpacing: compact ? '-0.02em' : '-0.025em',
+        margin: compact ? 0 : '0 0.09em',
+        filter: `drop-shadow(0 0 18px rgba(136,217,231,${glow}))`,
+        zIndex: 2,
+        ...style,
+      }}
+    >
+      {children}
+      {underline ? (
+        <span
           style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: 1280,
-            textAlign: "center",
-            color: palette.face,
-            fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
-            fontWeight: 900,
-            fontSize: 106,
-            lineHeight: 0.88,
-            letterSpacing: "0.025em",
-            whiteSpace: "nowrap",
-            opacity: energy * (0.075 / index),
-            filter: `blur(${index * 2.2}px)`,
-            transform: `translate(-50%, -50%) rotate(${turn * index * energy * 1.2}deg) scale(${1 + index * energy * 0.075})`,
-            textShadow: `0 0 24px ${palette.glow}`,
+            position: 'absolute',
+            left: '3%',
+            right: '3%',
+            height: 2,
+            bottom: -10,
+            background:
+              'linear-gradient(90deg, transparent, rgba(136,217,231,0.72), transparent)',
+            boxShadow: '0 0 12px rgba(136,217,231,0.28)',
           }}
-        >
-          ARTIFICIAL
-          <br />
-          INTELLIGENCE
-        </div>
-      ))}
-    </AbsoluteFill>
+        />
+      ) : null}
+    </span>
   );
 };
 
-const CentralTitle: React.FC<{
-  phase: number;
-  currentPalette: Palette;
-  nextPalette: Palette;
-  blend: number;
-  transitionEnergy: number;
-  turn: number;
-}> = ({
-  phase,
-  currentPalette,
-  nextPalette,
-  blend,
-  transitionEnergy,
-  turn,
-}) => {
-  const breathe = 1 + Math.sin(phase * TAU) * 0.008;
-  const scale = breathe + transitionEnergy * 0.045;
-  const tilt = -1.4 + Math.sin(phase * TAU) * 0.55 + transitionEnergy * turn * 2.2;
-  const pitch = 8 + transitionEnergy * 4;
-  const bracketPulse = 0.55 + Math.sin(phase * TAU * 2) * 0.12;
+const EdgeData: React.FC<{sceneIndex: number}> = ({sceneIndex}) => {
+  const labels = [
+    'SYSTEMS / SOCIETY',
+    'RESEARCH / MODELS',
+    'LANGUAGE / VISION',
+    'DATA / NETWORKS',
+    'SECURITY / BUSINESS',
+  ];
 
   return (
     <>
       <div
         style={{
-          position: "absolute",
-          left: 190,
-          top: "50%",
-          width: 260,
-          height: 2,
-          opacity: bracketPulse,
-          background:
-            "linear-gradient(90deg, transparent, rgba(92,220,255,.75))",
-          boxShadow: "0 0 16px rgba(74,216,255,.4)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          right: 190,
-          top: "50%",
-          width: 260,
-          height: 2,
-          opacity: bracketPulse,
-          background:
-            "linear-gradient(90deg, rgba(92,220,255,.75), transparent)",
-          boxShadow: "0 0 16px rgba(74,216,255,.4)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 1280,
-          height: 282,
-          transformStyle: "preserve-3d",
-          transform: `translate(-50%, -50%) perspective(1500px) rotateX(${pitch}deg) rotateZ(${tilt}deg) scale(${scale})`,
-          transformOrigin: "50% 50%",
-          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
-          fontWeight: 900,
-          letterSpacing: "0.025em",
-          textAlign: "center",
-          whiteSpace: "nowrap",
-          WebkitFontSmoothing: "antialiased",
+          position: 'absolute',
+          left: 70,
+          top: 46,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          color: MUTED,
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 14,
+          fontWeight: 700,
+          letterSpacing: '0.2em',
+          opacity: 0.6,
         }}
       >
-        <TitleLayer palette={currentPalette} opacity={1 - blend} />
-        <TitleLayer palette={nextPalette} opacity={blend} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: ACCENT,
+            boxShadow: '0 0 12px rgba(136,217,231,0.55)',
+          }}
+        />
+        SIGNAL INDEX 07
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          right: 70,
+          top: 46,
+          color: MUTED,
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 14,
+          fontWeight: 700,
+          letterSpacing: '0.19em',
+          opacity: 0.52,
+        }}
+      >
+        {labels[sceneIndex]}
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 70,
+          right: 70,
+          bottom: 44,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 22,
+          color: MUTED,
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: '0.18em',
+          opacity: 0.5,
+        }}
+      >
+        <span>VOL. 07</span>
+        <FineRule />
+        <span style={{whiteSpace: 'nowrap'}}>AI / DATA / AUTOMATION</span>
       </div>
     </>
   );
 };
 
-const EdgeLabels: React.FC<{phase: number}> = ({phase}) => {
-  const opacity = 0.22 + Math.sin(phase * TAU) * 0.04;
-  return (
-    <>
+const EditorialScene: React.FC<SceneProps> = () => (
+  <div style={{position: 'absolute', inset: 0}}>
+    <div
+      style={{
+        position: 'absolute',
+        left: 76,
+        top: 116,
+        color: PAPER,
+        fontFamily: 'Georgia, Times New Roman, serif',
+        fontSize: 93,
+        fontWeight: 600,
+        letterSpacing: '-0.055em',
+        opacity: 0.72,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      THE INTELLIGENCE REVIEW
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: 78,
+        right: 78,
+        top: 240,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 24,
+      }}
+    >
+      <FineRule />
       <div
         style={{
-          position: "absolute",
-          left: 42,
-          bottom: 36,
-          color: "#65CFFF",
-          opacity,
-          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
-          fontSize: 13,
-          fontWeight: 700,
-          letterSpacing: "0.24em",
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          color: MUTED,
+          fontFamily: 'Georgia, Times New Roman, serif',
+          fontSize: 18,
+          letterSpacing: '0.08em',
+          whiteSpace: 'nowrap',
+          opacity: 0.56,
         }}
       >
-        MACHINE · DIGITAL · INFORMATION
+        <span style={{color: WARM}}>●</span> RESEARCH
+        <span style={{color: WARM}}>●</span> INDUSTRY
+        <span style={{color: WARM}}>●</span> SOCIETY
+      </div>
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: -560,
+        top: 358,
+        width: 2220,
+        fontFamily: 'Georgia, Times New Roman, serif',
+        fontSize: 72,
+        lineHeight: 1.38,
+        letterSpacing: '-0.035em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div>
+        <Soft>HUMAN SYSTEMS EVOLVE AS </Soft>
+        <Focus>ARTIFICIAL INTELLIGENCE</Focus>
+        <Soft> RESHAPES DECISIONS</Soft>
+      </div>
+      <div style={{transform: 'translateX(-46px)'}}>
+        <Soft opacity={0.22}>ACROSS SCIENCE, MEDICINE AND MODERN PRODUCTION</Soft>
+      </div>
+      <div style={{transform: 'translateX(42px)'}}>
+        <Soft opacity={0.18} blur={2.2}>
+          RESPONSIBLE MODELS TURN COMPLEX DATA INTO USEFUL INSIGHT
+        </Soft>
+      </div>
+      <div style={{transform: 'translateX(-20px)'}}>
+        <Soft opacity={0.14} blur={2.6} style={{fontStyle: 'italic'}}>
+          AUTOMATION AND HUMAN CREATIVITY MOVE FORWARD TOGETHER
+        </Soft>
+      </div>
+    </div>
+  </div>
+);
+
+const ReportScene: React.FC<SceneProps> = () => (
+  <div style={{position: 'absolute', inset: 0}}>
+    <div
+      style={{
+        position: 'absolute',
+        right: 82,
+        top: 118,
+        textAlign: 'right',
+        fontFamily: 'Georgia, Times New Roman, serif',
+        color: PAPER,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 88,
+          lineHeight: 0.88,
+          letterSpacing: '-0.045em',
+          opacity: 0.66,
+        }}
+      >
+        AI REPORT
       </div>
       <div
         style={{
-          position: "absolute",
-          right: 42,
-          top: 36,
-          color: "#FF4A9C",
-          opacity,
-          fontFamily: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+          marginTop: 20,
+          fontFamily: 'Arial, Helvetica, sans-serif',
           fontSize: 13,
           fontWeight: 700,
-          letterSpacing: "0.24em",
-          textAlign: "right",
+          letterSpacing: '0.24em',
+          color: ACCENT,
+          opacity: 0.72,
         }}
       >
-        NEURAL NETWORKS · DEEP LEARNING
+        MACHINE INTELLIGENCE / FIELD NOTES
+      </div>
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: -70,
+        top: 310,
+        width: 2120,
+        textAlign: 'center',
+        fontFamily: 'Georgia, Times New Roman, serif',
+        fontSize: 76,
+        lineHeight: 1.45,
+        letterSpacing: '-0.035em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div>
+        <Soft opacity={0.2} blur={2.1}>
+          COMPLEX ENGINEERING, MEDICINE, TECHNOLOGY
+        </Soft>
+      </div>
+      <div>
+        <Soft>ADVANCED </Soft>
+        <Focus>ARTIFICIAL INTELLIGENCE</Focus>
+        <Soft> PRODUCTS</Soft>
+      </div>
+      <div>
+        <Soft opacity={0.22}>CREATING IMAGES, FORECASTS AND NEW TOOLS</Soft>
+      </div>
+      <div>
+        <Soft opacity={0.17} blur={2.4} style={{fontStyle: 'italic'}}>
+          DIALOGUE IN THE NATURAL LANGUAGE
+        </Soft>
+      </div>
+    </div>
+    <div style={{position: 'absolute', left: 460, right: 460, top: 850}}>
+      <FineRule opacity={0.16} />
+    </div>
+  </div>
+);
+
+const DigitalScene: React.FC<SceneProps> = () => (
+  <div style={{position: 'absolute', inset: 0}}>
+    <div
+      style={{
+        position: 'absolute',
+        left: 78,
+        right: 78,
+        top: 118,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+      }}
+    >
+      <div>
+        <div
+          style={{
+            color: ACCENT,
+            fontSize: 14,
+            fontWeight: 800,
+            letterSpacing: '0.28em',
+            opacity: 0.68,
+          }}
+        >
+          EMERGING SYSTEMS
+        </div>
+        <div
+          style={{
+            color: MUTED,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.18em',
+            marginTop: 16,
+            opacity: 0.52,
+          }}
+        >
+          VISION / LANGUAGE / COMPUTATION
+        </div>
+      </div>
+      <div
+        style={{
+          color: PAPER,
+          fontSize: 74,
+          fontWeight: 800,
+          letterSpacing: '-0.055em',
+          lineHeight: 0.85,
+          opacity: 0.66,
+        }}
+      >
+        DIGITAL REPORT
+      </div>
+    </div>
+    <div style={{position: 'absolute', left: 78, right: 78, top: 230}}>
+      <FineRule opacity={0.22} />
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: -115,
+        top: 310,
+        width: 2200,
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 66,
+        fontWeight: 760,
+        lineHeight: 1.34,
+        letterSpacing: '-0.035em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div>
+        <Soft opacity={0.2}>NEURAL NETWORKS ANALYZE LARGE DATA STREAMS</Soft>
+      </div>
+      <div style={{transform: 'translateX(-34px)'}}>
+        <Soft opacity={0.23}>SPEECH RECOGNITION AND NATURAL LANGUAGE</Soft>
+      </div>
+      <div style={{transform: 'translateX(72px)'}}>
+        <Soft>NEW LEVELS OF </Soft>
+        <Focus style={{fontFamily: 'Arial, Helvetica, sans-serif'}}>
+          ARTIFICIAL INTELLIGENCE
+        </Focus>
+      </div>
+      <div style={{transform: 'translateX(-18px)'}}>
+        <Soft opacity={0.22}>MACHINE LEARNING AND RESPONSIBLE DATA GROWTH</Soft>
+      </div>
+      <div style={{transform: 'translateX(32px)'}}>
+        <Soft opacity={0.16} blur={2.5}>
+          NEW CAPABILITIES FOR BUSINESS, SCIENCE AND CULTURE
+        </Soft>
+      </div>
+    </div>
+  </div>
+);
+
+const cloudWords = [
+  {text: 'ENERGY', x: 170, y: 218, size: 35, opacity: 0.27, serif: true},
+  {text: 'CYBER', x: 420, y: 170, size: 43, opacity: 0.38, serif: true},
+  {text: 'ADVANCED', x: 670, y: 205, size: 31, opacity: 0.3, serif: false},
+  {text: 'MODERN', x: 1490, y: 174, size: 38, opacity: 0.34, serif: true},
+  {text: 'ENGINEERING', x: 98, y: 342, size: 34, opacity: 0.29, serif: false},
+  {text: 'SELF-DRIVING', x: 420, y: 310, size: 48, opacity: 0.37, serif: true},
+  {text: 'NEW', x: 1208, y: 290, size: 42, opacity: 0.37, serif: false},
+  {text: 'ALGORITHMS', x: 1480, y: 324, size: 39, opacity: 0.27, serif: true},
+  {text: 'DEEP LEARNING', x: 130, y: 462, size: 39, opacity: 0.31, serif: true},
+  {text: 'NEURAL NETWORKS', x: 560, y: 410, size: 58, opacity: 0.47, serif: true},
+  {text: 'CHATBOT', x: 1510, y: 448, size: 41, opacity: 0.3, serif: true},
+  {text: 'DIGITAL', x: 160, y: 680, size: 36, opacity: 0.29, serif: false},
+  {text: 'INDUSTRY 4.0', x: 410, y: 720, size: 54, opacity: 0.38, serif: true},
+  {text: 'MACHINE LEARNING', x: 1160, y: 692, size: 41, opacity: 0.31, serif: true},
+  {text: 'SCIENCE', x: 126, y: 820, size: 36, opacity: 0.24, serif: true},
+  {text: 'BUSINESS', x: 670, y: 846, size: 43, opacity: 0.38, serif: true},
+  {text: 'TECHNOLOGY', x: 1040, y: 824, size: 47, opacity: 0.34, serif: true},
+  {text: 'AUTOMATION', x: 320, y: 930, size: 34, opacity: 0.27, serif: true},
+  {text: 'MEDICINE', x: 910, y: 945, size: 35, opacity: 0.27, serif: true},
+  {text: 'ECONOMY', x: 1480, y: 900, size: 39, opacity: 0.27, serif: true},
+];
+
+const CloudScene: React.FC<SceneProps> = ({localFrame}) => (
+  <div style={{position: 'absolute', inset: 0}}>
+    {cloudWords.map((word, index) => {
+      const drift = Math.sin(localFrame * 0.1 + index * 1.71) * 3;
+      return (
+        <div
+          key={word.text}
+          style={{
+            position: 'absolute',
+            left: word.x,
+            top: word.y,
+            transform: `translate3d(${drift}px, ${-drift * 0.35}px, 0)`,
+            color: PAPER,
+            opacity: word.opacity,
+            filter: 'blur(0.8px)',
+            fontFamily: word.serif
+              ? 'Georgia, Times New Roman, serif'
+              : 'Arial, Helvetica, sans-serif',
+            fontSize: word.size,
+            fontWeight: word.serif ? 500 : 730,
+            letterSpacing: '-0.03em',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {word.text}
+        </div>
+      );
+    })}
+    <div
+      style={{
+        position: 'absolute',
+        left: 960,
+        top: 560,
+        transform: 'translate(-50%, -50%)',
+        whiteSpace: 'nowrap',
+        fontFamily: 'Georgia, Times New Roman, serif',
+        fontSize: 82,
+        zIndex: 4,
+      }}
+    >
+      <Focus>ARTIFICIAL INTELLIGENCE</Focus>
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: 553,
+        top: 653,
+        width: 814,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 20,
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        color: ACCENT,
+        fontSize: 12,
+        fontWeight: 800,
+        letterSpacing: '0.23em',
+        opacity: 0.54,
+      }}
+    >
+      <FineRule color={ACCENT} opacity={0.54} />
+      <span style={{whiteSpace: 'nowrap'}}>CONNECTED KNOWLEDGE</span>
+      <FineRule color={ACCENT} opacity={0.54} />
+    </div>
+  </div>
+);
+
+const BusinessScene: React.FC<SceneProps> = () => (
+  <div style={{position: 'absolute', inset: 0}}>
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 104,
+        height: 116,
+        background:
+          'linear-gradient(90deg, rgba(238,244,243,0.06), rgba(238,244,243,0.17), rgba(238,244,243,0.06))',
+        borderTop: '1px solid rgba(238,244,243,0.15)',
+        borderBottom: '1px solid rgba(238,244,243,0.15)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 80px',
+        boxSizing: 'border-box',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          color: PAPER,
+          fontSize: 74,
+          fontWeight: 820,
+          letterSpacing: '-0.055em',
+          opacity: 0.67,
+        }}
+      >
+        Cyber Business
+      </div>
+      <div
+        style={{
+          color: MUTED,
+          fontSize: 13,
+          fontWeight: 750,
+          letterSpacing: '0.2em',
+          opacity: 0.54,
+        }}
+      >
+        INFORMATION / SECURITY / MARKETS
+      </div>
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: 80,
+        top: 252,
+        color: MUTED,
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 16,
+        fontWeight: 760,
+        letterSpacing: '0.16em',
+        opacity: 0.5,
+      }}
+    >
+      NEWS · ANALYSIS · REPORTS
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        left: -32,
+        top: 374,
+        width: 2050,
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 61,
+        fontWeight: 760,
+        lineHeight: 1.37,
+        letterSpacing: '-0.04em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div>
+        <Soft>HOW WILL </Soft>
+        <Focus style={{fontFamily: 'Arial, Helvetica, sans-serif'}}>
+          ARTIFICIAL INTELLIGENCE
+        </Focus>
+        <Soft> CHANGE</Soft>
+      </div>
+      <div style={{transform: 'translateX(54px)'}}>
+        <Soft opacity={0.24}>TECHNOLOGY AND ROBOTICS IN THE NEXT DECADE?</Soft>
+      </div>
+      <div style={{transform: 'translateX(-40px)'}}>
+        <Soft opacity={0.2} blur={2}>
+          IMPACT ON WORK, SECURITY AND DIGITAL TRADE
+        </Soft>
+      </div>
+      <div style={{transform: 'translateX(80px)'}}>
+        <Soft opacity={0.15} blur={2.5} style={{fontStyle: 'italic'}}>
+          THE FUTURE OF BUSINESS MOVES IN REAL TIME
+        </Soft>
+      </div>
+    </div>
+    <div
+      style={{
+        position: 'absolute',
+        right: 84,
+        bottom: 125,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        color: ACCENT,
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 12,
+        fontWeight: 800,
+        letterSpacing: '0.2em',
+        opacity: 0.56,
+      }}
+    >
+      REAL-TIME SIGNAL <span style={{fontSize: 18}}>↗</span>
+    </div>
+  </div>
+);
+
+const scenes: Array<React.FC<SceneProps>> = [
+  EditorialScene,
+  ReportScene,
+  DigitalScene,
+  CloudScene,
+  BusinessScene,
+];
+
+const Texture: React.FC<{frame: number; progress: number}> = ({
+  frame,
+  progress,
+}) => {
+  const sweepY = ((frame * 7.4) % 1250) - 100;
+  const glintX = ((frame * 3.1) % 2240) - 160;
+
+  return (
+    <>
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(circle at 50% 51%, rgba(38,55,59,0.35) 0%, rgba(8,13,15,0.48) 42%, rgba(3,4,6,0.96) 88%)',
+        }}
+      />
+      <svg
+        width="1920"
+        height="1080"
+        viewBox="0 0 1920 1080"
+        style={{position: 'absolute', inset: 0, opacity: 0.11}}
+      >
+        <filter id="paper-grain">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.78"
+            numOctaves="3"
+            seed="17"
+            stitchTiles="stitch"
+          />
+          <feColorMatrix type="saturate" values="0" />
+          <feComponentTransfer>
+            <feFuncA type="table" tableValues="0 0.52" />
+          </feComponentTransfer>
+        </filter>
+        <rect width="1920" height="1080" filter="url(#paper-grain)" />
+      </svg>
+      <AbsoluteFill
+        style={{
+          opacity: 0.11,
+          backgroundImage:
+            'repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(220,246,248,0.16) 4px)',
+          mixBlendMode: 'screen',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: sweepY,
+          height: 90,
+          background:
+            'linear-gradient(180deg, transparent, rgba(136,217,231,0.035), transparent)',
+          mixBlendMode: 'screen',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: glintX,
+          top: 0,
+          bottom: 0,
+          width: 180,
+          transform: 'skewX(-13deg)',
+          background:
+            'linear-gradient(90deg, transparent, rgba(238,244,243,0.018), transparent)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 70,
+          bottom: 76,
+          width: 1780,
+          height: 1,
+          backgroundColor: 'rgba(238,244,243,0.1)',
+        }}
+      >
+        <div
+          style={{
+            width: `${progress * 100}%`,
+            height: '100%',
+            background:
+              'linear-gradient(90deg, rgba(136,217,231,0.15), rgba(136,217,231,0.6))',
+            boxShadow: '0 0 10px rgba(136,217,231,0.28)',
+          }}
+        />
       </div>
     </>
   );
@@ -812,94 +740,85 @@ const EdgeLabels: React.FC<{phase: number}> = ({phase}) => {
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
+  const {fps, durationInFrames, width, height} = useVideoConfig();
 
-  // Duplicating the first visual state on the final frame guarantees a clean loop.
-  const normalizedFrame = frame >= durationInFrames - 1 ? 0 : frame;
-  const phase = normalizedFrame / Math.max(1, durationInFrames - 1);
-  const wavePosition = phase * WAVES.length;
-  const wholeWave = Math.floor(wavePosition);
-  const localWave = wavePosition - wholeWave;
-  const currentIndex = wholeWave % WAVES.length;
-  const nextIndex = (currentIndex + 1) % WAVES.length;
-  const blend = smootherStep(0.64, 1, localWave);
-  const transitionEnergy = Math.sin(blend * Math.PI);
-  const currentWave = WAVES[currentIndex];
-  const nextWave = WAVES[nextIndex];
-  const currentPalette = PALETTES[currentWave.palette];
-  const nextPalette = PALETTES[nextWave.palette];
-  const gridIntensity =
-    currentWave.grid * (1 - blend) + nextWave.grid * blend;
+  // The reference cuts to a new typography plate every 11 frames at 30 fps.
+  // Keeping this cadence proportional makes the rhythm identical at 60 fps.
+  const sceneFrames = Math.max(1, fps * (11 / 30));
+  const absoluteScene = Math.floor(frame / sceneFrames);
+  const sceneIndex = absoluteScene % scenes.length;
+  const localFrame = frame - absoluteScene * sceneFrames;
+  const Scene = scenes[sceneIndex];
+
+  const sharpnessFrames = Math.min(4, sceneFrames * 0.22);
+  const sharpness = interpolate(
+    localFrame,
+    [0, sharpnessFrames],
+    [0, 1],
+    {...clamp, easing: Easing.out(Easing.cubic)},
+  );
+  const pageScale = interpolate(
+    localFrame,
+    [0, Math.max(1, sceneFrames - 1)],
+    [1, 1.04],
+    clamp,
+  );
+  const pageBlur = interpolate(sharpness, [0, 1], [2.6, 0.4], clamp);
+  const progress = durationInFrames <= 1 ? 1 : frame / (durationInFrames - 1);
+
+  const stageScale = Math.min(width / 1920, height / 1080);
+  const stageLeft = (width - 1920 * stageScale) / 2;
+  const stageTop = (height - 1080 * stageScale) / 2;
 
   return (
     <AbsoluteFill
       style={{
-        overflow: "hidden",
-        backgroundColor: "#01040B",
+        backgroundColor: INK,
+        overflow: 'hidden',
       }}
     >
-      <BackgroundAtmosphere
-        phase={phase}
-        currentPalette={currentPalette}
-        nextPalette={nextPalette}
-        blend={blend}
-      />
-      <GridWorld
-        phase={phase}
-        intensity={gridIntensity}
-        transitionEnergy={transitionEnergy}
-      />
-      <GhostPlane phase={phase} transitionEnergy={transitionEnergy} />
-      <AmbientStreaks phase={phase} />
-
-      <KineticWordLayer
-        wave={currentWave}
-        opacity={1 - blend}
-        blend={blend}
-        incoming={false}
-        phase={phase}
-        transitionEnergy={transitionEnergy}
-      />
-      <KineticWordLayer
-        wave={nextWave}
-        opacity={blend}
-        blend={blend}
-        incoming
-        phase={phase}
-        transitionEnergy={transitionEnergy}
-      />
-
-      <TransitionEchoes
-        palette={nextPalette}
-        energy={transitionEnergy}
-        turn={nextWave.turn}
-      />
-      <CentralTitle
-        phase={phase}
-        currentPalette={currentPalette}
-        nextPalette={nextPalette}
-        blend={blend}
-        transitionEnergy={transitionEnergy}
-        turn={nextWave.turn}
-      />
-      <EdgeLabels phase={phase} />
-
-      <AbsoluteFill
+      <div
         style={{
-          pointerEvents: "none",
-          background:
-            "radial-gradient(ellipse at center, transparent 42%, rgba(0, 3, 12, .2) 68%, rgba(0, 2, 9, .76) 100%)",
+          position: 'absolute',
+          left: stageLeft,
+          top: stageTop,
+          width: 1920,
+          height: 1080,
+          overflow: 'hidden',
+          transform: `scale(${stageScale})`,
+          transformOrigin: 'top left',
+          backgroundColor: INK,
         }}
-      />
-      <AbsoluteFill
-        style={{
-          pointerEvents: "none",
-          opacity: 0.12,
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(115, 190, 255, .08) 4px)",
-          mixBlendMode: "screen",
-        }}
-      />
+      >
+        <Texture frame={frame} progress={progress} />
+
+        <div
+          style={{
+            position: 'absolute',
+            inset: -30,
+            opacity: 0.86 + sharpness * 0.14,
+            filter: `blur(${pageBlur}px) contrast(${1.02 + sharpness * 0.06})`,
+            transform: `scale(${pageScale})`,
+            transformOrigin: '50% 52%',
+            willChange: 'transform, filter, opacity',
+          }}
+        >
+          <Scene
+            localFrame={localFrame}
+            sceneFrames={sceneFrames}
+            sceneIndex={sceneIndex}
+          />
+          <EdgeData sceneIndex={sceneIndex} />
+        </div>
+
+        <AbsoluteFill
+          style={{
+            pointerEvents: 'none',
+            boxShadow:
+              'inset 0 0 190px rgba(0,0,0,0.82), inset 0 0 45px rgba(0,0,0,0.58)',
+          }}
+        />
+      </div>
     </AbsoluteFill>
   );
 };
