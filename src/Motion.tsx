@@ -4,181 +4,216 @@ import {
   Easing,
   interpolate,
   useCurrentFrame,
+  useVideoConfig,
 } from "remotion";
 
-const FPS = 60;
-const TOTAL_FRAMES = 20 * FPS;
-const FONT = "'Arial Narrow', 'Helvetica Neue', Arial, sans-serif";
-const MONO = "'SFMono-Regular', Consolas, 'Liberation Mono', monospace";
-
 const C = {
-  bg: "#03090e",
-  panel: "rgba(5, 17, 25, 0.88)",
-  panelSoft: "rgba(8, 25, 34, 0.72)",
-  line: "rgba(117, 193, 211, 0.20)",
-  lineStrong: "rgba(117, 211, 230, 0.46)",
-  text: "#e7f8fb",
-  muted: "#71909b",
-  cyan: "#63def2",
-  cyanSoft: "#2796b0",
-  amber: "#f4b860",
-  amberSoft: "#9b662d",
-  green: "#5fe0a2",
-  red: "#f07070",
+  bg: "#020812",
+  panel: "rgba(6, 16, 30, 0.92)",
+  panelSoft: "rgba(8, 22, 39, 0.78)",
+  border: "#18334c",
+  borderBright: "#24506c",
+  text: "#ecf8ff",
+  muted: "#7690a5",
+  dim: "#405b70",
+  cyan: "#28d9e7",
+  mint: "#55f2c0",
+  violet: "#9b78ff",
+  amber: "#ffbd66",
+  red: "#ff6f7d",
 };
+
+const FONT =
+  "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-const progress = (frame: number, start: number, end: number) =>
-  interpolate(frame, [start, end], [0, 1], {
+const enter = (frame: number, start: number, duration = 34) =>
+  interpolate(frame, [start, start + duration], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
-    easing: Easing.bezier(0.22, 1, 0.36, 1),
+    easing: Easing.out(Easing.cubic),
   });
 
-const linear = (frame: number, start: number, end: number) =>
-  interpolate(frame, [start, end], [0, 1], {
+const fadeWindow = (
+  frame: number,
+  start: number,
+  end: number,
+  feather = 16,
+) => {
+  if (frame < start || frame > end) return 0;
+  const fadeIn = interpolate(frame, [start, start + feather], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-
-const alpha = (hex: string, opacity: number) => {
-  const normalized = hex.replace("#", "");
-  const r = parseInt(normalized.slice(0, 2), 16);
-  const g = parseInt(normalized.slice(2, 4), 16);
-  const b = parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  const fadeOut = interpolate(frame, [end - feather, end], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return Math.min(fadeIn, fadeOut);
 };
 
-const CheckIcon: React.FC<{size?: number; color?: string}> = ({
-  size = 16,
-  color = C.green,
-}) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <path
-      d="M5 12.5 9.3 17 19 7"
-      stroke={color}
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const seeded = (value: number) => {
+  const x = Math.sin(value * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
 
-const ShieldIcon: React.FC<{size?: number; color?: string}> = ({
-  size = 28,
-  color = C.cyan,
-}) => (
-  <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-    <path
-      d="M16 3.5 27 7.8v7.5c0 6.7-4.3 10.9-11 13.3C9.3 26.2 5 22 5 15.3V7.8L16 3.5Z"
-      stroke={color}
-      strokeWidth="1.7"
-    />
-    <path d="m10.8 15.8 3.4 3.4 7.2-7.3" stroke={color} strokeWidth="1.8" />
-  </svg>
-);
+const linePath = (
+  width: number,
+  height: number,
+  count: number,
+  phase: number,
+  seed: number,
+  amplitude = 0.3,
+) => {
+  const points = Array.from({length: count}, (_, index) => {
+    const t = index / (count - 1);
+    const baseline =
+      0.5 +
+      Math.sin(t * Math.PI * 3.4 + phase + seed) * amplitude * 0.62 +
+      Math.sin(t * Math.PI * 7.2 - phase * 0.57 + seed * 2.1) *
+        amplitude *
+        0.26 +
+      Math.cos(t * Math.PI * 1.45 + phase * 0.32) * amplitude * 0.2;
+    return {
+      x: t * width,
+      y: clamp01(baseline) * height,
+    };
+  });
 
-const HumanIcon: React.FC<{size?: number; color?: string}> = ({
-  size = 36,
-  color = C.amber,
-}) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-    <circle cx="20" cy="13" r="6" stroke={color} strokeWidth="1.8" />
-    <path
-      d="M8.5 33c1.2-7.2 5-10.8 11.5-10.8S30.3 25.8 31.5 33"
-      stroke={color}
-      strokeWidth="1.8"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
-const AiNodeIcon: React.FC<{size?: number}> = ({size = 52}) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-    <path
-      d="M32 5 54.5 18v28L32 59 9.5 46V18L32 5Z"
-      stroke={C.cyan}
-      strokeWidth="1.5"
-    />
-    <path
-      d="M32 14 46.8 22.5v19L32 50l-14.8-8.5v-19L32 14Z"
-      stroke={alpha(C.cyan, 0.45)}
-      strokeWidth="1.2"
-    />
-    {[
-      [32, 22],
-      [24, 31],
-      [40, 31],
-      [32, 41],
-    ].map(([x, y], index) => (
-      <circle key={index} cx={x} cy={y} r="2.5" fill={C.cyan} />
-    ))}
-    <path
-      d="m32 22-8 9 8 10 8-10-8-9Zm-8 9h16"
-      stroke={alpha(C.cyan, 0.66)}
-      strokeWidth="1"
-    />
-  </svg>
-);
-
-const StatusPill: React.FC<{
-  children: React.ReactNode;
-  color: string;
-  compact?: boolean;
-}> = ({children, color, compact = false}) => (
-  <span
-    style={{
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: compact ? 66 : 88,
-      height: compact ? 24 : 28,
-      padding: compact ? "0 9px" : "0 12px",
-      borderRadius: 4,
-      border: `1px solid ${alpha(color, 0.52)}`,
-      background: alpha(color, 0.10),
-      color,
-      fontFamily: MONO,
-      fontSize: compact ? 10 : 11,
-      fontWeight: 700,
-      letterSpacing: "0.10em",
-      whiteSpace: "nowrap",
-      boxShadow: `0 0 16px ${alpha(color, 0.06)}`,
-    }}
-  >
-    {children}
-  </span>
-);
+  return points
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(
+          2,
+        )}`,
+    )
+    .join(" ");
+};
 
 const Panel: React.FC<{
-  frame: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  eyebrow?: string;
+  accent?: string;
   delay?: number;
+  uiOpacity: number;
   children: React.ReactNode;
-  style?: React.CSSProperties;
-}> = ({frame, delay = 0, children, style}) => {
-  const appear = progress(frame, 155 + delay, 260 + delay);
+}> = ({
+  x,
+  y,
+  width,
+  height,
+  title,
+  eyebrow,
+  accent = C.cyan,
+  delay = 0,
+  uiOpacity,
+  children,
+}) => {
+  const frame = useCurrentFrame();
+  const progress = enter(frame, delay, 34);
+
   return (
     <div
       style={{
-        position: "relative",
+        position: "absolute",
+        left: x,
+        top: y,
+        width,
+        height,
         overflow: "hidden",
-        border: `1px solid ${C.line}`,
-        background: `linear-gradient(155deg, ${C.panelSoft}, ${C.panel})`,
-        boxShadow: `inset 0 1px 0 ${alpha(C.cyan, 0.07)}, 0 18px 70px rgba(0,0,0,.28)`,
-        opacity: appear,
-        transform: `translateY(${(1 - appear) * 10}px)`,
-        clipPath: `inset(0 ${100 - appear * 100}% 0 0)`,
-        ...style,
+        borderRadius: 12,
+        border: `1px solid ${C.border}`,
+        background: `linear-gradient(145deg, ${C.panelSoft}, ${C.panel})`,
+        boxShadow:
+          "0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(150,220,255,0.035)",
+        opacity: uiOpacity * progress,
+        transform: `translateY(${(1 - progress) * 16}px)`,
       }}
     >
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
+          left: 0,
+          right: 0,
+          top: 0,
+          height: 48,
+          borderBottom: `1px solid ${C.border}`,
           background:
-            "linear-gradient(90deg, rgba(95,220,242,.025), transparent 33%, transparent 68%, rgba(244,184,96,.025))",
+            "linear-gradient(90deg, rgba(38,217,231,0.055), transparent 42%, rgba(155,120,255,0.035))",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 18,
+          top: 14,
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          backgroundColor: accent,
+          boxShadow: `0 0 14px ${accent}`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 38,
+          top: 11,
+          color: C.text,
+          fontFamily: FONT,
+          fontSize: 16,
+          lineHeight: "20px",
+          fontWeight: 700,
+          letterSpacing: 2.1,
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {title}
+      </div>
+      {eyebrow ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 18,
+            top: 13,
+            color: accent,
+            fontFamily: FONT,
+            fontSize: 12,
+            lineHeight: "18px",
+            fontWeight: 700,
+            letterSpacing: 1.45,
+            textTransform: "uppercase",
+          }}
+        >
+          {eyebrow}
+        </div>
+      ) : null}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: 78,
+          height: 2,
+          background: `linear-gradient(90deg, ${accent}, transparent)`,
+          opacity: 0.8,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          right: 0,
+          bottom: 0,
+          width: 52,
+          height: 2,
+          background: `linear-gradient(270deg, ${accent}, transparent)`,
+          opacity: 0.5,
         }}
       />
       {children}
@@ -186,694 +221,85 @@ const Panel: React.FC<{
   );
 };
 
-const PanelTitle: React.FC<{
-  title: string;
-  subtitle?: string;
-  accent?: string;
-  right?: React.ReactNode;
-}> = ({title, subtitle, accent = C.cyan, right}) => (
-  <div
-    style={{
-      height: 58,
-      padding: "0 20px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      borderBottom: `1px solid ${C.line}`,
-      position: "relative",
-      zIndex: 2,
-    }}
-  >
-    <div style={{display: "flex", alignItems: "center", gap: 11}}>
-      <div
-        style={{
-          width: 4,
-          height: 19,
-          borderRadius: 2,
-          background: accent,
-          boxShadow: `0 0 14px ${alpha(accent, 0.7)}`,
-        }}
-      />
-      <div>
-        <div
-          style={{
-            color: C.text,
-            fontFamily: FONT,
-            fontSize: 19,
-            fontWeight: 700,
-            letterSpacing: "0.12em",
-            lineHeight: 1,
-          }}
-        >
-          {title}
-        </div>
-        {subtitle ? (
-          <div
-            style={{
-              marginTop: 5,
-              color: C.muted,
-              fontFamily: MONO,
-              fontSize: 9,
-              letterSpacing: "0.12em",
-            }}
-          >
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-    </div>
-    {right}
-  </div>
-);
+const TinySparkline: React.FC<{
+  width: number;
+  height: number;
+  color: string;
+  seed: number;
+  phase: number;
+  filled?: boolean;
+}> = ({width, height, color, seed, phase, filled = false}) => {
+  const path = linePath(width, height, 30, phase, seed, 0.24);
+  const fillPath = `${path} L ${width} ${height} L 0 ${height} Z`;
+  const id = `spark-${seed.toString().replace(".", "-")}`;
 
-const Header: React.FC<{frame: number}> = ({frame}) => {
-  const onlinePulse = 0.65 + Math.sin(frame / 19) * 0.25;
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: 48,
-        top: 24,
-        width: 1824,
-        height: 56,
-        display: "flex",
-        alignItems: "center",
-        borderBottom: `1px solid ${C.line}`,
-        zIndex: 10,
-      }}
-    >
-      <div style={{display: "flex", alignItems: "center", width: 435}}>
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            display: "grid",
-            placeItems: "center",
-            border: `1px solid ${alpha(C.cyan, 0.36)}`,
-            background: alpha(C.cyan, 0.05),
-            boxShadow: `0 0 24px ${alpha(C.cyan, 0.12)}`,
-          }}
-        >
-          <ShieldIcon size={29} />
-        </div>
-        <div style={{marginLeft: 14}}>
-          <div
-            style={{
-              color: C.text,
-              fontFamily: FONT,
-              fontSize: 24,
-              fontWeight: 750,
-              letterSpacing: "0.11em",
-              lineHeight: 1,
-            }}
-          >
-            RESPONSIBLE AI
-          </div>
-          <div
-            style={{
-              color: C.cyan,
-              fontFamily: MONO,
-              fontSize: 10,
-              letterSpacing: "0.20em",
-              marginTop: 6,
-            }}
-          >
-            HUMAN APPROVAL CENTER
-          </div>
-        </div>
-      </div>
-      <div style={{display: "flex", alignItems: "center", gap: 10}}>
-        {["OVERVIEW", "AI DECISIONS", "HUMAN REVIEW", "AUDIT TRAIL"].map(
-          (item, index) => (
-            <div
-              key={item}
-              style={{
-                height: 34,
-                padding: "0 18px",
-                display: "grid",
-                placeItems: "center",
-                color: index === 0 ? C.text : C.muted,
-                background: index === 0 ? alpha(C.cyan, 0.08) : "transparent",
-                border:
-                  index === 0
-                    ? `1px solid ${alpha(C.cyan, 0.22)}`
-                    : "1px solid transparent",
-                fontFamily: MONO,
-                fontSize: 11,
-                letterSpacing: "0.10em",
-              }}
-            >
-              {item}
-            </div>
-          ),
-        )}
-      </div>
-      <div
-        style={{
-          marginLeft: "auto",
-          display: "flex",
-          alignItems: "center",
-          gap: 11,
-          color: C.green,
-          fontFamily: MONO,
-          fontSize: 11,
-          letterSpacing: "0.13em",
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: C.green,
-            boxShadow: `0 0 ${9 + onlinePulse * 8}px ${alpha(C.green, onlinePulse)}`,
-          }}
-        />
-        OVERSIGHT ONLINE
-      </div>
-    </div>
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.22" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {filled ? <path d={fillPath} fill={`url(#${id})`} /> : null}
+      <path
+        d={path}
+        fill="none"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 };
 
-const pipelineCases = [
-  {
-    id: "AP-2042",
-    title: "Loan Application",
-    detail: "Impact: High",
-    risk: "HUMAN REVIEW",
-    human: true,
-    resolve: 760,
-  },
-  {
-    id: "CL-8107",
-    title: "Insurance Claim",
-    detail: "Impact: Medium",
-    risk: "APPROVED",
-    human: false,
-    resolve: 690,
-  },
-  {
-    id: "TX-4931",
-    title: "Wire Transfer",
-    detail: "Impact: Critical",
-    risk: "HUMAN REVIEW",
-    human: true,
-    resolve: 875,
-  },
-  {
-    id: "CV-1180",
-    title: "Candidate Screen",
-    detail: "Impact: High",
-    risk: "ADJUSTED",
-    human: true,
-    resolve: 950,
-  },
-  {
-    id: "RX-6029",
-    title: "Clinical Triage",
-    detail: "Impact: Critical",
-    risk: "APPROVED",
-    human: true,
-    resolve: 1010,
-  },
-];
+const WorkflowsPanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const phase = (frame / fps) * 0.8;
+  const items = [
+    ["Incident triage", 82, C.cyan],
+    ["Knowledge retrieval", 74, C.mint],
+    ["Policy verification", 96, C.violet],
+    ["Response drafting", 68, C.cyan],
+    ["Risk assessment", 91, C.mint],
+    ["Action execution", 79, C.cyan],
+    ["Outcome review", 64, C.violet],
+  ] as const;
 
-const pipelineSteps = ["INPUT", "ANALYZE", "RISK", "POLICY", "DECISION"];
-
-const PipelinePanel: React.FC<{frame: number}> = ({frame}) => (
-  <Panel frame={frame} style={{width: 820, height: 646}}>
-    <PanelTitle
-      title="AI DECISION PIPELINE"
-      subtitle="POLICY-GATED • TRACEABLE • EXPLAINABLE"
-      right={<StatusPill color={C.cyan}>LIVE</StatusPill>}
-    />
-    <div
-      style={{
-        height: 41,
-        padding: "0 18px",
-        display: "grid",
-        alignItems: "center",
-        gridTemplateColumns: "238px 1fr",
-        color: C.muted,
-        fontFamily: MONO,
-        fontSize: 9,
-        letterSpacing: "0.12em",
-        borderBottom: `1px solid ${alpha(C.cyan, 0.10)}`,
-      }}
-    >
-      <div>CASE / BUSINESS IMPACT</div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
-          textAlign: "center",
-        }}
-      >
-        {pipelineSteps.map((step) => (
-          <span key={step}>{step}</span>
-        ))}
-      </div>
-    </div>
-    <div style={{padding: "6px 16px 0"}}>
-      {pipelineCases.map((item, rowIndex) => {
-        const start = 220 + rowIndex * 72;
-        const end = 640 + rowIndex * 58;
-        const rowProgress = progress(frame, start, end);
-        const resolved = progress(frame, item.resolve, item.resolve + 48);
-        const rowAppear = progress(frame, 225 + rowIndex * 42, 300 + rowIndex * 42);
-        const finalColor = item.risk === "ADJUSTED" ? C.amber : C.green;
-        return (
-          <div
-            key={item.id}
-            style={{
-              height: 92,
-              marginTop: 6,
-              padding: "0 12px 0 14px",
-              display: "grid",
-              gridTemplateColumns: "224px 1fr",
-              alignItems: "center",
-              background:
-                rowIndex % 2 === 0
-                  ? "rgba(24,57,68,.16)"
-                  : "rgba(3,11,17,.18)",
-              border: `1px solid ${alpha(C.cyan, 0.07)}`,
-              opacity: rowAppear,
-              transform: `translateX(${(1 - rowAppear) * -18}px)`,
-              position: "relative",
-            }}
-          >
-            <div>
-              <div style={{display: "flex", alignItems: "center", gap: 10}}>
-                <span
-                  style={{
-                    color: C.cyan,
-                    fontFamily: MONO,
-                    fontSize: 11,
-                    letterSpacing: "0.07em",
-                  }}
-                >
-                  {item.id}
-                </span>
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: item.human ? C.amber : C.green,
-                    boxShadow: `0 0 12px ${alpha(
-                      item.human ? C.amber : C.green,
-                      0.55,
-                    )}`,
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  marginTop: 7,
-                  color: C.text,
-                  fontFamily: FONT,
-                  fontWeight: 650,
-                  fontSize: 18,
-                  letterSpacing: "0.035em",
-                }}
-              >
-                {item.title}
-              </div>
-              <div
-                style={{
-                  marginTop: 5,
-                  color: C.muted,
-                  fontFamily: MONO,
-                  fontSize: 10,
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {item.detail}
-              </div>
-            </div>
-            <div style={{height: 54, position: "relative"}}>
-              <div
-                style={{
-                  position: "absolute",
-                  left: "9%",
-                  right: "9%",
-                  top: 18,
-                  height: 2,
-                  background: alpha(C.cyan, 0.16),
-                }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  left: "9%",
-                  top: 18,
-                  width: `${rowProgress * 82}%`,
-                  height: 2,
-                  background:
-                    item.human && resolved < 0.5
-                      ? `linear-gradient(90deg, ${C.cyan}, ${C.amber})`
-                      : `linear-gradient(90deg, ${C.cyan}, ${C.green})`,
-                  boxShadow: `0 0 9px ${alpha(C.cyan, 0.28)}`,
-                }}
-              />
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(5, 1fr)",
-                  position: "relative",
-                }}
-              >
-                {pipelineSteps.map((step, stepIndex) => {
-                  const nodeAmount = clamp01(rowProgress * 5 - stepIndex);
-                  const isLast = stepIndex === pipelineSteps.length - 1;
-                  const nodeColor =
-                    isLast && item.human && resolved < 0.5
-                      ? C.amber
-                      : isLast && resolved > 0.5
-                        ? finalColor
-                        : C.cyan;
-                  const active =
-                    nodeAmount > 0.05 &&
-                    nodeAmount < 0.98 &&
-                    rowProgress < 0.99;
-                  return (
-                    <div
-                      key={step}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        position: "relative",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: "50%",
-                          display: "grid",
-                          placeItems: "center",
-                          border: `1px solid ${alpha(nodeColor, 0.8)}`,
-                          background:
-                            nodeAmount > 0.08
-                              ? alpha(nodeColor, 0.18 + nodeAmount * 0.18)
-                              : C.bg,
-                          boxShadow:
-                            active || nodeAmount > 0.98
-                              ? `0 0 ${active ? 17 : 10}px ${alpha(
-                                  nodeColor,
-                                  active ? 0.55 : 0.27,
-                                )}`
-                              : "none",
-                        }}
-                      >
-                        {nodeAmount > 0.95 ? (
-                          <CheckIcon size={13} color={nodeColor} />
-                        ) : (
-                          <span
-                            style={{
-                              width: 4,
-                              height: 4,
-                              borderRadius: "50%",
-                              background: nodeColor,
-                              opacity: nodeAmount,
-                            }}
-                          />
-                        )}
-                      </div>
-                      {isLast && rowProgress > 0.82 ? (
-                        <div
-                          style={{
-                            marginTop: 7,
-                            color:
-                              resolved > 0.5
-                                ? finalColor
-                                : item.human
-                                  ? C.amber
-                                  : C.green,
-                            fontFamily: MONO,
-                            fontSize: 9,
-                            fontWeight: 700,
-                            letterSpacing: "0.06em",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {resolved > 0.5
-                            ? item.risk
-                            : item.human
-                              ? "REVIEW"
-                              : "AUTO"}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-    <div
-      style={{
-        position: "absolute",
-        left: 18,
-        right: 18,
-        bottom: 13,
-        height: 28,
-        display: "flex",
-        alignItems: "center",
-        gap: 22,
-        color: C.muted,
-        fontFamily: MONO,
-        fontSize: 9,
-        letterSpacing: "0.09em",
-      }}
-    >
-      <span>
-        <b style={{color: C.cyan}}>05</b> ACTIVE CASES
-      </span>
-      <span>
-        <b style={{color: C.amber}}>04</b> HUMAN CHECKS
-      </span>
-      <span>
-        <b style={{color: C.green}}>100%</b> AUDIT LOGGED
-      </span>
-    </div>
-  </Panel>
-);
-
-const handoffCards = [
-  {
-    id: "AP-2042",
-    reason: "FAIRNESS CHECK",
-    detail: "High-impact credit decision",
-    start: 390,
-    resolve: 760,
-    result: "APPROVED",
-  },
-  {
-    id: "TX-4931",
-    reason: "POLICY EXCEPTION",
-    detail: "Unusual transfer pattern",
-    start: 520,
-    resolve: 875,
-    result: "APPROVED",
-  },
-  {
-    id: "CV-1180",
-    reason: "LOW CONFIDENCE",
-    detail: "Human judgment required",
-    start: 650,
-    resolve: 950,
-    result: "ADJUSTED",
-  },
-];
-
-const HandoffBridge: React.FC<{frame: number}> = ({frame}) => {
-  const activity = progress(frame, 285, 390) * (1 - progress(frame, 1030, 1110));
-  const completed = progress(frame, 930, 1015);
-  const heroIn = progress(frame, 330, 405);
-  const approvedHero = progress(frame, 920, 990);
   return (
-    <Panel frame={frame} delay={24} style={{width: 340, height: 646}}>
-      <PanelTitle
-        title="AI → HUMAN"
-        subtitle="DECISION HANDOFF"
-        accent={C.amber}
-        right={
-          <span
-            style={{
-              color: completed > 0.5 ? C.green : C.amber,
-              fontFamily: MONO,
-              fontSize: 9,
-              letterSpacing: "0.11em",
-            }}
-          >
-            {completed > 0.5 ? "VERIFIED" : "LIVE"}
-          </span>
-        }
-      />
-      <div style={{position: "relative", height: 588}}>
-        <svg
-          width="340"
-          height="588"
-          viewBox="0 0 340 588"
-          style={{position: "absolute", inset: 0}}
-        >
-          <path
-            d="M170 94 C105 172 235 235 170 306 C108 374 231 431 170 505"
-            fill="none"
-            stroke={alpha(C.amber, 0.28)}
-            strokeWidth="2"
-            strokeDasharray="5 9"
-            strokeDashoffset={-frame * 0.65}
-          />
-          <path
-            d="M170 94 C105 172 235 235 170 306 C108 374 231 431 170 505"
-            fill="none"
-            stroke={alpha(C.cyan, 0.13)}
-            strokeWidth="9"
-            filter="blur(5px)"
-          />
-          {Array.from({length: 5}).map((_, index) => {
-            const p = ((frame / 150 + index / 5) % 1 + 1) % 1;
-            const x = 170 + Math.sin(p * Math.PI * 4) * 30;
-            const y = 104 + p * 392;
-            return (
-              <circle
-                key={index}
-                cx={x}
-                cy={y}
-                r={2.8 + (index % 2)}
-                fill={index % 2 ? C.amber : C.cyan}
-                opacity={activity * (0.38 + index * 0.1)}
-              />
-            );
-          })}
-        </svg>
-        <div
-          style={{
-            position: "absolute",
-            left: 126,
-            top: 18,
-            width: 88,
-            height: 88,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: "50%",
-            border: `1px solid ${alpha(C.cyan, 0.38)}`,
-            background: `radial-gradient(circle, ${alpha(C.cyan, 0.13)}, ${alpha(
-              C.cyan,
-              0.02,
-            )} 66%, transparent 68%)`,
-            boxShadow: `0 0 ${30 + Math.sin(frame / 22) * 5}px ${alpha(
-              C.cyan,
-              0.15,
-            )}`,
-          }}
-        >
-          <AiNodeIcon size={58} />
-          <div
-            style={{
-              position: "absolute",
-              top: 76,
-              color: C.cyan,
-              fontFamily: MONO,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              whiteSpace: "nowrap",
-            }}
-          >
-            AI AGENT
-          </div>
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            left: 28,
-            top: 112,
-            width: 284,
-            height: 78,
-            border: `1px solid ${alpha(
-              approvedHero > 0.5 ? C.green : C.amber,
-              0.42,
-            )}`,
-            background: `linear-gradient(90deg, ${alpha(
-              approvedHero > 0.5 ? C.green : C.amber,
-              0.10,
-            )}, rgba(3,12,17,.92))`,
-            boxShadow: `0 0 24px ${alpha(
-              approvedHero > 0.5 ? C.green : C.amber,
-              0.08,
-            )}`,
-            opacity: heroIn,
-            transform: `scale(${0.96 + heroIn * 0.04})`,
-            zIndex: 6,
-            display: "grid",
-            placeItems: "center",
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              color: C.amber,
-              fontFamily: FONT,
-              fontSize: 20,
-              fontWeight: 800,
-              lineHeight: 1.12,
-              letterSpacing: "0.09em",
-              opacity: 1 - approvedHero,
-            }}
-          >
-            HUMAN REVIEW
-            <br />
-            REQUIRED
-          </div>
-          <div
-            style={{
-              position: "absolute",
-              color: C.green,
-              fontFamily: FONT,
-              fontSize: 19,
-              fontWeight: 800,
-              lineHeight: 1.12,
-              letterSpacing: "0.075em",
-              opacity: approvedHero,
-            }}
-          >
-            APPROVED
-            <br />
-            WITH CONTROLS
-          </div>
-        </div>
-        {handoffCards.map((card, index) => {
-          const enter = progress(frame, card.start, card.start + 60);
-          const resolved = progress(frame, card.resolve, card.resolve + 52);
-          const cardColor = resolved > 0.5 ? C.green : C.amber;
-          const xOffset = (index % 2 === 0 ? -42 : 42) * (1 - enter);
+    <Panel
+      x={40}
+      y={116}
+      width={356}
+      height={594}
+      title="Live workflows"
+      eyebrow={frame > 410 && frame < 930 ? "08 active" : "03 active"}
+      delay={10}
+      uiOpacity={uiOpacity}
+    >
+      <div style={{position: "absolute", left: 22, right: 22, top: 64}}>
+        {items.map(([label, base, color], index) => {
+          const itemIn = enter(frame, 30 + index * 7, 26);
+          const value = Math.round(
+            Math.max(
+              18,
+              Math.min(
+                99,
+                base +
+                  Math.sin(phase * 0.72 + index * 1.13) * 3.2 +
+                  Math.sin(phase * 0.31 + index) * 1.5,
+              ),
+            ),
+          );
           return (
             <div
-              key={card.id}
+              key={label}
               style={{
-                position: "absolute",
-                left: 35,
-                top: 204 + index * 86 + resolved * 5,
-                width: 270,
                 height: 67,
-                padding: "9px 12px",
-                boxSizing: "border-box",
-                background: `linear-gradient(90deg, ${alpha(
-                  cardColor,
-                  0.12,
-                )}, rgba(7,17,23,.95))`,
-                border: `1px solid ${alpha(cardColor, 0.55)}`,
-                boxShadow: `0 0 24px ${alpha(cardColor, 0.08)}`,
-                opacity: enter,
-                transform: `translateX(${xOffset}px) scale(${0.96 + enter * 0.04})`,
-                zIndex: 4,
+                opacity: itemIn,
+                transform: `translateX(${(1 - itemIn) * -12}px)`,
               }}
             >
               <div
@@ -881,269 +307,62 @@ const HandoffBridge: React.FC<{frame: number}> = ({frame}) => {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                }}
-              >
-                <span
-                  style={{
-                    color: C.text,
-                    fontFamily: MONO,
-                    fontSize: 11,
-                    fontWeight: 750,
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  {card.reason}
-                </span>
-                <span
-                  style={{
-                    color: cardColor,
-                    fontFamily: MONO,
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  {resolved > 0.5 ? card.result : "REVIEW"}
-                </span>
-              </div>
-              <div
-                style={{
-                  marginTop: 5,
-                  color: C.muted,
-                  fontFamily: FONT,
-                  fontSize: 12,
-                  letterSpacing: "0.025em",
-                }}
-              >
-                {card.detail}
-              </div>
-              <div
-                style={{
-                  marginTop: 5,
-                  height: 3,
-                  background: alpha(cardColor, 0.13),
-                  position: "relative",
+                  marginBottom: 11,
                 }}
               >
                 <div
                   style={{
-                    width: `${Math.max(enter * 44, resolved * 100)}%`,
-                    height: "100%",
-                    background: cardColor,
-                    boxShadow: `0 0 8px ${alpha(cardColor, 0.45)}`,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        <div
-          style={{
-            position: "absolute",
-            left: 122,
-            bottom: 18,
-            width: 96,
-            height: 96,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: "50%",
-            border: `1px solid ${alpha(completed > 0.5 ? C.green : C.amber, 0.46)}`,
-            background: `radial-gradient(circle, ${alpha(
-              completed > 0.5 ? C.green : C.amber,
-              0.14,
-            )}, transparent 67%)`,
-            boxShadow: `0 0 30px ${alpha(
-              completed > 0.5 ? C.green : C.amber,
-              0.14,
-            )}`,
-          }}
-        >
-          <HumanIcon size={47} color={completed > 0.5 ? C.green : C.amber} />
-          <div
-            style={{
-              position: "absolute",
-              bottom: -2,
-              color: completed > 0.5 ? C.green : C.amber,
-              fontFamily: MONO,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.11em",
-              whiteSpace: "nowrap",
-            }}
-          >
-            HUMAN REVIEWER
-          </div>
-        </div>
-      </div>
-    </Panel>
-  );
-};
-
-const queueCases = [
-  {
-    id: "AP-2042",
-    title: "Loan fairness review",
-    owner: "REVIEWER A",
-    start: 400,
-    resolve: 760,
-    result: "APPROVED",
-    color: C.green,
-  },
-  {
-    id: "TX-4931",
-    title: "Transfer policy exception",
-    owner: "REVIEWER B",
-    start: 520,
-    resolve: 875,
-    result: "APPROVED",
-    color: C.green,
-  },
-  {
-    id: "CV-1180",
-    title: "Candidate confidence check",
-    owner: "REVIEWER C",
-    start: 650,
-    resolve: 950,
-    result: "ADJUSTED",
-    color: C.amber,
-  },
-  {
-    id: "RX-6029",
-    title: "Clinical triage validation",
-    owner: "REVIEWER D",
-    start: 750,
-    resolve: 1010,
-    result: "APPROVED",
-    color: C.green,
-  },
-];
-
-const ReviewerQueue: React.FC<{frame: number}> = ({frame}) => {
-  const entered = queueCases.filter((item) => frame >= item.start).length;
-  const resolvedCount = queueCases.filter((item) => frame >= item.resolve + 35).length;
-  const pending = Math.max(0, entered - resolvedCount);
-  return (
-    <Panel frame={frame} delay={48} style={{width: 624, height: 646}}>
-      <PanelTitle
-        title="HUMAN REVIEW QUEUE"
-        subtitle="HIGH-IMPACT DECISIONS ONLY"
-        accent={C.amber}
-        right={
-          <div style={{display: "flex", alignItems: "center", gap: 10}}>
-            <span
-              style={{
-                color: C.muted,
-                fontFamily: MONO,
-                fontSize: 10,
-                letterSpacing: "0.08em",
-              }}
-            >
-              {pending} PENDING
-            </span>
-            <StatusPill color={pending === 0 && entered > 0 ? C.green : C.amber}>
-              {pending === 0 && entered > 0 ? "CLEARED" : "ACTIVE"}
-            </StatusPill>
-          </div>
-        }
-      />
-      <div
-        style={{
-          height: 43,
-          padding: "0 17px",
-          display: "grid",
-          gridTemplateColumns: "105px 1fr 100px 93px",
-          alignItems: "center",
-          borderBottom: `1px solid ${alpha(C.cyan, 0.10)}`,
-          color: C.muted,
-          fontFamily: MONO,
-          fontSize: 9,
-          letterSpacing: "0.12em",
-        }}
-      >
-        <span>CASE ID</span>
-        <span>REVIEW REASON</span>
-        <span>OWNER</span>
-        <span style={{textAlign: "right"}}>STATUS</span>
-      </div>
-      <div style={{padding: "8px 14px 0"}}>
-        {queueCases.map((item, index) => {
-          const enter = progress(frame, item.start, item.start + 54);
-          const resolve = progress(frame, item.resolve, item.resolve + 50);
-          const color = resolve > 0.5 ? item.color : C.amber;
-          return (
-            <div
-              key={item.id}
-              style={{
-                height: 92,
-                marginTop: 7,
-                display: "grid",
-                gridTemplateColumns: "102px 1fr 100px 104px",
-                alignItems: "center",
-                padding: "0 12px",
-                boxSizing: "border-box",
-                border: `1px solid ${alpha(color, 0.18 + resolve * 0.24)}`,
-                background: `linear-gradient(90deg, ${alpha(
-                  color,
-                  0.06 + resolve * 0.05,
-                )}, rgba(4,12,18,.24))`,
-                opacity: enter,
-                transform: `translateX(${(1 - enter) * 26}px)`,
-                boxShadow:
-                  resolve > 0.1 ? `inset 3px 0 0 ${alpha(color, resolve)}` : "none",
-              }}
-            >
-              <div
-                style={{
-                  color: C.cyan,
-                  fontFamily: MONO,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {item.id}
-              </div>
-              <div>
-                <div
-                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
                     color: C.text,
                     fontFamily: FONT,
-                    fontSize: 17,
-                    fontWeight: 650,
-                    letterSpacing: "0.025em",
+                    fontSize: 16,
+                    fontWeight: 600,
                   }}
                 >
-                  {item.title}
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      backgroundColor: color,
+                      boxShadow: `0 0 10px ${color}`,
+                    }}
+                  />
+                  {label}
                 </div>
                 <div
                   style={{
-                    marginTop: 7,
-                    display: "flex",
-                    gap: 12,
-                    color: C.muted,
-                    fontFamily: MONO,
-                    fontSize: 9,
-                    letterSpacing: "0.08em",
+                    color,
+                    fontFamily: FONT,
+                    fontSize: 15,
+                    fontWeight: 800,
+                    fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  <span>AI CONF. {91 - index * 6}%</span>
-                  <span>IMPACT {index % 2 ? "HIGH" : "CRITICAL"}</span>
+                  {value.toString().padStart(2, "0")}%
                 </div>
               </div>
               <div
                 style={{
-                  color: C.muted,
-                  fontFamily: MONO,
-                  fontSize: 10,
-                  letterSpacing: "0.06em",
+                  position: "relative",
+                  height: 5,
+                  marginLeft: 17,
+                  borderRadius: 9,
+                  backgroundColor: "rgba(88,120,145,0.14)",
+                  overflow: "hidden",
                 }}
               >
-                {item.owner}
-              </div>
-              <div style={{display: "flex", justifyContent: "flex-end"}}>
-                <StatusPill color={color} compact>
-                  {resolve > 0.5 ? item.result : "REVIEW"}
-                </StatusPill>
+                <div
+                  style={{
+                    width: `${value}%`,
+                    height: "100%",
+                    borderRadius: 9,
+                    background: `linear-gradient(90deg, ${color}99, ${color})`,
+                    boxShadow: `0 0 12px ${color}66`,
+                  }}
+                />
               </div>
             </div>
           );
@@ -1152,50 +371,847 @@ const ReviewerQueue: React.FC<{frame: number}> = ({frame}) => {
       <div
         style={{
           position: "absolute",
-          left: 14,
-          right: 14,
-          bottom: 14,
-          height: 82,
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 8,
+          left: 22,
+          right: 22,
+          bottom: 19,
+          height: 42,
+          borderTop: `1px solid ${C.border}`,
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
         }}
       >
-        {[
-          ["REVIEWED", `${resolvedCount}/4`, C.green],
-          ["AVG. TIME", `${Math.max(0, 2.8 - resolvedCount * 0.25).toFixed(1)} min`, C.cyan],
-          ["POLICY CATCHES", `${Math.min(4, entered)}`, C.amber],
-          ["AUDIT COVERAGE", entered > 0 ? "100%" : "—", C.green],
-        ].map(([label, value, color]) => (
+        <span
+          style={{
+            color: C.muted,
+            fontFamily: FONT,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: 1.4,
+          }}
+        >
+          TASKS TODAY
+        </span>
+        <span
+          style={{
+            color: C.mint,
+            fontFamily: FONT,
+            fontSize: 22,
+            lineHeight: "24px",
+            fontWeight: 800,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {Math.round(1248 + Math.sin(phase * 0.7) * 18)
+            .toString()
+            .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+        </span>
+      </div>
+    </Panel>
+  );
+};
+
+type AgentNode = {
+  label: string;
+  sub: string;
+  x: number;
+  y: number;
+  start: number;
+  color: string;
+};
+
+const nodes: AgentNode[] = [
+  {label: "REQUEST", sub: "mission ingest", x: 28, y: 178, start: 100, color: C.cyan},
+  {label: "ROUTER", sub: "intent classify", x: 198, y: 72, start: 180, color: C.cyan},
+  {label: "PLANNER", sub: "12-step plan", x: 394, y: 26, start: 260, color: C.mint},
+  {label: "RESEARCH", sub: "ground context", x: 390, y: 166, start: 360, color: C.violet},
+  {label: "CONTEXT", sub: "memory sync", x: 194, y: 292, start: 450, color: C.cyan},
+  {label: "POLICY", sub: "guardrail check", x: 586, y: 76, start: 555, color: C.violet},
+  {label: "ACTION", sub: "tool execution", x: 590, y: 260, start: 660, color: C.cyan},
+  {label: "VALIDATOR", sub: "evidence review", x: 770, y: 130, start: 765, color: C.mint},
+  {label: "RESPONSE", sub: "verified output", x: 800, y: 294, start: 870, color: C.mint},
+];
+
+const edgePairs: Array<[number, number, number]> = [
+  [0, 1, -10],
+  [1, 2, -8],
+  [1, 4, 14],
+  [2, 3, 8],
+  [3, 4, 15],
+  [2, 5, -10],
+  [3, 6, 12],
+  [4, 6, 20],
+  [5, 7, -12],
+  [6, 7, 12],
+  [7, 8, 16],
+];
+
+const quadraticPoint = (
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  t: number,
+) => {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * ax + 2 * mt * t * bx + t * t * cx,
+    y: mt * mt * ay + 2 * mt * t * by + t * t * cy,
+  };
+};
+
+const MissionBanner: React.FC = () => {
+  const frame = useCurrentFrame();
+  const phases = [
+    {
+      start: 54,
+      end: 112,
+      title: "READY FOR MISSION",
+      detail: "Secure baseline synchronized",
+      color: C.cyan,
+    },
+    {
+      start: 112,
+      end: 228,
+      title: "NEW MISSION RECEIVED",
+      detail: "Resolve priority service incident",
+      color: C.amber,
+    },
+    {
+      start: 228,
+      end: 412,
+      title: "PLAN GENERATED",
+      detail: "12 steps · 3 specialist agents",
+      color: C.cyan,
+    },
+    {
+      start: 412,
+      end: 712,
+      title: "EXECUTING WORKFLOW",
+      detail: "Context grounded · tools active",
+      color: C.cyan,
+    },
+    {
+      start: 712,
+      end: 902,
+      title: "POLICY VERIFIED",
+      detail: "Risk level low · action approved",
+      color: C.mint,
+    },
+    {
+      start: 902,
+      end: 1082,
+      title: "MISSION COMPLETE",
+      detail: "Priority incident resolved",
+      color: C.mint,
+    },
+    {
+      start: 1082,
+      end: 1199,
+      title: "READY FOR MISSION",
+      detail: "Secure baseline synchronized",
+      color: C.cyan,
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 22,
+        right: 22,
+        top: 62,
+        height: 82,
+        borderRadius: 9,
+        border: `1px solid ${C.borderBright}`,
+        background:
+          "linear-gradient(90deg, rgba(24,53,74,0.40), rgba(6,18,32,0.72))",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 4,
+          background: C.cyan,
+          boxShadow: `0 0 16px ${C.cyan}`,
+        }}
+      />
+      {phases.map((phase) => {
+        const opacity = fadeWindow(frame, phase.start, phase.end, 18);
+        const move = interpolate(
+          frame,
+          [phase.start, phase.start + 18, phase.end - 18, phase.end],
+          [10, 0, 0, -8],
+          {
+            extrapolateLeft: "clamp",
+            extrapolateRight: "clamp",
+            easing: Easing.inOut(Easing.cubic),
+          },
+        );
+        return (
+          <div
+            key={`${phase.start}-${phase.title}`}
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity,
+              transform: `translateY(${move}px)`,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: 22,
+                top: 13,
+                color: phase.color,
+                fontFamily: FONT,
+                fontSize: 21,
+                lineHeight: "26px",
+                fontWeight: 850,
+                letterSpacing: 1.4,
+              }}
+            >
+              {phase.title}
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                left: 22,
+                top: 44,
+                color: C.text,
+                fontFamily: FONT,
+                fontSize: 17,
+                lineHeight: "22px",
+                fontWeight: 600,
+              }}
+            >
+              {phase.detail}
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                right: 22,
+                top: 20,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                color: phase.color,
+                fontFamily: FONT,
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 1.2,
+              }}
+            >
+              <span
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  background: phase.color,
+                  boxShadow: `0 0 14px ${phase.color}`,
+                }}
+              />
+              LIVE
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const WorkflowGraph: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const graphWidth = 978;
+  const graphHeight = 404;
+  const nodeWidth = 150;
+  const nodeHeight = 64;
+  const reset = interpolate(frame, [1080, 1144], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const success = interpolate(frame, [900, 948], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 25,
+        top: 160,
+        width: graphWidth,
+        height: graphHeight,
+      }}
+    >
+      <svg
+        width={graphWidth}
+        height={graphHeight}
+        viewBox={`0 0 ${graphWidth} ${graphHeight}`}
+        style={{position: "absolute", inset: 0}}
+      >
+        <defs>
+          <filter id="agent-path-glow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <radialGradient id="core-aura">
+            <stop offset="0" stopColor={C.cyan} stopOpacity="0.12" />
+            <stop offset="1" stopColor={C.cyan} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <ellipse
+          cx="492"
+          cy="212"
+          rx={220 + success * 22}
+          ry={128 + success * 12}
+          fill="url(#core-aura)"
+          opacity={0.45 + success * 0.28}
+        />
+        {edgePairs.map(([from, to, bend], index) => {
+          const a = nodes[from];
+          const b = nodes[to];
+          const ax = a.x + nodeWidth / 2;
+          const ay = a.y + nodeHeight / 2;
+          const cx = b.x + nodeWidth / 2;
+          const cy = b.y + nodeHeight / 2;
+          const bx = (ax + cx) / 2;
+          const by = (ay + cy) / 2 + bend;
+          const complete = clamp01((frame - b.start) / 36) * reset;
+          const signalT =
+            ((frame / fps) * 0.44 + index * 0.137) % 1;
+          const point = quadraticPoint(ax, ay, bx, by, cx, cy, signalT);
+          const color = b.color;
+          return (
+            <g key={`${from}-${to}`}>
+              <path
+                d={`M ${ax} ${ay} Q ${bx} ${by} ${cx} ${cy}`}
+                fill="none"
+                stroke="#1e4059"
+                strokeWidth={1.4}
+                strokeDasharray="4 8"
+                opacity={0.65}
+              />
+              <path
+                d={`M ${ax} ${ay} Q ${bx} ${by} ${cx} ${cy}`}
+                fill="none"
+                stroke={color}
+                strokeWidth={2.1}
+                pathLength={1}
+                strokeDasharray={`${complete} 1`}
+                opacity={0.38 + complete * 0.52}
+                filter="url(#agent-path-glow)"
+              />
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={2.8 + complete * 1.3}
+                fill={color}
+                opacity={(0.22 + complete * 0.78) * reset}
+                filter="url(#agent-path-glow)"
+              />
+            </g>
+          );
+        })}
+      </svg>
+      {nodes.map((node, index) => {
+        const complete = clamp01((frame - node.start) / 32) * reset;
+        const nextStart = nodes[index + 1]?.start ?? 940;
+        const isCurrent =
+          frame >= node.start && frame < nextStart && frame < 920;
+        const pulse =
+          0.5 + 0.5 * Math.sin((frame / fps) * Math.PI * 2.2 + index);
+        const successBoost = frame >= 900 ? success * reset : 0;
+        const borderOpacity = 0.22 + complete * 0.6 + successBoost * 0.18;
+        return (
+          <div
+            key={node.label}
+            style={{
+              position: "absolute",
+              left: node.x,
+              top: node.y,
+              width: nodeWidth,
+              height: nodeHeight,
+              borderRadius: 10,
+              border: `1px solid ${node.color}${Math.round(
+                borderOpacity * 255,
+              )
+                .toString(16)
+                .padStart(2, "0")}`,
+              background: `linear-gradient(145deg, ${node.color}10, rgba(4,14,27,0.96))`,
+              boxShadow:
+                isCurrent || successBoost > 0.5
+                  ? `0 0 ${18 + pulse * 11}px ${node.color}38, inset 0 0 18px ${node.color}12`
+                  : "inset 0 1px 0 rgba(255,255,255,0.025)",
+              opacity: 0.5 + complete * 0.5,
+              transform: `scale(${1 + (isCurrent ? pulse * 0.012 : 0)})`,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              paddingLeft: 18,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 12,
+                width: 3,
+                height: 38,
+                borderRadius: "0 3px 3px 0",
+                background: node.color,
+                opacity: 0.35 + complete * 0.65,
+                boxShadow: `0 0 12px ${node.color}`,
+              }}
+            />
+            <div
+              style={{
+                color: complete > 0.25 ? C.text : C.muted,
+                fontFamily: FONT,
+                fontSize: 17,
+                lineHeight: "21px",
+                fontWeight: 800,
+                letterSpacing: 1.1,
+              }}
+            >
+              {node.label}
+            </div>
+            <div
+              style={{
+                color: node.color,
+                fontFamily: FONT,
+                fontSize: 12,
+                lineHeight: "16px",
+                fontWeight: 650,
+                letterSpacing: 0.6,
+                marginTop: 2,
+              }}
+            >
+              {node.sub}
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                right: 12,
+                top: 13,
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: complete > 0.2 ? node.color : C.dim,
+                boxShadow:
+                  complete > 0.2 ? `0 0 11px ${node.color}` : "none",
+              }}
+            />
+          </div>
+        );
+      })}
+      <div
+        style={{
+          position: "absolute",
+          left: 404,
+          bottom: 4,
+          width: 174,
+          height: 32,
+          borderRadius: 18,
+          border: `1px solid ${C.borderBright}`,
+          color:
+            frame >= 1082 ? C.cyan : frame >= 900 ? C.mint : C.cyan,
+          backgroundColor: "rgba(5,18,31,0.82)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 9,
+          fontFamily: FONT,
+          fontSize: 13,
+          fontWeight: 800,
+          letterSpacing: 1.2,
+        }}
+      >
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            backgroundColor:
+              frame >= 1082 ? C.cyan : frame >= 900 ? C.mint : C.cyan,
+            boxShadow: `0 0 10px ${
+              frame >= 1082 ? C.cyan : frame >= 900 ? C.mint : C.cyan
+            }`,
+          }}
+        />
+        {frame >= 1082
+          ? "READY STATE"
+          : frame >= 900
+            ? "SYNC COMPLETE"
+            : "LIVE EXECUTION"}
+      </div>
+    </div>
+  );
+};
+
+const MainWorkflowPanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => (
+  <Panel
+    x={412}
+    y={116}
+    width={1028}
+    height={594}
+    title="Agent workflow / live mission"
+    eyebrow="trace 7F-A2"
+    accent={C.cyan}
+    delay={18}
+    uiOpacity={uiOpacity}
+  >
+    <MissionBanner />
+    <WorkflowGraph />
+  </Panel>
+);
+
+const CapacityPanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const phase = frame / fps;
+  const cols = 12;
+  const rows = 6;
+
+  return (
+    <Panel
+      x={1456}
+      y={116}
+      width={424}
+      height={286}
+      title="Regional capacity"
+      eyebrow="balanced"
+      accent={C.violet}
+      delay={24}
+      uiOpacity={uiOpacity}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          top: 66,
+          display: "grid",
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gridTemplateRows: `repeat(${rows}, 22px)`,
+          gap: 6,
+        }}
+      >
+        {Array.from({length: cols * rows}, (_, index) => {
+          const signal =
+            0.52 +
+            Math.sin(phase * 1.25 + index * 0.77) * 0.24 +
+            (seeded(index + 4) - 0.5) * 0.28;
+          const hueColor =
+            index % 5 === 0
+              ? C.violet
+              : index % 7 === 0
+                ? C.mint
+                : C.cyan;
+          return (
+            <div
+              key={index}
+              style={{
+                borderRadius: 3,
+                backgroundColor: hueColor,
+                opacity: 0.18 + clamp01(signal) * 0.76,
+                boxShadow:
+                  signal > 0.72 ? `0 0 9px ${hueColor}55` : "none",
+              }}
+            />
+          );
+        })}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          bottom: 18,
+          display: "flex",
+          justifyContent: "space-between",
+          color: C.muted,
+          fontFamily: FONT,
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: 1,
+        }}
+      >
+        <span>NORTH AMERICA</span>
+        <span>EUROPE</span>
+        <span>ASIA PACIFIC</span>
+      </div>
+    </Panel>
+  );
+};
+
+const MetricCard: React.FC<{
+  label: string;
+  value: string;
+  color: string;
+  phase: number;
+  seed: number;
+}> = ({label, value, color, phase, seed}) => (
+  <div
+    style={{
+      position: "relative",
+      height: 88,
+      borderRadius: 9,
+      border: `1px solid ${C.border}`,
+      backgroundColor: "rgba(9,24,41,0.62)",
+      padding: "12px 13px",
+      boxSizing: "border-box",
+    }}
+  >
+    <div
+      style={{
+        color: C.muted,
+        fontFamily: FONT,
+        fontSize: 12,
+        fontWeight: 750,
+        letterSpacing: 1.05,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        color,
+        fontFamily: FONT,
+        fontSize: 25,
+        lineHeight: "31px",
+        fontWeight: 850,
+        fontVariantNumeric: "tabular-nums",
+        marginTop: 4,
+      }}
+    >
+      {value}
+    </div>
+    <div style={{position: "absolute", right: 10, bottom: 12}}>
+      <TinySparkline
+        width={68}
+        height={28}
+        color={color}
+        seed={seed}
+        phase={phase}
+      />
+    </div>
+  </div>
+);
+
+const AssurancePanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const phase = frame / fps;
+  const verified = interpolate(frame, [690, 850], [78, 99], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+
+  return (
+    <Panel
+      x={1456}
+      y={418}
+      width={424}
+      height={292}
+      title="Decision assurance"
+      eyebrow="secure"
+      accent={C.mint}
+      delay={30}
+      uiOpacity={uiOpacity}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 20,
+          right: 20,
+          top: 62,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <MetricCard
+          label="SUCCESS RATE"
+          value={`${(98.5 + Math.sin(phase * 0.72) * 0.2).toFixed(1)}%`}
+          color={C.mint}
+          phase={phase}
+          seed={1.1}
+        />
+        <MetricCard
+          label="AVG RESPONSE"
+          value={`${(1.8 + Math.sin(phase * 0.53 + 1) * 0.08).toFixed(1)}s`}
+          color={C.cyan}
+          phase={phase * 0.82}
+          seed={2.4}
+        />
+        <MetricCard
+          label="ACTIVE AGENTS"
+          value={frame > 410 && frame < 930 ? "08" : "03"}
+          color={C.violet}
+          phase={phase * 0.9}
+          seed={3.2}
+        />
+        <MetricCard
+          label="ERRORS"
+          value="00"
+          color={C.mint}
+          phase={phase * 0.68}
+          seed={4.7}
+        />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          bottom: 17,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <span
+          style={{
+            color: C.muted,
+            fontFamily: FONT,
+            fontSize: 12,
+            fontWeight: 750,
+            letterSpacing: 1.05,
+            whiteSpace: "nowrap",
+          }}
+        >
+          POLICY VERIFIED
+        </span>
+        <div
+          style={{
+            flex: 1,
+            height: 5,
+            borderRadius: 9,
+            overflow: "hidden",
+            backgroundColor: "rgba(88,120,145,0.15)",
+          }}
+        >
+          <div
+            style={{
+              width: `${verified}%`,
+              height: "100%",
+              borderRadius: 9,
+              background: `linear-gradient(90deg, ${C.cyan}, ${C.mint})`,
+              boxShadow: `0 0 12px ${C.mint}66`,
+            }}
+          />
+        </div>
+        <span
+          style={{
+            color: C.mint,
+            fontFamily: FONT,
+            fontSize: 13,
+            fontWeight: 850,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {Math.round(verified)}%
+        </span>
+      </div>
+    </Panel>
+  );
+};
+
+const SignalsPanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const phase = frame / fps;
+  const signals = [
+    ["REASONING", "14.2K", C.cyan, 1.2],
+    ["CONTEXT", "98.4", C.mint, 2.4],
+    ["TOOLS", "0.08", C.violet, 3.6],
+    ["TRUST", "99.1", C.amber, 4.8],
+  ] as const;
+
+  return (
+    <Panel
+      x={40}
+      y={726}
+      width={356}
+      height={314}
+      title="Agent signals"
+      eyebrow="stable"
+      accent={C.cyan}
+      delay={36}
+      uiOpacity={uiOpacity}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 18,
+          right: 18,
+          top: 62,
+          bottom: 18,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+        }}
+      >
+        {signals.map(([label, value, color, seed]) => (
           <div
             key={label}
             style={{
-              padding: "13px 12px",
-              border: `1px solid ${alpha(color, 0.16)}`,
-              background: alpha(color, 0.035),
+              position: "relative",
+              border: `1px solid ${C.border}`,
+              borderRadius: 9,
+              background: "rgba(6,18,32,0.62)",
+              padding: "12px 12px 10px",
+              boxSizing: "border-box",
             }}
           >
             <div
               style={{
                 color: C.muted,
-                fontFamily: MONO,
-                fontSize: 8,
-                letterSpacing: "0.10em",
+                fontFamily: FONT,
+                fontSize: 12,
+                fontWeight: 750,
+                letterSpacing: 1.1,
               }}
             >
               {label}
             </div>
             <div
               style={{
-                marginTop: 9,
                 color,
                 fontFamily: FONT,
-                fontWeight: 700,
                 fontSize: 20,
-                letterSpacing: "0.04em",
+                lineHeight: "25px",
+                fontWeight: 850,
+                marginTop: 3,
+                fontVariantNumeric: "tabular-nums",
               }}
             >
               {value}
+            </div>
+            <div style={{position: "absolute", left: 10, right: 10, bottom: 8}}>
+              <TinySparkline
+                width={132}
+                height={40}
+                color={color}
+                seed={seed}
+                phase={phase * (0.6 + seed * 0.04)}
+                filled
+              />
             </div>
           </div>
         ))}
@@ -1204,540 +1220,516 @@ const ReviewerQueue: React.FC<{frame: number}> = ({frame}) => {
   );
 };
 
-const SafeAutomationGauge: React.FC<{frame: number}> = ({frame}) => {
-  const amount = linear(frame, 240, 744);
-  const percent = Math.round(amount * 90);
-  const circumference = Math.PI * 2 * 72;
-  const dashOffset = circumference * (1 - amount * 0.9);
+const ActivityPanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const activities = [
+    {at: 120, time: "09:42:08", text: "Mission payload normalized", color: C.cyan},
+    {at: 260, time: "09:42:09", text: "Plan decomposed into 12 steps", color: C.cyan},
+    {at: 430, time: "09:42:11", text: "Knowledge context synchronized", color: C.violet},
+    {at: 610, time: "09:42:13", text: "Policy guardrail passed", color: C.mint},
+    {at: 760, time: "09:42:15", text: "Priority action approved", color: C.mint},
+    {at: 900, time: "09:42:17", text: "Response delivered successfully", color: C.mint},
+  ];
+
   return (
     <Panel
-      frame={frame}
-      delay={70}
-      style={{position: "absolute", left: 48, top: 764, width: 398, height: 268}}
+      x={412}
+      y={726}
+      width={628}
+      height={314}
+      title="Live activity"
+      eyebrow="event trace"
+      accent={C.violet}
+      delay={42}
+      uiOpacity={uiOpacity}
     >
-      <PanelTitle
-        title="SAFE AUTOMATION"
-        subtitle="HUMAN OVERSIGHT ENFORCED"
-        right={
-          <span
-            style={{
-              color: C.green,
-              fontFamily: MONO,
-              fontSize: 9,
-              letterSpacing: "0.1em",
-            }}
-          >
-            HEALTHY
-          </span>
-        }
-      />
-      <div style={{display: "flex", alignItems: "center", height: 208}}>
-        <div style={{width: 194, height: 194, position: "relative"}}>
-          <svg width="194" height="194" viewBox="0 0 194 194">
-            <circle
-              cx="97"
-              cy="97"
-              r="72"
-              fill="none"
-              stroke={alpha(C.cyan, 0.09)}
-              strokeWidth="14"
-            />
-            <circle
-              cx="97"
-              cy="97"
-              r="72"
-              fill="none"
-              stroke={C.cyan}
-              strokeWidth="14"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              transform="rotate(-90 97 97)"
-              style={{filter: `drop-shadow(0 0 7px ${alpha(C.cyan, 0.55)})`}}
-            />
-            <circle
-              cx="97"
-              cy="97"
-              r="51"
-              fill={alpha(C.cyan, 0.025)}
-              stroke={alpha(C.cyan, 0.13)}
-            />
-          </svg>
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-            }}
-          >
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          top: 61,
+          bottom: 18,
+        }}
+      >
+        {activities.map((activity, index) => {
+          const progress = enter(frame, activity.at, 24);
+          const activeIndex = Math.max(
+            0,
+            activities.filter((item) => frame >= item.at).length - 1,
+          );
+          const isLatest = index === activeIndex;
+          return (
             <div
+              key={activity.text}
               style={{
-                color: C.text,
-                fontFamily: FONT,
-                fontWeight: 700,
-                fontSize: 43,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              {percent}
-              <span style={{fontSize: 19, color: C.cyan}}>%</span>
-            </div>
-            <div
-              style={{
-                marginTop: 2,
-                color: C.muted,
-                fontFamily: MONO,
-                fontSize: 8,
-                letterSpacing: "0.12em",
-              }}
-            >
-              POLICY SAFE
-            </div>
-          </div>
-        </div>
-        <div style={{flex: 1, paddingRight: 18}}>
-          {([
-            ["AUTO-APPROVED", Math.round(amount * 83), C.cyan],
-            ["HUMAN REVIEWED", Math.round(amount * 16), C.amber],
-            ["UNLOGGED", 0, C.green],
-          ] as Array<[string, number, string]>).map(([label, value, color]) => (
-            <div
-              key={label}
-              style={{
-                height: 50,
-                borderBottom: `1px solid ${alpha(C.cyan, 0.09)}`,
+                height: 38,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
+                gap: 12,
+                borderBottom:
+                  index < activities.length - 1
+                    ? `1px solid rgba(24,51,76,0.62)`
+                    : "none",
+                opacity: 0.18 + progress * 0.82,
+                transform: `translateX(${(1 - progress) * 16}px)`,
               }}
             >
-              <span
+              <div
                 style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: progress > 0.5 ? activity.color : C.dim,
+                  boxShadow:
+                    isLatest && progress > 0.5
+                      ? `0 0 12px ${activity.color}`
+                      : "none",
+                  flex: "0 0 auto",
+                }}
+              />
+              <div
+                style={{
+                  width: 78,
                   color: C.muted,
-                  fontFamily: MONO,
-                  fontSize: 9,
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {label}
-              </span>
-              <span
-                style={{
-                  color,
                   fontFamily: FONT,
-                  fontSize: 20,
+                  fontSize: 13,
                   fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {value}
-                {label !== "UNLOGGED" ? "%" : ""}
-              </span>
+                {activity.time}
+              </div>
+              <div
+                style={{
+                  flex: 1,
+                  color: progress > 0.5 ? C.text : C.dim,
+                  fontFamily: FONT,
+                  fontSize: 16,
+                  lineHeight: "20px",
+                  fontWeight: isLatest ? 700 : 550,
+                }}
+              >
+                {activity.text}
+              </div>
+              <div
+                style={{
+                  color: activity.color,
+                  fontFamily: FONT,
+                  fontSize: 12,
+                  fontWeight: 850,
+                  letterSpacing: 1.1,
+                }}
+              >
+                {progress > 0.72 ? "DONE" : "WAIT"}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </Panel>
   );
 };
 
-const timelineDots = Array.from({length: 34}, (_, index) => ({
-  x: 25 + index * 37.2,
-  y: 24 + ((Math.sin(index * 1.71) + 1) / 2) * 54 + (index % 3) * 4,
-  type: index % 7 === 3 || index % 11 === 7 ? "human" : index % 5 === 1 ? "policy" : "auto",
-}));
+const PerformancePanel: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const phase = frame / fps;
+  const w = 766;
+  const h = 154;
+  const cyanPath = linePath(w, h, 58, phase * 0.48, 1.3, 0.24);
+  const violetPath = linePath(w, h, 58, phase * 0.39 + 1.4, 3.6, 0.22);
+  const mintPath = linePath(w, h, 58, phase * 0.31 + 2.7, 5.1, 0.18);
+  const fillPath = `${cyanPath} L ${w} ${h} L 0 ${h} Z`;
 
-const AuditTimeline: React.FC<{frame: number}> = ({frame}) => {
-  const amount = linear(frame, 220, 1030);
-  const visibleCount = Math.floor(amount * timelineDots.length);
-  const cursorX = 25 + amount * 1227;
-  const areaPath =
-    "M 25 100 " +
-    timelineDots
-      .map((dot, index) => `${index === 0 ? "L" : "L"} ${dot.x} ${86 - Math.sin(index * 0.61) * 11}`)
-      .join(" ") +
-    " L 1252 100 Z";
-  const linePath =
-    "M " +
-    timelineDots
-      .map((dot, index) => `${dot.x} ${86 - Math.sin(index * 0.61) * 11}`)
-      .join(" L ");
-  const completion = progress(frame, 930, 1025);
   return (
     <Panel
-      frame={frame}
-      delay={92}
-      style={{position: "absolute", left: 466, top: 764, width: 1406, height: 268}}
+      x={1056}
+      y={726}
+      width={824}
+      height={314}
+      title="Outcome velocity"
+      eyebrow="predictive"
+      accent={C.mint}
+      delay={48}
+      uiOpacity={uiOpacity}
     >
-      <PanelTitle
-        title="DECISION AUDIT TIMELINE"
-        subtitle="EVERY AI ACTION • EVERY HUMAN OVERRIDE • IMMUTABLE LOG"
-        right={
-          <div style={{display: "flex", gap: 17, alignItems: "center"}}>
-            {[
-              [C.cyan, "AUTO"],
-              [C.amber, "HUMAN"],
-              [C.green, "VERIFIED"],
-            ].map(([color, label]) => (
-              <span
-                key={label}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  color: C.muted,
-                  fontFamily: MONO,
-                  fontSize: 9,
-                  letterSpacing: "0.08em",
-                }}
-              >
-                <i
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: color,
-                    boxShadow: `0 0 8px ${alpha(color, 0.4)}`,
-                  }}
-                />
-                {label}
-              </span>
-            ))}
-          </div>
-        }
-      />
-      <div style={{padding: "6px 22px 0", position: "relative"}}>
-        <svg width="100%" height="116" viewBox="0 0 1280 116" preserveAspectRatio="none">
+      <div
+        style={{
+          position: "absolute",
+          left: 20,
+          top: 62,
+          width: w,
+          height: h,
+        }}
+      >
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
           <defs>
-            <linearGradient id="auditArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor={C.cyan} stopOpacity="0.18" />
-              <stop offset="1" stopColor={C.cyan} stopOpacity="0.01" />
+            <linearGradient id="outcome-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={C.cyan} stopOpacity="0.2" />
+              <stop offset="1" stopColor={C.cyan} stopOpacity="0" />
             </linearGradient>
-            <clipPath id="auditClip">
-              <rect x="0" y="0" width={1280 * amount} height="116" />
-            </clipPath>
+            <filter id="chart-glow" x="-20%" y="-30%" width="140%" height="160%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
-          {[26, 52, 78, 104].map((y) => (
+          {[0, 1, 2, 3].map((index) => (
             <line
-              key={y}
-              x1="0"
-              y1={y}
-              x2="1280"
-              y2={y}
-              stroke={alpha(C.cyan, 0.08)}
-              strokeWidth="1"
+              key={index}
+              x1={0}
+              x2={w}
+              y1={(index / 3) * h}
+              y2={(index / 3) * h}
+              stroke={C.border}
+              strokeWidth={1}
+              strokeDasharray="3 8"
+              opacity={0.52}
             />
           ))}
-          <g clipPath="url(#auditClip)">
-            <path d={areaPath} fill="url(#auditArea)" />
-            <path
-              d={linePath}
-              fill="none"
-              stroke={C.cyan}
-              strokeWidth="2"
-              opacity="0.75"
-            />
-          </g>
-          {timelineDots.map((dot, index) => {
-            const visible = index < visibleCount;
-            const color =
-              dot.type === "human"
-                ? C.amber
-                : dot.type === "policy"
-                  ? C.green
-                  : C.cyan;
-            return (
-              <g key={index} opacity={visible ? 1 : 0}>
-                <circle
-                  cx={dot.x}
-                  cy={dot.y}
-                  r={dot.type === "human" ? 4 : 3}
-                  fill={color}
-                  opacity={0.92}
-                />
-                <circle
-                  cx={dot.x}
-                  cy={dot.y}
-                  r={dot.type === "human" ? 9 : 6}
-                  fill="none"
-                  stroke={alpha(color, 0.18)}
-                />
-              </g>
-            );
-          })}
-          <line
-            x1={cursorX}
-            y1="6"
-            x2={cursorX}
-            y2="108"
-            stroke={alpha(C.text, 0.38)}
-            strokeWidth="1"
+          <path d={fillPath} fill="url(#outcome-area)" />
+          <path
+            d={cyanPath}
+            fill="none"
+            stroke={C.cyan}
+            strokeWidth={2.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter="url(#chart-glow)"
           />
-          <rect
-            x={cursorX - 17}
-            y="1"
-            width="34"
-            height="14"
-            rx="2"
-            fill={alpha(C.cyan, 0.14)}
-            stroke={alpha(C.cyan, 0.30)}
+          <path
+            d={violetPath}
+            fill="none"
+            stroke={C.violet}
+            strokeWidth={2.1}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.88}
+          />
+          <path
+            d={mintPath}
+            fill="none"
+            stroke={C.mint}
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.7}
           />
         </svg>
-        <div
-          style={{
-            height: 67,
-            display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
-            gap: 8,
-          }}
-        >
-          {([
-            ["AI DECISIONS", Math.round(amount * 2486), C.cyan],
-            ["HUMAN REVIEWS", Math.round(amount * 394), C.amber],
-            ["OVERRIDES", Math.round(amount * 27), C.amber],
-            ["POLICY BREACHES", "0", C.green],
-            ["GOVERNANCE", completion > 0.5 ? "VERIFIED" : "MONITORING", C.green],
-          ] as Array<[string, string | number, string]>).map(
-            ([label, value, color]) => (
-            <div
-              key={label}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          bottom: 20,
+          display: "flex",
+          gap: 12,
+        }}
+      >
+        {[
+          ["RESOLUTION", "92%", C.cyan],
+          ["CONFIDENCE", "98%", C.violet],
+          ["EFFICIENCY", "84%", C.mint],
+        ].map(([label, value, color]) => (
+          <div
+            key={label}
+            style={{
+              flex: 1,
+              height: 54,
+              borderTop: `2px solid ${color}`,
+              background: `linear-gradient(180deg, ${color}0c, transparent)`,
+              padding: "10px 12px 0",
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+            }}
+          >
+            <span
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0 13px",
-                border: `1px solid ${alpha(color, 0.13)}`,
-                background: alpha(color, 0.025),
+                color: C.muted,
+                fontFamily: FONT,
+                fontSize: 12,
+                lineHeight: "20px",
+                fontWeight: 750,
+                letterSpacing: 1.15,
               }}
             >
-              <span
-                style={{
-                  color: C.muted,
-                  fontFamily: MONO,
-                  fontSize: 8,
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {label}
-              </span>
-              <span
-                style={{
-                  color,
-                  fontFamily: FONT,
-                  fontSize: typeof value === "number" ? 20 : 14,
-                  fontWeight: 700,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                {value}
-              </span>
-            </div>
-            ),
-          )}
-        </div>
+              {label}
+            </span>
+            <span
+              style={{
+                color,
+                fontFamily: FONT,
+                fontSize: 20,
+                lineHeight: "22px",
+                fontWeight: 850,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {value}
+            </span>
+          </div>
+        ))}
       </div>
     </Panel>
   );
 };
 
-const CompletionBanner: React.FC<{frame: number}> = ({frame}) => {
-  const show = progress(frame, 955, 1010) * (1 - progress(frame, 1070, 1100));
+const Header: React.FC<{uiOpacity: number}> = ({uiOpacity}) => {
+  const frame = useCurrentFrame();
+  const progress = enter(frame, 2, 34);
+  const {fps} = useVideoConfig();
+  const phase = frame / fps;
+
   return (
     <div
       style={{
         position: "absolute",
-        left: 680,
-        top: 88,
-        width: 560,
-        height: 54,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 14,
-        border: `1px solid ${alpha(C.green, 0.52)}`,
-        background: "rgba(5,24,22,.93)",
-        boxShadow: `0 0 34px ${alpha(C.green, 0.16)}`,
-        color: C.green,
-        fontFamily: FONT,
-        fontSize: 22,
-        fontWeight: 750,
-        letterSpacing: "0.13em",
-        whiteSpace: "nowrap",
-        opacity: show,
-        transform: `translateY(${(1 - show) * -14}px) scale(${0.96 + show * 0.04})`,
-        zIndex: 20,
-      }}
-    >
-      <CheckIcon size={25} color={C.green} />
-      HUMAN OVERSIGHT VERIFIED
-    </div>
-  );
-};
-
-const Atmosphere: React.FC<{frame: number}> = ({frame}) => {
-  const intro = progress(frame, 0, 110);
-  const scanY = ((frame * 1.15) % 1160) - 40;
-  return (
-    <AbsoluteFill
-      style={{
-        background: C.bg,
+        left: 40,
+        top: 28,
+        width: 1840,
+        height: 70,
+        borderRadius: 12,
+        border: `1px solid ${C.border}`,
+        background:
+          "linear-gradient(90deg, rgba(8,22,39,0.88), rgba(5,15,28,0.95), rgba(8,22,39,0.88))",
+        opacity: uiOpacity * progress,
+        transform: `translateY(${(1 - progress) * -10}px)`,
         overflow: "hidden",
       }}
     >
       <div
         style={{
           position: "absolute",
-          inset: -100,
-          opacity: intro,
-          background: `
-            radial-gradient(circle at 18% 45%, rgba(36,151,190,.23), transparent 38%),
-            radial-gradient(circle at 81% 45%, rgba(220,139,50,.21), transparent 40%),
-            radial-gradient(circle at 50% 72%, rgba(57,109,124,.09), transparent 45%),
-            linear-gradient(180deg, #02070b, #041018 53%, #02070b)
-          `,
+          left: 20,
+          top: 0,
+          bottom: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
         }}
-      />
+      >
+        {[C.cyan, C.mint, C.violet].map((color) => (
+          <span
+            key={color}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              backgroundColor: color,
+              boxShadow: `0 0 12px ${color}`,
+            }}
+          />
+        ))}
+        <div
+          style={{
+            width: 86,
+            height: 3,
+            borderRadius: 6,
+            background: `linear-gradient(90deg, ${C.cyan}, transparent)`,
+            opacity: 0.55,
+          }}
+        />
+        <div
+          style={{
+            color: C.mint,
+            fontFamily: FONT,
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: 1.35,
+          }}
+        >
+          NETWORK ONLINE
+        </div>
+      </div>
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          opacity: 0.28 * intro,
-          backgroundImage: `
-            linear-gradient(${alpha(C.cyan, 0.05)} 1px, transparent 1px),
-            linear-gradient(90deg, ${alpha(C.cyan, 0.05)} 1px, transparent 1px)
-          `,
-          backgroundSize: "54px 54px",
+          left: "50%",
+          top: 10,
+          transform: "translateX(-50%)",
+          textAlign: "center",
+          whiteSpace: "nowrap",
         }}
-      />
+      >
+        <div
+          style={{
+            color: C.text,
+            fontFamily: FONT,
+            fontSize: 28,
+            lineHeight: "31px",
+            fontWeight: 850,
+            letterSpacing: 4.1,
+          }}
+        >
+          AUTONOMOUS AI OPERATIONS
+        </div>
+        <div
+          style={{
+            color: C.muted,
+            fontFamily: FONT,
+            fontSize: 11,
+            lineHeight: "18px",
+            fontWeight: 700,
+            letterSpacing: 2.25,
+          }}
+        >
+          ENTERPRISE AGENT ORCHESTRATION / SECURE WORKFLOW CONTROL
+        </div>
+      </div>
       <div
         style={{
           position: "absolute",
-          left: 0,
-          right: 0,
-          top: scanY,
+          right: 20,
+          top: 0,
+          bottom: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 22,
+        }}
+      >
+        <div style={{textAlign: "right"}}>
+          <div
+            style={{
+              color: C.muted,
+              fontFamily: FONT,
+              fontSize: 11,
+              lineHeight: "16px",
+              fontWeight: 750,
+              letterSpacing: 1.2,
+            }}
+          >
+            SYSTEM HEALTH
+          </div>
+          <div
+            style={{
+              color: C.mint,
+              fontFamily: FONT,
+              fontSize: 17,
+              lineHeight: "22px",
+              fontWeight: 850,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {(99.97 + Math.sin(phase * 0.42) * 0.01).toFixed(2)}%
+          </div>
+        </div>
+        <div
+          style={{
+            height: 34,
+            width: 1,
+            backgroundColor: C.border,
+          }}
+        />
+        <div
+          style={{
+            height: 34,
+            borderRadius: 18,
+            padding: "0 14px",
+            border: `1px solid ${C.mint}66`,
+            color: C.mint,
+            background: `${C.mint}0d`,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontFamily: FONT,
+            fontSize: 12,
+            fontWeight: 850,
+            letterSpacing: 1.1,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              backgroundColor: C.mint,
+              boxShadow: `0 0 10px ${C.mint}`,
+            }}
+          />
+          SECURE MODE
+        </div>
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: "30%",
+          right: "30%",
+          bottom: 0,
           height: 2,
-          background: `linear-gradient(90deg, transparent, ${alpha(
-            C.cyan,
-            0.22,
-          )}, ${alpha(C.amber, 0.18)}, transparent)`,
-          boxShadow: `0 0 22px ${alpha(C.cyan, 0.12)}`,
-          opacity: 0.5 * intro,
+          background: `linear-gradient(90deg, transparent, ${C.cyan}, transparent)`,
+          opacity: 0.7,
         }}
       />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "repeating-linear-gradient(180deg, transparent 0, transparent 3px, rgba(0,0,0,.10) 4px)",
-          opacity: 0.42,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          boxShadow: "inset 0 0 180px 82px rgba(0,0,0,.86)",
-        }}
-      />
-    </AbsoluteFill>
+    </div>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const introOpacity = progress(frame, 18, 190);
-  const introSharp = progress(frame, 65, 235);
-  const outro = linear(frame, 1110, TOTAL_FRAMES - 1);
-  const opacity = introOpacity * (1 - outro);
-  const blur = (1 - introSharp) * 24 + outro * 13;
-  const scale = 1.018 - introSharp * 0.018 + outro * 0.006;
+  const intro = interpolate(frame, [0, 14, 64], [0, 0.08, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+  const outro = interpolate(frame, [1120, 1199], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const uiOpacity = intro * outro;
 
   return (
     <AbsoluteFill
       style={{
-        width: 1920,
-        height: 1080,
         backgroundColor: C.bg,
-        color: C.text,
-        fontFamily: FONT,
         overflow: "hidden",
+        fontFamily: FONT,
       }}
     >
-      <Atmosphere frame={frame} />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity,
-          filter: `blur(${blur}px)`,
-          transform: `scale(${scale})`,
-          transformOrigin: "50% 50%",
-        }}
-      >
-        <Header frame={frame} />
-        <div
-          style={{
-            position: "absolute",
-            left: 48,
-            top: 98,
-            width: 1824,
-            height: 646,
-            display: "grid",
-            gridTemplateColumns: "820px 340px 624px",
-            gap: 20,
-          }}
-        >
-          <PipelinePanel frame={frame} />
-          <HandoffBridge frame={frame} />
-          <ReviewerQueue frame={frame} />
-        </div>
-        <SafeAutomationGauge frame={frame} />
-        <AuditTimeline frame={frame} />
-        <CompletionBanner frame={frame} />
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          left: 50,
-          bottom: 18,
-          color: C.muted,
-          fontFamily: MONO,
-          fontSize: 8,
-          letterSpacing: "0.14em",
-          opacity: opacity * 0.75,
-        }}
-      >
-        RESPONSIBLE AI • HUMAN-IN-THE-LOOP • TRACEABLE DECISIONS
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 50,
-          bottom: 18,
-          color: C.muted,
-          fontFamily: MONO,
-          fontSize: 8,
-          letterSpacing: "0.14em",
-          opacity: opacity * 0.75,
-        }}
-      >
-        SYSTEM UTC 14:28:36 • LATENCY 24 MS • AUDIT ONLINE
-      </div>
       <AbsoluteFill
         style={{
-          pointerEvents: "none",
-          background: `radial-gradient(circle at center, transparent 52%, rgba(0,0,0,${
-            0.28 + outro * 0.48
-          }) 100%)`,
+          background:
+            "radial-gradient(circle at 50% 42%, rgba(17,64,88,0.20), transparent 46%), radial-gradient(circle at 83% 22%, rgba(79,49,146,0.11), transparent 33%), radial-gradient(circle at 12% 78%, rgba(22,126,122,0.08), transparent 36%)",
         }}
       />
       <AbsoluteFill
         style={{
+          opacity: 0.16 * uiOpacity,
+          backgroundImage:
+            "linear-gradient(rgba(74,129,157,0.11) 1px, transparent 1px), linear-gradient(90deg, rgba(74,129,157,0.11) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+          maskImage:
+            "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: 0.11,
+          backgroundImage:
+            "repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, rgba(160,220,255,0.06) 4px)",
+          mixBlendMode: "screen",
           pointerEvents: "none",
-          backgroundColor: `rgba(0,0,0,${outro})`,
+        }}
+      />
+      <Header uiOpacity={uiOpacity} />
+      <WorkflowsPanel uiOpacity={uiOpacity} />
+      <MainWorkflowPanel uiOpacity={uiOpacity} />
+      <CapacityPanel uiOpacity={uiOpacity} />
+      <AssurancePanel uiOpacity={uiOpacity} />
+      <SignalsPanel uiOpacity={uiOpacity} />
+      <ActivityPanel uiOpacity={uiOpacity} />
+      <PerformancePanel uiOpacity={uiOpacity} />
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          boxShadow:
+            "inset 0 0 150px rgba(0,0,0,0.58), inset 0 0 24px rgba(41,144,184,0.06)",
         }}
       />
     </AbsoluteFill>
