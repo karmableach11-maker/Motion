@@ -1,887 +1,814 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Easing,
   interpolate,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
 
-const W = 1920;
-const H = 1080;
-const CX = W / 2;
-const CY = 548;
+const WIDTH = 1920;
+const HEIGHT = 1080;
+const CENTER_X = 1000;
+const CENTER_Y = 540;
+const CORE_RADIUS = 220;
+const ORBIT_RADIUS = 286;
+const NODE_RADIUS = 74;
 const TAU = Math.PI * 2;
 
-// Exact silhouette from cloud-computing-svgrepo-com.svg. Every cloud layer
-// below reuses this single path so the body, clip, rim, glow, and tracer
-// cannot drift apart or create a false split along the left lobe.
-const CLOUD_PATH =
-  "M343.454 170.099C343.464 169.516 343.476 168.934 343.476 168.349C343.476 112.621 298.299 67.444 242.571 67.444C194.546 67.444 154.362 100.995 144.168 145.936C134.663 140.615 123.714 137.568 112.046 137.568C75.639 137.568 46.126 167.082 46.126 203.488C46.126 204.976 46.193 206.447 46.29 207.911C19.262 217.944 0 243.959 0 274.479C0 313.686 31.784 345.47 70.991 345.47H324.174C373.183 345.47 412.913 305.74 412.913 256.731C412.913 214.343 383.192 178.903 343.454 170.099Z";
-const CLOUD_TRANSFORM = "translate(52.8299 -124.8572) scale(1.4732893)";
-
-const CODE_LINES = [
-  "const secureCloud = encrypt(payload);",
-  "if (threatDetected) isolate(node);",
-  "zeroTrust.verify(identity, device);",
-  "tls.handshake({ cipher: 'AES-256' });",
-  "await gateway.authorize(session);",
-  "backup.sync({ region: 'global' });",
-  "firewall.inspect(packet.signature);",
-  "token.rotate({ ttl: 900, scope });",
-  "hash = sha256(data + nonce);",
-  "policy.require('least-privilege');",
-  "stream.pipe(anomalyDetector);",
-  "cluster.health === 'protected';",
-  "const access = biometric && verified;",
-  "audit.write(event, timestamp);",
-  "edge.route(request, encryptedTunnel);",
-  "recovery.snapshot(volume, version);",
-  "identity.score >= trustThreshold;",
-  "monitor.watch(network.telemetry);",
-];
-
-const modulo = (value: number, length = 1) =>
-  ((value % length) + length) % length;
-
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-const hash01 = (seed: number) => {
-  const value = Math.sin(seed * 91.3458 + 12.345) * 47453.5453;
-  return value - Math.floor(value);
+type Point = {
+  readonly x: number;
+  readonly y: number;
 };
 
-const mix = (a: number, b: number, amount: number) =>
-  a + (b - a) * amount;
-
-type TunnelFragment = {
-  anchorX: number;
-  anchorY: number;
-  baseDepth: number;
-  color: string;
-  fontSize: number;
-  rotation: number;
-  text: string;
-  tracking: number;
+type NodeSpec = {
+  readonly id: "purple" | "pink" | "blue" | "teal" | "orange";
+  readonly angle: number;
+  readonly startFrame: number;
+  readonly travelFrames: number;
+  readonly calloutStart: number;
+  readonly color: string;
+  readonly light: string;
+  readonly dark: string;
+  readonly elbow: Point;
+  readonly endpoint: Point;
+  readonly phase: number;
 };
 
-const TUNNEL_FRAGMENTS: TunnelFragment[] = Array.from(
-  {length: 104},
-  (_, i) => {
-    const side = i % 4;
-    const a = hash01(i * 7 + 1);
-    const b = hash01(i * 11 + 3);
-    let anchorX = 0;
-    let anchorY = 0;
-    let rotation = 0;
-
-    if (side === 0) {
-      anchorX = -220 + a * 830;
-      anchorY = 44 + b * 990;
-      rotation = (anchorY - CY) * 0.026;
-    } else if (side === 1) {
-      anchorX = W + 220 - a * 830;
-      anchorY = 44 + b * 990;
-      rotation = -(anchorY - CY) * 0.026;
-    } else if (side === 2) {
-      anchorX = 55 + a * 1810;
-      anchorY = -120 + b * 470;
-      rotation = (anchorX - CX) * 0.01;
-    } else {
-      anchorX = 55 + a * 1810;
-      anchorY = H + 120 - b * 405;
-      rotation = -(anchorX - CX) * 0.01;
-    }
-
-    return {
-      anchorX,
-      anchorY,
-      baseDepth: hash01(i * 13 + 9),
-      color:
-        i % 9 === 0
-          ? "#88f6ff"
-          : i % 4 === 0
-            ? "#198dff"
-            : "#19dff5",
-      fontSize: 13 + hash01(i * 17 + 5) * 13,
-      rotation,
-      text: CODE_LINES[i % CODE_LINES.length],
-      tracking: hash01(i * 5 + 2) * 0.9,
-    };
+const NODES: readonly NodeSpec[] = [
+  {
+    id: "purple",
+    angle: 68,
+    startFrame: 64,
+    travelFrames: 50,
+    calloutStart: 198,
+    color: "#6539ad",
+    light: "#8958d0",
+    dark: "#422276",
+    elbow: { x: 1224, y: 918 },
+    endpoint: { x: 1440, y: 918 },
+    phase: 0.2,
   },
-);
+  {
+    id: "pink",
+    angle: 34,
+    startFrame: 94,
+    travelFrames: 46,
+    calloutStart: 228,
+    color: "#e72c83",
+    light: "#f2519c",
+    dark: "#ad155b",
+    elbow: { x: 1418, y: 782 },
+    endpoint: { x: 1652, y: 782 },
+    phase: 1.35,
+  },
+  {
+    id: "blue",
+    angle: 0,
+    startFrame: 124,
+    travelFrames: 42,
+    calloutStart: 258,
+    color: "#49a4d4",
+    light: "#72bee3",
+    dark: "#2678aa",
+    elbow: { x: 1450, y: 540 },
+    endpoint: { x: 1648, y: 540 },
+    phase: 2.55,
+  },
+  {
+    id: "teal",
+    angle: -34,
+    startFrame: 154,
+    travelFrames: 37,
+    calloutStart: 288,
+    color: "#35c3c4",
+    light: "#68dcda",
+    dark: "#168d98",
+    elbow: { x: 1415, y: 307 },
+    endpoint: { x: 1644, y: 307 },
+    phase: 3.7,
+  },
+  {
+    id: "orange",
+    angle: -68,
+    startFrame: 184,
+    travelFrames: 31,
+    calloutStart: 318,
+    color: "#f39a16",
+    light: "#ffbd46",
+    dark: "#c66b05",
+    elbow: { x: 1223, y: 164 },
+    endpoint: { x: 1440, y: 164 },
+    phase: 4.85,
+  },
+] as const;
 
-type Streak = {
-  x: number;
-  y: number;
-  start: number;
-  width: number;
-  opacity: number;
-  offset: number;
-};
+const clamp = (value: number, min = 0, max = 1): number =>
+  Math.max(min, Math.min(max, value));
 
-const STREAKS: Streak[] = Array.from({length: 68}, (_, i) => {
-  const side = i % 4;
-  const a = hash01(i * 19 + 2);
-  let x = 0;
-  let y = 0;
+const mix = (from: number, to: number, progress: number): number =>
+  from + (to - from) * progress;
 
-  if (side === 0) {
-    x = -20;
-    y = 26 + a * (H - 52);
-  } else if (side === 1) {
-    x = W + 20;
-    y = 26 + a * (H - 52);
-  } else if (side === 2) {
-    x = 28 + a * (W - 56);
-    y = -20;
-  } else {
-    x = 28 + a * (W - 56);
-    y = H + 20;
-  }
-
-  return {
-    x,
-    y,
-    start: 0.09 + hash01(i * 23 + 4) * 0.27,
-    width: 0.7 + hash01(i * 29 + 7) * 2.5,
-    opacity: 0.11 + hash01(i * 31 + 8) * 0.32,
-    offset: hash01(i * 37 + 1),
-  };
-});
-
-type DataColumn = {
-  x: number;
-  offset: number;
-  cycles: number;
-  fontSize: number;
-  opacity: number;
-  color: string;
-};
-
-const DATA_COLUMNS: DataColumn[] = Array.from({length: 39}, (_, i) => ({
-  x: 72 + i * 14.4,
-  offset: hash01(i * 17 + 4),
-  cycles: 2 + (i % 4),
-  fontSize: 12 + hash01(i * 23 + 2) * 12,
-  opacity: 0.35 + hash01(i * 29 + 7) * 0.58,
-  color: i % 7 === 0 ? "#c8ffff" : i % 3 === 0 ? "#36edff" : "#03b9ff",
-}));
-
-const FLOATING_MARKERS = Array.from({length: 42}, (_, i) => {
-  const angle = hash01(i * 9 + 4) * TAU;
-  const radiusX = 560 + hash01(i * 17 + 8) * 430;
-  const radiusY = 230 + hash01(i * 13 + 5) * 280;
-  return {
-    x: CX + Math.cos(angle) * radiusX,
-    y: CY + Math.sin(angle) * radiusY,
-    size: 8 + hash01(i * 23 + 6) * 12,
-    opacity: 0.12 + hash01(i * 29 + 7) * 0.34,
-    phase: hash01(i * 31 + 8),
-    text:
-      i % 3 === 0
-        ? `${Math.floor(hash01(i * 37 + 2) * 999)}.${Math.floor(
-            hash01(i * 41 + 3) * 99,
-          )}`
-        : i % 3 === 1
-          ? `{${Math.floor(hash01(i * 43 + 4) * 4096)}}`
-          : `0x${Math.floor(hash01(i * 47 + 5) * 65535)
-              .toString(16)
-              .padStart(4, "0")}`,
-  };
-});
-
-const Vignette: React.FC = () => (
-  <>
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(ellipse at 50% 50%, transparent 31%, rgba(0,5,27,.25) 60%, rgba(0,2,18,.88) 100%)",
-        zIndex: 30,
-        pointerEvents: "none",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        background:
-          "linear-gradient(90deg, rgba(0,2,20,.2), transparent 18%, transparent 82%, rgba(0,2,20,.2))",
-        mixBlendMode: "multiply",
-        zIndex: 29,
-        pointerEvents: "none",
-      }}
-    />
-  </>
-);
-
-const Background: React.FC<{time: number}> = ({time}) => {
-  const topGlowX = 50 + Math.sin((time / 8.6) * TAU) * 2.4;
-  const horizonPulse = 0.72 + Math.sin((time / 2.7) * TAU) * 0.13;
-
-  return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        background:
-          "linear-gradient(180deg, #061447 0%, #030c31 46%, #020822 100%)",
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse at ${topGlowX}% 0%, rgba(34,128,255,.35) 0%, rgba(11,47,129,.12) 24%, transparent 52%)`,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse at 50% 51%, rgba(9,103,229,.22) 0%, rgba(2,17,63,.05) 35%, transparent 66%)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: CY - 4,
-          height: 8,
-          opacity: horizonPulse,
-          background:
-            "linear-gradient(90deg, transparent 0%, rgba(15,171,255,.18) 18%, rgba(82,235,255,.85) 48%, rgba(60,79,255,.65) 64%, transparent 100%)",
-          filter: "blur(5px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: CY,
-          height: 2,
-          background:
-            "linear-gradient(90deg, transparent, rgba(48,199,255,.4) 23%, #6afaff 50%, rgba(70,91,255,.5) 73%, transparent)",
-          boxShadow: "0 0 26px rgba(24,194,255,.7)",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const PerspectiveGrid: React.FC<{progress: number}> = ({progress}) => {
-  const depthLines = Array.from({length: 13}, (_, i) => {
-    const d = modulo(i / 13 + progress * 1.82);
-    const shaped = d ** 2.15;
-    const yBottom = CY + (H - CY) * shaped;
-    const yTop = CY - CY * shaped;
-    const halfWidth = 34 + (W / 2 + 80) * shaped;
-    return {d, yBottom, yTop, halfWidth};
+const progress = (
+  frame: number,
+  start: number,
+  end: number,
+  easing: (value: number) => number = Easing.out(Easing.cubic),
+): number =>
+  interpolate(frame, [start, end], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing,
   });
 
+const pointOnCircle = (
+  angleDegrees: number,
+  radius: number,
+  centerX = CENTER_X,
+  centerY = CENTER_Y,
+): Point => {
+  const radians = (angleDegrees * Math.PI) / 180;
+  return {
+    x: centerX + Math.cos(radians) * radius,
+    y: centerY + Math.sin(radians) * radius,
+  };
+};
+
+const arcPath = (
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+): string => {
+  const start = pointOnCircle(startAngle, radius, centerX, centerY);
+  const end = pointOnCircle(endAngle, radius, centerX, centerY);
+  const sweep = Math.abs(endAngle - startAngle);
+  const largeArc = sweep > 180 ? 1 : 0;
+  const direction = endAngle >= startAngle ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} ${direction} ${end.x} ${end.y}`;
+};
+
+const polylinePath = (points: readonly Point[]): string =>
+  points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
+
+const DrawnPath: React.FC<{
+  readonly d: string;
+  readonly reveal: number;
+  readonly stroke: string;
+  readonly width: number;
+  readonly opacity?: number;
+}> = ({ d, reveal, stroke, width, opacity = 1 }) => (
+  <path
+    d={d}
+    fill="none"
+    pathLength={1}
+    stroke={stroke}
+    strokeDasharray="1"
+    strokeDashoffset={1 - reveal}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth={width}
+    opacity={opacity}
+  />
+);
+
+const PersonIcon: React.FC<{ readonly reveal: number }> = ({ reveal }) => {
+  const iconScale = mix(0.65, 1, reveal);
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        opacity: 0.5,
-      }}
+    <g
+      opacity={reveal}
+      transform={`scale(${iconScale})`}
+      style={{ transformBox: "fill-box", transformOrigin: "center" }}
     >
-      <defs>
-        <linearGradient id="grid-floor" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4aefff" stopOpacity="0.02" />
-          <stop offset="1" stopColor="#1176ff" stopOpacity="0.48" />
-        </linearGradient>
-        <linearGradient id="grid-ceiling" x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0" stopColor="#49eaff" stopOpacity="0.02" />
-          <stop offset="1" stopColor="#0d62ff" stopOpacity="0.35" />
-        </linearGradient>
-      </defs>
-
-      {Array.from({length: 17}, (_, i) => {
-        const x = -80 + (i / 16) * (W + 160);
-        return (
-          <React.Fragment key={`ray-${i}`}>
-            <line
-              x1={CX}
-              y1={CY}
-              x2={x}
-              y2={H + 40}
-              stroke="url(#grid-floor)"
-              strokeWidth={i % 4 === 0 ? 1.5 : 0.8}
-            />
-            <line
-              x1={CX}
-              y1={CY}
-              x2={x}
-              y2={-40}
-              stroke="url(#grid-ceiling)"
-              strokeWidth={i % 4 === 0 ? 1.2 : 0.6}
-            />
-          </React.Fragment>
-        );
-      })}
-
-      {depthLines.map(({d, yBottom, yTop, halfWidth}, i) => {
-        const opacity = clamp01(d / 0.2) * clamp01((1 - d) / 0.08);
-        return (
-          <React.Fragment key={`depth-${i}`}>
-            <line
-              x1={CX - halfWidth}
-              y1={yBottom}
-              x2={CX + halfWidth}
-              y2={yBottom}
-              stroke="#1db8ff"
-              strokeOpacity={opacity * 0.25}
-              strokeWidth={0.7 + d * 1.2}
-            />
-            <line
-              x1={CX - halfWidth}
-              y1={yTop}
-              x2={CX + halfWidth}
-              y2={yTop}
-              stroke="#2b9dff"
-              strokeOpacity={opacity * 0.17}
-              strokeWidth={0.6 + d}
-            />
-          </React.Fragment>
-        );
-      })}
-    </svg>
-  );
-};
-
-const RadialStreaks: React.FC<{progress: number}> = ({progress}) => (
-  <svg
-    viewBox={`0 0 ${W} ${H}`}
-    style={{
-      position: "absolute",
-      inset: 0,
-      width: "100%",
-      height: "100%",
-      mixBlendMode: "screen",
-    }}
-  >
-    <defs>
-      <radialGradient id="streak-fade" cx="50%" cy="50%" r="68%">
-        <stop offset="0" stopColor="#3aeaff" stopOpacity="0.08" />
-        <stop offset="0.36" stopColor="#25d8ff" stopOpacity="0.34" />
-        <stop offset="1" stopColor="#087dff" stopOpacity="0.72" />
-      </radialGradient>
-      <filter id="soft-streak" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="0.8" />
-      </filter>
-    </defs>
-    {STREAKS.map((streak, i) => {
-      const x1 = mix(CX, streak.x, streak.start);
-      const y1 = mix(CY, streak.y, streak.start);
-      const dash = 34 + (i % 5) * 12;
-      const travel = modulo(
-        progress * (1.72 + (i % 3) * 0.63) + streak.offset,
-      );
-      return (
-        <line
-          key={`streak-${i}`}
-          x1={x1}
-          y1={y1}
-          x2={streak.x}
-          y2={streak.y}
-          pathLength={1000}
-          stroke="url(#streak-fade)"
-          strokeWidth={streak.width}
-          strokeOpacity={streak.opacity}
-          strokeDasharray={`${dash} ${1000 - dash}`}
-          strokeDashoffset={-travel * 1000}
-          strokeLinecap="round"
-          filter={i % 4 === 0 ? "url(#soft-streak)" : undefined}
-        />
-      );
-    })}
-  </svg>
-);
-
-const CodeTunnel: React.FC<{progress: number}> = ({progress}) => (
-  <AbsoluteFill style={{overflow: "hidden"}}>
-    {TUNNEL_FRAGMENTS.map((fragment, i) => {
-      const depth = modulo(
-        fragment.baseDepth + progress * (1.68 + (i % 2) * 0.74),
-      );
-      const fadeIn = clamp01(depth / 0.095);
-      const fadeOut = clamp01((1 - depth) / 0.1);
-      const fade = fadeIn * fadeOut;
-      const projection = 0.065 + 0.935 * depth ** 0.72;
-      const x = mix(CX, fragment.anchorX, projection);
-      const y = mix(CY, fragment.anchorY, projection);
-      const scale = 0.28 + depth * 1.12;
-      const perspectiveStretch = 0.72 + depth * 0.48;
-      const edgeBlur =
-        depth > 0.82 ? (depth - 0.82) * 16 : (1 - depth) * 0.65;
-      const opacity = fade * (0.08 + depth ** 0.84 * 0.68);
-
-      return (
-        <div
-          key={`code-${i}`}
-          style={{
-            position: "absolute",
-            left: x,
-            top: y,
-            maxWidth: 640,
-            whiteSpace: "nowrap",
-            color: fragment.color,
-            opacity,
-            fontFamily:
-              "'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace",
-            fontSize: fragment.fontSize,
-            fontWeight: i % 7 === 0 ? 700 : 500,
-            letterSpacing: fragment.tracking,
-            lineHeight: 1,
-            filter: `blur(${edgeBlur}px)`,
-            textShadow:
-              i % 5 === 0
-                ? "0 0 11px rgba(24,217,255,.7)"
-                : "0 0 5px rgba(20,147,255,.45)",
-            transform: `translate(-50%, -50%) rotate(${fragment.rotation}deg) scale(${scale}) scaleX(${perspectiveStretch})`,
-            transformOrigin: "50% 50%",
-          }}
-        >
-          {fragment.text}
-        </div>
-      );
-    })}
-  </AbsoluteFill>
-);
-
-const FloatingTelemetry: React.FC<{time: number}> = ({time}) => (
-  <AbsoluteFill>
-    {FLOATING_MARKERS.map((marker, i) => {
-      const drift = Math.sin(
-        (time * (0.11 + (i % 3) * 0.025) + marker.phase) * TAU,
-      );
-      const opacity =
-        marker.opacity *
-        (0.45 +
-          0.55 * Math.sin((time * 0.42 + marker.phase) * TAU) ** 2);
-      return (
-        <div
-          key={`marker-${i}`}
-          style={{
-            position: "absolute",
-            left: marker.x + drift * 8,
-            top:
-              marker.y +
-              Math.cos((time * 0.13 + marker.phase) * TAU) * 3.5,
-            color: i % 5 === 0 ? "#8cfbff" : "#2eb7ff",
-            opacity,
-            fontFamily: "'SFMono-Regular', Consolas, monospace",
-            fontSize: marker.size,
-            letterSpacing: 0.4,
-            textShadow: "0 0 8px rgba(29,191,255,.6)",
-          }}
-        >
-          {marker.text}
-        </div>
-      );
-    })}
-  </AbsoluteFill>
-);
-
-const LightBeams: React.FC<{time: number}> = ({time}) => {
-  const leftPulse = 0.36 + 0.24 * Math.sin((time / 2.4 + 0.16) * TAU);
-  const rightPulse = 0.31 + 0.2 * Math.sin((time / 2.4 + 0.66) * TAU);
-
-  return (
-    <AbsoluteFill style={{mixBlendMode: "screen"}}>
-      <div
-        style={{
-          position: "absolute",
-          left: -130,
-          top: CY - 22,
-          width: 770,
-          height: 48,
-          opacity: leftPulse,
-          background:
-            "linear-gradient(90deg, rgba(18,172,255,.9), rgba(51,235,255,.25) 42%, transparent)",
-          filter: "blur(13px)",
-          transform: "skewX(-18deg)",
-        }}
+      <circle cx="0" cy="-17" r="13.5" fill="#ffffff" />
+      <path
+        d="M -31 31 C -29 8 -17 -4 0 -4 C 17 -4 29 8 31 31 C 22 39 12 42 0 42 C -12 42 -22 39 -31 31 Z"
+        fill="#ffffff"
       />
-      <div
-        style={{
-          position: "absolute",
-          right: -140,
-          top: CY - 10,
-          width: 710,
-          height: 34,
-          opacity: rightPulse,
-          background:
-            "linear-gradient(270deg, rgba(61,67,255,.9), rgba(38,194,255,.2) 48%, transparent)",
-          filter: "blur(12px)",
-          transform: "skewX(18deg)",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const CloudData: React.FC<{time: number}> = ({time}) => {
-  const scan = modulo(time / 2.35);
-  const scanY = 56 + scan * 318;
-  const scanFade = clamp01(scan / 0.08) * clamp01((1 - scan) / 0.09);
-
-  return (
-    <g clipPath="url(#cloud-clip)">
-      <rect
-        x="30"
-        y="-30"
-        width="660"
-        height="440"
-        fill="url(#cloud-body)"
-      />
-      <rect
-        x="30"
-        y="-30"
-        width="660"
-        height="440"
-        fill="url(#cloud-vignette)"
-      />
-
-      {DATA_COLUMNS.map((column, i) => {
-        const rate = 0.22 + column.cycles * 0.055;
-        const shift = modulo(column.offset + time * rate) * 428;
-        const dash = 80 + (i % 5) * 25;
-        const gap = 170 + (i % 4) * 35;
-        const dashPeriod = dash + gap;
-        return (
-          <g
-            key={`column-${i}`}
-            opacity={column.opacity}
-            filter={i % 5 === 0 ? "url(#data-glow)" : undefined}
-          >
-            <line
-              x1={column.x}
-              y1="24"
-              x2={column.x}
-              y2="394"
-              stroke={column.color}
-              strokeOpacity={0.15 + (i % 4) * 0.04}
-              strokeWidth={i % 6 === 0 ? 2.2 : 0.8}
-              pathLength={1000}
-              strokeDasharray={`${dash} ${gap}`}
-              strokeDashoffset={-time * rate * dashPeriod * 1.75}
-            />
-            {Array.from({length: 13}, (_, j) => {
-              const y = modulo(j * 35.5 + shift, 430) - 21;
-              const digit = (i * 7 + j * 3 + (i % 4)) % 10;
-              const emphasis = (i + j) % 11 === 0;
-              const blink =
-                0.44 +
-                  0.56 *
-                  Math.sin(
-                    (time * (0.3 + ((i + j) % 4) * 0.08) +
-                      hash01(i * 71 + j * 17)) *
-                      TAU,
-                  ) **
-                    2;
-              return (
-                <text
-                  key={`digit-${i}-${j}`}
-                  x={column.x}
-                  y={y}
-                  fill={emphasis ? "#e2ffff" : column.color}
-                  fillOpacity={blink}
-                  fontFamily="'SFMono-Regular', Consolas, monospace"
-                  fontSize={emphasis ? column.fontSize * 1.55 : column.fontSize}
-                  fontWeight={emphasis ? 800 : 600}
-                  textAnchor="middle"
-                >
-                  {digit}
-                </text>
-              );
-            })}
-          </g>
-        );
-      })}
-
-      {Array.from({length: 38}, (_, i) => {
-        const x = 65 + hash01(i * 37 + 5) * 585;
-        const y = 36 + hash01(i * 41 + 8) * 342;
-        const pulse =
-          0.22 +
-          0.78 *
-            Math.sin(
-              (time * (0.34 + (i % 3) * 0.09) +
-                hash01(i * 47 + 3)) *
-                TAU,
-            ) **
-              2;
-        return (
-          <circle
-            key={`cloud-particle-${i}`}
-            cx={x}
-            cy={y}
-            r={0.8 + hash01(i * 53 + 9) * 2.3}
-            fill={i % 5 === 0 ? "#ffffff" : "#49efff"}
-            opacity={pulse * 0.82}
-          />
-        );
-      })}
-
-      <rect
-        x="42"
-        y={scanY - 14}
-        width="640"
-        height="28"
-        opacity={scanFade * 0.28}
-        fill="url(#scan-line)"
-        filter="url(#scan-glow)"
-      />
-      <line
-        x1="50"
-        y1={scanY}
-        x2="666"
-        y2={scanY}
-        stroke="#d9ffff"
-        strokeWidth="1.2"
-        opacity={scanFade * 0.38}
+      <path
+        d="M -17 8 C -9 14 9 14 17 8"
+        fill="none"
+        stroke="rgba(255,255,255,0.72)"
+        strokeLinecap="round"
+        strokeWidth="3"
       />
     </g>
   );
 };
 
-const DigitalCloud: React.FC<{time: number}> = ({time}) => {
-  const breathe = 1 + Math.sin((time / 3.4) * TAU) * 0.009;
-  const floatY = Math.sin((time / 6.2 + 0.12) * TAU) * 2;
-  const haloPulse = 0.78 + Math.sin((time / 2.8) * TAU) * 0.13;
-  const hotspot = modulo(time / 3.8 + 0.75);
+const Node: React.FC<{
+  readonly frame: number;
+  readonly spec: NodeSpec;
+}> = ({ frame, spec }) => {
+  const travel = progress(
+    frame,
+    spec.startFrame,
+    spec.startFrame + spec.travelFrames,
+    Easing.inOut(Easing.cubic),
+  );
+  const entrance = progress(
+    frame,
+    spec.startFrame,
+    spec.startFrame + Math.min(25, spec.travelFrames * 0.66),
+  );
+  const iconReveal = progress(
+    frame,
+    spec.startFrame + Math.min(13, spec.travelFrames * 0.34),
+    spec.startFrame + Math.min(31, spec.travelFrames * 0.82),
+  );
+  const startAngle = -53;
+  const angle = mix(startAngle, spec.angle, travel);
+  const radius = ORBIT_RADIUS + (1 - travel) * 22;
+  const position = pointOnCircle(angle, radius);
+  const pop = interpolate(
+    entrance,
+    [0, 0.72, 1],
+    [0.55, 1.045, 1],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const holdStart = spec.startFrame + spec.travelFrames;
+  const holdMix = progress(frame, holdStart, holdStart + 24);
+  const holdPulse =
+    1 +
+    Math.sin((frame * 0.018 + spec.phase) * TAU) *
+      0.0045 *
+      holdMix;
+  const scale = pop * holdPulse;
+
+  const arcReveal = progress(
+    frame,
+    spec.startFrame + spec.travelFrames * 0.58,
+    spec.startFrame + spec.travelFrames + 21,
+    Easing.inOut(Easing.cubic),
+  );
+  const localArcStart = -77;
+  const localArcEnd = 79;
+  const localArcRadius = NODE_RADIUS + 20;
+  const arcStart = pointOnCircle(
+    localArcStart,
+    localArcRadius,
+    position.x,
+    position.y,
+  );
+  const arcEnd = pointOnCircle(
+    localArcEnd,
+    localArcRadius,
+    position.x,
+    position.y,
+  );
+  const endpointScale = progress(frame, holdStart + 7, holdStart + 20);
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "52.4%",
-        width: 720,
-        height: 432,
-        transform: `translate(-50%, -50%) translateY(${floatY}px) scale(${breathe})`,
-        transformOrigin: "50% 90%",
-        zIndex: 18,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: "5%",
-          right: "5%",
-          top: "13%",
-          bottom: "0%",
-          opacity: haloPulse,
-          background:
-            "radial-gradient(ellipse at 50% 66%, rgba(59,247,255,.64), rgba(0,143,255,.3) 34%, rgba(0,54,255,.1) 58%, transparent 75%)",
-          filter: "blur(35px)",
-          transform: "scale(1.08)",
-        }}
-      />
+    <g>
+      <g opacity={arcReveal}>
+        <DrawnPath
+          d={arcPath(
+            position.x,
+            position.y,
+            localArcRadius,
+            localArcStart,
+            localArcEnd,
+          )}
+          reveal={arcReveal}
+          stroke="#465356"
+          width={3}
+          opacity={0.86}
+        />
+        <circle
+          cx={arcStart.x}
+          cy={arcStart.y}
+          r={5 * endpointScale}
+          fill="#465356"
+        />
+        <circle
+          cx={arcEnd.x}
+          cy={arcEnd.y}
+          r={5 * endpointScale}
+          fill="#465356"
+        />
+      </g>
 
-      <svg
-        viewBox="0 0 720 420"
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          overflow: "visible",
-          filter:
-            "drop-shadow(0 0 15px rgba(28,226,255,.74)) drop-shadow(0 0 38px rgba(0,105,255,.42))",
-        }}
+      <g
+        opacity={entrance}
+        transform={`translate(${position.x} ${position.y}) scale(${scale})`}
       >
-        <defs>
-          <clipPath id="cloud-clip">
-            <path d={CLOUD_PATH} transform={CLOUD_TRANSFORM} />
-          </clipPath>
-          <linearGradient id="cloud-body" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#04366f" stopOpacity="0.68" />
-            <stop offset="0.48" stopColor="#006fb3" stopOpacity="0.52" />
-            <stop offset="1" stopColor="#05195c" stopOpacity="0.8" />
-          </linearGradient>
-          <radialGradient id="cloud-vignette" cx="50%" cy="70%" r="70%">
-            <stop offset="0" stopColor="#11e9ff" stopOpacity="0.18" />
-            <stop offset="0.58" stopColor="#0a57c1" stopOpacity="0.08" />
-            <stop offset="1" stopColor="#020b38" stopOpacity="0.62" />
-          </radialGradient>
-          <linearGradient id="cloud-edge" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#4ffaff" />
-            <stop offset="0.5" stopColor="#1bc5ff" />
-            <stop offset="1" stopColor="#655dff" />
-          </linearGradient>
-          <linearGradient id="scan-line" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#65efff" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#baffff" stopOpacity="0.8" />
-            <stop offset="1" stopColor="#65efff" stopOpacity="0" />
-          </linearGradient>
-          <filter id="data-glow" x="-80%" y="-20%" width="260%" height="140%">
-            <feGaussianBlur stdDeviation="1.5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="scan-glow" x="-20%" y="-180%" width="140%" height="460%">
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
-          <filter id="edge-glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="6" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <path
-          d={CLOUD_PATH}
-          transform={CLOUD_TRANSFORM}
-          vectorEffect="non-scaling-stroke"
-          fill="rgba(3,23,84,.64)"
-          stroke="#0c87e8"
-          strokeWidth="20"
-          strokeLinejoin="round"
-          strokeMiterlimit={2}
-          opacity="0.16"
-          filter="url(#edge-glow)"
+        <circle
+          cx="9"
+          cy="12"
+          r={NODE_RADIUS + 2}
+          fill="rgba(44,54,55,0.18)"
+          filter="url(#m26-node-shadow)"
         />
-
-        <CloudData time={time} />
-
-        <path
-          d={CLOUD_PATH}
-          transform={CLOUD_TRANSFORM}
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-          stroke="url(#cloud-edge)"
-          strokeWidth="4.2"
-          strokeLinejoin="round"
-          strokeMiterlimit={2}
-          opacity="0.96"
-          filter="url(#edge-glow)"
+        <circle
+          r={NODE_RADIUS + 2.5}
+          fill="#ffffff"
+          stroke="rgba(255,255,255,0.98)"
+          strokeWidth="5"
         />
-
-        <path
-          d={CLOUD_PATH}
-          transform={CLOUD_TRANSFORM}
-          vectorEffect="non-scaling-stroke"
+        <circle
+          r={NODE_RADIUS - 4}
+          fill={`url(#m26-node-${spec.id})`}
+          stroke={spec.dark}
+          strokeWidth="2"
+        />
+        <circle
+          r={NODE_RADIUS - 13}
           fill="none"
-          pathLength={1000}
-          stroke="#d9ffff"
-          strokeWidth="8"
-          strokeDasharray="72 928"
-          strokeDashoffset={-hotspot * 1000}
+          stroke="rgba(255,255,255,0.44)"
+          strokeWidth="2.5"
+        />
+        <path
+          d={arcPath(0, 0, NODE_RADIUS - 8, 208, 312)}
+          fill="none"
+          stroke="rgba(255,255,255,0.56)"
           strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity="0.72"
-          filter="url(#edge-glow)"
+          strokeWidth="7"
         />
-
-        <path
-          d={CLOUD_PATH}
-          transform={CLOUD_TRANSFORM}
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-          pathLength={1000}
-          stroke="#ffffff"
-          strokeWidth="2.2"
-          strokeDasharray="50 950"
-          strokeDashoffset={-hotspot * 1000}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity="0.98"
-        />
-
         <ellipse
-          cx="357"
-          cy="382"
-          rx="284"
-          ry="15"
-          fill="#48f5ff"
-          opacity={0.14 + Math.sin((time / 3.4) * TAU) ** 2 * 0.18}
-          filter="url(#scan-glow)"
+          cx="-23"
+          cy="-32"
+          rx="20"
+          ry="11"
+          fill="rgba(255,255,255,0.2)"
+          transform="rotate(-24 -23 -32)"
         />
-      </svg>
-    </div>
+        <PersonIcon reveal={iconReveal} />
+      </g>
+    </g>
   );
 };
 
-const ForegroundBloom: React.FC<{time: number}> = ({time}) => {
-  const pulse = 0.44 + Math.sin((time / 4.1 + 0.18) * TAU) * 0.12;
+const BlankCallout: React.FC<{
+  readonly frame: number;
+  readonly spec: NodeSpec;
+}> = ({ frame, spec }) => {
+  const nodeCenter = pointOnCircle(spec.angle, ORBIT_RADIUS);
+  const radians = (spec.angle * Math.PI) / 180;
+  const start = {
+    x: nodeCenter.x + Math.cos(radians) * (NODE_RADIUS + 26),
+    y: nodeCenter.y + Math.sin(radians) * (NODE_RADIUS + 26),
+  };
+  const lineReveal = progress(
+    frame,
+    spec.calloutStart,
+    spec.calloutStart + 38,
+    Easing.inOut(Easing.cubic),
+  );
+  const endpointReveal = progress(
+    frame,
+    spec.calloutStart + 28,
+    spec.calloutStart + 43,
+  );
+  const endpointPulse =
+    1 + Math.sin((frame * 0.013 + spec.phase) * TAU) * 0.045;
+
   return (
-    <>
-      <div
-        style={{
-          position: "absolute",
-          left: -180,
-          top: CY - 58,
-          width: 480,
-          height: 120,
-          borderRadius: "50%",
-          opacity: pulse,
-          background:
-            "radial-gradient(ellipse, rgba(29,205,255,.8), rgba(16,91,255,.2) 42%, transparent 74%)",
-          filter: "blur(25px)",
-          zIndex: 22,
-        }}
+    <g>
+      <DrawnPath
+        d={polylinePath([start, spec.elbow, spec.endpoint])}
+        reveal={lineReveal}
+        stroke="#526064"
+        width={3}
+        opacity={0.86}
       />
-      <div
-        style={{
-          position: "absolute",
-          right: -220,
-          top: CY - 34,
-          width: 520,
-          height: 94,
-          borderRadius: "50%",
-          opacity: pulse * 0.7,
-          background:
-            "radial-gradient(ellipse, rgba(70,70,255,.75), rgba(16,132,255,.18) 46%, transparent 76%)",
-          filter: "blur(27px)",
-          zIndex: 22,
-        }}
+      <circle
+        cx={start.x}
+        cy={start.y}
+        r={5.5 * endpointReveal}
+        fill="#526064"
       />
-    </>
+      <g
+        opacity={endpointReveal}
+        transform={`translate(${spec.endpoint.x} ${spec.endpoint.y}) scale(${endpointReveal * endpointPulse})`}
+      >
+        <circle r="11" fill="#ffffff" stroke="#526064" strokeWidth="2.4" />
+        <circle r="5.5" fill={spec.color} />
+      </g>
+    </g>
   );
 };
+
+const CentralSystem: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const coreReveal = progress(frame, 0, 27, Easing.out(Easing.quad));
+  const frontDiscReveal = progress(frame, 7, 34, Easing.out(Easing.cubic));
+  const backRingReveal = progress(frame, 6, 37, Easing.out(Easing.cubic));
+  const frontRingReveal = progress(frame, 14, 47, Easing.out(Easing.cubic));
+  const outerArcReveal = progress(
+    frame,
+    25,
+    61,
+    Easing.inOut(Easing.cubic),
+  );
+  const innerArcReveal = progress(
+    frame,
+    31,
+    67,
+    Easing.inOut(Easing.cubic),
+  );
+  const orbitDotReveal = progress(frame, 52, 67);
+  const leftLineReveal = progress(
+    frame,
+    94,
+    142,
+    Easing.inOut(Easing.cubic),
+  );
+  const leftEndpointReveal = progress(frame, 128, 148);
+  const accentReveal = progress(frame, 26, 59);
+  const shimmerReveal = progress(frame, 356, 400);
+  const shimmerAngle = ((frame - 356) * 0.075) % 360;
+
+  const outerArcStart = pointOnCircle(162, 301);
+  const outerArcEnd = pointOnCircle(467, 301);
+  const innerArcStart = pointOnCircle(196, 264);
+  const innerArcEnd = pointOnCircle(493, 264);
+
+  const coreScale = interpolate(
+    coreReveal,
+    [0, 0.75, 1],
+    [0.22, 1.025, 1],
+  );
+  const discScale = interpolate(
+    frontDiscReveal,
+    [0, 0.72, 1],
+    [0.4, 1.018, 1],
+  );
+
+  return (
+    <g>
+      <g
+        opacity={backRingReveal}
+        transform={`translate(${CENTER_X} ${CENTER_Y}) scale(${mix(
+          0.62,
+          1,
+          backRingReveal,
+        )}) translate(${-CENTER_X} ${-CENTER_Y})`}
+      >
+        <circle
+          cx={CENTER_X + 5}
+          cy={CENTER_Y + 10}
+          r="280"
+          fill="none"
+          stroke="rgba(59,72,74,0.13)"
+          strokeWidth="22"
+          filter="url(#m26-ring-shadow)"
+        />
+        <circle
+          cx={CENTER_X}
+          cy={CENTER_Y}
+          r="278"
+          fill="none"
+          stroke="url(#m26-ring-outer)"
+          strokeWidth="22"
+        />
+        <circle
+          cx={CENTER_X}
+          cy={CENTER_Y}
+          r="266"
+          fill="none"
+          stroke="rgba(135,148,149,0.42)"
+          strokeWidth="2"
+        />
+      </g>
+
+      <g
+        opacity={frontRingReveal}
+        transform={`translate(${CENTER_X} ${CENTER_Y}) scale(${mix(
+          0.68,
+          1,
+          frontRingReveal,
+        )}) translate(${-CENTER_X} ${-CENTER_Y})`}
+      >
+        <circle
+          cx={CENTER_X + 4}
+          cy={CENTER_Y + 8}
+          r="247"
+          fill="none"
+          stroke="rgba(45,55,56,0.12)"
+          strokeWidth="18"
+          filter="url(#m26-ring-shadow)"
+        />
+        <circle
+          cx={CENTER_X}
+          cy={CENTER_Y}
+          r="246"
+          fill="none"
+          stroke="url(#m26-ring-inner)"
+          strokeWidth="18"
+        />
+        <circle
+          cx={CENTER_X}
+          cy={CENTER_Y}
+          r="235"
+          fill="none"
+          stroke="rgba(120,135,136,0.24)"
+          strokeWidth="2"
+        />
+      </g>
+
+      <g>
+        <DrawnPath
+          d={arcPath(CENTER_X, CENTER_Y, 301, 162, 467)}
+          reveal={outerArcReveal}
+          stroke="#465255"
+          width={3.5}
+          opacity={0.92}
+        />
+        <DrawnPath
+          d={arcPath(CENTER_X, CENTER_Y, 264, 196, 493)}
+          reveal={innerArcReveal}
+          stroke="#5b6769"
+          width={2.5}
+          opacity={0.7}
+        />
+        <circle
+          cx={outerArcStart.x}
+          cy={outerArcStart.y}
+          r={6 * orbitDotReveal}
+          fill="#465255"
+        />
+        <circle
+          cx={outerArcEnd.x}
+          cy={outerArcEnd.y}
+          r={6 * orbitDotReveal}
+          fill="#465255"
+        />
+        <circle
+          cx={innerArcStart.x}
+          cy={innerArcStart.y}
+          r={4.5 * orbitDotReveal}
+          fill="#5b6769"
+        />
+        <circle
+          cx={innerArcEnd.x}
+          cy={innerArcEnd.y}
+          r={4.5 * orbitDotReveal}
+          fill="#5b6769"
+        />
+      </g>
+
+      <g
+        opacity={coreReveal}
+        transform={`translate(${CENTER_X} ${CENTER_Y}) scale(${coreScale})`}
+      >
+        <circle
+          cx="8"
+          cy="12"
+          r={CORE_RADIUS + 3}
+          fill="rgba(41,52,54,0.17)"
+          filter="url(#m26-core-shadow)"
+        />
+        <circle
+          r={CORE_RADIUS + 3}
+          fill="url(#m26-core-face)"
+          stroke="rgba(148,159,160,0.3)"
+          strokeWidth="2"
+        />
+      </g>
+
+      <g
+        opacity={frontDiscReveal}
+        transform={`translate(${CENTER_X} ${CENTER_Y}) scale(${discScale})`}
+      >
+        <circle
+          r={CORE_RADIUS - 7}
+          fill="url(#m26-disc-face)"
+          stroke="#ffffff"
+          strokeWidth="4"
+        />
+        <path
+          d={arcPath(0, 0, CORE_RADIUS - 19, 210, 326)}
+          fill="none"
+          stroke="rgba(255,255,255,0.95)"
+          strokeLinecap="round"
+          strokeWidth="8"
+        />
+        <path
+          d={arcPath(0, 0, CORE_RADIUS - 17, 28, 120)}
+          fill="none"
+          stroke="rgba(145,158,159,0.11)"
+          strokeLinecap="round"
+          strokeWidth="5"
+        />
+
+        <g
+          opacity={accentReveal}
+          transform={`translate(0 86) scale(${accentReveal})`}
+        >
+          {NODES.slice()
+            .reverse()
+            .map((node, index) => (
+              <circle
+                key={node.id}
+                cx={(index - 2) * 28}
+                cy="0"
+                r="7.5"
+                fill={node.color}
+                stroke="#ffffff"
+                strokeWidth="2"
+              />
+            ))}
+        </g>
+      </g>
+
+      <g>
+        <DrawnPath
+          d={polylinePath([
+            { x: CENTER_X - CORE_RADIUS - 8, y: CENTER_Y },
+            { x: 655, y: CENTER_Y },
+            { x: 500, y: CENTER_Y },
+          ])}
+          reveal={leftLineReveal}
+          stroke="#4c585b"
+          width={4}
+          opacity={0.92}
+        />
+        <circle
+          cx={CENTER_X - CORE_RADIUS - 8}
+          cy={CENTER_Y}
+          r={7 * leftEndpointReveal}
+          fill="#4c585b"
+        />
+        <g
+          opacity={leftEndpointReveal}
+          transform={`translate(500 ${CENTER_Y}) scale(${leftEndpointReveal})`}
+        >
+          <circle r="15" fill="#ffffff" stroke="#4c585b" strokeWidth="3" />
+          <circle r="8" fill="#4c585b" />
+        </g>
+      </g>
+
+      <g
+        opacity={0.28 * shimmerReveal}
+        transform={`rotate(${shimmerAngle} ${CENTER_X} ${CENTER_Y})`}
+      >
+        <path
+          d={arcPath(CENTER_X, CENTER_Y, 248, -38, 26)}
+          fill="none"
+          stroke="#ffffff"
+          strokeLinecap="round"
+          strokeWidth="8"
+          filter="url(#m26-soft-glow)"
+        />
+      </g>
+    </g>
+  );
+};
+
+const Background: React.FC = () => (
+  <>
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(circle at 53% 48%, #ffffff 0%, #f8fbfa 42%, #f0f5f3 100%)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        opacity: 0.22,
+        backgroundImage:
+          "radial-gradient(circle at 68% 28%, rgba(45,196,196,0.10), transparent 24%), radial-gradient(circle at 67% 72%, rgba(231,44,131,0.08), transparent 25%)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        opacity: 0.16,
+        backgroundImage:
+          "repeating-linear-gradient(0deg, rgba(62,78,79,0.025) 0px, rgba(62,78,79,0.025) 1px, transparent 1px, transparent 5px)",
+        mixBlendMode: "multiply",
+      }}
+    />
+  </>
+);
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const time = frame / fps;
-  const tunnelProgress = time * (0.9 / 4.8);
-  const chromaticPulse = interpolate(
-    Math.sin((time / 3.1 + 0.08) * TAU),
-    [-1, 1],
-    [0.94, 1.04],
-  );
+  const globalReveal = progress(frame, 0, 12, Easing.out(Easing.quad));
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "#02071f",
+        width: WIDTH,
+        height: HEIGHT,
         overflow: "hidden",
-        color: "white",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: -8,
-          filter: `saturate(${chromaticPulse})`,
-        }}
+      <Background />
+
+      <svg
+        width={WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        style={{ position: "absolute", inset: 0, opacity: globalReveal }}
       >
-        <Background time={time} />
-        <PerspectiveGrid progress={tunnelProgress} />
-        <RadialStreaks progress={tunnelProgress} />
-        <CodeTunnel progress={tunnelProgress} />
-        <FloatingTelemetry time={time} />
-        <LightBeams time={time} />
-        <DigitalCloud time={time} />
-        <ForegroundBloom time={time} />
-      </div>
-      <Vignette />
+        <defs>
+          <linearGradient id="m26-ring-outer" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.42" stopColor="#f4f7f6" />
+            <stop offset="0.72" stopColor="#dce2e0" />
+            <stop offset="1" stopColor="#ffffff" />
+          </linearGradient>
+          <linearGradient id="m26-ring-inner" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.52" stopColor="#e9edec" />
+            <stop offset="0.78" stopColor="#d6dcda" />
+            <stop offset="1" stopColor="#ffffff" />
+          </linearGradient>
+          <radialGradient id="m26-core-face" cx="35%" cy="27%" r="80%">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.66" stopColor="#f9fbfa" />
+            <stop offset="1" stopColor="#e7ecea" />
+          </radialGradient>
+          <radialGradient id="m26-disc-face" cx="31%" cy="24%" r="82%">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.74" stopColor="#fdfefe" />
+            <stop offset="1" stopColor="#f0f4f2" />
+          </radialGradient>
+
+          {NODES.map((node) => (
+            <radialGradient
+              key={node.id}
+              id={`m26-node-${node.id}`}
+              cx="31%"
+              cy="24%"
+              r="82%"
+            >
+              <stop offset="0" stopColor={node.light} />
+              <stop offset="0.55" stopColor={node.color} />
+              <stop offset="1" stopColor={node.dark} />
+            </radialGradient>
+          ))}
+
+          <filter
+            id="m26-ring-shadow"
+            x="-30%"
+            y="-30%"
+            width="160%"
+            height="160%"
+          >
+            <feGaussianBlur stdDeviation="9" />
+          </filter>
+          <filter
+            id="m26-core-shadow"
+            x="-35%"
+            y="-35%"
+            width="170%"
+            height="170%"
+          >
+            <feGaussianBlur stdDeviation="13" />
+          </filter>
+          <filter
+            id="m26-node-shadow"
+            x="-50%"
+            y="-50%"
+            width="200%"
+            height="200%"
+          >
+            <feGaussianBlur stdDeviation="11" />
+          </filter>
+          <filter
+            id="m26-soft-glow"
+            x="-60%"
+            y="-60%"
+            width="220%"
+            height="220%"
+          >
+            <feGaussianBlur stdDeviation="5" />
+          </filter>
+        </defs>
+
+        <ellipse
+          cx={CENTER_X + 10}
+          cy={CENTER_Y + 300}
+          rx="310"
+          ry="42"
+          fill="rgba(48,63,64,0.08)"
+          filter="url(#m26-soft-glow)"
+          opacity={progress(frame, 0, 48)}
+        />
+
+        <CentralSystem frame={frame} />
+
+        {NODES.map((node) => (
+          <BlankCallout key={`callout-${node.id}`} frame={frame} spec={node} />
+        ))}
+
+        {NODES.map((node) => (
+          <Node key={node.id} frame={frame} spec={node} />
+        ))}
+      </svg>
+
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          boxShadow:
+            "inset 0 0 150px rgba(103,124,123,0.07), inset 0 0 24px rgba(255,255,255,0.95)",
+        }}
+      />
     </AbsoluteFill>
   );
 };
