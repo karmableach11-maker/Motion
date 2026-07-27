@@ -3,1614 +3,1511 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
-  interpolateColors,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
-const C = {
-  paper: "#eef2f0",
-  paperWarm: "#f7f4ec",
-  glass: "#fbfdfb",
-  navy: "#102b3a",
-  navySoft: "#2f5363",
-  slate: "#6b828b",
-  line: "#c8d5d4",
-  lineDark: "#a8b9b9",
-  cyan: "#32acd1",
-  cyanDark: "#137a9b",
-  mint: "#26c98d",
-  mintDark: "#13835e",
-  amber: "#f2aa38",
-  coral: "#f05e69",
-  coralDark: "#ae303e",
-  white: "#ffffff",
-};
+type LonLat = readonly [number, number];
 
-const FONT =
-  "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-
-const progress = (
-  frame: number,
-  start: number,
-  end: number,
-  easing = Easing.out(Easing.cubic),
-) =>
-  interpolate(frame, [start, end], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing,
-  });
-
-const windowOpacity = (
-  frame: number,
-  start: number,
-  end: number,
-  feather = 18,
-) => {
-  if (frame < start || frame > end) return 0;
-  const fadeIn = interpolate(frame, [start, start + feather], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const fadeOut = interpolate(frame, [end - feather, end], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.in(Easing.cubic),
-  });
-  return Math.min(fadeIn, fadeOut);
-};
-
-const seeded = (value: number) => {
-  const x = Math.sin(value * 91.731 + 17.13) * 43758.5453;
-  return x - Math.floor(x);
-};
-
-type Point = {x: number; y: number};
-
-const cubicPoint = (
-  p0: Point,
-  p1: Point,
-  p2: Point,
-  p3: Point,
-  t: number,
-) => {
-  const mt = 1 - t;
-  return {
-    x:
-      mt * mt * mt * p0.x +
-      3 * mt * mt * t * p1.x +
-      3 * mt * t * t * p2.x +
-      t * t * t * p3.x,
-    y:
-      mt * mt * mt * p0.y +
-      3 * mt * mt * t * p1.y +
-      3 * mt * t * t * p2.y +
-      t * t * t * p3.y,
-  };
-};
-
-const polar = (cx: number, cy: number, r: number, degrees: number) => {
-  const angle = ((degrees - 90) * Math.PI) / 180;
-  return {x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle)};
-};
-
-const annularSegmentPath = (
-  cx: number,
-  cy: number,
-  outer: number,
-  inner: number,
-  start: number,
-  end: number,
-) => {
-  const a = polar(cx, cy, outer, start);
-  const b = polar(cx, cy, outer, end);
-  const c = polar(cx, cy, inner, end);
-  const d = polar(cx, cy, inner, start);
-  const large = end - start > 180 ? 1 : 0;
-  return [
-    `M ${a.x} ${a.y}`,
-    `A ${outer} ${outer} 0 ${large} 1 ${b.x} ${b.y}`,
-    `L ${c.x} ${c.y}`,
-    `A ${inner} ${inner} 0 ${large} 0 ${d.x} ${d.y}`,
-    "Z",
-  ].join(" ");
-};
-
-const Background: React.FC = () => {
-  return (
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(circle at 50% 48%, #ffffff 0%, #f4f6f2 34%, #e5ecea 72%, #dce5e4 100%)",
-        overflow: "hidden",
-      }}
-    >
-      <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
-        <defs>
-          <pattern
-            id="micro-grid"
-            width="44"
-            height="44"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M44 0H0V44"
-              fill="none"
-              stroke={C.navy}
-              strokeOpacity={0.055}
-              strokeWidth={1}
-            />
-            <circle cx={0} cy={0} r={1.3} fill={C.navy} opacity={0.09} />
-          </pattern>
-          <radialGradient id="floor-light" cx="50%" cy="48%" r="57%">
-            <stop offset="0%" stopColor={C.white} stopOpacity={0.9} />
-            <stop offset="62%" stopColor={C.cyan} stopOpacity={0.035} />
-            <stop offset="100%" stopColor={C.navy} stopOpacity={0.025} />
-          </radialGradient>
-        </defs>
-        <rect width="1920" height="1080" fill="url(#micro-grid)" />
-        <rect width="1920" height="1080" fill="url(#floor-light)" />
-        <circle
-          cx={960}
-          cy={552}
-          r={430}
-          fill="none"
-          stroke={C.navy}
-          strokeOpacity={0.045}
-          strokeWidth={1}
-        />
-        <circle
-          cx={960}
-          cy={552}
-          r={500}
-          fill="none"
-          stroke={C.navy}
-          strokeOpacity={0.028}
-          strokeWidth={1}
-          strokeDasharray="5 12"
-        />
-      </svg>
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width: "100%",
-          height: 15,
-          background: `linear-gradient(90deg, ${C.cyan}, ${C.mint}, ${C.amber}, ${C.coral})`,
-          opacity: 0.82,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 80,
-          background:
-            "linear-gradient(180deg, rgba(16,43,58,0), rgba(16,43,58,0.055))",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const Avatar: React.FC<{
-  cx: number;
-  cy: number;
-  r: number;
-  color: string;
-  opacity?: number;
-}> = ({cx, cy, r, color, opacity = 1}) => {
-  return (
-    <g opacity={opacity}>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill={color}
-        fillOpacity={0.12}
-        stroke={color}
-        strokeOpacity={0.55}
-        strokeWidth={2}
-      />
-      <circle cx={cx} cy={cy - r * 0.25} r={r * 0.25} fill={color} />
-      <path
-        d={`M ${cx - r * 0.5} ${cy + r * 0.5} C ${cx - r * 0.46} ${
-          cy + r * 0.08
-        }, ${cx + r * 0.46} ${cy + r * 0.08}, ${cx + r * 0.5} ${
-          cy + r * 0.5
-        } Z`}
-        fill={color}
-      />
-    </g>
-  );
-};
-
-const Lock: React.FC<{
+type ProjectedPoint = {
   x: number;
   y: number;
-  size: number;
-  closed: number;
-  color: string;
-}> = ({x, y, size, closed, color}) => {
-  const shackleY = interpolate(closed, [0, 1], [size * 0.18, size * 0.34]);
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <path
-        d={`M ${size * 0.25} ${size * 0.46} V ${shackleY} C ${
-          size * 0.25
-        } ${-size * 0.06}, ${size * 0.75} ${-size * 0.06}, ${
-          size * 0.75
-        } ${shackleY} V ${size * 0.46}`}
-        fill="none"
-        stroke={color}
-        strokeWidth={size * 0.11}
-        strokeLinecap="round"
-      />
-      <rect
-        x={size * 0.12}
-        y={size * 0.42}
-        width={size * 0.76}
-        height={size * 0.56}
-        rx={size * 0.13}
-        fill={color}
-      />
-      <circle
-        cx={size * 0.5}
-        cy={size * 0.67}
-        r={size * 0.075}
-        fill={C.white}
-        opacity={0.94}
-      />
-      <rect
-        x={size * 0.465}
-        y={size * 0.69}
-        width={size * 0.07}
-        height={size * 0.15}
-        rx={size * 0.035}
-        fill={C.white}
-        opacity={0.94}
-      />
-    </g>
-  );
+  z: number;
+  visible: boolean;
 };
 
-type ResourceKind = "cloud" | "mail" | "finance" | "admin";
-
-const ResourceIcon: React.FC<{
-  kind: ResourceKind;
-  x: number;
-  y: number;
-  color: string;
-}> = ({kind, x, y, color}) => {
-  if (kind === "cloud") {
-    return (
-      <g
-        transform={`translate(${x} ${y})`}
-        fill="none"
-        stroke={color}
-        strokeWidth={4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M10 43 C2 39, 3 25, 14 22 C17 7, 38 5, 45 18 C58 15, 66 24, 64 34 C63 42, 56 47, 46 47 H15 C13 47, 11 46, 10 43" />
-      </g>
-    );
-  }
-  if (kind === "mail") {
-    return (
-      <g
-        transform={`translate(${x} ${y})`}
-        fill="none"
-        stroke={color}
-        strokeWidth={4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x={4} y={10} width={60} height={44} rx={8} />
-        <path d="M8 16 L34 36 L60 16" />
-      </g>
-    );
-  }
-  if (kind === "finance") {
-    return (
-      <g
-        transform={`translate(${x} ${y})`}
-        fill="none"
-        stroke={color}
-        strokeWidth={4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M5 21 L34 7 L63 21 Z" />
-        <path d="M10 25 H58 M12 53 H56 M18 27 V51 M34 27 V51 M50 27 V51" />
-      </g>
-    );
-  }
-  return (
-    <g
-      transform={`translate(${x} ${y})`}
-      fill="none"
-      stroke={color}
-      strokeWidth={4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x={7} y={8} width={55} height={48} rx={8} />
-      <path d="M23 24 L15 32 L23 40 M46 24 L54 32 L46 40 M31 44 L39 20" />
-    </g>
-  );
+type DataCenter = {
+  code: string;
+  city: string;
+  lon: number;
+  lat: number;
 };
 
-type Resource = {
-  x: number;
-  y: number;
-  label: string;
-  kind: ResourceKind;
-  side: "left" | "right";
-  path: [Point, Point, Point, Point];
+type RouteDefinition = {
+  from: string;
+  to: string;
+  priority?: boolean;
 };
 
-const RESOURCES: Resource[] = [
-  {
-    x: 105,
-    y: 266,
-    label: "CLOUD FILES",
-    kind: "cloud",
-    side: "left",
-    path: [
-      {x: 435, y: 341},
-      {x: 590, y: 341},
-      {x: 660, y: 410},
-      {x: 785, y: 438},
-    ],
-  },
-  {
-    x: 105,
-    y: 736,
-    label: "EMAIL SERVICE",
-    kind: "mail",
-    side: "left",
-    path: [
-      {x: 435, y: 811},
-      {x: 590, y: 811},
-      {x: 660, y: 692},
-      {x: 785, y: 660},
-    ],
-  },
-  {
-    x: 1485,
-    y: 266,
-    label: "FINANCE DATA",
-    kind: "finance",
-    side: "right",
-    path: [
-      {x: 1485, y: 341},
-      {x: 1325, y: 341},
-      {x: 1255, y: 410},
-      {x: 1135, y: 438},
-    ],
-  },
-  {
-    x: 1485,
-    y: 736,
-    label: "ADMIN CONSOLE",
-    kind: "admin",
-    side: "right",
-    path: [
-      {x: 1485, y: 811},
-      {x: 1325, y: 811},
-      {x: 1255, y: 692},
-      {x: 1135, y: 660},
-    ],
-  },
-];
-
-const ResourceCard: React.FC<{
-  resource: Resource;
-  index: number;
-  frame: number;
-}> = ({resource, index, frame}) => {
-  const enter = progress(frame, 48 + index * 13, 138 + index * 13);
-  const risk = progress(frame, 344, 500);
-  const revoked = progress(
-    frame,
-    650 + index * 34,
-    730 + index * 34,
-    Easing.inOut(Easing.cubic),
-  );
-  const settle = progress(frame, 790, 900);
-  const yOffset = interpolate(enter, [0, 1], [26, 0]);
-  const xOffset =
-    interpolate(enter, [0, 1], [resource.side === "left" ? -38 : 38, 0]) *
-    (1 - enter);
-  const outline = interpolateColors(
-    Math.max(risk * (1 - revoked), revoked),
-    [0, 0.55, 1],
-    [C.mint, C.amber, C.navy],
-  );
-  const iconColor = interpolateColors(
-    revoked,
-    [0, 0.72, 1],
-    [risk > 0.55 ? C.coral : C.cyanDark, C.coral, C.navy],
-  );
-  const flash =
-    revoked > 0 && revoked < 1
-      ? 0.5 + 0.5 * Math.sin(frame * 0.32 + index)
-      : 0;
-  const connectedOpacity = interpolate(revoked, [0, 0.24], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const lockedOpacity = interpolate(revoked, [0.48, 0.78], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const labelFontSize =
-    resource.label.length >= 13
-      ? 20
-      : resource.label.length >= 12
-        ? 22
-        : 24;
-
-  return (
-    <g
-      transform={`translate(${resource.x + xOffset} ${
-        resource.y + yOffset
-      })`}
-      opacity={enter}
-    >
-      <rect
-        x={8}
-        y={14}
-        width={330}
-        height={150}
-        rx={25}
-        fill={C.navy}
-        opacity={0.12}
-        filter="url(#card-shadow)"
-      />
-      <rect
-        x={0}
-        y={0}
-        width={330}
-        height={150}
-        rx={25}
-        fill={C.glass}
-        fillOpacity={0.94}
-        stroke={outline}
-        strokeWidth={interpolate(revoked, [0, 0.5, 1], [2.5, 5, 3])}
-      />
-      <rect
-        x={15}
-        y={15}
-        width={94}
-        height={120}
-        rx={18}
-        fill={iconColor}
-        fillOpacity={0.09 + flash * 0.06}
-      />
-      <ResourceIcon kind={resource.kind} x={28} y={42} color={iconColor} />
-      <text
-        x={126}
-        y={62}
-        fill={C.navy}
-        fontFamily={FONT}
-        fontSize={labelFontSize}
-        fontWeight={800}
-        letterSpacing={0.1}
-      >
-        {resource.label}
-      </text>
-      <g opacity={connectedOpacity}>
-        <circle cx={137} cy={103} r={6} fill={risk > 0.62 ? C.amber : C.mint} />
-        <text
-          x={153}
-          y={110}
-          fill={risk > 0.62 ? C.coralDark : C.mintDark}
-          fontFamily={FONT}
-          fontSize={19}
-          fontWeight={800}
-          letterSpacing={1.4}
-        >
-          {risk > 0.62 ? "CHECKING" : "CONNECTED"}
-        </text>
-      </g>
-      <g opacity={lockedOpacity}>
-        <Lock
-          x={270}
-          y={78}
-          size={44}
-          closed={lockedOpacity}
-          color={C.navy}
-        />
-        <circle cx={137} cy={103} r={6} fill={C.navy} />
-        <text
-          x={153}
-          y={110}
-          fill={C.navy}
-          fontFamily={FONT}
-          fontSize={19}
-          fontWeight={900}
-          letterSpacing={1.7}
-        >
-          LOCKED
-        </text>
-      </g>
-      <rect
-        x={4}
-        y={4}
-        width={322}
-        height={142}
-        rx={21}
-        fill="none"
-        stroke={C.white}
-        strokeOpacity={0.72 - settle * 0.18}
-        strokeWidth={1.5}
-      />
-    </g>
-  );
-};
-
-const ConnectionRibbon: React.FC<{
-  resource: Resource;
-  index: number;
-  frame: number;
-}> = ({resource, index, frame}) => {
-  const [p0, p1, p2, p3] = resource.path;
-  const path = `M ${p0.x} ${p0.y} C ${p1.x} ${p1.y} ${p2.x} ${p2.y} ${p3.x} ${p3.y}`;
-  const draw = progress(frame, 92 + index * 14, 188 + index * 14);
-  const risk = progress(frame, 350, 510);
-  const revoked = progress(
-    frame,
-    650 + index * 34,
-    730 + index * 34,
-    Easing.inOut(Easing.cubic),
-  );
-  const visible = Math.max(0.0001, draw * (1 - revoked));
-  const tokenOpacity = draw * (1 - revoked) * (1 - progress(frame, 510, 610));
-  const t1 = (frame * 0.008 + index * 0.22) % 1;
-  const t2 = (t1 + 0.42) % 1;
-  const token1 = cubicPoint(p0, p1, p2, p3, t1);
-  const token2 = cubicPoint(p0, p1, p2, p3, t2);
-  const activeColor = interpolateColors(risk, [0, 0.62, 1], [
-    C.mint,
-    C.amber,
-    C.coral,
-  ]);
-  const cutT = Math.max(0, 0.96 - revoked * 0.82);
-  const cutPoint = cubicPoint(p0, p1, p2, p3, cutT);
-  const cutOpacity = Math.sin(Math.PI * revoked);
-
-  return (
-    <g>
-      <path
-        d={path}
-        fill="none"
-        stroke={C.lineDark}
-        strokeOpacity={0.48 * draw}
-        strokeWidth={19}
-        strokeLinecap="round"
-      />
-      <path
-        d={path}
-        fill="none"
-        stroke={C.white}
-        strokeOpacity={0.72 * draw}
-        strokeWidth={13}
-        strokeLinecap="round"
-        pathLength={1}
-        strokeDasharray={`${visible} 1`}
-      />
-      <path
-        d={path}
-        fill="none"
-        stroke={activeColor}
-        strokeOpacity={0.96}
-        strokeWidth={8}
-        strokeLinecap="round"
-        pathLength={1}
-        strokeDasharray={`${visible} 1`}
-      />
-      {[token1, token2].map((point, tokenIndex) => (
-        <g
-          key={tokenIndex}
-          opacity={tokenOpacity}
-          transform={`translate(${point.x} ${point.y})`}
-        >
-          <circle r={11} fill={C.white} opacity={0.95} />
-          <circle r={7} fill={activeColor} />
-          <circle r={17} fill="none" stroke={activeColor} strokeOpacity={0.2} />
-        </g>
-      ))}
-      <g
-        opacity={cutOpacity}
-        transform={`translate(${cutPoint.x} ${cutPoint.y}) rotate(45)`}
-      >
-        <circle r={22} fill={C.white} stroke={C.coral} strokeWidth={3} />
-        <path
-          d="M-9 0 H9 M0 -9 V9"
-          stroke={C.coralDark}
-          strokeWidth={4}
-          strokeLinecap="round"
-        />
-      </g>
-    </g>
-  );
-};
-
-const Iris: React.FC<{frame: number}> = ({frame}) => {
-  const appear = progress(frame, 36, 150);
-  const risk = progress(frame, 350, 510);
-  const check = progress(frame, 500, 640, Easing.inOut(Easing.cubic));
-  const revoke = progress(frame, 640, 820, Easing.inOut(Easing.cubic));
-  const inner = interpolate(check, [0, 1], [328, 253]);
-  const rotation = interpolate(frame, [0, 1200], [0, 36]);
-  const segmentColor = interpolateColors(Math.max(risk * 0.84, revoke), [
-    0,
-    0.52,
-    1,
-  ], [C.cyan, C.amber, C.coral]);
-  const ringPulse = risk > 0.1 && revoke < 1
-    ? 0.5 + 0.5 * Math.sin(frame * 0.22)
-    : 0;
-
-  return (
-    <g opacity={appear}>
-      <circle
-        cx={960}
-        cy={548}
-        r={373}
-        fill={C.white}
-        fillOpacity={0.23}
-        stroke={C.white}
-        strokeOpacity={0.8}
-        strokeWidth={2}
-      />
-      <circle
-        cx={960}
-        cy={548}
-        r={356}
-        fill="none"
-        stroke={segmentColor}
-        strokeOpacity={0.25 + ringPulse * 0.18}
-        strokeWidth={2 + ringPulse * 2}
-      />
-      {Array.from({length: 12}, (_, index) => {
-        const start = index * 30 + 3;
-        const end = index * 30 + 27;
-        const stagger = progress(frame, 44 + index * 3, 125 + index * 3);
-        const localRotate =
-          rotation + index * 0.18 + Math.sin(frame * 0.012 + index) * 0.45;
-        return (
-          <path
-            key={index}
-            d={annularSegmentPath(960, 548, 348, inner, start, end)}
-            fill={segmentColor}
-            fillOpacity={0.085 + risk * 0.13 + revoke * 0.11}
-            stroke={segmentColor}
-            strokeOpacity={0.34 + risk * 0.34}
-            strokeWidth={1.8}
-            opacity={stagger}
-            transform={`rotate(${localRotate} 960 548)`}
-          />
-        );
-      })}
-      <circle
-        cx={960}
-        cy={548}
-        r={inner - 10}
-        fill="none"
-        stroke={segmentColor}
-        strokeOpacity={0.24 + check * 0.43}
-        strokeWidth={2}
-        strokeDasharray="7 11"
-        transform={`rotate(${-rotation * 2} 960 548)`}
-      />
-      {risk > 0 ? (
-        <>
-          <circle
-            cx={960}
-            cy={548}
-            r={interpolate(check, [0, 1], [420, 282])}
-            fill="none"
-            stroke={segmentColor}
-            strokeWidth={3}
-            strokeOpacity={(1 - check) * 0.42}
-          />
-          <circle
-            cx={960}
-            cy={548}
-            r={interpolate(check, [0, 1], [465, 302])}
-            fill="none"
-            stroke={segmentColor}
-            strokeWidth={1.5}
-            strokeOpacity={(1 - check) * 0.24}
-          />
-        </>
-      ) : null}
-    </g>
-  );
-};
-
-/*
- * FingerprintPattern paths from Lucide Static v1.27.0.
- * Source: https://lucide.dev/icons/fingerprint-pattern
- * ISC License — Copyright (c) 2026 Lucide Icons and Contributors.
- * Permission to use, copy, modify, and/or distribute for any purpose with or
- * without fee is granted when this copyright and permission notice is kept.
- */
-const FingerprintPattern: React.FC<{
-  x: number;
-  y: number;
-  risk: number;
-}> = ({x, y, risk}) => {
-  const color = interpolateColors(risk, [0, 0.55, 1], [
-    C.cyanDark,
-    C.amber,
-    C.coral,
-  ]);
-  return (
-    <g
-      transform={`translate(${x} ${y}) scale(2.65)`}
-      fill="none"
-      stroke={color}
-      strokeWidth={1.28}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
-      <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
-      <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
-      <path d="M2 12a10 10 0 0 1 18-6" />
-      <path d="M2 16h.01" />
-      <path d="M21.8 16c.2-2 .131-5.354 0-6" />
-      <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
-      <path d="M8.65 22c.21-.66.45-1.32.57-2" />
-      <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
-    </g>
-  );
-};
-
-const CredentialCard: React.FC<{frame: number}> = ({frame}) => {
-  const enter = progress(frame, 50, 145);
-  const risk = progress(frame, 350, 505, Easing.inOut(Easing.cubic));
-  const check = progress(frame, 500, 640, Easing.inOut(Easing.cubic));
-  const revoke = progress(frame, 640, 820, Easing.inOut(Easing.cubic));
-  const settled = progress(frame, 820, 910);
-  const score = Math.round(interpolate(risk, [0, 1], [12, 94]));
-  const cardStroke = interpolateColors(Math.max(risk, revoke), [0, 0.55, 1], [
-    C.cyan,
-    C.amber,
-    C.coral,
-  ]);
-  const scale = interpolate(enter, [0, 1], [0.88, 1]);
-  const tilt = interpolate(enter, [0, 1], [-5, 0]);
-  const scanY = 40 + ((frame * 2.35) % 330);
-  const statusColor = interpolateColors(risk, [0, 0.55, 1], [
-    C.mint,
-    C.amber,
-    C.coral,
-  ]);
-  const stamp = progress(frame, 760, 835, Easing.out(Easing.back(1.4)));
-  const detailOpacity = 1 - progress(frame, 778, 824);
-
-  return (
-    <g
-      opacity={enter}
-      transform={`translate(960 548) scale(${scale}) rotate(${tilt}) translate(-960 -548)`}
-    >
-      <rect
-        x={792}
-        y={344}
-        width={360}
-        height={430}
-        rx={34}
-        fill={C.navy}
-        opacity={0.16}
-        filter="url(#card-shadow)"
-      />
-      <rect
-        x={780}
-        y={330}
-        width={360}
-        height={430}
-        rx={34}
-        fill={C.glass}
-        fillOpacity={0.965}
-        stroke={cardStroke}
-        strokeWidth={interpolate(check, [0, 1], [3, 6])}
-      />
-      <rect
-        x={796}
-        y={346}
-        width={328}
-        height={398}
-        rx={25}
-        fill="none"
-        stroke={C.white}
-        strokeWidth={2}
-        strokeOpacity={0.86}
-      />
-      <rect
-        x={780}
-        y={330}
-        width={360}
-        height={79}
-        rx={34}
-        fill={C.navy}
-      />
-      <rect x={780} y={376} width={360} height={33} fill={C.navy} />
-      <circle cx={818} cy={370} r={7} fill={statusColor} />
-      <text
-        x={840}
-        y={377}
-        fill={C.white}
-        fontFamily={FONT}
-        fontSize={14}
-        fontWeight={800}
-        letterSpacing={1.1}
-      >
-        IDENTITY CREDENTIAL
-      </text>
-      <rect
-        x={1064}
-        y={352}
-        width={58}
-        height={35}
-        rx={11}
-        fill={C.white}
-        fillOpacity={0.1}
-        stroke={C.white}
-        strokeOpacity={0.22}
-      />
-      <text
-        x={1093}
-        y={375.5}
-        fill={C.white}
-        fillOpacity={0.78}
-        fontFamily={FONT}
-        fontSize={14}
-        fontWeight={850}
-        textAnchor="middle"
-        letterSpacing={0.8}
-      >
-        7A41
-      </text>
-
-      <Avatar
-        cx={852}
-        cy={484}
-        r={49}
-        color={risk > 0.62 ? C.coral : C.cyanDark}
-      />
-      <text
-        x={920}
-        y={467}
-        fill={C.slate}
-        fontFamily={FONT}
-        fontSize={12.8}
-        fontWeight={800}
-        letterSpacing={0.85}
-      >
-        WORKFORCE IDENTITY
-      </text>
-      <text
-        x={920}
-        y={506}
-        fill={C.navy}
-        fontFamily={FONT}
-        fontSize={31}
-        fontWeight={900}
-      >
-        USER 7A41
-      </text>
-      <text
-        x={920}
-        y={537}
-        fill={C.slate}
-        fontFamily={FONT}
-        fontSize={16.5}
-        fontWeight={650}
-      >
-        PRIVILEGED ACCESS
-      </text>
-
-      <rect
-        x={813}
-        y={568}
-        width={294}
-        height={88}
-        rx={18}
-        fill={statusColor}
-        fillOpacity={0.09}
-        stroke={statusColor}
-        strokeOpacity={0.42}
-        strokeWidth={2}
-      />
-      <text
-        x={835}
-        y={600}
-        fill={C.slate}
-        fontFamily={FONT}
-        fontSize={16}
-        fontWeight={800}
-        letterSpacing={1.4}
-      >
-        IDENTITY RISK
-      </text>
-      <text
-        x={835}
-        y={638}
-        fill={statusColor}
-        fontFamily={FONT}
-        fontSize={risk >= 0.5 && risk < 0.88 ? 30 : 35}
-        fontWeight={900}
-      >
-        {risk < 0.5 ? "LOW" : risk < 0.88 ? "ELEVATED" : "CRITICAL"}
-      </text>
-      <text
-        x={1082}
-        y={634}
-        fill={statusColor}
-        fontFamily={FONT}
-        fontSize={44}
-        fontWeight={900}
-        textAnchor="end"
-      >
-        {score}
-      </text>
-
-      <g opacity={detailOpacity}>
-        <rect
-          x={812}
-          y={666}
-          width={92}
-          height={72}
-          rx={17}
-          fill={statusColor}
-          fillOpacity={0.075}
-          stroke={statusColor}
-          strokeOpacity={0.2}
-          strokeWidth={1.5}
-        />
-        <FingerprintPattern x={826} y={670} risk={risk} />
-        <g transform="translate(914 682)">
-          {[
-            ["DEVICE", risk < 0.55 ? "MANAGED" : "UNKNOWN"],
-            ["LOCATION", risk < 0.55 ? "VERIFIED" : "MISMATCH"],
-            ["TOKEN", risk < 0.55 ? "VALID" : "REUSED"],
-          ].map(([label, value], index) => (
-            <g key={label} transform={`translate(0 ${index * 29})`}>
-              <text
-                x={0}
-                y={0}
-                fill={C.slate}
-                fontFamily={FONT}
-                fontSize={12.5}
-                fontWeight={750}
-                letterSpacing={0.85}
-              >
-                {label}
-              </text>
-              <text
-                x={196}
-                y={0}
-                fill={risk < 0.55 ? C.mintDark : C.coralDark}
-                fontFamily={FONT}
-                fontSize={13.2}
-                fontWeight={900}
-                textAnchor="end"
-                letterSpacing={0.55}
-              >
-                {value}
-              </text>
-            </g>
-          ))}
-        </g>
-      </g>
-
-      <g opacity={(1 - check) * 0.075}>
-        <rect
-          x={786}
-          y={scanY + 330}
-          width={348}
-          height={3}
-          rx={2}
-          fill={C.cyan}
-        />
-      </g>
-
-      <g
-        opacity={stamp}
-        transform={`translate(960 552) rotate(-8) scale(${interpolate(
-          stamp,
-          [0, 1],
-          [1.22, 1],
-        )}) translate(-960 -552)`}
-      >
-        <rect
-          x={806}
-          y={515}
-          width={308}
-          height={92}
-          rx={15}
-          fill={C.white}
-          fillOpacity={0.94}
-          stroke={C.coral}
-          strokeWidth={6}
-        />
-        <text
-          x={960}
-          y={575}
-          fill={C.coralDark}
-          fontFamily={FONT}
-          fontSize={42}
-          fontWeight={950}
-          letterSpacing={2.8}
-          textAnchor="middle"
-        >
-          REVOKED
-        </text>
-      </g>
-
-      <g opacity={settled * 0.78}>
-        <rect
-          x={800}
-          y={704}
-          width={320}
-          height={42}
-          rx={21}
-          fill={C.navy}
-        />
-        <text
-          x={960}
-          y={732}
-          fill={C.white}
-          fontFamily={FONT}
-          fontSize={17}
-          fontWeight={900}
-          letterSpacing={1.8}
-          textAnchor="middle"
-        >
-          IDENTITY QUARANTINED
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const EvidencePill: React.FC<{
-  frame: number;
-  start: number;
-  end: number;
-  x: number;
-  y: number;
-  label: string;
-  icon: string;
-}> = ({frame, start, end, x, y, label, icon}) => {
-  const opacity = windowOpacity(frame, start, end, 18);
-  const enter = progress(frame, start, start + 28, Easing.out(Easing.back(1.25)));
-  const yOffset = interpolate(enter, [0, 1], [18, 0]);
-  const isLongLabel = label.length > 14;
-  const pillWidth = isLongLabel ? 280 : 246;
-  return (
-    <g opacity={opacity} transform={`translate(${x} ${y + yOffset})`}>
-      <rect
-        x={6}
-        y={9}
-        width={pillWidth}
-        height={64}
-        rx={20}
-        fill={C.navy}
-        opacity={0.12}
-        filter="url(#card-shadow)"
-      />
-      <rect
-        x={0}
-        y={0}
-        width={pillWidth}
-        height={64}
-        rx={20}
-        fill={C.white}
-        stroke={C.coral}
-        strokeWidth={2.5}
-      />
-      <circle cx={32} cy={32} r={18} fill={C.coral} fillOpacity={0.12} />
-      <text
-        x={32}
-        y={40}
-        fill={C.coralDark}
-        fontFamily={FONT}
-        fontSize={22}
-        fontWeight={900}
-        textAnchor="middle"
-      >
-        {icon}
-      </text>
-      <text
-        x={62}
-        y={40}
-        fill={C.navy}
-        fontFamily={FONT}
-        fontSize={isLongLabel ? 16.5 : 18}
-        fontWeight={900}
-        letterSpacing={isLongLabel ? 0.45 : 0.75}
-      >
-        {label}
-      </text>
-    </g>
-  );
-};
-
-type Phase = {
+type StatusPhase = {
   start: number;
   end: number;
   eyebrow: string;
   title: string;
-  subtitle: string;
-  color: string;
+  detail: string;
+  accent: string;
 };
 
-const PHASES: Phase[] = [
-  {
-    start: 80,
-    end: 318,
-    eyebrow: "AUTONOMOUS ZERO-TRUST",
-    title: "CONTINUOUS ACCESS VERIFIED",
-    subtitle: "Every request is evaluated before protected resources respond",
-    color: C.mintDark,
-  },
-  {
-    start: 330,
-    end: 498,
-    eyebrow: "BEHAVIOR ANALYTICS",
-    title: "RISK SIGNAL DETECTED",
-    subtitle: "Unfamiliar device  •  impossible travel  •  token reuse",
-    color: C.coralDark,
-  },
-  {
-    start: 510,
-    end: 635,
-    eyebrow: "REAL-TIME POLICY ENGINE",
-    title: "ZERO-TRUST POLICY CHECK",
-    subtitle: "Trust is never assumed — each signal is verified",
-    color: C.amber,
-  },
-  {
-    start: 650,
-    end: 838,
-    eyebrow: "AUTONOMOUS RESPONSE",
-    title: "REVOKING EVERY ACTIVE SESSION",
-    subtitle: "Permissions retract while access tokens are invalidated",
-    color: C.coralDark,
-  },
-  {
-    start: 850,
-    end: 1004,
-    eyebrow: "SELECTIVE CONTAINMENT",
-    title: "HEALTHY WORKFORCE UNAFFECTED",
-    subtitle: "Only the compromised identity is isolated",
-    color: C.mintDark,
-  },
+const FONT =
+  "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+const MONO =
+  "IBM Plex Mono, SFMono-Regular, Consolas, Liberation Mono, monospace";
+
+const COLORS = {
+  background: "#02090e",
+  panel: "rgba(6, 24, 33, 0.78)",
+  panelBorder: "rgba(95, 220, 235, 0.2)",
+  cyan: "#45d9ec",
+  cyanBright: "#9bf5ff",
+  cyanSoft: "#1f8fa5",
+  mint: "#67efc4",
+  amber: "#ffad58",
+  amberSoft: "#d77e3e",
+  ink: "#e9fbff",
+  muted: "#86aab3",
+  dim: "#45646c",
+};
+
+const DEG = Math.PI / 180;
+
+// Geography source:
+// Natural Earth 1:110m land geometry, distributed through world-atlas.
+// Natural Earth map data is Public Domain:
+// https://www.naturalearthdata.com/about/terms-of-use/
+// world-atlas project page:
+// https://github.com/topojson/world-atlas
+const NATURAL_EARTH_110M =
+  "fQANALQEZACxBF8ArgRaAJkEWwCDBFsAdwReAHcEXwBxBGEAiARhAJ0EYAClBGQAqgRoALQEZAALANAAaQC9AGgAsABrAKoAbwCpAG8AowByAKkAdgC8AHQAxgBxAM0AbgDQAGkAFQBEBXgAUQVzAFUFbQBWBWkAVwVkAEcFYQA3BV4AJAVcAA8FWgD3BFoA6gReAOwEYgABBWUACgVoABAFbAAVBXAAGwVzACEFeAAmBXgANQV6AEQFeAAJAEwCpQBZAqMAZQKlAF8CogBWAp8ASAKgAD4CowBAAqcATAKlAAcAIAKlADACoQAqAqIAHQKjAA8CpQAWAqgAIAKlAA0AKgO1ADUDswBAA7QARgOvAD4DsAAyA68AJgOwABgDrwAOA7EACQO1AA8DtwAcA7UAKgO1ABkAWwS+AF0EugBbBLYAWASyAEwEsQBBBK8ANASvADkEswAtBLIAIgSwABoEswAaBLcAJQS7ACwEvAA3BLwAOgTBADsExQA7BM0AQATSAEkE0wBPBM8AUQTMAFUExwBZBMMAWwS+ACwCAAA1AAEANQAJADsAGwA3AB0AOAAfADkAIwA6ACYAOwAnADsAKQA7ACoAOwA4ADcARQA7AEcAOwBkAD0AbgA7AHMAOgCCADYAngA0ALUAMQDbAC4A+AAxACMBLwA7ASwAVQEvAHEBMgBzATYATAE3ACsBOQAjAT0ACAE/AAoBRAAOAUgAEQFLAA8BUAD/AFIA9wBWAOgAWQAAAVgAFwFaACYBVwA3AVoASAFdAFABYQBMAWUAPwFnADEBagAcAWsACgFsAPcAbQDwAHEA4wB0ANsAeADYAIMA3QCCAOYAfwD3AIAABwGBAA8BfQAfAX4ALAGAADkBgwBEAYYAUwGHAFMBiwBPAY8AUgGSAF8BlABlAZEAdAGTAIABlQCOAZUAmwGWAKkBmQC0AZsAwAGdAMgBnADPAZwA3QGdAOsBmwD4AZsABgKdABMCnAAiApsAMAKbAD4CmwBNApsAWwKbAGUCngBxAqAAfgKeAIoCnwCVAqMAmwKgAJ8CnAClApkArwKcALsCmADJApcA1AKUAOMClQDvApcA/gKWAAwDlQAaA5MAHwOXABgDmwATA54ABwOfAAEDowD/AqYA+wKuAAMDrAAQA6wAHQOsACkDqwAzA6gANwOkAEUDpABSA6UAXwOnAGwDqAB2A6YAgwOnAIwDrgCUA6oAnwOoAKwDqQC0A6UAwQOlAM0DpADZA6EA4QOlAOUDqQDvA6UA/QOmAAcEpAAOBKAAGwShACUEowAwBKYAPASnAEoEqQBXBKoAYASsAGYErwBpBLQAZwS4AGQEvABhBL8AXgTDAFsExwBbBMsAXATPAGAE0gBkBNcAZgTaAGQE3wBjBOMAZwTnAG0E6gBzBO4AegTxAIIE9ACGBPgAjAT7AJIE/gCcBP4AogQBAakEAwGxBAQBuAQHAb4ECgHGBAsBzAQJAcgEBQG+BAIBugQAAbIEAgGqBAEBowT/AJwE/ACXBPkAlgT1AJYE8QCbBO4AlATsAIsE6wCFBOgAfwTlAHkE4AB3BNwAewTYAIAE1QCIBNMAkATQAJQEzACWBMgAmQTEAJ4EwQChBL0AogS0AKUEsACmBKwAqQSoAKgEowCiBJ8AnAScAI8EmgCLBJcAhASTAHUEkABoBI4AXASMAE4EigBGBIYANgSFACQEhgAUBIUABASFAAcEgQAWBH8AIQR8ACcEeQAcBHYACwR3AP0DdAD8A3AA/ANsAAgEaQAKBGUAFgRhACwEYAA+BF0ATARaAF4EVwB3BFUAjwRTAKAEUACzBEwAvQRIAMIERADOBEcA3gRKAPAETQAFBVAAFgVTAC8FUwBIBVIAXAVPAGIFUwBwBVYAigVXAJ0FWQCwBVsAxQVcANsFXgDqBWEA4wVkAN8FaADfBWsAzAVrALcFaQCkBWkAoQVtAKIFdQCnBXcAtQV5AMYFewDSBX4A3gWBAOcFhQD1BYcAAgaIAAkGiQAZBooAJwaLADQGjQBABo8ASwaSAFkGlQBiBpgAawabAG4GnwBjBqEAZwalAG4GqQB4BqoAgwatAI0GsACVBrQAmga5AKEGuwCtBrsAsga3AL4GtwC+BrsAwwa/AM4GvgDRBroA3Qa5AOoGuwD2BrwAAQe8AAYHuAARB7sAGwe9ACYHvgAxB78APAfCAEcHwwBPB8YAVQfJAF0HxwBnB8gAbwfDAHQHwACAB8IAhAfGAI4HyACbB8gAnwfEAKcHyACyB8kAvgfJAMkHyQDUB8gA3wfHAOMHxADqB8EA9QfDAAAIwwAMCMMAFwjDACEIxQAsCMYANAjJAD4IygBICMsAUAjOAFUI1ABbCNcAZQjVAGkI0gByCNAAfAjQAIMIzQCKCMoAlQjNAJgI0QChCNMArAjWALUI1wDBCNkAyQjbANEI3gDZCOAA4gjfAOsI4gDyCOUA+wjlAAQJ5wAFCesADgnuABYJ7wAgCfEAKQnyADIJ8QA8CfAARAnuAEUJ6QBNCeYAUwnjAF8J4gBmCd8AbgncAHgJ3ACACd4AiQniAJIJ4ACcCd8ApQndAK8J3QC5Cd0AwQnSAMEJ0ADACcsAtgnJAK4JxQCvCcEAuwnBALkJvQC0CboArwm1ALcJsgDDCbEAzgmzANQJtwDXCbsA3Qm+AOMJwQDlCcQA6wnJAPEJygD8CcsABgrMABAKzQAVCtEAGArVAB8K2QApCtsAMQrdADcK4QA9CuIARArkAE4K4wBXCuQAYQrlAGwK5QBzCucAeAruAHwK6wCACuYAiQrlAJIK5ACcCuUApgrkAK8K5AC2CuUAvgrkAMYK4gDPCuQA2grkAOMK5QDtCuQA9ArnAPkK6gAAC+0ADAv0ABML8wAaC/AAIQvtAC4L5wA4C+YAQQvmAEwL6ABWC+kAXwvsAGUL7wBxC+8AeAvxAIAL7wCFC+wAjAvpAJcL6QCeC+cAqgvkALYL4wDBC+QAyQvnAM8L6gDYC+sA4QvqAOwL6QD1C+oA/gvqAAcM6QAQDOgAGQzqACQM7AAuDOwAOQzsAEMM7QBMDO4ATgzzAE8M9wBVDPQAVwzwAFoM7ABeDOgAZwzmAHIM5wB/DOcAiAzoAJUM6ACfDOgArAzoALcM5wC+DOQAvAzgAMIM3QDNDNsA2AzYAOUM1gDzDNUA/QzTAAgN0wAPDdYAGA3UAB8N0QAoDc4ANA3NAEANzABFDcgAUA3GAFgNwgBjDcEAbg3BAHkNwACFDcAAkQ3AAJwNvgCnDbwAsQ26ALgNtwC3DbMAsg2wAK0NqwCqDagApQ2jAJgNogCSDZ4AhQ2cAIANmAB6DZUAcg2RAG4NjQBsDYoAaw2FAGsNgQBxDX0Acw16AHcNdgCKDXUAjg1wAHwNbwBtDW0AWg1sAFENZwBPDWIASw1eAEYNWwBTDVcAWA1TAGENTwBtDUwAew1JAIoNRgChDUMApg0+AMMNPADFDTsAzA04AOgNOgD/DTcAAAA1ABcAYgRqAW8EYwF9BGEBeQRcAW8EXAFqBF8BZwRbAV8EWAFUBFkBTARcAUIEXQE1BGMBKwRoAR0EdAEmBHIBNARrAUEEZwFGBGwBSQRzAVMEdwFaBHYBXQRxAWIEagEKAL8EhQHHBIEBxAR9AbYEegGyBH4BqQR5AaQEfgGwBIMBuASBAb8EhQEJAMcJkwG3CZIBtwmYAbkJnAG5CZ4BwAmbAckJmQHKCZcBxwmTAREAtgzsAcAM6QHFDOoBzQzsAdMM6wHUDN8B0AzcAc8M1AHMDNcBxQzQAcMM0AG8DNEBtgzZAbUM4AGvDOgBrwztAbYM7AEeAMoN6wHMDecB1A3rAdYN5wHWDeIB0w3eAcwN1gHHDdIByw3NAcMNzQG7DcoBuA3DAbINuQGqDbQBpQ2yAZwNsgGWDbUBiw22AYkNuQGODcEBmw3LAaENzQGpDdABsQ3WAbcN2wG8DeIBwA3lAcEN6gHIDe8Byg3rASQA2g0aAuENEALiDRcC5g0UAugNDALwDQkC9g0IAvwNDAIBDgsC/w0CAvwN/AH0Df0B8Q36AfIN9QHxDfMB7Q3uAegN5wHgDeMB3w3mAdsN5wHgDe8B3Q31AdIN+QHTDf0B2g0AAtsNCALbDQ4C1w0VAtcNFwLSDRsCyw0kAsYNKwLKDSsC0A0mAtcNIwLaDRoCDQCPDaYCiw2kAoYNpwJ/DasCeA2xAnINuAJwDbsCdQ27AnoNtwJ/DbQCgg2xAooNqwKPDaYCCQAADtcCAw7UAgIOzgL7Dc0C9g3OAvUN0wL5DdYC/Q3VAgAO1wIKAAAA3gIKDtwCAw7aAgIO3gIHDuACCg7gAgAA4wICAOQCAQDfAgAA3gIFAJYN3wKTDd4CkA3iApAN5QKWDd8CBwCPDe8CkQ3nAo4N6AKMDecCiw3qAooN8gKPDe8CMQD9CPwC/gjwAgEJ7AIACecC/gjkAvsI6gL5COcC+wjfAvoI2wL3CNkC9gjQAvIIxQLtCLcC5wikAuMIlgLfCIsC1wiIAs4IhALICIcCwAiKAr4IjwK9CJgCuQigArkIpwK6CK8CvwiwAr8ItALECLsCxQjCAsIIxgLACM0CwAjWAsMI2wLECOICyQjiAs8I5ALTCOYC1wjmAt0I7ALlCPIC6Aj3AucI+wLrCPoC8AgBA/EIBwP0CAwD9wgHA/oIAwP9CPwC4ACkDPoCpwzzAq4M9gKxDPICtgzuArUM6gK3DOECuAzcArsM2wK+DNICvQzNAsAMxgLLDMEC0gy8AtgMuALXDLYC3QyvAuEMpQLlDKcC6QyiAusMpALtDJkC9AyTAvkMjwIBDYcCAw1/AgQNegIDDXMCCA1rAgcNYgIFDV0CAw1UAgMNTwIBDUgC/Aw+AvUMOgLxDDIC7gwtAusMJALnDB8C5QwYAuMMEQLkDA4C3gwKAtMMCgLKDAYCxQwCAr8M/gG3DAICsQwEArIMCQKtDAcCpAwAApsMAwKWDAQCkAwFAoYMCAKADA4CfgwWAnwMGwJ3DB8CbQwgAnAMJQJuDCwCaQwlAmAMIwJmDCkCZwwvAmsMNAJqDDsCYgwyAlwMLwJYDCcCUAwrAlAMMQJKDDgCRQw8AkcMPgI6DEQCMwxEAikMSQIXDEgCCgxFAv8LQQL1C0IC6ws9AuILOgLgCzUC3QsxAtQLMQLOCzACxQsyAr4LMQK3CzACsQsrAq4LKwKpCykCpAslAp0LJgKWCyYCjAssAoYLLgKGCzQCiws1Ao0LNwKNCzsCjgtCAo0LSAKIC1IChgtYAoYLXQKCC2QCggtnAn4LawJ8C3MCdwt7AnULfwJ6C3sCdguEAnsLgQJ+C30CfguCAnkLigJ4C40CdguQAncLlgJ5C5gCegudAnkLowJ9C6oCfgujAoILqgKLC60CjwuxApcLtQKcC7YCngu1AqYLuAKsC7kCrgu8ArELvAK2C7wCwQu/AsYLxALJC8kCzgvOAs8L0gLPC9cC1gvgAtoL1wLfC9kC2wveAt4L4wLjC+EC5AvoAukL7QLsC/EC8QvzAvEL9gL1C/UC9Qv3AvoL+AL/C/oCBgz1AgwM7wISDO8CGAzuAhYM9AIbDPwCHwz+Ah4MAQMiDAcDKAwKAy0MCQM2DAsDNgwQAy4MEwM0DBUDOgwSA0AMDgNIDAwDSwwNA1EMCgNXDAwDWwwMA10MDQNiDAgDXwwDA1sM/wJYDP8CWQz7AlYM9gJSDPECUwzuAlsM6AJjDOUCaAziAm8M3AJyDNwCdwzZAnkM1gKCDNMCiQzWAosM3AKNDOACjgzmApEM7gKQDPICkAz1Ao8M+wKRDAMDkgwFA5EMCAOTDA0DlQwTA5UMFgOZDBkDnAwUA50MDgOfDA0DoAwJA6MMBAOkDP4CpAz6AgYAXQ0bA2ANGANZDRgDVQ0eA1sNHANdDRsDBwC/Cx4DuwsdA64LJAO3CyYDvAsjA8ALIAO/Cx4DCABRDSEDTQ0hA0cNIgNEDSQDRQ0oA0wNJgNPDSQDUQ0hAwcAWQ0kA1cNIgNQDSsDTg0xA1ENMQNVDSkDWQ0kAw8A5AsfA9wLHAPbCx4D3AshA+ALJwPqCysD6wstA/MLMAP6CzAD/gsxAwEMMAP+Cy0D8wspA+sLJgPkCx8DCgCjCzMDpwswA60LMQOvCy0DpAsrA50LKgOXCyoDmwsvA6ALMAOjCzMDCQDVCzMD1AstA8ULKwO3CywDtwswA78LMgPFCy8DzAsvA9ULMwMJAEcNMQNHDS8DPw0zAzoNNgM2DToDOA07AzwNOANEDTQDRw0xAwcALw07Ay0NOgMpDTwDJQ1AAyUNQgMrDT4DLw07AxcARgtAA1kLPwNcC0MDbgs/A3ILOAOBCzYDjQswA4ILLAN3CzEDbgswA2MLMQNaCzMDTgs3A0cLOANDCzYDMQs6Ay8LPwMmCz8DLQtJAzkLSANBC0UDRQtEA0YLQAMHAEsMRgNGDD8DRQxHA0cMSgNJDE4DSwxLA0sMRgMLAB8NQAMcDT8DGA1DAxMNSQMRDVEDEw1SAxQNTwMXDUwDGw1GAyANQwMfDUADFgD4DE0D8wxMA/EMSgPsDEcD5gxFA+EMRQPZDEgD0wxLA9QMTgPdDEwD4gxNA+QMUgPlDFID5gxNA+wMTQPvDFED9AxUA/MMWgP5DFsD+wxZA/sMUwP4DE0DBgAADGED/QteA/YLYAP0C2QD/gtlAwAMYQMJACEMZQMkDF0DHAxiAxQMYgMODGIDBwxiAwkMaAMWDGgDIQxlAw4AAw1XAwANVAP+DFoD/AxeA/gMYQPyDGYD6wxpA+0MawPzDGgD9gxmA/oMZAP+DF8DAg1cAwMNVwNDAEUMeANIDGgDUwxiA1sMbQNmDHMDbwxzA3gMbwN/DGwDigxqA5sMYwOuDF0DtQxYA7oMUwO8DE0DzAxHA88MQgPGDEEDyAw6A9EMNAPXDCkD3QwpA90MJQPkDCMD4QwhA+wMHQPrDBoD5AwZA+IMHAPZDB0DzwwfA8cMJQPCDCsDvAwzA68MOAOnDDUDoQwyA6IMKgOaDCcDlQwoA4oMKQOBDDEDdwwzA3UMMANoDDADbAw4A3MMOwNwDEYDawxOA1gMVwNQDFcDQQxhAz4MXAM6DFsDOAxfAzgMYwMwDGgDOwxrA0IMawNBDG4DMgxuAy4MdAMlDHYDIQx7Ay8MfQM0DIADRAx8A0UMeAMtAOwLkgPkC4gD3QuGA9MLiAPDC4gDuguGA7gLfwPBC3YDxwt6A9kLfgPZC3kD1At7A9ALdQPHC3ED0QtkA88LYQPYC1UD2AtPA9ILTAPOC08D0wtXA8kLUwPHC1YDyAtaA8ELYAPCC2oDuwtnA7wLWwO8C00DtgtLA7ILTgO1C1cDswthA68LYQOsC2gDsAtvA7ELdgO2C4YDuAuKA8ELkQPJC44D1QuNA+ELjQPrC5QD7AuSAw0ADwyPAw4MhwMJDIgDCAyBAwwMfAMJDHsDBQyBAwIMjgMEDJYDBwyaAwgMlAMODJMDDwyPAyMAKgtJAx8LSQMXC1IDCgtaAwYLYAP+CmgD+QpvA/EKfQPpCoYD5gqOA+IKlgPZCp0D1AqlA8wKqwPCCrYDwQq7A8cKugPXCrgD4AqvA+cKqAPtCqQD9gqZAwELmQMJC5IDDwuKAxYLhQMSC30DGAt5AxwLeQMdC3IDIQttAygLbAMtC2UDKwtZAyoLSQMuAKMLlgOuC40DoguMA58LhQOfC3wDlgt1A5ULawORC1wDkAtfA4ULWwOBC2EDegtiA3ULZQNpC2EDZQtmA14LZgNWC2cDVQt0A1ALdwNLC38DSguIA0sLkQNRC5gDWAuVA2ALlwNiC58DZguhA3ILowN5C6sDfguxA4ILtQOLC7oDkgvBA5cLyQObC8kDoAvEA6ELwAOnC70DsAu6A68LtgOoC7YDqguxA6MLrQOdC6QDpAubA6MLlgMbAPgL2AP5C9ID+QvMA/YLwwPyC80D7gvIA/ELwAPuC7wD4gvCA98LyQPiC84D3AvSA9kLzgPUC88DzQvJA8sLzAPPC9QD1QvXA9sL2wPeC9YD5gvZA+gL3gPvC94D7gvmA/YL4QP3C9wD+AvYAwoANArCAysKwAMnCsgDJQrWAykK5gMwCuEDNQraAzoKzwM4CsUDNArCAwgApwTpA54E6AOcBOkDnwTsA58E8AOlBPEDpwTxA6cE6QMMAOAL6wPcC+cD2QvhA9YL3gPQC+UD0gvoA9QL6wPVC/ED2wvxA9kL6wPhC/QD4AvrAwkAqQvhA5wL2AOhC98DqAvlA64L7AOzC/YDtQvuA64L6AOpC+EDCQDLC/sD0Qv4A9cL+APXC/QD0gvvA8wL7APMC/EDzAv2A8sL+wMOAO8L/gPyC/ID6gv1A+oL8gPtC+wD6AvpA+gL8APlC/ED4wv3A+kL9gPpC/oD4wsCBOwLAQTvC/4DBgDHCwcExQv+A8ALAwS7CwsExAsKBMcLBwQhAMULPQTLCzoEzgs9BM8LOgTOCzYE0QsvBM8LJwTJCyMExwsbBMkLEwTPCxIE0wsTBOALDgTfCwgE4gsGBOELAQTZCwYE1QsMBNMLCATMCw4EwwsMBL4LDwS/CxMEwgsVBL8LGAS+CxQEuQsaBLcLHgS3CygEuwskBLwLNAS/Cz0ExQs9BAkAeAQ6BHYEOARuBDgEaAQ3BGgEPARpBD0EcQQ9BHYEPAR4BDoECwAHBDcEBAQ1BP4DNwT5AzoE+gM9BP4DPQQABD0EBwQ8BAwEOgQOBDcEBwQ3BCQAMgRLBDsESQQ8BEsERARLBEoESARMBEgETgRFBFQERQRTBEIEWARCBF0EPgRZBDoEVAQ8BFAEPARMBDwESwQ6BEcEOgRFBDwEQgQ7BD4ENAQ7BDYEOwQ4BDQEOgQwBDkEKQQ6BCUEOAQfBDsEIAQ/BCoEPQQxBDwENQQ/BDAEQwQwBEcEKgRIBCwESwQyBEsECgBXCz8ETws6BEcLPQRGC0YESwtKBFYLTQRcC00EXgtJBFoLRQRXCz8EEQD1AEME8wBBBPEAQwTxAEUE7wBJBPAASgTxAEwE8QBOBPEATwTyAE4E9gBNBPgATAT5AEsE/ABHBPwARwT4AEQE9QBDBAkA7wBSBOwAUgTqAFQE6QBVBOkAVQTqAFYE7QBVBPAAVATvAFIEBQDoAFgE6ABXBOMAVwTjAFgE6ABYBAkA3wBZBN8AWQTeAFkE2wBZBNkAWwTZAFwE3ABdBN0AXQTfAFkEBwDPAGAEzQBfBMoAYQTLAGEEzABiBM4AYgTPAGAEKgDrA2gE7wNkBPkDZQT8A2MEBQRdBAsEWAQOBFgEFARWBBMEUwQbBFMEIgRPBCEETQQaBEsEFARLBA0ETAT+A0sEBQRQBAEEUwT7A1ME9wNWBPUDXATvA1wE5gNeBOMDYATWA2IE0gNkBNYDZgTMA2cExQNiBMEDYgS/A18EuwNeBLYDXwS8A2IEvgNmBMIDaATHA2oEzwNrBNEDbATaA2sE4gNrBOsDaAQIAAEEcgT+A3EE/AN3BPgDegT6A4AE/QOABAEEdwQBBHIECQDEC2gEvwtgBLoLaAS5C3AEvwt5BMcLgQTMC34Eygt4BMQLaAQGAP4DjgTzA4wE8gOQBPcDkQT+A5AE/gOOBAcABgSOBAQEhwQCBIgEAwSNBP4DkQT+A5IEBgSOBAwASgzZBEwM1gRGDNAEQgzTBD0M0QQ6DMsENAzOBDQM0wQ5DNkEPwzXBEMM3ARKDNkEDABiCOkEWwjkBFwI4wRcCOIEUgjeBE0I3wRLCOMETwjjBFAI4wRRCOYEWQjmBGII6QQLAPUH6QT6B+YEAgjmBAoI5gQJCOQEDwjlBA4I4gT/B+EE/wfjBPMH5QT1B+kECwCjBwIFoAf6BKEH9wSfB/IElwf2BJIH9wSEB/wEhgcBBZEHAAWcBwEFowcCBQoAZAcgBWoHGQVpBwwFZAcMBWAHCQVcBwwFXAcYBVoHHgVfBx0FZAcgBSUAigz3BIYM7wSIDOoEgwzjBHYM3wRkDN4EVgzTBE8M1gRPDN4EPQzcBDIM1wQmDNcEMAzPBCkMvwQjDLoEHgy+BCAMxwQaDMoEFgzRBCAM1AQlDNoELwzgBDYM5gRKDOkEVQznBF8M+QRmDPQEdQz+BHoMAgWBDA4FfwwaBYMMIAWODCIFkwwUBZMMDAWKDAIFigz3BAcAaAcqBWQHIgVgByQFXQcrBV8HLgVmBzIFaAcqBRAApww+Ba4MPAW1DEAFtww1BakMMgWgDCgFkAwvBYsMJAWADCQFfgwuBYMMNQWODDYFkQxEBZQMTAWfDEEFpww+BQkAiwRVBZMEVAWcBFQFlwRQBZMEUAWHBFQFhARXBYgEWgWLBFUFCACeBG8FmQRvBYwEcgWDBHcFhgR4BZMEdQWeBHEFngRvBRAANQJpBTACaAUfAmwFHAJwBRQCcwUSAnYFBwJ4BQQCfQUEAoAFDwJ+BRUCfAUeAnsFIgJ3BScCcwUxAm8FNQJpBSEA1wR/BdAEdgXXBHkF3QR3BdoEdAXjBHEF5wR0BfEEcAXuBGkF9QRrBfYEZgX6BF8F9QRXBfEEVgXqBFgF7ARgBeoEYgXeBFkF2ARZBd8EXgXVBGAFywRgBbcEYAW2BGMFvARnBbgEaQXABG8FygR/BdEEhQXZBIgF3gSIBdwEhQXXBH8FCwDZAaAF4wGhBd8BlgXoAY4F5AGOBd4BkgXaAZcF1QGaBdQBnwXUAaIF2QGgBRYApAx/Ba8MbgWgDHEFmgxjBaMMWAWjDFEFmwxXBZUMUAWTDFgFlAxiBZMMbQWVDHQFlgyCBZAMiwWRDJkFmgyeBZYMogWbDKQFnQydBaEMkwWgDIoFpAx/BQwAxAaPBbIGiQWkBooFrAaVBacGnwW1BqcFvAarBcUGrAXPBqYFygafBcwGmAXEBo8FBgCHB7AFgQeoBXYHrgV1B7IFhAe1BYcHsAUJAA4BvwUEAbsF/wC+Bf0AwwUGAcYFDAHIBRIBxwUXAcQFDgG/BSwA6gbOBd8GxAXpBsUF9AbFBfIGvQXpBrQF8wazBf0GpgUEB6UFCgeZBQ0HlQUZB5MFGAeNBRIHigUWB4UFDQeABQAHgAXvBn0F6gZ/BeQGegXbBnsF1AZ4Bc4GegXdBoQF5gaGBdYGiAXTBowF3gaPBdgGlAXaBpsF6QaaBesGoAXkBqYF2AaoBdUGqwXZBq8F1gayBdAGrQXQBrcFyga8Bc4GxgXWBs4F3gbOBeoGzgUHAJAA2wWKANoFhADbBX0A3gWHAOAFjwDfBZAA2wUIAO8D8gXrA+wF5wPtBeQD8AXlA/EF6QP0Be0D9AXvA/IFBwDVA/cFyQPyBcID8gXAA/UFyAP5BdUD+QXVA/cFDABTAAIGWQAABl8AAQZnAP4FcQD9BXAA/AVpAPoFYQD8BV0A/gVUAP0FUgD+BVMAAgYUALQDFQa2AxAGuwMSBsEDDwbMAwwG2AMJBtgDBAbgAwUG5wMBBt4D/gXPAwEGyQMFBr8DAAaxA/sFrQMABqAD/wWoAwQGqgMMBq0DFQa0AxUGFAB3Bh0GdQYWBoAGDwZzBggGVgYBBk0G/wVABgAGJAYEBi4GCAYYBg0GKgYPBioGEgYVBhQGGwYbBisGHAY6BhUGSQYbBlYGGAZmBh0GdwYdBgkAEQQjBgYEIwYEBCgGCAQtBhEELwYZBCwGGQQoBhgEJgYRBCMGCwBMAzcGRQM0BjgDNwYwAzYGIgM6BisDPQYyA0EGPAM/BkIDPQZFAzsGTAM3BgwAAABPBhAOSAYFDkgGAw5LBgAATwYBAFAGCgBQBhgATQYXAEsGDQBJBgAASAYAAE8GpAN/AzsGfwMxBowDOQaYAzIGlQMrBp8DJAapAysGsAM0BrEDPwa/Az4GzgM9BtsDOAbcAzMG1AMtBtsDKAbaAyMGxwMcBrkDGwauAx4GqwMZBqIDEAafAwwGkwMFBoUDBAZ9AwAGfAP6BXED+AVkA/AFWgPlBVYD3QVVA9EFZAPQBWgDxgVtA78FewPBBY4DvQWYA7kFnwO0BasDsQW2A60FxgOsBdEDqwXQA6MF0wOZBdoDjgXpA4QF8QOHBfYDkgXxA6EF6gOnBfoDqwUFBLIFCwS5BQoEwAUDBMkF9wPQBQME2wX+A+QF+wPzBQIE9gUTBPMFHQTyBSYE9AUvBPEFOwTrBT4E5wVQBOcFUATeBVME0gVcBNAFYwTKBXIE0AV8BNsFggTfBYoE1gWXBMoFogS+BZ4EtwWrBLIFtASsBcQEqQXLBKYFzwSeBdYEnAXaBJkF2wSNBdQEigXNBIYFvASDBbAEegWfBHkFiQR7BXoEewVwBHoFaARzBVsEbwVMBGEFQQRYBUkEWgVZBGcFbgRvBX0EcAWGBGsFfQRlBYAEWgWDBFIFkARNBaEETwWrBFoFqwRTBbIETwWmBEkFjwRDBYYEPwV6BDcFcwQ4BXIEQQWEBEkFdARJBWkERwVqBEQFYAQ/BVUEPAVLBDkFRQQyBUQEMQVEBCsFRwQmBUsEJgVKBCkFTQQnBUwEJAVGBCMFQQQjBTkEIQU1BCEFLwQgBScEHQU2BB8FOQQdBSsEGgUkBBoFJAQcBSEEGQUkBBgFIgQRBRsECQUaBAwFGAQMBRUEDwUXBAoFGQQIBRkEBAUWBAAFEQT4BBAE+QQTBP8EDgQDBQwECwULBAcFDQQBBQYEAgUNBP8EDQT2BBAE9QQRBPIEEwToBAwE4AQCBN0E+wPXBPYD1wTxA9ME8APQBOUDyQTfA8QE2wO+BNkDtwTbA7AE3gOoBOMDoQTjA5wE5wORBOcDigTnA4YE5AOABOEDfwTcA4AE2wOEBNcDhwTSA48EzQOXBMsDmwTNA6IEywOnBMMDrwS/A7EEtQOsBLMDrQSuA7IEqAO0BJ0DswSUA7QEjAOzBIgDsgSKA68EigOrBIwDqQSKA6gEhgOpBIIDpwR7A6cEdAOtBGsDrARkA64EXgOtBFUDqwRMA6MEQgOfBD0DmgQ6A5YEOgOPBDsDigQ9A4cEPQOHBD0DhwQ5A34ENwN3BDYDaQQ1A2QENwNfBDoDWgQ8A1IEQwNLBEUDRQRJA0AEVAM+BFgDOQRhAzwEaAM9BHADPwR2A0EEfANFBH8DSwR/A1MEgQNWBIgDWQSTA1sEmwNbBKEDWwSkA1kEpANUBJ4DTwScA0gEngNHBJwDQgSaAzsElwM9BJUDPQSVAzwElwM7BJcDOQSVAzQElgMzBJUDLwSWAy4ElAMpBJIDJwSRAyYEjwMjBJIDIQSTAyMElgMhBJcDIQSZAyMEnAMjBJ0DIgSeAyIEowMiBKgDIgSrAyMErAMkBK8DJASyAyMEtAMjBLYDJAS7AyMEvAMiBL8DIATCAx4ExgMdBMkDGgTIAxkExwMXBMgDEwTGAxAExQMMBMQDBwTFAwUExQMABMQD/wPDA/sDwwP4A8ED9gPCA/MDwwPxA8YD7APKA+gDzwPkA9ID4APSA94D1gPeA9cD3gPaA9wD3wPdA+MD3wPpA+ED7APkA/ID5APxA+MD9wPiA/sD4AP/A90DAgTbAwgE2gMPBOEDEwTiAxME5gMVBO4DGwTzAyEE8wMiBPUDKgT0AzIE+QM2BPwDOgQABD4EAARBBP0DPwT6Az4E9wM5BPYDPATyAzwE7AM3BOcDOwTfAz8E3wNCBOcDPgTqAz4E8gNKBPYDSQT6A00E/gNQBPcDVwT2A14E8QNeBO4DZwTtA3IE7gN3BOoDfwTpA4UE7AOFBO4DkQTvA50E7wOVBOwDmATnA6AE5wOoBOIDqQTaA64E2gOyBNgDuQTUA78EzQO/BMgDwwTIA8kEwwPNBMAD2QS+A9oEwAPiBMAD7AS+A/AEvAP3BLoDAgWyAwMFrgMHBa4DCQWoAw8FlwMUBZUDFQWOAw0FhgMQBYMDIgWCAyIFeAMqBX4DNgV7A0cFdANMBW8DSgVpA1YFbANpBWcDeAVnA4cFXwOUBVQDmwVRA6QFUQOoBU0DqwVBA60FOwOpBSoDpAUkA5YFFgOPBQoDiAUCA4UFAQOCBfoCgwXnAoAF2AJ/BdECfAXNAnoFwAJwBbMCbwWpAmYFpAJkBZ4CWQWeAkoFmgJCBZYCNwWTAiwFiwIjBYECIgV6AiMFdAIhBWoCHwVlAhgFYAINBU4CBAVGAv0EQgL5BDgC8gQyAu4ELALjBCYC2wQoAtYEJwLNBCwCxgQrAsAEMQK/BCwCzAQjAsoEHALRBBgC0AQTAscEBgK4BAECpAT/AZkEAAKbBPoBmQTyAZsE7QGVBOoBigToAYEE7AF9BOkBfgTfAYUE3AGKBOABjQTaAYQE1wF8BNEBewTHAXgEwgFvBMIBZwS8AWQEtQFuBK4BeASsAXQEowFoBJ0BYgSRAVkEjQFVBIkBWAR+AV4EeAFaBHkBUQR5AU0EdwFEBHMBQgRqAT4EaQEyBG0BJwR0ARsEeQEXBIABGgSGARUEjAEUBJ0BGASnASMErwEUBLIBHQS6ASAEywEsBMcBMQTcASoE3wEnBNIBIQTUASQE4gEnBPUBLAT7ASkEBQIoBBACLAQRAjIEIQI5BDECPgRAAjsETwI+BFcCPQRjAkMEcAJFBIMCSASYAksErgJKBL4CSATNAj4E0gI9BNYCKgTgAhgE6wIQBPICDAT6Ag0E/QIFBAoD+wMcA/IDMAPuAzUD6gM8A+MDQwPbA0cD3wNLA9oDVQPdA1wD5QNiA+oDaQPoA24D5ANpA94DbgPgA3AD3wN5A+IDewPkA4ED6AOIA+cDjAPtA44D8wOSA/IDlQP2A5YD9QObA/gDngP9A58DAQSlAwUEqgMBBK0DAwSzAwEEvAMDBL4DAQTHA/0DzAP6A88D+APVA/oD1wP4A9gD9gPbA/ED3gPsA90D6gPaA+YD1wPkA9cD4wPVA+gDzwPlA84D5APNA98DzAPdA9ID3APQA9kD0QPXA9UD0wPWA9AD1wPMA9cDzAPVA8oD1gPFA9gDwwPbA8QD3APEA98DwQPhA70D4wO6A+QDuQPnA7YD6QO3A+YDtQPkA7MD5gOvA+cDrgPpA64D7AOvA/ADrQPxA68D8wOrA/YDpwP6A6UD/QOgAwEEmwMFBJwDBwSeAwUEnwMGBJ0DCQSaAwoEmQMHBJMDCASQAwkEiwMLBIYDCwSDAw0EfgMPBHgDDwRzAxEEbgMVBGIDIARdAyMEVQMmBE8DJQRHAyIEQgMhBDsDIwQ0AyUEKwMqBCMDKwQYAzAEDwM0BA0DNwQHAzgE/QI7BPkCPwTuAkUE6QJLBOcCUATqAlEE6QJUBOsCVwTrAloE6AJfBOcCYwTkAmgE2wJyBNECeQTMAoAEwwKEBMIChgTDAowEvgKPBLgClAS2ApsEsAKbBKoCoQSmAqYEpQKpBKACsAScArgEnQK8BJUCwASSAr8EjALCBIsCvgSMArkEjQKyBJECrgSYAqcEmgKkBJsCpASdAqAEngKgBKACmgSjApcEpgKUBKwCjwSvAoUEsgKBBLUCfAS1AncEugJ3BL4CcgTCAm4EwgJsBL0CaAS8AmgEuQJuBLICdASrAnkEpgJ7BKYCgwSlAogEoAKLBJkCkASYAo4ElgKRBI8CkwSJApkEigKaBI4CmQSSAp0EkgKiBIsCqQSFAqwEgQKyBH0CuAR5AsAEdQLJBHMCzgRtAtQEaALVBGcC2ARhAtkEXgLbBFQC3ARSAt4EUQLkBEcC7gQ/AvwEPwL+BDoCAQUzAgoFMQISBSwCFwUuAh8FLgIoBSsCMAUvAjkFMQJLBS8CWQUsAmEFKQJmBSoCaAU5AmQFPgJbBUECXgU/AmYFPAJuBToCbgUnAngFIAJ8BQ4CgAUIAokFCgKPBf0BlAX7AZwF7wGjBe8BqAXpAawF4AGvBd4BuAXRAcAFywHJBcIBygWyAcoFpgHNBZEB1wWIAdkFdgHdBWgB3AVVAeEFSQHlBT4B4wVAAdwFOgHbBS8B2QUmAdYFGwHUBRkB2QUeAeMFKQHmBSYB6QUZAeMFEgHdBQQB1gULAdEFAgHJBfcAxQXtAMIF6gC+BdsAuQXYALQFzACwBcUAsAW8AK4FsgCqBakApwWYAKQFlwCmBaIAqgWrAK0FtgCzBcIAtAXHALgF1QC+BdcAwAXfAMQF4ADLBeYA0QXaAM4F1wDQBdEAzAXLANEFyADOBcQA0wW6AM8FtADPBbMA1QW1ANgFrwDcBaIA2gWZAN8FkwDhBZIA5wWLAOsFjwDxBZcA9gWaAPsFogD8BakA+wWxAP8FuQD/BcAAAga+AAYGuQAIBsAADAa6AAwGrwAKBqwABwalAAoGlgAIBogACwaEAA8GdwAVBoUAGQabAB4GowAeBqIAGQa3ABkGrwAfBqMAIwacACgGkgAsBoQAMAaKADUGnAA1BqgAOgarAD8GtQBDBr8ARAbSAEkG2wBIBuoATgb5AEsGAQFHBgUBSQYWAUgGFQFGBiUBRAYvAUUGRAFCBlcBQQZfAUAGbAFCBnsBPwaGAT0GmQE7BqkBNgazATUGvAE5BsgBPAbXATsG5gE/BvYBQgb9AT4GBAJABgcCRQYOAkQGHgI7BiwCQgYtAjoGOQI8Bj0CPwZJAj4GWQI6BnACNgZ+AjQGiAI1BpUCMAaHAisGmQIpBrQCKga9AiwGxwImBtICKwbIAi8GzgIzBtoCMwbjAjQG6wIyBvUCLAYAAy0GEQMoBiEDKgYwAyoGLgMwBjcDMgZHAy4GRwMlBk0DLQZVAy0GWgM3Bk8DPQZDA0EGRANMBlADUwZdA1IGZwNNBnUDQgZsAz0GfwM7Bi0AkgJfBo0CWwakAl4GsQJZBr0CXgbGAloGzgJRBtMCVQbMAl8G1QJgBt8CXwbqAlsG8AJRBvMCSgYEA0UGFgNABhUDPAYFAzsGCwM3BggDNAb2AjUG5AI4BtkCNwbGAjQGqAIyBpsCMQaVAjYGiAI5Bn8COAZzAkAGeQJBBokCQgaXAkIGpAJEBpECRgZ7AkUGbQJFBmgCSQZ/Ak0GbwJNBl4CUAZmAlcGbQJbBogCYQaSAl8GBgDzAmIG6gJcBtsCYwbeAmQG6wJkBvMCYgYLAA0EXwYNBFwGAwRdBvgDXQbtA1sG6gNcBt8DYQbgA2UG5ANmBvsDZQYNBF8GSQCmA2AGrgNZBrcDYQbRA2YG4gNbBuADVQb0A1gG/gNcBhQEVgYiBFIGIwRNBjYEUAZABEkGWARFBmEEQQZqBDgGWAQzBm8ELQZ/BCoGjgQhBp0EIQaaBBoGiQQOBn0EEgZtBBwGYAQbBl8EFQZpBA8GdwQKBnsECAaBBP4FfgT3BXEE+QVYBAEGZgT5BXEE8wVyBO8FVwTzBUIE+QU2BP4FOQQBBioEBgYcBAsGHAQIBv8DBgb2AwoG/QMRBhAEEQYkBBMGIQQWBiUEGwYxBCUGLwQpBisELQYcBDIGBwQ1Bg4ENwYDBD4G+gM+BvIDQgbtAz8G2wM9BrcDQAahA0MGkQNEBokDSAaTA0wGhQNMBoIDVgaKA18GlANjBq4DZgamA2AGDwAcA2YGKANkBjoDZgY9A2MGMwNeBkMDWgZBA1EGMANNBicDTgYgA1EGBwNZBgcDXAYcA1sGEQNiBhwDZgYIAKQMYAaVDGAGgAxhBn8MYgaIDGYGlQxnBqMMYwakDGAGCwBkA1wGWQNUBk4DVQZIA10GSANiBk0DZwZXA2kGbANpBn8DZwZwA14GZANcBhEAUwJOBjkCSQY0Ak0GHQJTBiACVgYoAl4GMQJlBicCawZJAmwGVwJqBnACagZ6AmcGhQJjBngCYAZgAlkGUwJSBlMCTgYHAOsMcwbgDG8G0AxwBr0MdAbADHcG0gx1BusMcwYIAGADcgZaA24GTANvBkADcQZFA3YGUwN4BlwDdQZgA3IGCQCzDHgGqwxwBoYMcAZ2DG4GYgx1BmcMewZ0DH0Gjwx9BrMMeAYNAC8DgwY3A38GNwN5BjIDcgYiA3EGFwNzBhcDeAYHA3gGBgN/BhEDfwYgA4IGLgOCBi8DgwYWAM4CfgbSAnoG2wJ8BuUCfAbnAncG4QJyBr8CcQamAmwGlwJsBpUCbwaqAnQGfQJyBm8CdAZ9An4GhgKBBqICfQa0AncGxQJ3BrcCgAbAAoQGygKDBs4CfgYaAEcJRwZBCUYGIQlIBh4JTAYMCU8GCwlUBhUJVgYUCVwGKAlkBh8JZgY3CW4GNAlzBksJeAZsCX8GjQmABp4JhAayCYUGuQmBBrIJfgaOCXkGcAl1BlEJawZCCWEGMglYBjQJTwZHCUcGHABVA4cGYAOEBnQDhAZ9A4EGegN9BoYDegaMA3gGmgN4BqgDdwa4A3kGzAN6Bt0DeQbnA3UG6gNxBuMDbwbVA2wGyANuBqsDbAaXA2wGhgNtBmwDcAZoA3YGZwN7Bl0DfwZIA4AGPQOEBkEDiAZVA4cGCwB+AowGfQKFBnUCgQZsAoEGWQJ9BkkCewY7An0GTAKFBmECiwZwAosGfgKMBjQA8wghBfgIGgX9CBkFAAkXBfgIFgX2CA4F9AgKBfEICAXxCAMF9Aj8BP0I+gQECfUEEwnzBCIJ9gQjCfgEIQn/BCMJCgUbCQ0FHgkUBRcJFAUZCR0FIwkaBSsJHgUkCSQFIQkpBRkJJwUYCR8FFQkmBRQJKAUXCSwFFQkwBQkJMwUFCTwF/wg/Bf8IQgUJCUEFCQlIBRIJSgUaCUkFHAlSBRoJWQUQCVgFCAlaBfwIVgXzCFQF7ghOBeUITAXbCEIF5Ag5BeMIMgXuCCYF8wghBSgFAAA2BhkALgYzACQGMgAeBjkAGwY2ACMGUQAhBmUAGAZbABMGSwASBkoACQZGAAcGPQAHBjUACgYoAA0GJgASBhwAEwYQABIGCwAVBg0AGQYBABcGBgASBgAADgYQDg4GAw4JBvYNCgb/DQUGBQ79BQoO+gULDvYFCA7zBfYN9QXaDe4F0Q3tBcEN5QWzDd8Frw3bBaEN4gWHDdoFgg3eBXkN2QVrDdsFaA3UBVwNygVdDcYFaA3EBWcNtgVdDbUFWQ2tBV0NqQVMDaMFSA2YBTkNlgU2DYsFKA2CBSQNiQUgDZgFGg2uBR8NvAUoDcIFKA3GBTgNyQVJDdUFWw3fBW0N5wV1DfYFaQ31BWMN7AVJDeEFQQ3uBScN6gUODdoFFg3TBQAN0QXxDNAF8QzXBeIM2QXVDNQFtwzVBZYM0gV2DL8FTwynBV8MpgVkDKAFbgyeBXQMowV/DKIFjQyXBY4MjgWGDIQFhQx4BYEMaAVyDFoFbgxTBWEMRwVTDDwFTQw2BT8MMAU5DDAFMww1BSUMLgUkDCoFIAwrBRwMJwUZDCQFGQwdBRQMGwUSDBkFDgwWBQgMFAUDDBIFAwwNBQIMDAUGDAsFDAwGBRQM+gQXDPQEFwzoBBMM4wQKDOEEAgzdBPkL3AT4C+EE+gvpBPUL8wT9C/UE9gv9BPEL/wTwC/4E7Qv9BOwL/wTqC/8E5wsBBeoLBQXsCwcF6wsIBe4LDgXtCxAF5wsRBeMLEwXVCxAFzQsMBcMLCQXICw4FxgsSBc4LGAXICx0FwAsaBbQLEwWuCw0FpAsMBZ8LBwWlCwEFrQv/BK0L+gS1C/gEwAv/BMkL+wTQC/sE0Qv1BMML8wS+C+0EtQvoBLAL4QS6C9wEvgvSBMQLyQTLC8EEywu5BMULtwTHC7EEzQuuBMsLpgTJC54EwwudBLwLkwS0C4UEqwt5BJ0LcASPC2gEhAtnBH4LYgR6C2UEdAthBGYLXARcC1oEWAtPBFMLTwRQC1YEUwtaBEULXQRAC1wEMwtTBCsLSgQpC0MEMAs4BDoLKwRDCyUESQsdBE0LCgRMC/kDRAvyAzgL7AMwC+MDJAvaAyAL4AMjC+cDGwvtAxML7gMPC/QDCgv+AwELAgT4CgIE+goKBPEKCgTwCv8D6wrwA+gK6APoCuAD7wrgA/MK1wP1Cs4D+grJAwALxwMFC8IDCAvBAw4LuwMSC7UDEguuAxELqQMSC6YDEwugAxcLnQMaC5QDGguRAxMLkAMKC5gD/gqgA/0KpQP3CqsD9gq0A/IKuQPzCsAD8QrFA+0KyAPrCs0D5grTA+EK2APfCtID3QrXA98K3gPiCucD4QrvA+QK9gPgCvwD4QoHBN0KDATaChgE2AolBNQKLQTNCigEwgohBLwKIgS2CiQEuQoxBLcKOgSvCkYEsQpJBKsKSwSkClMEoQpYBKAKXQSeCmIEmgpoBJEKaASSCmQEjwpeBIoKYASJCl8EhgpgBIIKYQSBCl0EegpdBG4KWwRuClMEaQpOBFsKRwRPCjsESAo1BD4KLgQ+CioEOQonBDAKJAQrCiMEKAobBCoKDgQrCgYEJwr9AycK7AMhCusDHQrjAyAK4AMXCt0DEwrXAw8K1AMGCt0DAQrrA/0J9QP6CfoD9QkDBPIJEATwCRYE5wkkBOMJNwTgCUQE4AlQBN4JWgTQCVQEyQlVBLwJYQTACWUEvQloBLIJcQSqCXMEpwl7BKAJggSNCYAEfQmABG8JfwRcCYIEUQmEBEYJhQRCCZIEPQmTBDUJkgQrCY0EHwmQBBUJmAQLCZsEBQmkBP0IsQT4CLAE8QizBO4IrwToCLAE6girBOkIqQTsCKIE8AiZBPUIlwT3CJME/giPBP4IiwT9CIcE/giEBAEJgQQDCX4EBAl8BAMJgwQGCYgECQmJBAwJhgQMCYAECgl6BAwJdgQOCXcEDgl0BBYJdgQeCXYEJAl1BCsJfAQyCYIEOQmJBDwJjAQ9CYsEPAmHBDsJhQQ8CX0EQAl2BEYJcwRNCXEEUwlwBFgJagRaCWcEXgllBF4JYwRaCV0EWQlaBFUJVwRRCVAETAlRBEoJTgRJCUkESglDBEkJQQRECUEEPgk+BD0JOQQ7CTcENQk3BDEJNAQxCTAELAktBCYJLgQgCSsEGwkrBBQJKAQSCSMEEgkgBAgJHAT4CBcE7wgQBOoIDwTnCBAE4ggMBNsICgTTCAkE0AgJBM4IBgTLCAYEyggDBMUIAwTCCAIEuwgCBLgICAS5CA4EtwgRBLUIGASyCBwEtAgdBLMIIQS0CCMEtAgnBLMILASvCC8ErwgzBKoINgSkCD8EoQhHBJoITgSWCE8EjwhZBI4IYASPCGYEiQhxBIQIdQR/CHcEfAh9BHwIfwR5CIQEdgiGBHMIjgRsCJYEZwidBGIInQRkCKIEZAimBGYIqgRlCKsEYginBGAInwReCJoEWwiYBFgInARTCKAETAivBEsIrgRPCKMEVQiZBF0IiQRhCIQEZAh+BG0IcwRrCHIEawhrBHcIYgR5CGAEfAhWBHoIVAR7CEoEfwg+BIMIPASICDgEjggsBJEIIwSWCB4EpAgVBKkIDwSvCAkEsggGBLcIAwS5CAAEuQj8A7MI+QO3CPcDuwj1A70I8QPBCOwDxgjsA9AI7wPaCPAD4wjzA+gI9APsCPYD8Qj2A/UI9gP5CPgD/wj5AwMJ/AMHCfwDBwn5AwYJ9AMGCe4DBAnrAwIJ4AP9CNUD9wjIA+4IuQPlCK4D2gihA9AImAPBCI8DtwiHA6wIewOqCHYDqAhzA6EIbwOeCGsDmwhqA5kIYwOWCF8DlAhZA5AIVQOLCEkDjAhDA5IIQAOTCD0DkAg3A5EINAOQCC8DkwgpA5gIHwObCB0DnQgYA5wIDgOeCAYDngj2AqAI8QKdCOoCmQjjApMI3QKJCNkCfgjUAnMIyQJvCMgCaAjAAmQIvgJjCLcCaAivAmoIqgJqCKcCbAinAmsInQJqCJkCbAiXAmsIkwJmCI8CXgiMAlIIhgJOCIMCTwh/AlEIfgJQCHkCTghxAk0IaQJKCGQCQwhfAkEIXgI9CFkCOghUAjUITQIpCEICIgg8AhsIOAIQCDQCCwgzAgoIMQIECDIC/wcwAvQHMgLuBzEC6gcxAt8HLQLXBywC0QcoAswHKALIBysCxQcsAsAHMALABy8CvgcxAr8HNwK7Bz4CvgdAAr4HRwK4B1ECswdZArMHWQKrB2YCpAduAqAHdQKeB38CmweGApgHlQKYB6EClwenApMHqwKOB7MCiAe/AoYHxgJ+B88CfQfXAnwH3QJ+B+YCgQfvAoIH9AKFB/0ChwcBA40HBwOQBwwDkQcTA5EHGQOOBxwDiwciA4kHKAOJByoDjAcuA4kHOAOHBz8DggdFA4MHRwOCB0oDfwdSA3cHXANtB2YDZgdvA2AHeQNgB3wDYgd/A2UHhwNnB44DZQeQA2gHmwNqB6MDZgepA2EHqwNfB7ADXQexA10HtANTB7ADTwexA0sHrgNDB68DPge1AzoHvAMzB8MDLAfDAyMHwwMbB8EDEwe/AwMHuQP9BrYD9AazA+sGtgPnBrYD4Aa4A9oGuAPOBrYDxwazA70GrwO7BrADuAawA64GtAOlBrwDnAbBA5YGyAOTBskDjAbNA4cG0gOFBtYDhAbdA38G4wN7BucDeQboA3YG6gN1Bu8DdAbxA3EG8gNrBvcDZwb3A2UG+gNlBvwDYgb+A2EGAARgBggEYQYMBF0GFARYBhcEXAYZBGEGIARjBiUEYgYrBGUGMARnBjkEZQZDBGQGSARlBk0EYwZSBF0GVgReBloEXgZfBGIGYgRlBmcEZQZqBGgGcQRuBngEcQZ5BHQGfwR0BoQEeAaLBH4GjgSFBpgEigacBJMGnQSbBqQEoAanBKgGrwSmBrwEqgbEBKsGygSxBtAEuwbVBMMG2QTKBuMEzQbqBNQG6gTaBuUE5AbmBO4G5ATyBuQE/AbpBAcH6wQNB+8EFwfyBCgH9AQ4B/UEPQfzBEcH9wRRB/cEVQf1BFwH9QRnB/oEbgf4BG4H8wR2B/cEdwf1BHIH8ARyB+sEdQfpBHQH4ARuB9sEbwfWBHUH1gR3B9EEewfPBIcHzASLB80EkwfLBKAHxwSlB74Erge8BLwHuATHB7MEzAe1BNEHugTOB8IE0QfGBNkHywTfB8wE7QfKBPAHxgT0B8YE9wfEBAEIwwQECMAEEQjABBsIvQQkCLoEKQi5BDEIvAQ1CL8EPgjABEUIvgRICLkESgi9BFIIugRaCLoEXwi8BGIIvwRhCMAEZAjFBGYIzARnCM8EZwjPBGsI1wRwCN4EcAjeBG8I5gRxCOoEbgjvBHII8wRsCPIEYwj0BFwI7gRNCO0ERQjyBDoI8wQ4CO8EMQjtBCcI8wQcCPMEFgj9BA8IAgUUCAoFDggPBRkIGAUoCBkFLAggBT8IHwVLCCUFVwgoBWgIKAV5CCEFhwgdBZMIHwWcCB4FqAgjBakIKAWnCC4FoQgyBZsIMwWYCDYFiwg/BX8IQwV3CEgFfghKBYYIUgWBCFYFjwhaBY8IXQWGCFsFfghaBXgIVwVuCFYFZghTBWYITQVrCEoFdQhLBXMIRwVoCEUFWwhABVUIQgVXCEYFTQhJBU4ISwVYCE8FVQhRBUUIUwVFCFcFOwhWBTgIUAUwCEkFMAhGBSsIRAUoCEUFJgg5BSAINQUdCC4FIAgoBSEIJAUqCCEFKAgfBRwIHgUYCBsFEAgWBQwIGgUNCBwFBggdBQEIHQX1BxsF/AcVBfcHFAXxBxQF7AcZBeoHFwXtBxEF8gcMBe4HCgXzBwUF+AcCBfgH/QTvB/8E8gf6BOwH+QTwB/AE6QfwBOEH9ATdB/wE2wcDBdcHCAXSBw0F0gcQBdAHEQXQBxMFygcXBckHGwXKByIFywclBcoHJwXIBygFxQcrBcAHLQW3BzAFsQc0BagHNwWgBz4Fogc/BZ0HQwWdB0cFlwdIBZQHRAWRB0cFkQdLBZEHSwWTB0wFiwdNBYMHSgWEB0UFgwdCBYYHPQWPBzgFlAcwBZ8HKAWnBygFqgclBacHIwWwByAFtwcdBcAHGAXBBxYFvwcSBbkHFwWxBxgFrQcSBbQHDgWzBwkFrgcIBakHAAWlB/8EpQcCBacHCAWpBwoFpQcPBaIHFAWeBxYFmwcaBZUHHAWQByAFiQchBYEHJQV4BywFcQcxBW4HOwVpBzwFYQdABVwHPgVWBzoFUgc5BUkHMwU2BzYFJwczBSYHLQUmBycFHQcgBRAHHgUPBxsFCQcVBQUHDQUJBwcFAwcDBQEH/AT6BvoE8wbzBOYG8wTcBvME1gbvBNIG6wTNBuwEygbwBMcG9QS9BvcEuQb0BLQG9gSvBvUEsQb9BLAGAwWrBgQFqQYHBaoGDgWuBhIFrgYWBbAGHAWwBiAFrgYjBa4GJwWuBi4FqgYyBbgGOQXEBjgF0gY4Bd0GNgXlBjcF9QY2BfoGPAX8BlAF8gZbBeoGYAXbBmQF2gZrBecGbQX4BmoF9QZ2Bf4GcQUVB3kFGAeBBSEHgwUpB4UFLgeIBTcHlwVFB5sFTQebBU8HnQVXB50FWQebBWAHoAVeB6QFXQeqBVkHrwVZB7kFWwe8BV0HvwVmB8AFagfCBXIHxQVxB8AFbwe9BXAHugV1B7kFcwe1BXAHtgVoB68FaweqBWsHpgV1B6QFdQegBYAHogWFB6UFkAehBZUHngWcB6EFrAelBbgHqQXCB6cFwwekBc0HpAXPB6kF3QesBdsHtAXbB7wF4AfCBekHxgXxB74F+Qe+BfsHxgX8B8wF+QfLBfIHzgXxB9QF/gfXBQsI2AUVCNYFIAjXBSsI3AUhCOEFDwjgBf0H3QXtB9oF5wfgBd0H4wXfB+0F2wf2Bd8H/AXoBwIG/wcNBgYIDwYFCBMG9wcYBuYHFQbcBw4G3gcIBs4HAAa6B/cFswfpBboH4gXEB90FuwfSBbAHzwWsB74Fpwe1BZsHtgWVB64FiQeuBYYHtwV+B8IFdgfRBXAH1wVcB8sFTwfJBUEHzgU9B9kFOgfwBUMH9gVeB/8FcQcJBoQHFwacByoGrAcyBsgHPgbeB0MG7gdCBv0HSgYQCEoGIghMBkEIRQY0CEIGPwg8BkkIPwZaCDkGdQg3BpsIKwajCCcGowggBpgIGwaICBgGWwggBlQIHgZkCBcGZQgIBnIIBQZ6CAMGewgHBnUIDAZ8CA8GlAgJBpwIDAaWCBMGrQgdBrYIHAbACBkGxQggBr0IJgbCCCwGuwgyBtcILgbcCCkG0AgoBtAIIgbXCB8G5wghBukIJwb+CCwGIQk1BikJNAYfCS4GKwktBjIJMAZFCTEGVAk1Bl8JLwZrCTUGYAk7BmYJPwaDCTsGkQk4BrUJLQa8CTIGsgk3BrEJOgalCTsGqQk/BqMJRwajCUoGtQlTBrwJXAbDCV4G3glcBuAJVgbWCU4G3QlLBuAJRAbeCTYG6QkwBuQJKQbRCRsG3AkaBuAJHQbrCSAG7gklBvcJKgbxCS8G9Qk2BuoJNwboCTwG8AlGBuMJTgb1CVUG8wlcBvgJXQb9CVcG+QlNBgQKTAb/CVMGEApXBiUKVwY3ClEGLgpaBi0KZAY/CmcGVwpmBmwKZwZkCm0GcApzBnsKcwaPCngGqQp6BqwKfAbHCn0Gzwp7BuUKgAb4CoAG+gqFBgQLiQYcC40GLQuKBh8LhwY2C4YGOAuBBkILgwZfC4MGdQt+Bn0LegZ7C3UGcAtyBlYLbQZOC2oGWgtoBmkLZgZyC2gGdwthBnwLZAaMC2YGrAtkBq4LXwbYC14G2QtlBu4LZAb+C2QGDgxeBhMMWAYNDFQGGQxMBikMSAYzDFIGQwxOBlQMUQZnDE0GbgxQBn8MTwZ3DFgGhQxcBt8MVgboDFAGAg1IBioNSgY+DUkGRg1FBkUNPQZRDToGXw08BnENPQaDDTsGlg08BqgNMwa0DTYGrA09BrENQQbQDT4G5Q0/BgIOOgYAADYGBwBeA4sGWQOLBkYDjAZEA44GWAOOBl8DjAZeA4sGBwC6Ao0GpwKKBpkCjQahApEGrwKSBr0CkAa6Ao0GCAD/B48G6QeKBtcHjQbeB48G2AeTBu0HlQbxB5EG/wePBgcAvwKWBrMClAajApQGowKWBq0CmQayApgGvwKWBgkASgORBjsDjgYzA5EGLgOVBi4DmQY7A5gGQAOYBkwDlAZKA5EGCwAfA5MGIwOPBhMDkAYDA5MG7AKUBvYClwbqApkG6QKdBv0CnAYYA5gGHwOTBgcAIwuTBuoKjwb9CpwGBQudBgwLnQYmC5cGIwuTBhIAvwehBt8HmgbGB5YGwQeOBrgHjAazB4QGpweEBpIHigabB40GjAeQBngHmQZwB6EGjAekBpEHoQafB6EGowekBrIHpQa/B6EGDAAGCKgGGgilBgsInwbuB54G0QegBs8HogbBB6MGtgenBtUHqgbjB6gG7QerBgYIqAYPAAcJqQb6CKgG8QinBvAIpgbkCKQG2QimBt8IqgbICKoG3AisBusIrAbtCKkG8wisBvwIrQYLCasGBwmpBgsA7wqZBtoKmAa+CpoGrQqeBqUKpQaYCqcGsgquBscKsQbbCqsG8gqiBu8KmQYVAKIDoQauA50GoAOaBo4DkwZ8A5IGZwOTBlwDmAZdA5sGZQOeBlIDngZHA6EGQQOmBkgDqgZPA60GWQOuBlUDsAZsA7EGeQOrBooDqQaaA6cGogOhBkEAWwTDBnYEwgaLBMEGnQS+Bp0EvAaFBLcGbAS1BmMEswZ5BLMGYgStBlEEqgZABKIGLASgBiUEngYHBJ0GFQScBg4EmgYWBJUGDQSSBv0Djwb4A4sG6gOIBuwDhgb9A4YG/QOEBuIDfgbIA4EGqwN/BpwDgAaJA4EGiAOGBpoDiAaVA48GnAOQBrYDiwapA5IGmAOUBqADmAayA5oGtQOdBqcDoQajA6cGvgOmBsYDpQbWA6kGvwOqBpwDqQaKA60GggOxBnYDtAZ0A7cGgwO5Bo8DuQaiA7sGsQO/Br0DvgbIA7sG0APBBt0DwgbvA8MGDQTEBhMEwwYwBMQGRQTEBlsEwwaEAPkFxwY4Br8GJQa7Bv8FuwbJBboGzgW4BvEFuQYQBrYGIwa5BisGtQYgBrAGOgazBmoGtwaIBrUGjgaxBmUGqgZgBqcGQAamBlcGpQZLBp4GQwaYBkMGjAZPBoYGQAaFBi8GggZCBn0GRAZ0BjkGdAZGBmsGMAZqBjwGZgY4BmMGKgZhBhwGYQYpBloGKQZWBhUGWgYQBlcGHgZVBisGTwYuBkcGHQZFBhUGSQYJBk4GDAZIBgAGQgYbBkIGKQZBBg4GOQbzBTEG1QUtBsoFLQbABSkGsgUfBpwFGAaWBRcGiAUVBnoFEwZxBQwGcQUFBmwF/wVcBfcFYAXvBVsF5wVWBd0FSAXcBTkF5QUlBeUFHAXqBRUF9AUEBQAG/wQHBv0EEAbvBBkG8wQgBuwEJAb2BDAGBQUzBgkFNwYLBT8GAAU8BvoEOgbxBDkG5QQ8BuQEQwboBEgG8gRIBgYFRgb1BEwG7ARPBuIETgbaBFEG5QRaBt8EXgbXBGUGywRvBr4Ecwa+BHcGowR9Bo4EfgZzBH0GWwR9Bk8EgAY+BIYGWASJBmwEigZCBIwGKwSQBiwElAZSBJkGdwSeBnsEogZgBKUGaQSpBosEsAaaBLEGlgS2Bq0EuAbMBLoG6wS6BvYEtwYQBbwGKAW5BjYFuAZLBbUGMwW6BjQFvgZWBcQGeQXEBoYFxwapBcgG+QXHBg==";
+
+const decodeCoastlines = (encoded: string): LonLat[][] => {
+  const raw = atob(encoded);
+  const bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+  const read = () => {
+    const value = view.getUint16(offset, true);
+    offset += 2;
+    return value;
+  };
+
+  const lineCount = read();
+  const lines: LonLat[][] = [];
+
+  for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
+    const pointCount = read();
+    const line: LonLat[] = [];
+    for (let pointIndex = 0; pointIndex < pointCount; pointIndex++) {
+      const lon = read() / 10 - 180;
+      const lat = read() / 10 - 90;
+      line.push([lon, lat]);
+    }
+    lines.push(line);
+  }
+
+  return lines;
+};
+
+const COASTLINES = decodeCoastlines(NATURAL_EARTH_110M);
+
+const createGraticule = (): LonLat[][] => {
+  const lines: LonLat[][] = [];
+
+  for (let lat = -60; lat <= 60; lat += 20) {
+    const line: LonLat[] = [];
+    for (let lon = -180; lon <= 180; lon += 4) {
+      line.push([lon, lat]);
+    }
+    lines.push(line);
+  }
+
+  for (let lon = -160; lon <= 180; lon += 20) {
+    const line: LonLat[] = [];
+    for (let lat = -84; lat <= 84; lat += 4) {
+      line.push([lon, lat]);
+    }
+    lines.push(line);
+  }
+
+  return lines;
+};
+
+const GRATICULE = createGraticule();
+
+const DATA_CENTERS: readonly DataCenter[] = [
+  {code: "PDX", city: "Portland", lon: -122.68, lat: 45.52},
+  {code: "IAD", city: "Ashburn", lon: -77.49, lat: 39.04},
+  {code: "GRU", city: "São Paulo", lon: -46.63, lat: -23.55},
+  {code: "FRA", city: "Frankfurt", lon: 8.68, lat: 50.11},
+  {code: "DXB", city: "Dubai", lon: 55.27, lat: 25.2},
+  {code: "BOM", city: "Mumbai", lon: 72.88, lat: 19.08},
+  {code: "SIN", city: "Singapore", lon: 103.82, lat: 1.35},
+  {code: "TYO", city: "Tokyo", lon: 139.69, lat: 35.68},
+  {code: "SYD", city: "Sydney", lon: 151.21, lat: -33.87},
+] as const;
+
+const ROUTES: readonly RouteDefinition[] = [
+  {from: "FRA", to: "IAD", priority: true},
+  {from: "FRA", to: "GRU", priority: true},
+  {from: "FRA", to: "DXB", priority: true},
+  {from: "PDX", to: "IAD"},
+  {from: "IAD", to: "GRU"},
+  {from: "DXB", to: "BOM"},
+  {from: "BOM", to: "SIN"},
+  {from: "SIN", to: "TYO"},
+  {from: "SIN", to: "SYD"},
+  {from: "TYO", to: "PDX"},
+] as const;
+
+const CENTER_BY_CODE = new Map(DATA_CENTERS.map((center) => [center.code, center]));
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const smooth = (value: number) =>
+  Easing.inOut(Easing.cubic)(clamp01(value));
+
+const phaseWindow = (
+  frame: number,
+  start: number,
+  end: number,
+  fade = 32,
+) =>
+  interpolate(
+    frame,
+    [start, start + fade, end - fade, end],
+    [0, 1, 1, 0],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+
+const seeded = (seed: number) => {
+  const value = Math.sin(seed * 91.173 + 17.731) * 43758.5453;
+  return value - Math.floor(value);
+};
+
+const projectPoint = (
+  lon: number,
+  lat: number,
+  centerLon: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+): ProjectedPoint => {
+  const lambda = (lon - centerLon) * DEG;
+  const phi = lat * DEG;
+  const cosPhi = Math.cos(phi);
+  const z = cosPhi * Math.cos(lambda);
+
+  return {
+    x: centerX + radius * cosPhi * Math.sin(lambda),
+    y: centerY - radius * Math.sin(phi),
+    z,
+    visible: z > 0.015,
+  };
+};
+
+const projectedPath = (
+  line: readonly LonLat[],
+  centerLon: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+) => {
+  let path = "";
+  let drawing = false;
+
+  for (const [lon, lat] of line) {
+    const point = projectPoint(lon, lat, centerLon, centerX, centerY, radius);
+    if (!point.visible) {
+      drawing = false;
+      continue;
+    }
+
+    path +=
+      (drawing ? "L" : "M") +
+      point.x.toFixed(1) +
+      " " +
+      point.y.toFixed(1) +
+      " ";
+    drawing = true;
+  }
+
+  return path;
+};
+
+const toVector = ([lon, lat]: LonLat) => {
+  const lambda = lon * DEG;
+  const phi = lat * DEG;
+  const cosPhi = Math.cos(phi);
+  return [
+    cosPhi * Math.cos(lambda),
+    cosPhi * Math.sin(lambda),
+    Math.sin(phi),
+  ] as const;
+};
+
+const fromVector = (x: number, y: number, z: number): LonLat => [
+  Math.atan2(y, x) / DEG,
+  Math.atan2(z, Math.hypot(x, y)) / DEG,
 ];
 
-const PhaseHeader: React.FC<{frame: number}> = ({frame}) => {
-  return (
-    <>
-      {PHASES.map((phase) => {
-        const opacity = windowOpacity(frame, phase.start, phase.end, 16);
-        const enter = progress(frame, phase.start, phase.start + 28);
-        const y = interpolate(enter, [0, 1], [16, 0]);
-        return (
-          <div
-            key={phase.title}
-            style={{
-              position: "absolute",
-              left: 420,
-              top: 50 + y,
-              width: 1080,
-              textAlign: "center",
-              opacity,
-            }}
-          >
-            <div
-              style={{
-                color: phase.color,
-                fontFamily: FONT,
-                fontSize: 20,
-                fontWeight: 900,
-                letterSpacing: 4.2,
-                lineHeight: 1.15,
-                marginBottom: 10,
-              }}
-            >
-              {phase.eyebrow}
-            </div>
-            <div
-              style={{
-                color: C.navy,
-                fontFamily: FONT,
-                fontSize: 53,
-                fontWeight: 950,
-                letterSpacing: -1.5,
-                lineHeight: 1.02,
-              }}
-            >
-              {phase.title}
-            </div>
-            <div
-              style={{
-                color: C.slate,
-                fontFamily: FONT,
-                fontSize: 24,
-                fontWeight: 650,
-                letterSpacing: 0.2,
-                lineHeight: 1.25,
-                marginTop: 12,
-              }}
-            >
-              {phase.subtitle}
-            </div>
-          </div>
-        );
-      })}
-    </>
-  );
+const greatCircle = (start: LonLat, end: LonLat, steps = 56): LonLat[] => {
+  const a = toVector(start);
+  const b = toVector(end);
+  const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  const omega = Math.acos(dot);
+  const sinOmega = Math.sin(omega);
+  const points: LonLat[] = [];
+
+  for (let index = 0; index <= steps; index++) {
+    const amount = index / steps;
+    if (sinOmega < 0.0001) {
+      points.push([
+        start[0] + (end[0] - start[0]) * amount,
+        start[1] + (end[1] - start[1]) * amount,
+      ]);
+      continue;
+    }
+
+    const weightA = Math.sin((1 - amount) * omega) / sinOmega;
+    const weightB = Math.sin(amount * omega) / sinOmega;
+    const x = a[0] * weightA + b[0] * weightB;
+    const y = a[1] * weightA + b[1] * weightB;
+    const z = a[2] * weightA + b[2] * weightB;
+    points.push(fromVector(x, y, z));
+  }
+
+  return points;
 };
 
-const HealthyAccessBanner: React.FC<{frame: number}> = ({frame}) => {
-  const opacity = windowOpacity(frame, 842, 1000, 24);
-  const width = 790;
-  const healthyPulse = 0.5 + 0.5 * Math.sin(frame * 0.08);
-  return (
-    <g opacity={opacity}>
-      <rect
-        x={960 - width / 2}
-        y={936}
-        width={width}
-        height={86}
-        rx={30}
-        fill={C.white}
-        fillOpacity={0.96}
-        stroke={C.mint}
-        strokeWidth={3}
-        filter="url(#card-shadow)"
-      />
-      {[0, 1, 2].map((index) => (
-        <Avatar
-          key={index}
-          cx={662 + index * 52}
-          cy={979}
-          r={22}
-          color={C.mintDark}
-          opacity={0.72 + healthyPulse * 0.18}
-        />
-      ))}
-      <text
-        x={842}
-        y={971}
-        fill={C.navy}
-        fontFamily={FONT}
-        fontSize={23}
-        fontWeight={900}
-        letterSpacing={0.3}
-      >
-        142 HEALTHY SESSIONS CONTINUE
-      </text>
-      <text
-        x={842}
-        y={999}
-        fill={C.mintDark}
-        fontFamily={FONT}
-        fontSize={18}
-        fontWeight={800}
-        letterSpacing={1.6}
-      >
-        BUSINESS ACCESS REMAINS AVAILABLE
-      </text>
-      <circle cx={1330} cy={978} r={19} fill={C.mint} />
-      <path
-        d="M1321 978 L1327 984 L1340 970"
-        fill="none"
-        stroke={C.white}
-        strokeWidth={4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </g>
-  );
-};
+const ROUTE_POINTS = ROUTES.map((route) => {
+  const start = CENTER_BY_CODE.get(route.from);
+  const end = CENTER_BY_CODE.get(route.to);
+  if (!start || !end) {
+    throw new Error("Unknown data-center code in route");
+  }
 
-const FinalPayoff: React.FC<{frame: number}> = ({frame}) => {
-  const opacity = windowOpacity(frame, 1008, 1152, 22);
-  const enter = progress(frame, 1008, 1045, Easing.out(Easing.back(1.1)));
-  const titleScale = interpolate(enter, [0, 1], [0.92, 1]);
-  const metrics = [
-    ["04", "PERMISSIONS REMOVED"],
-    ["03", "SESSIONS ENDED"],
-    ["00", "ACTIVE TOKENS"],
+  return greatCircle([start.lon, start.lat], [end.lon, end.lat]);
+});
+
+const pointAlong = (line: readonly LonLat[], progress: number): LonLat => {
+  const scaled = clamp01(progress) * (line.length - 1);
+  const lower = Math.floor(scaled);
+  const upper = Math.min(line.length - 1, lower + 1);
+  const mix = scaled - lower;
+  return [
+    line[lower][0] + (line[upper][0] - line[lower][0]) * mix,
+    line[lower][1] + (line[upper][1] - line[lower][1]) * mix,
   ];
-  return (
-    <g opacity={opacity}>
-      <rect
-        x={310}
-        y={52}
-        width={1300}
-        height={175}
-        rx={38}
-        fill={C.white}
-        fillOpacity={0.97}
-        stroke={C.navy}
-        strokeOpacity={0.13}
-        strokeWidth={2}
-        filter="url(#card-shadow)"
-      />
-      <g
-        transform={`translate(960 129) scale(${titleScale}) translate(-960 -129)`}
-      >
-        <circle cx={535} cy={132} r={42} fill={C.mint} />
-        <path
-          d="M515 132 L529 146 L556 116"
-          fill="none"
-          stroke={C.white}
-          strokeWidth={8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <text
-          x={600}
-          y={141}
-          fill={C.navy}
-          fontFamily={FONT}
-          fontSize={78}
-          fontWeight={950}
-          letterSpacing={-2.2}
-        >
-          ACCESS REVOKED
-        </text>
-      </g>
-      <text
-        x={960}
-        y={192}
-        fill={C.slate}
-        fontFamily={FONT}
-        fontSize={23}
-        fontWeight={700}
-        textAnchor="middle"
-        letterSpacing={0.3}
-      >
-        Compromised identity contained • protected resources secured
-      </text>
+};
 
-      <rect
-        x={420}
-        y={880}
-        width={1080}
-        height={132}
-        rx={32}
-        fill={C.navy}
-        filter="url(#card-shadow)"
-      />
-      {metrics.map(([value, label], index) => {
-        const x = 600 + index * 360;
-        const stagger = progress(frame, 1028 + index * 14, 1070 + index * 14);
+const BACKGROUND_PARTICLES = Array.from({length: 88}, (_, index) => ({
+  x: seeded(index + 4) * 1920,
+  y: seeded(index + 104) * 1080,
+  radius: 0.9 + seeded(index + 204) * 2.8,
+  phase: seeded(index + 304),
+  travel: 20 + seeded(index + 404) * 95,
+  cyan: seeded(index + 504) > 0.18,
+}));
+
+const RIM_SPIKES = Array.from({length: 52}, (_, index) => ({
+  angle: (index / 52) * Math.PI * 2,
+  length: 10 + seeded(index + 700) * 64,
+  phase: seeded(index + 800) * Math.PI * 2,
+}));
+
+const statusOpacity = (
+  frame: number,
+  phase: StatusPhase,
+  durationInFrames: number,
+) => {
+  if (frame < phase.start || frame >= phase.end) {
+    return 0;
+  }
+
+  const fadeIn =
+    phase.start === 0
+      ? 1
+      : interpolate(frame, [phase.start, phase.start + 24], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
+  const fadeOut =
+    phase.end === durationInFrames
+      ? 1
+      : interpolate(frame, [phase.end - 24, phase.end], [1, 0], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
+  return fadeIn * fadeOut;
+};
+
+const BackgroundField: React.FC<{
+  frame: number;
+  durationInFrames: number;
+  centerX: number;
+  centerY: number;
+}> = ({frame, durationInFrames, centerX, centerY}) => {
+  const cycle = frame / durationInFrames;
+
+  return (
+    <svg
+      width="1920"
+      height="1080"
+      viewBox="0 0 1920 1080"
+      style={{position: "absolute", inset: 0}}
+      aria-hidden
+    >
+      <defs>
+        <radialGradient id="backgroundBloom" cx="56%" cy="46%" r="62%">
+          <stop offset="0%" stopColor="#0b4557" stopOpacity="0.5" />
+          <stop offset="35%" stopColor="#072c39" stopOpacity="0.32" />
+          <stop offset="72%" stopColor="#04131b" stopOpacity="0.1" />
+          <stop offset="100%" stopColor="#02090e" stopOpacity="0" />
+        </radialGradient>
+        <filter id="fieldBlur">
+          <feGaussianBlur stdDeviation="5" />
+        </filter>
+        <linearGradient id="rayGradient" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={COLORS.cyan} stopOpacity="0" />
+          <stop offset="58%" stopColor={COLORS.cyan} stopOpacity="0.16" />
+          <stop offset="100%" stopColor={COLORS.cyanBright} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      <rect width="1920" height="1080" fill="url(#backgroundBloom)" />
+
+      {Array.from({length: 18}, (_, index) => {
+        const angle = (index / 18) * Math.PI * 2 + 0.12;
+        const inner = 420;
+        const outer = 980 + seeded(index + 900) * 220;
+        const pulse =
+          0.08 +
+          0.08 * Math.sin(cycle * Math.PI * 2 + index * 0.72);
         return (
-          <g key={label} opacity={stagger}>
-            {index > 0 ? (
-              <line
-                x1={x - 180}
-                y1={906}
-                x2={x - 180}
-                y2={986}
-                stroke={C.white}
-                strokeOpacity={0.16}
-              />
-            ) : null}
-            <text
-              x={x}
-              y={946}
-              fill={index === 2 ? C.mint : C.white}
-              fontFamily={FONT}
-              fontSize={46}
-              fontWeight={950}
-              textAnchor="middle"
-            >
-              {value}
-            </text>
-            <text
-              x={x}
-              y={978}
-              fill={C.white}
-              fillOpacity={0.7}
-              fontFamily={FONT}
-              fontSize={16}
-              fontWeight={850}
-              textAnchor="middle"
-              letterSpacing={1.55}
-            >
-              {label}
-            </text>
-          </g>
+          <line
+            key={"ray-" + index}
+            x1={centerX + Math.cos(angle) * inner}
+            y1={centerY + Math.sin(angle) * inner}
+            x2={centerX + Math.cos(angle) * outer}
+            y2={centerY + Math.sin(angle) * outer}
+            stroke="url(#rayGradient)"
+            strokeWidth={1}
+            opacity={pulse}
+            strokeDasharray="3 16"
+            strokeDashoffset={-cycle * 19 * (3 + (index % 3))}
+          />
         );
       })}
-    </g>
+
+      {BACKGROUND_PARTICLES.map((particle, index) => {
+        const local = (cycle + particle.phase) % 1;
+        const driftX = (local - 0.5) * particle.travel;
+        const driftY = Math.sin((local + particle.phase) * Math.PI * 2) * 12;
+        const opacity = Math.pow(Math.sin(local * Math.PI), 2) * 0.58;
+        return (
+          <circle
+            key={"particle-" + index}
+            cx={particle.x + driftX}
+            cy={particle.y + driftY}
+            r={particle.radius}
+            fill={particle.cyan ? COLORS.cyan : COLORS.amber}
+            opacity={opacity}
+            filter={particle.radius > 2.4 ? "url(#fieldBlur)" : undefined}
+          />
+        );
+      })}
+
+      <g opacity={0.2}>
+        {Array.from({length: 10}, (_, index) => (
+          <path
+            key={"scan-" + index}
+            d={
+              "M " +
+              (60 + index * 186) +
+              " 96 V 984 M " +
+              (55 + index * 186) +
+              " " +
+              (180 + (index % 3) * 170) +
+              " h 46"
+            }
+            stroke={COLORS.cyanSoft}
+            strokeWidth={0.7}
+            strokeDasharray="2 24"
+            strokeDashoffset={-cycle * 26 * 5 - index * 7}
+          />
+        ))}
+      </g>
+    </svg>
   );
 };
 
-const CornerLabel: React.FC<{frame: number}> = ({frame}) => {
-  const opacity = windowOpacity(frame, 40, 1158, 30);
+const Globe: React.FC<{
+  frame: number;
+  durationInFrames: number;
+  centerX: number;
+  centerY: number;
+  radius: number;
+  eventProgress: number;
+}> = ({
+  frame,
+  durationInFrames,
+  centerX,
+  centerY,
+  radius,
+  eventProgress,
+}) => {
+  const cycle = frame / durationInFrames;
+  const centerLon = 112 - cycle * 360;
+  const globeBreath = 1 + Math.sin(cycle * Math.PI * 2) * 0.008;
+  const coastPath = COASTLINES.map((line) =>
+    projectedPath(line, centerLon, centerX, centerY, radius),
+  ).join(" ");
+  const gridPath = GRATICULE.map((line) =>
+    projectedPath(line, centerLon, centerX, centerY, radius),
+  ).join(" ");
+  const rerouteOpacity = phaseWindow(
+    frame,
+    Math.round(durationInFrames * 0.28),
+    Math.round(durationInFrames * 0.72),
+    48,
+  );
+  const overloadOpacity = phaseWindow(
+    frame,
+    Math.round(durationInFrames * 0.13),
+    Math.round(durationInFrames * 0.39),
+    42,
+  );
+  const optimizedOpacity = phaseWindow(
+    frame,
+    Math.round(durationInFrames * 0.56),
+    Math.round(durationInFrames * 0.92),
+    48,
+  );
+  const frankfurt = DATA_CENTERS.find((center) => center.code === "FRA");
+  const frankfurtPoint = frankfurt
+    ? projectPoint(
+        frankfurt.lon,
+        frankfurt.lat,
+        centerLon,
+        centerX,
+        centerY,
+        radius,
+      )
+    : null;
+
   return (
-    <div
+    <svg
+      width="1920"
+      height="1080"
+      viewBox="0 0 1920 1080"
       style={{
         position: "absolute",
-        left: 74,
-        top: 64,
+        inset: 0,
+        transform: "scale(" + globeBreath + ")",
+        transformOrigin: centerX + "px " + centerY + "px",
+      }}
+      aria-hidden
+    >
+      <defs>
+        <clipPath id="sphereClip">
+          <circle cx={centerX} cy={centerY} r={radius} />
+        </clipPath>
+        <radialGradient id="sphereFill" cx="34%" cy="28%" r="78%">
+          <stop offset="0%" stopColor="#153d4b" stopOpacity="0.7" />
+          <stop offset="34%" stopColor="#082733" stopOpacity="0.86" />
+          <stop offset="74%" stopColor="#031118" stopOpacity="0.98" />
+          <stop offset="100%" stopColor="#01070b" />
+        </radialGradient>
+        <radialGradient id="surfaceLight" cx="36%" cy="32%" r="70%">
+          <stop offset="0%" stopColor={COLORS.cyanBright} stopOpacity="0.18" />
+          <stop offset="48%" stopColor={COLORS.cyan} stopOpacity="0.035" />
+          <stop offset="100%" stopColor="#001015" stopOpacity="0.42" />
+        </radialGradient>
+        <linearGradient id="rimGradient" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={COLORS.cyanBright} />
+          <stop offset="48%" stopColor={COLORS.cyan} />
+          <stop offset="77%" stopColor={COLORS.amber} />
+          <stop offset="100%" stopColor={COLORS.cyan} />
+        </linearGradient>
+        <filter id="globeGlow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="16" />
+        </filter>
+        <filter id="lineGlow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="nodeGlow" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="7" result="nodeBlur" />
+          <feMerge>
+            <feMergeNode in="nodeBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g opacity={0.54}>
+        <ellipse
+          cx={centerX}
+          cy={centerY}
+          rx={radius * 1.22}
+          ry={radius * 0.33}
+          fill="none"
+          stroke={COLORS.cyan}
+          strokeWidth={1.2}
+          strokeDasharray="6 17"
+          strokeDashoffset={-cycle * 23 * 6}
+          transform={"rotate(-16 " + centerX + " " + centerY + ")"}
+        />
+        <ellipse
+          cx={centerX}
+          cy={centerY}
+          rx={radius * 1.16}
+          ry={radius * 0.28}
+          fill="none"
+          stroke={COLORS.cyanBright}
+          strokeWidth={0.8}
+          strokeDasharray="2 12"
+          strokeDashoffset={cycle * 14 * 7}
+          transform={"rotate(62 " + centerX + " " + centerY + ")"}
+          opacity={0.55}
+        />
+        <ellipse
+          cx={centerX}
+          cy={centerY}
+          rx={radius * 1.1}
+          ry={radius * 0.23}
+          fill="none"
+          stroke={COLORS.amber}
+          strokeWidth={0.9}
+          strokeDasharray="3 28"
+          strokeDashoffset={-cycle * 31 * 5}
+          transform={"rotate(23 " + centerX + " " + centerY + ")"}
+          opacity={0.46}
+        />
+      </g>
+
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={radius + 16}
+        fill="none"
+        stroke={COLORS.cyan}
+        strokeWidth={18}
+        opacity={0.18}
+        filter="url(#globeGlow)"
+      />
+
+      <g>
+        {RIM_SPIKES.map((spike, index) => {
+          const inner = radius + 8;
+          const flicker =
+            0.22 +
+            0.35 *
+              (0.5 +
+                0.5 *
+                  Math.sin(
+                    cycle * Math.PI * 2 * (1 + (index % 3)) + spike.phase,
+                  ));
+          return (
+            <line
+              key={"rim-" + index}
+              x1={centerX + Math.cos(spike.angle) * inner}
+              y1={centerY + Math.sin(spike.angle) * inner}
+              x2={
+                centerX +
+                Math.cos(spike.angle) * (inner + spike.length * flicker)
+              }
+              y2={
+                centerY +
+                Math.sin(spike.angle) * (inner + spike.length * flicker)
+              }
+              stroke={index % 9 === 0 ? COLORS.amber : COLORS.cyan}
+              strokeWidth={index % 7 === 0 ? 2 : 1}
+              opacity={flicker}
+            />
+          );
+        })}
+      </g>
+
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={radius}
+        fill="url(#sphereFill)"
+        stroke="url(#rimGradient)"
+        strokeWidth={5}
+      />
+
+      <g clipPath="url(#sphereClip)">
+        <circle
+          cx={centerX}
+          cy={centerY}
+          r={radius}
+          fill="url(#surfaceLight)"
+        />
+        <path
+          d={gridPath}
+          fill="none"
+          stroke={COLORS.cyan}
+          strokeWidth={0.78}
+          opacity={0.16}
+        />
+        <path
+          d={coastPath}
+          fill="none"
+          stroke={COLORS.cyan}
+          strokeWidth={4.8}
+          opacity={0.16}
+          filter="url(#lineGlow)"
+        />
+        <path
+          d={coastPath}
+          fill="none"
+          stroke={COLORS.cyanBright}
+          strokeWidth={1.45}
+          opacity={0.9}
+        />
+
+        {ROUTE_POINTS.map((line, index) => {
+          const route = ROUTES[index];
+          const active = route.priority ? rerouteOpacity : 0;
+          const path = projectedPath(
+            line,
+            centerLon,
+            centerX,
+            centerY,
+            radius,
+          );
+          const routeColor =
+            route.priority && frame < durationInFrames * 0.48
+              ? COLORS.amber
+              : route.priority
+                ? COLORS.mint
+                : COLORS.cyan;
+          return (
+            <g key={"route-" + index}>
+              <path
+                d={path}
+                fill="none"
+                stroke={COLORS.cyan}
+                strokeWidth={1.1}
+                strokeDasharray="3 8"
+                strokeDashoffset={-cycle * 11 * (7 + (index % 3))}
+                opacity={0.22}
+              />
+              {route.priority ? (
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={routeColor}
+                  strokeWidth={2.4}
+                  strokeDasharray="8 10"
+                  strokeDashoffset={-cycle * 18 * 10}
+                  opacity={active * 0.88}
+                  filter="url(#lineGlow)"
+                />
+              ) : null}
+            </g>
+          );
+        })}
+
+        {ROUTE_POINTS.flatMap((line, routeIndex) =>
+          [0, 1].map((packetIndex) => {
+            const route = ROUTES[routeIndex];
+            const progress =
+              (cycle * (route.priority ? 10 : 7) +
+                routeIndex * 0.137 +
+                packetIndex * 0.51) %
+              1;
+            const [lon, lat] = pointAlong(line, progress);
+            const point = projectPoint(
+              lon,
+              lat,
+              centerLon,
+              centerX,
+              centerY,
+              radius,
+            );
+            const active = route.priority ? rerouteOpacity : 0;
+            const opacity =
+              (route.priority ? 0.24 + active * 0.76 : 0.28) *
+              clamp01((point.z - 0.02) / 0.28);
+            const color =
+              route.priority && frame < durationInFrames * 0.48
+                ? COLORS.amber
+                : route.priority
+                  ? COLORS.mint
+                  : COLORS.cyanBright;
+            return point.visible ? (
+              <circle
+                key={"packet-" + routeIndex + "-" + packetIndex}
+                cx={point.x}
+                cy={point.y}
+                r={route.priority ? 3.8 + active * 2.2 : 2.6}
+                fill={color}
+                opacity={opacity}
+                filter="url(#nodeGlow)"
+              />
+            ) : null;
+          }),
+        )}
+
+        {DATA_CENTERS.map((center, index) => {
+          const point = projectPoint(
+            center.lon,
+            center.lat,
+            centerLon,
+            centerX,
+            centerY,
+            radius,
+          );
+          if (!point.visible) {
+            return null;
+          }
+
+          const depthOpacity = clamp01((point.z - 0.02) / 0.3);
+          const isFrankfurt = center.code === "FRA";
+          const color =
+            isFrankfurt && overloadOpacity > 0.05
+              ? COLORS.amber
+              : isFrankfurt && optimizedOpacity > 0.05
+                ? COLORS.mint
+                : COLORS.cyanBright;
+          const pulse =
+            1 +
+            0.22 *
+              Math.sin(cycle * Math.PI * 2 * 4 + index * 1.9) *
+              (isFrankfurt ? 1 : 0.45);
+
+          return (
+            <g
+              key={center.code}
+              opacity={depthOpacity}
+              transform={
+                "translate(" +
+                point.x +
+                " " +
+                point.y +
+                ") scale(" +
+                pulse +
+                ")"
+              }
+            >
+              <circle
+                r={12}
+                fill="none"
+                stroke={color}
+                strokeWidth={1.5}
+                opacity={0.42}
+              />
+              <circle r={4.1} fill={color} filter="url(#nodeGlow)" />
+              <line
+                x1={-4}
+                x2={4}
+                y1={-16}
+                y2={-16}
+                stroke={color}
+                strokeWidth={1}
+                opacity={0.7}
+              />
+              <text
+                x={0}
+                y={-23}
+                textAnchor="middle"
+                fill={COLORS.ink}
+                fontFamily={MONO}
+                fontWeight={700}
+                fontSize={16}
+                letterSpacing={1.6}
+                opacity={
+                  center.code === "DXB" && overloadOpacity > 0.05 ? 0 : 0.88
+                }
+                style={{paintOrder: "stroke", stroke: "#031016", strokeWidth: 4}}
+              >
+                {center.code}
+              </text>
+            </g>
+          );
+        })}
+
+        {frankfurtPoint &&
+        frankfurtPoint.visible &&
+        frankfurtPoint.z > 0.16 &&
+        overloadOpacity > 0.04 ? (
+          <g opacity={overloadOpacity}>
+            <line
+              x1={frankfurtPoint.x + 8}
+              y1={frankfurtPoint.y + 8}
+              x2={frankfurtPoint.x + 38}
+              y2={frankfurtPoint.y + 48}
+              stroke={COLORS.amber}
+              strokeWidth={1.5}
+            />
+            <rect
+              x={frankfurtPoint.x + 30}
+              y={frankfurtPoint.y + 42}
+              width={236}
+              height={58}
+              rx={12}
+              fill="rgba(30, 17, 9, 0.92)"
+              stroke={COLORS.amber}
+              strokeWidth={1}
+            />
+            <text
+              x={frankfurtPoint.x + 48}
+              y={frankfurtPoint.y + 66}
+              fill={COLORS.amber}
+              fontFamily={MONO}
+              fontWeight={800}
+              fontSize={16}
+              letterSpacing={1.4}
+            >
+              FRA OVERLOAD
+            </text>
+            <text
+              x={frankfurtPoint.x + 48}
+              y={frankfurtPoint.y + 87}
+              fill={COLORS.ink}
+              fontFamily={MONO}
+              fontWeight={700}
+              fontSize={18}
+            >
+              CAPACITY 98%
+            </text>
+          </g>
+        ) : null}
+      </g>
+
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={radius - 1}
+        fill="none"
+        stroke={COLORS.cyanBright}
+        strokeWidth={1.2}
+        opacity={0.72}
+      />
+      <path
+        d={
+          "M " +
+          (centerX - radius * 0.72) +
+          " " +
+          (centerY - radius * 0.7) +
+          " A " +
+          radius +
+          " " +
+          radius +
+          " 0 0 1 " +
+          (centerX + radius * 0.35) +
+          " " +
+          (centerY - radius * 0.93)
+        }
+        fill="none"
+        stroke={COLORS.cyanBright}
+        strokeWidth={6}
+        strokeLinecap="round"
+        opacity={0.28}
+        filter="url(#lineGlow)"
+      />
+
+      <g
+        opacity={rerouteOpacity * 0.9}
+        transform={"translate(" + centerX + " " + (centerY + radius + 68) + ")"}
+      >
+        <rect
+          x={-186}
+          y={-22}
+          width={372}
+          height={44}
+          rx={22}
+          fill="rgba(4, 24, 30, 0.9)"
+          stroke={eventProgress > 0.72 ? COLORS.mint : COLORS.cyan}
+          strokeWidth={1}
+        />
+        <circle
+          cx={-154}
+          cy={0}
+          r={5}
+          fill={eventProgress > 0.72 ? COLORS.mint : COLORS.cyan}
+        />
+        <text
+          x={-136}
+          y={6}
+          fill={COLORS.ink}
+          fontFamily={MONO}
+          fontWeight={700}
+          fontSize={17}
+          letterSpacing={1.5}
+        >
+          WORKLOAD ROUTING ACTIVE
+        </text>
+      </g>
+    </svg>
+  );
+};
+
+const MetricCard: React.FC<{
+  top: number;
+  label: string;
+  value: string;
+  unit: string;
+  supporting: string;
+  progress: number;
+  accent: string;
+}> = ({top, label, value, unit, supporting, progress, accent}) => (
+  <div
+    style={{
+      position: "absolute",
+      left: 1544,
+      top,
+      width: 282,
+      height: 128,
+      borderRadius: 18,
+      border: "1px solid " + COLORS.panelBorder,
+      background:
+        "linear-gradient(135deg, rgba(8, 29, 38, 0.9), rgba(3, 15, 22, 0.68))",
+      boxShadow: "0 20px 50px rgba(0, 0, 0, 0.24)",
+      padding: "19px 20px 17px",
+      boxSizing: "border-box",
+      overflow: "hidden",
+    }}
+  >
+    <div
+      style={{
+        fontFamily: MONO,
+        color: COLORS.muted,
+        fontSize: 15,
+        lineHeight: 1,
+        letterSpacing: 1.8,
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        marginTop: 10,
         display: "flex",
-        alignItems: "center",
-        gap: 13,
-        opacity,
+        alignItems: "baseline",
+        gap: 6,
       }}
     >
       <div
         style={{
-          width: 13,
-          height: 13,
-          borderRadius: "50%",
-          background: C.cyan,
-          boxShadow: `0 0 0 7px rgba(50,172,209,0.12)`,
-        }}
-      />
-      <div
-        style={{
-          color: C.navy,
           fontFamily: FONT,
-          fontSize: 19,
-          fontWeight: 900,
-          letterSpacing: 2.1,
+          color: COLORS.ink,
+          fontSize: 40,
+          lineHeight: 1,
+          fontWeight: 750,
+          letterSpacing: -1.8,
+          fontVariantNumeric: "tabular-nums",
+          whiteSpace: "nowrap",
         }}
       >
-        IDENTITY SECURITY
+        {value}
+      </div>
+      <div
+        style={{
+          fontFamily: MONO,
+          color: COLORS.muted,
+          fontSize: 16,
+          fontWeight: 700,
+          letterSpacing: 0.6,
+        }}
+      >
+        {unit}
       </div>
     </div>
-  );
-};
+    <div
+      style={{
+        position: "absolute",
+        right: 18,
+        top: 68,
+        width: 90,
+        fontFamily: MONO,
+        color: accent,
+        fontSize: 12,
+        lineHeight: 1.15,
+        fontWeight: 800,
+        letterSpacing: 0.8,
+        textAlign: "right",
+      }}
+    >
+      {supporting}
+    </div>
+    <div
+      style={{
+        position: "absolute",
+        left: 20,
+        right: 20,
+        bottom: 16,
+        height: 3,
+        borderRadius: 2,
+        background: "rgba(79, 126, 137, 0.22)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          width: 100 * progress + "%",
+          height: "100%",
+          borderRadius: 2,
+          background: accent,
+          boxShadow: "0 0 14px " + accent,
+        }}
+      />
+    </div>
+  </div>
+);
 
-const DecorativeDots: React.FC<{frame: number}> = ({frame}) => {
+const TitlePanel: React.FC<{
+  frame: number;
+  durationInFrames: number;
+  eventProgress: number;
+}> = ({frame, durationInFrames, eventProgress}) => {
+  const phases: StatusPhase[] = [
+    {
+      start: 0,
+      end: Math.round(durationInFrames * 0.14),
+      eyebrow: "SYSTEM ONLINE",
+      title: "LIVE NETWORK",
+      detail: "Distributed capacity within target range",
+      accent: COLORS.cyan,
+    },
+    {
+      start: Math.round(durationInFrames * 0.14),
+      end: Math.round(durationInFrames * 0.31),
+      eyebrow: "ANOMALY DETECTED",
+      title: "REGIONAL OVERLOAD",
+      detail: "Frankfurt workload exceeds safe threshold",
+      accent: COLORS.amber,
+    },
+    {
+      start: Math.round(durationInFrames * 0.31),
+      end: Math.round(durationInFrames * 0.57),
+      eyebrow: "AUTONOMOUS CONTROL",
+      title: "WORKLOAD REROUTING",
+      detail: "AI shifts compute to available regions",
+      accent: COLORS.cyanBright,
+    },
+    {
+      start: Math.round(durationInFrames * 0.57),
+      end: Math.round(durationInFrames * 0.75),
+      eyebrow: "EFFICIENCY RECOVERED",
+      title: "GRID REBALANCED",
+      detail: "Latency and energy demand return to target",
+      accent: COLORS.mint,
+    },
+    {
+      start: Math.round(durationInFrames * 0.75),
+      end: Math.round(durationInFrames * 0.92),
+      eyebrow: "MISSION COMPLETE",
+      title: "GLOBAL COMPUTE OPTIMIZED",
+      detail: "Reliable AI capacity across every active region",
+      accent: COLORS.mint,
+    },
+    {
+      start: Math.round(durationInFrames * 0.92),
+      end: durationInFrames,
+      eyebrow: "SYSTEM ONLINE",
+      title: "LIVE NETWORK",
+      detail: "Distributed capacity within target range",
+      accent: COLORS.cyan,
+    },
+  ];
+
   return (
-    <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
-      {Array.from({length: 24}, (_, index) => {
-        const angle = seeded(index + 2) * Math.PI * 2;
-        const radius = 440 + seeded(index + 91) * 340;
-        const x = 960 + Math.cos(angle) * radius;
-        const y = 550 + Math.sin(angle) * radius * 0.58;
-        const drift = Math.sin(frame * 0.018 + index) * 6;
-        return (
-          <circle
-            key={index}
-            cx={x}
-            cy={y + drift}
-            r={1.8 + seeded(index + 55) * 2.1}
-            fill={index % 4 === 0 ? C.cyan : C.navy}
-            opacity={0.08 + seeded(index + 10) * 0.1}
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: 94,
+          top: 100,
+          width: 540,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontFamily: MONO,
+            color: COLORS.cyan,
+            fontSize: 16,
+            lineHeight: 1,
+            letterSpacing: 3.2,
+            fontWeight: 800,
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: COLORS.mint,
+              boxShadow: "0 0 18px " + COLORS.mint,
+            }}
           />
-        );
-      })}
-    </svg>
+          AUTONOMOUS CLOUD OPERATIONS
+        </div>
+        <div
+          style={{
+            marginTop: 28,
+            fontFamily: FONT,
+            color: COLORS.ink,
+            fontSize: 58,
+            lineHeight: 0.98,
+            letterSpacing: -2.4,
+            fontWeight: 800,
+          }}
+        >
+          GLOBAL AI
+          <br />
+          COMPUTE GRID
+        </div>
+        <div
+          style={{
+            marginTop: 22,
+            width: 474,
+            fontFamily: FONT,
+            color: COLORS.muted,
+            fontSize: 21,
+            lineHeight: 1.42,
+            letterSpacing: 0.1,
+            fontWeight: 450,
+          }}
+        >
+          Intelligent workload and energy routing across distributed data
+          centers.
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 94,
+          top: 484,
+          width: 516,
+          height: 208,
+          borderRadius: 22,
+          border: "1px solid " + COLORS.panelBorder,
+          background:
+            "linear-gradient(145deg, rgba(7, 28, 37, 0.92), rgba(3, 15, 21, 0.74))",
+          boxShadow:
+            "0 24px 60px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255,255,255,0.025)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, rgba(69, 217, 236, 0.04), transparent 42%)",
+          }}
+        />
+        {phases.map((phase) => {
+          const opacity = statusOpacity(
+            frame,
+            phase,
+            durationInFrames,
+          );
+          return (
+            <div
+              key={phase.start + "-" + phase.title}
+              style={{
+                position: "absolute",
+                left: 26,
+                right: 26,
+                top: 25,
+                opacity,
+                transform:
+                  "translateY(" +
+                  interpolate(opacity, [0, 1], [8, 0]) +
+                  "px)",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: MONO,
+                  color: phase.accent,
+                  fontSize: 14,
+                  lineHeight: 1,
+                  letterSpacing: 2.4,
+                  fontWeight: 800,
+                }}
+              >
+                {phase.eyebrow}
+              </div>
+              <div
+                style={{
+                  marginTop: 14,
+                  maxWidth: 460,
+                  fontFamily: FONT,
+                  color: COLORS.ink,
+                  fontSize:
+                    phase.title === "GLOBAL COMPUTE OPTIMIZED" ? 29 : 34,
+                  lineHeight: 1.08,
+                  letterSpacing: -0.8,
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {phase.title}
+              </div>
+              <div
+                style={{
+                  marginTop: 13,
+                  maxWidth: 450,
+                  fontFamily: FONT,
+                  color: COLORS.muted,
+                  fontSize: 17,
+                  lineHeight: 1.3,
+                  fontWeight: 500,
+                }}
+              >
+                {phase.detail}
+              </div>
+            </div>
+          );
+        })}
+        <div
+          style={{
+            position: "absolute",
+            left: 26,
+            right: 26,
+            bottom: 21,
+            height: 3,
+            borderRadius: 2,
+            background: "rgba(92, 130, 140, 0.2)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: 100 * eventProgress + "%",
+              borderRadius: 2,
+              background:
+                eventProgress > 0.72 ? COLORS.mint : COLORS.cyan,
+              boxShadow:
+                "0 0 16px " +
+                (eventProgress > 0.72 ? COLORS.mint : COLORS.cyan),
+            }}
+          />
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 96,
+          top: 731,
+          display: "flex",
+          alignItems: "center",
+          gap: 17,
+          fontFamily: MONO,
+          color: COLORS.dim,
+          fontSize: 15,
+          lineHeight: 1,
+          letterSpacing: 1.5,
+          fontWeight: 700,
+        }}
+      >
+        <span style={{color: COLORS.cyanBright}}>09 REGIONS</span>
+        <span>•</span>
+        <span style={{color: COLORS.mint}}>10 ROUTES</span>
+        <span>•</span>
+        <span>LIVE TELEMETRY</span>
+      </div>
+    </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const globalOpacity = windowOpacity(frame, 0, durationInFrames - 1, 38);
-  const riskPush = progress(frame, 335, 520, Easing.inOut(Easing.cubic));
-  const pullBack = progress(frame, 850, 1005, Easing.inOut(Easing.cubic));
-  const stageScale = interpolate(
-    riskPush - pullBack,
-    [-1, 0, 1],
-    [0.988, 1, 1.034],
-  );
-  const finalDim = progress(frame, 1008, 1044) * 0.56;
+  const centerX = 1080;
+  const centerY = 520;
+  const radius = 372;
+
+  const optimizeStart = durationInFrames * 0.3;
+  const optimizeEnd = durationInFrames * 0.73;
+  const resetStart = durationInFrames * 0.91;
+  const eventProgress =
+    frame < optimizeStart
+      ? 0
+      : frame < optimizeEnd
+        ? smooth((frame - optimizeStart) / (optimizeEnd - optimizeStart))
+        : frame < resetStart
+          ? 1
+          : 1 -
+            smooth(
+              (frame - resetStart) /
+                Math.max(1, durationInFrames - resetStart),
+            );
+
+  const latency = Math.round(48 - eventProgress * 22);
+  const gridLoad = Math.round(96 - eventProgress * 29);
+  const renewable = Math.round(58 + eventProgress * 21);
+  const uptime = (99.95 + eventProgress * 0.04).toFixed(2);
+  const vignettePulse =
+    0.42 + Math.sin((frame / durationInFrames) * Math.PI * 2) * 0.02;
 
   return (
-    <AbsoluteFill>
-      <Background />
-      <AbsoluteFill style={{opacity: globalOpacity}}>
-        <DecorativeDots frame={frame} />
-        <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
-          <defs>
-            <filter
-              id="card-shadow"
-              x="-40%"
-              y="-40%"
-              width="180%"
-              height="180%"
-            >
-              <feGaussianBlur stdDeviation="13" />
-            </filter>
-            <filter
-              id="soft-shadow"
-              x="-50%"
-              y="-50%"
-              width="200%"
-              height="200%"
-            >
-              <feGaussianBlur stdDeviation="24" />
-            </filter>
-          </defs>
+    <AbsoluteFill
+      style={{
+        backgroundColor: COLORS.background,
+        color: COLORS.ink,
+        fontFamily: FONT,
+        overflow: "hidden",
+      }}
+    >
+      <BackgroundField
+        frame={frame}
+        durationInFrames={durationInFrames}
+        centerX={centerX}
+        centerY={centerY}
+      />
 
-          <g
-            opacity={1 - finalDim}
-            transform={`translate(960 555) scale(${stageScale}) translate(-960 -555)`}
-          >
-            <ellipse
-              cx={960}
-              cy={918}
-              rx={350}
-              ry={47}
-              fill={C.navy}
-              opacity={0.08}
-              filter="url(#soft-shadow)"
-            />
-            {RESOURCES.map((resource, index) => (
-              <ConnectionRibbon
-                key={`ribbon-${resource.label}`}
-                resource={resource}
-                index={index}
-                frame={frame}
-              />
-            ))}
-            <Iris frame={frame} />
-            {RESOURCES.map((resource, index) => (
-              <ResourceCard
-                key={resource.label}
-                resource={resource}
-                index={index}
-                frame={frame}
-              />
-            ))}
-            <CredentialCard frame={frame} />
+      <Globe
+        frame={frame}
+        durationInFrames={durationInFrames}
+        centerX={centerX}
+        centerY={centerY}
+        radius={radius}
+        eventProgress={eventProgress}
+      />
 
-            <EvidencePill
-              frame={frame}
-              start={348}
-              end={632}
-              x={570}
-              y={278}
-              label="NEW DEVICE"
-              icon="!"
-            />
-            <EvidencePill
-              frame={frame}
-              start={378}
-              end={632}
-              x={1104}
-              y={278}
-              label="IMPOSSIBLE TRAVEL"
-              icon="↗"
-            />
-            <EvidencePill
-              frame={frame}
-              start={408}
-              end={632}
-              x={837}
-              y={817}
-              label="TOKEN REUSE"
-              icon="×"
-            />
-          </g>
+      <TitlePanel
+        frame={frame}
+        durationInFrames={durationInFrames}
+        eventProgress={eventProgress}
+      />
 
-          <HealthyAccessBanner frame={frame} />
-          <FinalPayoff frame={frame} />
-        </svg>
-        <CornerLabel frame={frame} />
-        <PhaseHeader frame={frame} />
-      </AbsoluteFill>
+      <div
+        style={{
+          position: "absolute",
+          left: 1544,
+          top: 112,
+          width: 282,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontFamily: MONO,
+          fontSize: 14,
+          lineHeight: 1,
+          letterSpacing: 1.5,
+          fontWeight: 800,
+          color: COLORS.muted,
+        }}
+      >
+        <span>GRID TELEMETRY</span>
+        <span
+          style={{
+            color: eventProgress > 0.8 ? COLORS.mint : COLORS.cyan,
+          }}
+        >
+          {eventProgress > 0.8
+            ? "OPTIMAL"
+            : eventProgress > 0.12
+              ? "BALANCING"
+              : "MONITORING"}
+        </span>
+      </div>
+
+      <MetricCard
+        top={154}
+        label="GLOBAL LATENCY"
+        value={String(latency)}
+        unit="ms"
+        supporting={eventProgress > 0.08 ? "▼ 46%" : "TARGET < 50"}
+        progress={1 - latency / 70}
+        accent={eventProgress > 0.5 ? COLORS.mint : COLORS.cyan}
+      />
+      <MetricCard
+        top={300}
+        label="COMPUTE LOAD"
+        value={String(gridLoad)}
+        unit="%"
+        supporting={eventProgress > 0.08 ? "BALANCED" : "PEAK"}
+        progress={gridLoad / 100}
+        accent={gridLoad > 85 ? COLORS.amber : COLORS.cyan}
+      />
+      <MetricCard
+        top={446}
+        label="CLEAN POWER"
+        value={String(renewable)}
+        unit="%"
+        supporting={eventProgress > 0.75 ? "OPTIMIZED" : "LIVE MIX"}
+        progress={renewable / 100}
+        accent={COLORS.mint}
+      />
+      <MetricCard
+        top={592}
+        label="GRID UPTIME"
+        value={uptime}
+        unit="%"
+        supporting="MULTI-REGION"
+        progress={0.999}
+        accent={COLORS.cyanBright}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 94,
+          right: 94,
+          bottom: 62,
+          height: 1,
+          background:
+            "linear-gradient(90deg, rgba(69,217,236,0.42), rgba(69,217,236,0.03) 34%, rgba(69,217,236,0.18) 75%, rgba(69,217,236,0))",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 94,
+          bottom: 30,
+          fontFamily: MONO,
+          color: COLORS.dim,
+          fontSize: 13,
+          letterSpacing: 2.2,
+          fontWeight: 700,
+        }}
+      >
+        AI ORCHESTRATION / DISTRIBUTED COMPUTE / ENERGY-AWARE ROUTING
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 94,
+          bottom: 30,
+          fontFamily: MONO,
+          color: COLORS.cyan,
+          fontSize: 13,
+          letterSpacing: 2.2,
+          fontWeight: 800,
+        }}
+      >
+        SECURE LINK 7A41
+      </div>
+
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 55% 45%, transparent 42%, rgba(0,0,0," +
+            vignettePulse +
+            ") 118%)",
+          boxShadow: "inset 0 0 130px rgba(0,0,0,0.72)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          opacity: 0.06,
+          backgroundImage:
+            "repeating-linear-gradient(0deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 1px, transparent 1px, transparent 4px)",
+          mixBlendMode: "soft-light",
+        }}
+      />
     </AbsoluteFill>
   );
 };
