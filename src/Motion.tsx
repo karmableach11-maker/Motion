@@ -3,2219 +3,1614 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
+  interpolateColors,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const TOTAL_FRAMES = 900;
-
-const COLORS = {
-  background: "#02070d",
-  backgroundSoft: "#06121b",
-  platform: "#091923",
-  platformLight: "#102b38",
-  platformEdge: "#163746",
-  cyan: "#29e2f2",
-  blue: "#398dff",
-  amber: "#ffb547",
-  red: "#ff3158",
-  white: "#ddfbff",
-  muted: "#6e96a4",
-  dim: "#24434f",
+const C = {
+  paper: "#eef2f0",
+  paperWarm: "#f7f4ec",
+  glass: "#fbfdfb",
+  navy: "#102b3a",
+  navySoft: "#2f5363",
+  slate: "#6b828b",
+  line: "#c8d5d4",
+  lineDark: "#a8b9b9",
+  cyan: "#32acd1",
+  cyanDark: "#137a9b",
+  mint: "#26c98d",
+  mintDark: "#13835e",
+  amber: "#f2aa38",
+  coral: "#f05e69",
+  coralDark: "#ae303e",
+  white: "#ffffff",
 };
 
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.max(min, Math.min(max, value));
+const FONT =
+  "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
 
-const mix = (a: number, b: number, amount: number) =>
-  a + (b - a) * amount;
-
-const smooth = (frame: number, start: number, end: number) =>
+const progress = (
+  frame: number,
+  start: number,
+  end: number,
+  easing = Easing.out(Easing.cubic),
+) =>
   interpolate(frame, [start, end], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
-    easing: Easing.inOut(Easing.cubic),
-  });
-
-const easeOut = (frame: number, start: number, end: number) =>
-  interpolate(frame, [start, end], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
+    easing,
   });
 
 const windowOpacity = (
   frame: number,
-  inStart: number,
-  inEnd: number,
-  outStart: number,
-  outEnd: number,
-) => smooth(frame, inStart, inEnd) * (1 - smooth(frame, outStart, outEnd));
-
-const hash = (seed: number) => {
-  const value = Math.sin(seed * 91.3458 + 17.132) * 43758.5453;
-  return value - Math.floor(value);
+  start: number,
+  end: number,
+  feather = 18,
+) => {
+  if (frame < start || frame > end) return 0;
+  const fadeIn = interpolate(frame, [start, start + feather], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+  const fadeOut = interpolate(frame, [end - feather, end], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.in(Easing.cubic),
+  });
+  return Math.min(fadeIn, fadeOut);
 };
 
-const range = (count: number) => Array.from({length: count}, (_, i) => i);
+const seeded = (value: number) => {
+  const x = Math.sin(value * 91.731 + 17.13) * 43758.5453;
+  return x - Math.floor(x);
+};
 
-const modulo = (value: number, divisor = 1) =>
-  ((value % divisor) + divisor) % divisor;
+type Point = {x: number; y: number};
 
 const cubicPoint = (
-  start: {x: number; y: number},
-  control1: {x: number; y: number},
-  control2: {x: number; y: number},
-  end: {x: number; y: number},
-  progress: number,
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  t: number,
 ) => {
-  const t = clamp(progress);
-  const inverse = 1 - t;
+  const mt = 1 - t;
   return {
     x:
-      inverse ** 3 * start.x +
-      3 * inverse ** 2 * t * control1.x +
-      3 * inverse * t ** 2 * control2.x +
-      t ** 3 * end.x,
+      mt * mt * mt * p0.x +
+      3 * mt * mt * t * p1.x +
+      3 * mt * t * t * p2.x +
+      t * t * t * p3.x,
     y:
-      inverse ** 3 * start.y +
-      3 * inverse ** 2 * t * control1.y +
-      3 * inverse * t ** 2 * control2.y +
-      t ** 3 * end.y,
+      mt * mt * mt * p0.y +
+      3 * mt * mt * t * p1.y +
+      3 * mt * t * t * p2.y +
+      t * t * t * p3.y,
   };
 };
 
-type GraphNode = {
-  id: string;
-  label: string;
-  version: string;
-  x: number;
-  y: number;
-  size: number;
-  tier: "APPLICATION" | "DIRECT" | "TRANSITIVE";
-  appearFrame: number;
-  infectionFrame?: number;
-  badge: string;
+const polar = (cx: number, cy: number, r: number, degrees: number) => {
+  const angle = ((degrees - 90) * Math.PI) / 180;
+  return {x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle)};
 };
 
-const GRAPH_NODES: GraphNode[] = [
-  {
-    id: "app",
-    label: "APP CORE",
-    version: "BUILD 84",
-    x: 960,
-    y: 428,
-    size: 46,
-    tier: "APPLICATION",
-    appearFrame: 72,
-    infectionFrame: 395,
-    badge: "ROOT",
-  },
-  {
-    id: "auth",
-    label: "AUTH",
-    version: "4.2.1",
-    x: 520,
-    y: 568,
-    size: 34,
-    tier: "DIRECT",
-    appearFrame: 98,
-    badge: "DIR",
-  },
-  {
-    id: "parser",
-    label: "PARSER",
-    version: "6.8.0",
-    x: 790,
-    y: 568,
-    size: 36,
-    tier: "DIRECT",
-    appearFrame: 112,
-    infectionFrame: 346,
-    badge: "DIR",
-  },
-  {
-    id: "image",
-    label: "IMAGE",
-    version: "3.1.7",
-    x: 1060,
-    y: 568,
-    size: 34,
-    tier: "DIRECT",
-    appearFrame: 126,
-    badge: "DIR",
-  },
-  {
-    id: "telemetry",
-    label: "TELEMETRY",
-    version: "2.9.4",
-    x: 1330,
-    y: 568,
-    size: 34,
-    tier: "DIRECT",
-    appearFrame: 140,
-    badge: "DIR",
-  },
-  {
-    id: "crypto",
-    label: "CRYPTO",
-    version: "5.0.3",
-    x: 405,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 154,
-    badge: "TRN",
-  },
-  {
-    id: "codec",
-    label: "CODEC",
-    version: "1.4.8",
-    x: 560,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 166,
-    badge: "TRN",
-  },
-  {
-    id: "util",
-    label: "UTIL-7A",
-    version: "0.9.6",
-    x: 760,
-    y: 748,
-    size: 34,
-    tier: "TRANSITIVE",
-    appearFrame: 178,
-    infectionFrame: 270,
-    badge: "TRN",
-  },
-  {
-    id: "format",
-    label: "FORMAT",
-    version: "2.0.1",
-    x: 920,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 188,
-    badge: "TRN",
-  },
-  {
-    id: "render",
-    label: "RENDER",
-    version: "7.3.2",
-    x: 1095,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 198,
-    badge: "TRN",
-  },
-  {
-    id: "media",
-    label: "MEDIA",
-    version: "3.5.4",
-    x: 1260,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 208,
-    badge: "TRN",
-  },
-  {
-    id: "log",
-    label: "LOG",
-    version: "8.1.0",
-    x: 1450,
-    y: 748,
-    size: 29,
-    tier: "TRANSITIVE",
-    appearFrame: 218,
-    badge: "TRN",
-  },
-];
-
-type Edge = {
-  id: string;
-  from: string;
-  to: string;
-  revealFrame: number;
-  attackFrame?: number;
-  compromised?: boolean;
+const annularSegmentPath = (
+  cx: number,
+  cy: number,
+  outer: number,
+  inner: number,
+  start: number,
+  end: number,
+) => {
+  const a = polar(cx, cy, outer, start);
+  const b = polar(cx, cy, outer, end);
+  const c = polar(cx, cy, inner, end);
+  const d = polar(cx, cy, inner, start);
+  const large = end - start > 180 ? 1 : 0;
+  return [
+    `M ${a.x} ${a.y}`,
+    `A ${outer} ${outer} 0 ${large} 1 ${b.x} ${b.y}`,
+    `L ${c.x} ${c.y}`,
+    `A ${inner} ${inner} 0 ${large} 0 ${d.x} ${d.y}`,
+    "Z",
+  ].join(" ");
 };
 
-const GRAPH_EDGES: Edge[] = [
-  {id: "auth-app", from: "auth", to: "app", revealFrame: 104},
-  {
-    id: "parser-app",
-    from: "parser",
-    to: "app",
-    revealFrame: 118,
-    attackFrame: 360,
-    compromised: true,
-  },
-  {id: "image-app", from: "image", to: "app", revealFrame: 132},
-  {
-    id: "telemetry-app",
-    from: "telemetry",
-    to: "app",
-    revealFrame: 146,
-  },
-  {id: "crypto-auth", from: "crypto", to: "auth", revealFrame: 160},
-  {id: "codec-auth", from: "codec", to: "auth", revealFrame: 172},
-  {
-    id: "util-parser",
-    from: "util",
-    to: "parser",
-    revealFrame: 184,
-    attackFrame: 305,
-    compromised: true,
-  },
-  {id: "format-parser", from: "format", to: "parser", revealFrame: 194},
-  {id: "render-image", from: "render", to: "image", revealFrame: 204},
-  {id: "media-image", from: "media", to: "image", revealFrame: 214},
-  {
-    id: "log-telemetry",
-    from: "log",
-    to: "telemetry",
-    revealFrame: 224,
-  },
-];
-
-const PARTICLES = range(72).map((index) => ({
-  x: hash(index * 3.1 + 1) * WIDTH,
-  y: hash(index * 5.7 + 4) * HEIGHT,
-  size: 1 + hash(index * 7.3 + 8) * 2.4,
-  speed: 0.15 + hash(index * 11.2 + 9) * 0.45,
-  phase: hash(index * 13.9 + 7),
-  opacity: 0.08 + hash(index * 2.6 + 3) * 0.28,
-}));
-
-const DATA_COLUMNS = range(28).map((index) => ({
-  x: 70 + index * 70 + hash(index + 9) * 28,
-  height: 35 + hash(index * 3.3) * 155,
-  delay: hash(index * 8.1),
-}));
-
-const SceneDefs: React.FC = () => (
-  <defs>
-    <linearGradient id="background-gradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stopColor="#071825" />
-      <stop offset="0.45" stopColor={COLORS.background} />
-      <stop offset="1" stopColor="#010409" />
-    </linearGradient>
-    <radialGradient id="horizon-glow">
-      <stop offset="0" stopColor={COLORS.blue} stopOpacity="0.2" />
-      <stop offset="0.5" stopColor={COLORS.cyan} stopOpacity="0.06" />
-      <stop offset="1" stopColor={COLORS.background} stopOpacity="0" />
-    </radialGradient>
-    <linearGradient id="platform-top" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stopColor="#102835" />
-      <stop offset="0.55" stopColor={COLORS.platform} />
-      <stop offset="1" stopColor="#07131c" />
-    </linearGradient>
-    <linearGradient id="platform-front" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stopColor="#0b202b" />
-      <stop offset="1" stopColor="#03090f" />
-    </linearGradient>
-    <linearGradient id="cyan-edge" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stopColor={COLORS.blue} stopOpacity="0.25" />
-      <stop offset="0.5" stopColor={COLORS.cyan} stopOpacity="0.95" />
-      <stop offset="1" stopColor={COLORS.blue} stopOpacity="0.25" />
-    </linearGradient>
-    <linearGradient id="scan-plane" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stopColor={COLORS.cyan} stopOpacity="0" />
-      <stop offset="0.48" stopColor={COLORS.cyan} stopOpacity="0.02" />
-      <stop offset="0.5" stopColor={COLORS.white} stopOpacity="0.65" />
-      <stop offset="0.52" stopColor={COLORS.cyan} stopOpacity="0.08" />
-      <stop offset="1" stopColor={COLORS.cyan} stopOpacity="0" />
-    </linearGradient>
-    <filter id="cyan-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="7" result="blur" />
-      <feFlood floodColor={COLORS.cyan} floodOpacity="0.75" />
-      <feComposite in2="blur" operator="in" />
-      <feMerge>
-        <feMergeNode />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-    <filter id="red-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="9" result="blur" />
-      <feFlood floodColor={COLORS.red} floodOpacity="0.82" />
-      <feComposite in2="blur" operator="in" />
-      <feMerge>
-        <feMergeNode />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-    <filter id="soft-blur" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="16" />
-    </filter>
-    <filter id="shadow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="11" />
-    </filter>
-    <pattern id="micro-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-      <path
-        d="M 24 0 L 0 0 0 24"
-        fill="none"
-        stroke={COLORS.cyan}
-        strokeOpacity="0.055"
-        strokeWidth="1"
-      />
-      <circle cx="0" cy="0" r="1.2" fill={COLORS.cyan} fillOpacity="0.16" />
-    </pattern>
-  </defs>
-);
-
-const CyberBackdrop: React.FC<{
-  frame: number;
-  cameraX: number;
-  cameraY: number;
-}> = ({frame, cameraX, cameraY}) => {
-  const cycle = (frame / TOTAL_FRAMES) * Math.PI * 2;
-  const horizonPulse = 0.74 + Math.sin(cycle * 2) * 0.08;
-
+const Background: React.FC = () => {
   return (
-    <AbsoluteFill style={{background: COLORS.background}}>
-      <svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
-        <SceneDefs />
-        <rect width={WIDTH} height={HEIGHT} fill="url(#background-gradient)" />
-        <ellipse
-          cx={980 + cameraX * 0.12}
-          cy={410 + cameraY * 0.12}
-          rx={850}
-          ry={400}
-          fill="url(#horizon-glow)"
-          opacity={horizonPulse}
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(circle at 50% 48%, #ffffff 0%, #f4f6f2 34%, #e5ecea 72%, #dce5e4 100%)",
+        overflow: "hidden",
+      }}
+    >
+      <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
+        <defs>
+          <pattern
+            id="micro-grid"
+            width="44"
+            height="44"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M44 0H0V44"
+              fill="none"
+              stroke={C.navy}
+              strokeOpacity={0.055}
+              strokeWidth={1}
+            />
+            <circle cx={0} cy={0} r={1.3} fill={C.navy} opacity={0.09} />
+          </pattern>
+          <radialGradient id="floor-light" cx="50%" cy="48%" r="57%">
+            <stop offset="0%" stopColor={C.white} stopOpacity={0.9} />
+            <stop offset="62%" stopColor={C.cyan} stopOpacity={0.035} />
+            <stop offset="100%" stopColor={C.navy} stopOpacity={0.025} />
+          </radialGradient>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#micro-grid)" />
+        <rect width="1920" height="1080" fill="url(#floor-light)" />
+        <circle
+          cx={960}
+          cy={552}
+          r={430}
+          fill="none"
+          stroke={C.navy}
+          strokeOpacity={0.045}
+          strokeWidth={1}
         />
-
-        <g
-          opacity="0.5"
-          transform={`translate(${cameraX * 0.12} ${cameraY * 0.12})`}
-        >
-          {range(18).map((index) => {
-            const x = 60 + index * 112;
-            const height = 80 + hash(index + 20) * 250;
-            const flicker =
-              0.1 +
-              0.16 *
-                Math.max(
-                  0,
-                  Math.sin(cycle * (1 + (index % 4) * 0.2) + index),
-                );
-            return (
-              <g key={`sky-${index}`}>
-                <line
-                  x1={x}
-                  y1={245 - height}
-                  x2={x}
-                  y2={305}
-                  stroke={index % 5 === 0 ? COLORS.blue : COLORS.cyan}
-                  strokeOpacity={flicker}
-                  strokeWidth={index % 4 === 0 ? 2 : 1}
-                />
-                <rect
-                  x={x - 2}
-                  y={245 - height}
-                  width={4}
-                  height={10}
-                  fill={COLORS.cyan}
-                  opacity={flicker * 1.7}
-                />
-              </g>
-            );
-          })}
-          <line
-            x1="0"
-            y1="310"
-            x2={WIDTH}
-            y2="310"
-            stroke={COLORS.blue}
-            strokeOpacity="0.2"
-          />
-          <line
-            x1="0"
-            y1="318"
-            x2={WIDTH}
-            y2="318"
-            stroke={COLORS.cyan}
-            strokeOpacity="0.06"
-          />
-        </g>
-
-        <g opacity="0.45">
-          {PARTICLES.map((particle, index) => {
-            const travel = modulo(
-              particle.phase + (frame / 900) * particle.speed,
-            );
-            const y = modulo(particle.y - travel * 280, HEIGHT + 80) - 40;
-            const x =
-              particle.x +
-              Math.sin(cycle + index * 0.67) * (6 + particle.speed * 10);
-            return (
-              <circle
-                key={`particle-${index}`}
-                cx={x}
-                cy={y}
-                r={particle.size}
-                fill={index % 7 === 0 ? COLORS.blue : COLORS.cyan}
-                opacity={particle.opacity}
-              />
-            );
-          })}
-        </g>
-
-        <g opacity="0.13">
-          {DATA_COLUMNS.map((column, index) => {
-            const signal =
-              0.2 +
-              0.8 *
-                Math.max(
-                  0,
-                  Math.sin(cycle * 2 + column.delay * Math.PI * 2),
-                );
-            return (
-              <rect
-                key={`data-column-${index}`}
-                x={column.x}
-                y={HEIGHT - 48 - column.height * signal}
-                width={index % 3 === 0 ? 3 : 1}
-                height={column.height * signal}
-                fill={index % 6 === 0 ? COLORS.blue : COLORS.cyan}
-              />
-            );
-          })}
-        </g>
+        <circle
+          cx={960}
+          cy={552}
+          r={500}
+          fill="none"
+          stroke={C.navy}
+          strokeOpacity={0.028}
+          strokeWidth={1}
+          strokeDasharray="5 12"
+        />
       </svg>
-
-      <AbsoluteFill
+      <div
         style={{
-          background:
-            "radial-gradient(circle at 52% 53%, transparent 34%, rgba(0,3,8,0.28) 68%, rgba(0,2,6,0.82) 100%)",
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: "100%",
+          height: 15,
+          background: `linear-gradient(90deg, ${C.cyan}, ${C.mint}, ${C.amber}, ${C.coral})`,
+          opacity: 0.82,
         }}
       />
-      <AbsoluteFill
+      <div
         style={{
-          opacity: 0.16,
-          backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 4px)",
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 80,
+          background:
+            "linear-gradient(180deg, rgba(16,43,58,0), rgba(16,43,58,0.055))",
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const SandboxSlab: React.FC<{frame: number; reset: number}> = ({
-  frame,
-  reset,
-}) => {
-  const power = easeOut(frame, 0, 58);
-  const railDraw = 1;
-  const pulse = 0.68 + Math.sin(frame * 0.025) * 0.12;
-
-  return (
-    <g opacity={1}>
-      <ellipse
-        cx="970"
-        cy="860"
-        rx="790"
-        ry="145"
-        fill="#00040a"
-        opacity="0.85"
-        filter="url(#soft-blur)"
-      />
-      <polygon
-        points="190,332 1510,332 1768,842 300,842"
-        fill="url(#platform-top)"
-        stroke={COLORS.platformEdge}
-        strokeWidth="2"
-      />
-      <polygon
-        points="300,842 1768,842 1768,900 300,900"
-        fill="url(#platform-front)"
-        stroke="#102833"
-        strokeWidth="2"
-      />
-      <polygon
-        points="1510,332 1768,842 1768,900 1510,390"
-        fill="#061018"
-        stroke="#102833"
-        strokeWidth="2"
-      />
-      <polygon
-        points="190,332 1510,332 1768,842 300,842"
-        fill="url(#micro-grid)"
-        opacity="0.95"
-      />
-
-      <g opacity={0.38 * railDraw}>
-        {range(9).map((index) => {
-          const y1 = 374 + index * 55;
-          return (
-            <line
-              key={`iso-row-${index}`}
-              x1={200 + index * 12}
-              y1={y1}
-              x2={1532 + index * 28}
-              y2={y1}
-              stroke={index % 3 === 0 ? COLORS.blue : COLORS.cyan}
-              strokeOpacity={index % 3 === 0 ? 0.22 : 0.09}
-              strokeWidth="1"
-            />
-          );
-        })}
-        {range(17).map((index) => {
-          const x = 210 + index * 80;
-          return (
-            <line
-              key={`iso-column-${index}`}
-              x1={x}
-              y1="334"
-              x2={x + 110}
-              y2="842"
-              stroke={COLORS.cyan}
-              strokeOpacity="0.08"
-            />
-          );
-        })}
-      </g>
-
-      <g
-        fill="none"
-        stroke="url(#cyan-edge)"
-        strokeWidth="3"
-        opacity={power * (1 - reset)}
-      >
-        <path
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - power}
-          d="M 222 370 L 1528 370 L 1748 805"
-        />
-        <path
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - power}
-          d="M 310 810 L 1708 810"
-        />
-      </g>
-
-      <g opacity={0.7}>
-        {[
-          {label: "APPLICATION", x: 262, y: 412},
-          {label: "DIRECT", x: 338, y: 556},
-          {label: "TRANSITIVE", x: 430, y: 739},
-        ].map((item, index) => (
-          <g key={item.label}>
-            <rect
-              x={item.x}
-              y={item.y - 18}
-              width={118}
-              height={26}
-              rx="2"
-              fill="#06131d"
-              stroke={COLORS.cyan}
-              strokeOpacity={0.18 + index * 0.06}
-            />
-            <text
-              x={item.x + 11}
-              y={item.y}
-              fill={COLORS.muted}
-              fontSize="12"
-              fontFamily="monospace"
-              fontWeight="700"
-              letterSpacing="1.7"
-            >
-              {item.label}
-            </text>
-          </g>
-        ))}
-      </g>
-
-      <g opacity={pulse}>
-        <circle cx="214" cy="354" r="4" fill={COLORS.cyan} />
-        <circle cx="1534" cy="354" r="4" fill={COLORS.cyan} />
-        <circle cx="1742" cy="841" r="4" fill={COLORS.blue} />
-        <circle cx="306" cy="841" r="4" fill={COLORS.cyan} />
-      </g>
-
-      <g opacity="0.5">
-        <text
-          x="340"
-          y="880"
-          fill={COLORS.muted}
-          fontFamily="monospace"
-          fontSize="12"
-          letterSpacing="2"
-        >
-          ISOLATED BUILD ENVIRONMENT / NO NETWORK TRUST
-        </text>
-        <text
-          x="1470"
-          y="880"
-          fill={COLORS.cyan}
-          fontFamily="monospace"
-          fontSize="12"
-          letterSpacing="2"
-        >
-          POLICY SX-84
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const NodeCube: React.FC<{
-  frame: number;
-  node: GraphNode;
-  x: number;
-  y: number;
-  opacity: number;
-  threat: number;
-  verified: number;
-  lift?: number;
-  sealed?: number;
-  labelOpacity?: number;
-}> = ({
-  frame,
-  node,
-  x,
-  y,
-  opacity,
-  threat,
-  verified,
-  lift = 0,
-  sealed = 0,
-  labelOpacity = 1,
-}) => {
-  const size = node.size;
-  const appearScale = 0.72 + opacity * 0.28;
-  const hover =
-    Math.sin(frame * 0.035 + node.x * 0.01) *
-    (node.id === "util" ? 2.8 : 1.35);
-  const liftPixels = lift * 80;
-  const localY = y - liftPixels + hover;
-  const safeOpacity = 1 - threat * 0.72;
-  const topPoints = `0,${-size * 0.62} ${size},${-size * 0.13} 0,${
-    size * 0.36
-  } ${-size},${-size * 0.13}`;
-  const leftPoints = `${-size},${-size * 0.13} 0,${size * 0.36} 0,${
-    size * 0.98
-  } ${-size},${size * 0.48}`;
-  const rightPoints = `${size},${-size * 0.13} 0,${size * 0.36} 0,${
-    size * 0.98
-  } ${size},${size * 0.48}`;
-  const stateColor =
-    threat > 0.3 ? COLORS.red : verified > 0.5 ? COLORS.cyan : COLORS.blue;
-  const signal = 0.7 + Math.sin(frame * 0.11 + node.x) * 0.18;
-
-  return (
-    <g
-      opacity={opacity}
-      transform={`translate(${x} ${localY}) scale(${appearScale})`}
-    >
-      <ellipse
-        cx="0"
-        cy={size * 1.06 + liftPixels}
-        rx={size * (1.12 - lift * 0.3)}
-        ry={size * 0.28}
-        fill="#00040a"
-        opacity={0.72 - lift * 0.3}
-        filter="url(#shadow)"
-      />
-
-      <g opacity={safeOpacity}>
-        <polygon
-          points={leftPoints}
-          fill="#071a26"
-          stroke={COLORS.blue}
-          strokeOpacity="0.72"
-          strokeWidth="2"
-        />
-        <polygon
-          points={rightPoints}
-          fill="#0a2531"
-          stroke={COLORS.cyan}
-          strokeOpacity="0.68"
-          strokeWidth="2"
-        />
-        <polygon
-          points={topPoints}
-          fill="#123745"
-          stroke={COLORS.cyan}
-          strokeOpacity="0.92"
-          strokeWidth="2"
-        />
-      </g>
-
-      <g opacity={threat} filter="url(#red-glow)">
-        <polygon
-          points={leftPoints}
-          fill="#270812"
-          stroke={COLORS.red}
-          strokeWidth="2"
-        />
-        <polygon
-          points={rightPoints}
-          fill="#3a0a18"
-          stroke={COLORS.red}
-          strokeWidth="2"
-        />
-        <polygon
-          points={topPoints}
-          fill="#561125"
-          stroke={COLORS.red}
-          strokeWidth="2.4"
-        />
-      </g>
-
-      <g
-        opacity={0.55 + signal * 0.3}
-        stroke={stateColor}
-        strokeWidth="2"
-        fill="none"
-      >
-        <path
-          d={`M ${-size * 0.5} ${-size * 0.1} L 0 ${
-            size * 0.16
-          } L ${size * 0.5} ${-size * 0.1}`}
-        />
-        <line x1="0" y1={size * 0.16} x2="0" y2={size * 0.72} />
-        <line
-          x1={-size * 0.5}
-          y1={-size * 0.1}
-          x2={-size * 0.5}
-          y2={size * 0.34}
-        />
-        <line
-          x1={size * 0.5}
-          y1={-size * 0.1}
-          x2={size * 0.5}
-          y2={size * 0.34}
-        />
-      </g>
-
-      <rect
-        x={-size * 0.2}
-        y={-size * 0.17}
-        width={size * 0.4}
-        height={size * 0.24}
-        rx="2"
-        fill={threat > 0.3 ? COLORS.red : COLORS.cyan}
-        opacity={0.82}
-      />
-
-      {threat > 0.02 ? (
-        <g opacity={threat}>
-          <circle
-            cx="0"
-            cy={-size * 0.16}
-            r={size * 0.32 + Math.sin(frame * 0.17) * 2}
-            fill="none"
-            stroke={COLORS.red}
-            strokeWidth="2"
-            strokeDasharray="4 5"
-          />
-          <text
-            x="0"
-            y={-size * 0.02}
-            fill={COLORS.white}
-            textAnchor="middle"
-            fontFamily="Arial, sans-serif"
-            fontWeight="900"
-            fontSize={Math.max(14, size * 0.5)}
-          >
-            !
-          </text>
-        </g>
-      ) : null}
-
-      {verified > 0.15 ? (
-        <g opacity={verified} transform={`translate(${size * 0.62} ${-size * 0.3})`}>
-          <circle
-            r={size * 0.25}
-            fill="#061b22"
-            stroke={COLORS.cyan}
-            strokeWidth="2"
-          />
-          <path
-            d={`M ${-size * 0.1} 0 L ${-size * 0.02} ${
-              size * 0.08
-            } L ${size * 0.13} ${-size * 0.1}`}
-            fill="none"
-            stroke={COLORS.white}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </g>
-      ) : null}
-
-      {sealed > 0.02 ? (
-        <g opacity={sealed} filter="url(#cyan-glow)">
-          <polygon
-            points={`0,${-size * 1.04} ${size * 1.38},${-size * 0.32} ${
-              size * 1.38
-            },${size * 0.9} 0,${size * 1.58} ${-size * 1.38},${
-              size * 0.9
-            } ${-size * 1.38},${-size * 0.32}`}
-            fill="none"
-            stroke={COLORS.cyan}
-            strokeWidth="2"
-            strokeDasharray="7 7"
-          />
-        </g>
-      ) : null}
-
-      <g opacity={labelOpacity}>
-        <rect
-          x={-size - 10}
-          y={size * 1.2}
-          width={size * 2 + 20}
-          height="42"
-          rx="3"
-          fill="#030c13"
-          stroke={threat > 0.3 ? COLORS.red : COLORS.cyan}
-          strokeOpacity={0.36 + threat * 0.5}
-        />
-        <text
-          x="0"
-          y={size * 1.2 + 17}
-          fill={threat > 0.3 ? COLORS.red : COLORS.white}
-          textAnchor="middle"
-          fontFamily="'Arial Narrow', Arial, sans-serif"
-          fontSize={node.id === "app" ? 14 : 12}
-          fontWeight="800"
-          letterSpacing="1.4"
-        >
-          {node.label}
-        </text>
-        <text
-          x="0"
-          y={size * 1.2 + 33}
-          fill={COLORS.muted}
-          textAnchor="middle"
-          fontFamily="monospace"
-          fontSize="10"
-          letterSpacing="1.2"
-        >
-          {node.version} / {node.badge}
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const GraphEdge: React.FC<{
-  frame: number;
-  edge: Edge;
-  from: {x: number; y: number};
-  to: {x: number; y: number};
-  reset: number;
-  isolate: number;
-  restore: number;
-}> = ({frame, edge, from, to, reset, isolate, restore}) => {
-  const reveal = easeOut(frame, edge.revealFrame, edge.revealFrame + 22);
-  const isCompromised = Boolean(edge.compromised);
-  const attack = edge.attackFrame
-    ? smooth(frame, edge.attackFrame, edge.attackFrame + 48) *
-      (1 - smooth(frame, 548, 628))
-    : 0;
-  const branchDisconnect =
-    edge.id === "util-parser" ? smooth(frame, 540, 610) : 0;
-  const reconnect =
-    edge.id === "util-parser" ? smooth(frame, 680, 735) : 0;
-  const baseOpacity =
-    reveal *
-    (1 - reset) *
-    (edge.id === "util-parser"
-      ? Math.max(1 - branchDisconnect, reconnect * restore)
-      : 1);
-  const middleY = (from.y + to.y) / 2;
-  const control1 = {x: from.x, y: middleY};
-  const control2 = {x: to.x, y: middleY};
-  const path = `M ${from.x} ${from.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${to.x} ${to.y}`;
-  const packetOpacity = baseOpacity * (1 - attack * 0.55);
-
-  return (
-    <g>
-      <path
-        d={path}
-        fill="none"
-        stroke="#173b48"
-        strokeWidth="8"
-        strokeLinecap="round"
-        opacity={baseOpacity * 0.46}
-      />
-      <path
-        d={path}
-        pathLength={1}
-        fill="none"
-        stroke="url(#cyan-edge)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeDasharray={1}
-        strokeDashoffset={1 - reveal}
-        opacity={baseOpacity}
-      />
-
-      {isCompromised ? (
-        <path
-          d={path}
-          pathLength={1}
-          fill="none"
-          stroke={COLORS.red}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeDasharray={1}
-          strokeDashoffset={1 - attack}
-          opacity={attack * (1 - reset)}
-          filter="url(#red-glow)"
-        />
-      ) : null}
-
-      {range(2).map((index) => {
-        const travel = modulo(frame * 0.011 + index * 0.49 + edge.revealFrame);
-        const point = cubicPoint(from, control1, control2, to, travel);
-        return (
-          <g
-            key={`${edge.id}-safe-packet-${index}`}
-            opacity={travel < reveal ? packetOpacity : 0}
-          >
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={index === 0 ? 4.2 : 2.8}
-              fill={COLORS.cyan}
-              filter={index === 0 ? "url(#cyan-glow)" : undefined}
-            />
-            <line
-              x1={point.x - 12}
-              y1={point.y}
-              x2={point.x - 3}
-              y2={point.y}
-              stroke={COLORS.blue}
-              strokeWidth="2"
-              opacity="0.55"
-            />
-          </g>
-        );
-      })}
-
-      {isCompromised && attack > 0.05
-        ? range(3).map((index) => {
-            const local = modulo(
-              frame * 0.018 + index * 0.31 + edge.revealFrame * 0.01,
-            );
-            const travel = Math.min(local, attack);
-            const point = cubicPoint(from, control1, control2, to, travel);
-            return (
-              <rect
-                key={`${edge.id}-threat-packet-${index}`}
-                x={point.x - 4}
-                y={point.y - 4}
-                width="8"
-                height="8"
-                rx="1"
-                fill={COLORS.red}
-                opacity={attack * (1 - isolate)}
-                transform={`rotate(45 ${point.x} ${point.y})`}
-                filter="url(#red-glow)"
-              />
-            );
-          })
-        : null}
-    </g>
-  );
-};
-
-const QuarantineDock: React.FC<{
-  frame: number;
-  isolate: number;
-  reset: number;
-}> = ({frame, isolate, reset}) => {
-  const ringRotation = frame * 0.28;
-  const sealed = smooth(frame, 620, 690) * (1 - reset);
-  const pulse = 0.7 + Math.sin(frame * 0.08) * 0.2;
-
-  return (
-    <g opacity={(0.42 + isolate * 0.58) * (1 - reset * 0.7)}>
-      <ellipse
-        cx="1572"
-        cy="676"
-        rx="112"
-        ry="47"
-        fill="#030a10"
-        stroke={COLORS.cyan}
-        strokeOpacity={0.28 + isolate * 0.45}
-        strokeWidth="2"
-      />
-      <ellipse
-        cx="1572"
-        cy="676"
-        rx={90 + sealed * 7}
-        ry={36 + sealed * 3}
-        fill="none"
-        stroke={sealed > 0.2 ? COLORS.cyan : COLORS.blue}
-        strokeOpacity={0.38 + sealed * 0.45}
-        strokeWidth="2"
-        strokeDasharray="9 8"
-        transform={`rotate(${ringRotation} 1572 676)`}
-      />
-      <path
-        d="M 1492 676 L 1455 656 M 1652 676 L 1689 656"
-        stroke={COLORS.cyan}
-        strokeOpacity={pulse * 0.52}
-        strokeWidth="2"
-      />
-      <rect
-        x="1472"
-        y="706"
-        width="200"
-        height="48"
-        rx="3"
-        fill="#041018"
-        stroke={COLORS.cyan}
-        strokeOpacity="0.34"
-      />
-      <text
-        x="1572"
-        y="725"
-        fill={COLORS.white}
-        fontFamily="'Arial Narrow', Arial, sans-serif"
-        fontSize="12"
-        fontWeight="800"
-        textAnchor="middle"
-        letterSpacing="2"
-      >
-        QUARANTINE DOCK
-      </text>
-      <text
-        x="1572"
-        y="743"
-        fill={sealed > 0.6 ? COLORS.cyan : COLORS.muted}
-        fontFamily="monospace"
-        fontSize="10"
-        textAnchor="middle"
-        letterSpacing="1.5"
-      >
-        {sealed > 0.6 ? "AIR-GAPPED / SEALED" : "STANDBY / NO EGRESS"}
-      </text>
-    </g>
-  );
-};
-
-const AnalysisPlanes: React.FC<{
-  frame: number;
-  primaryScan: number;
-  isolate: number;
-  reset: number;
-}> = ({frame, primaryScan, isolate, reset}) => {
-  const sweepX = mix(260, 1660, primaryScan);
-  const confirm = windowOpacity(frame, 450, 474, 530, 554);
-  const diagonal = modulo(frame * 2.4, 1600) + 180;
-
-  return (
-    <g opacity={1 - reset}>
-      <g opacity={windowOpacity(frame, 188, 202, 258, 274)}>
-        <polygon
-          points={`${sweepX - 82},365 ${sweepX + 12},365 ${
-            sweepX + 270
-          },818 ${sweepX + 176},818`}
-          fill="url(#scan-plane)"
-        />
-        <line
-          x1={sweepX}
-          y1="365"
-          x2={sweepX + 258}
-          y2="818"
-          stroke={COLORS.white}
-          strokeWidth="2"
-          opacity="0.55"
-          filter="url(#cyan-glow)"
-        />
-      </g>
-
-      <g opacity={confirm}>
-        <polygon
-          points="360,430 1470,430 1555,585 445,585"
-          fill={COLORS.cyan}
-          fillOpacity="0.035"
-          stroke={COLORS.cyan}
-          strokeOpacity="0.36"
-          strokeWidth="2"
-        />
-        <polygon
-          points="440,565 1530,565 1650,780 560,780"
-          fill={COLORS.blue}
-          fillOpacity="0.026"
-          stroke={COLORS.blue}
-          strokeOpacity="0.4"
-          strokeWidth="2"
-        />
-        <line
-          x1={diagonal}
-          y1="350"
-          x2={diagonal + 280}
-          y2="840"
-          stroke={COLORS.white}
-          strokeOpacity="0.25"
-          strokeWidth="2"
-        />
-      </g>
-
-      <g opacity={isolate}>
-        <path
-          d="M 690 705 L 760 664 L 830 705 L 830 785 L 760 826 L 690 785 Z"
-          fill={COLORS.cyan}
-          fillOpacity="0.035"
-          stroke={COLORS.cyan}
-          strokeWidth="2"
-          strokeDasharray="10 8"
-          filter="url(#cyan-glow)"
-        />
-        <line
-          x1="760"
-          y1={688 + modulo(frame * 1.8, 100)}
-          x2="760"
-          y2={710 + modulo(frame * 1.8, 100)}
-          stroke={COLORS.white}
-          strokeWidth="5"
-          strokeLinecap="round"
-        />
-      </g>
-    </g>
-  );
-};
-
-const AttackEgress: React.FC<{
-  frame: number;
-  root: {x: number; y: number};
-  reset: number;
-  isolate: number;
-}> = ({frame, root, reset, isolate}) => {
-  const attack = smooth(frame, 405, 448) * (1 - smooth(frame, 545, 620));
-  const portX = 1620;
-  const portY = 462;
-  const control1 = {x: root.x + 190, y: root.y - 90};
-  const control2 = {x: portX - 180, y: portY - 90};
-  const path = `M ${root.x} ${root.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${portX} ${portY}`;
-
-  return (
-    <g opacity={(1 - reset) * windowOpacity(frame, 378, 402, 608, 628)}>
-      <path
-        d={path}
-        fill="none"
-        stroke={COLORS.red}
-        strokeWidth="3.5"
-        strokeDasharray="12 10"
-        strokeDashoffset={-frame * 0.65}
-        opacity={attack * (1 - isolate)}
-        filter="url(#red-glow)"
-      />
-      <g transform={`translate(${portX} ${portY})`}>
-        <circle
-          r="39"
-          fill="#190811"
-          stroke={COLORS.red}
-          strokeOpacity={attack}
-          strokeWidth="2"
-        />
-        <circle
-          r={28 + Math.sin(frame * 0.12) * 4}
-          fill="none"
-          stroke={COLORS.red}
-          strokeOpacity={attack * 0.8}
-          strokeDasharray="5 5"
-        />
-        <path
-          d="M -11 -2 L 3 -16 M -11 -2 L 3 12 M -11 -2 L 17 -2"
-          stroke={COLORS.red}
-          strokeWidth="3"
-          strokeLinecap="round"
-          fill="none"
-        />
-      </g>
-      <text
-        x={portX}
-        y={portY + 62}
-        fill={COLORS.red}
-        fontFamily="monospace"
-        fontSize="11"
-        fontWeight="700"
-        textAnchor="middle"
-        letterSpacing="1.4"
-      >
-        EXTERNAL EGRESS
-      </text>
-    </g>
-  );
-};
-
-const DependencyGraph: React.FC<{
-  frame: number;
-  reset: number;
-  isolate: number;
-  restore: number;
-}> = ({frame, reset, isolate, restore}) => {
-  const move = smooth(frame, 548, 648);
-  const arc = Math.sin(move * Math.PI);
-  const utilNode = GRAPH_NODES.find((node) => node.id === "util")!;
-  const utilPosition = {
-    x: mix(utilNode.x, 1572, move),
-    y: mix(utilNode.y, 630, move) - arc * 95,
-  };
-  const quarantineSeal = smooth(frame, 625, 690);
-  const replace = smooth(frame, 670, 732) * (1 - reset);
-  const restoredVerified = smooth(frame, 690, 755) * (1 - reset);
-
-  const nodePosition = (id: string) => {
-    if (id === "util") return utilPosition;
-    const node = GRAPH_NODES.find((candidate) => candidate.id === id)!;
-    return {x: node.x, y: node.y};
-  };
-
-  return (
-    <g>
-      <QuarantineDock frame={frame} isolate={isolate} reset={reset} />
-
-      <g opacity={1 - reset}>
-        {GRAPH_EDGES.map((edge) => (
-          <GraphEdge
-            key={edge.id}
-            frame={frame}
-            edge={edge}
-            from={nodePosition(edge.from)}
-            to={nodePosition(edge.to)}
-            reset={reset}
-            isolate={isolate}
-            restore={restore}
-          />
-        ))}
-      </g>
-
-      <AttackEgress
-        frame={frame}
-        root={nodePosition("app")}
-        reset={reset}
-        isolate={isolate}
-      />
-
-      {GRAPH_NODES.map((node) => {
-        const visible =
-          easeOut(frame, node.appearFrame, node.appearFrame + 28) * (1 - reset);
-        let threat = 0;
-        if (node.infectionFrame) {
-          threat =
-            smooth(frame, node.infectionFrame, node.infectionFrame + 38) *
-            (1 - smooth(frame, 624, node.id === "util" ? 840 : 712));
-        }
-        const position = nodePosition(node.id);
-        const verified =
-          node.id === "util"
-            ? 0
-            : restoredVerified *
-              (0.78 + 0.22 * Math.sin((node.x + node.y) * 0.01));
-        return (
-          <NodeCube
-            key={node.id}
-            frame={frame}
-            node={node}
-            x={position.x}
-            y={position.y}
-            opacity={visible}
-            threat={threat}
-            verified={verified}
-            lift={node.id === "util" ? arc * 0.7 : 0}
-            sealed={node.id === "util" ? quarantineSeal : 0}
-            labelOpacity={node.id === "util" && move > 0.74 ? 0.9 : 1}
-          />
-        );
-      })}
-
-      {replace > 0.01 ? (
-        <NodeCube
-          frame={frame}
-          node={{
-            ...utilNode,
-            label: "UTIL-7B",
-            version: "0.9.7",
-          }}
-          x={utilNode.x}
-          y={utilNode.y - (1 - replace) * 130}
-          opacity={replace}
-          threat={0}
-          verified={restoredVerified}
-          lift={0}
-        />
-      ) : null}
-
-      <g
-        opacity={windowOpacity(frame, 275, 291, 620, 644) * (1 - reset)}
-        transform={`translate(${mix(760, 1572, move)} ${
-          mix(748, 630, move) - arc * 95
-        })`}
-      >
-        <path
-          d="M 42 -38 L 90 -70 L 246 -70"
-          fill="none"
-          stroke={frame < 540 ? COLORS.red : COLORS.cyan}
-          strokeWidth="2"
-          strokeDasharray="6 5"
-        />
-        <rect
-          x="90"
-          y="-103"
-          width="260"
-          height="66"
-          rx="3"
-          fill="rgba(3,10,16,0.95)"
-          stroke={frame < 540 ? COLORS.red : COLORS.cyan}
-          strokeOpacity="0.72"
-        />
-        <text
-          x="107"
-          y="-80"
-          fill={frame < 540 ? COLORS.red : COLORS.cyan}
-          fontFamily="'Arial Narrow', Arial, sans-serif"
-          fontWeight="900"
-          fontSize="15"
-          letterSpacing="1.4"
-        >
-          {frame < 540 ? "SIGNATURE MISMATCH" : "BRANCH ISOLATED"}
-        </text>
-        <text
-          x="107"
-          y="-58"
-          fill={COLORS.muted}
-          fontFamily="monospace"
-          fontSize="11"
-          letterSpacing="1"
-        >
-          {frame < 540
-            ? "UNDECLARED INSTALL HOOK"
-            : "EGRESS DISABLED / HASH BLOCKED"}
-        </text>
-      </g>
-
-      <AnalysisPlanes
-        frame={frame}
-        primaryScan={smooth(frame, 190, 262)}
-        isolate={isolate}
-        reset={reset}
-      />
-    </g>
-  );
-};
-
-const IncomingArtifact: React.FC<{
-  frame: number;
-  reset: number;
-}> = ({frame, reset}) => {
-  const travel = smooth(frame, 8, 78);
-  const fade = 1 - smooth(frame, 88, 114);
-  const start = {x: -110, y: 672};
-  const control1 = {x: 300, y: 700};
-  const control2 = {x: 670, y: 430};
-  const end = {x: 960, y: 428};
-  const point = cubicPoint(start, control1, control2, end, travel);
-  const trail = range(7).map((index) =>
-    cubicPoint(
-      start,
-      control1,
-      control2,
-      end,
-      clamp(travel - 0.025 * (index + 1)),
-    ),
-  );
-  const opacity = fade * (1 - reset);
-  const packageNode: GraphNode = {
-    id: "artifact-intake",
-    label: "UNSIGNED ARTIFACT",
-    version: "PKG / 84A7",
-    x: point.x,
-    y: point.y,
-    size: 38,
-    tier: "APPLICATION",
-    appearFrame: 0,
-    badge: "IN",
-  };
-
+const Avatar: React.FC<{
+  cx: number;
+  cy: number;
+  r: number;
+  color: string;
+  opacity?: number;
+}> = ({cx, cy, r, color, opacity = 1}) => {
   return (
     <g opacity={opacity}>
-      {trail.map((trailPoint, index) => (
-        <circle
-          key={`artifact-trail-${index}`}
-          cx={trailPoint.x}
-          cy={trailPoint.y}
-          r={6 - index * 0.55}
-          fill={index % 2 === 0 ? COLORS.cyan : COLORS.blue}
-          opacity={(1 - index / trail.length) * 0.52}
-          filter="url(#cyan-glow)"
-        />
-      ))}
-      <NodeCube
-        frame={frame}
-        node={packageNode}
-        x={point.x}
-        y={point.y - Math.sin(travel * Math.PI) * 24}
-        opacity={opacity}
-        threat={0}
-        verified={0}
-        lift={0}
-        labelOpacity={smooth(frame, 10, 30) * (1 - smooth(frame, 68, 84))}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill={color}
+        fillOpacity={0.12}
+        stroke={color}
+        strokeOpacity={0.55}
+        strokeWidth={2}
+      />
+      <circle cx={cx} cy={cy - r * 0.25} r={r * 0.25} fill={color} />
+      <path
+        d={`M ${cx - r * 0.5} ${cy + r * 0.5} C ${cx - r * 0.46} ${
+          cy + r * 0.08
+        }, ${cx + r * 0.46} ${cy + r * 0.08}, ${cx + r * 0.5} ${
+          cy + r * 0.5
+        } Z`}
+        fill={color}
       />
     </g>
   );
 };
 
-type HeadlinePhase = {
-  start: number;
-  inEnd: number;
-  outStart: number;
-  end: number;
-  eyebrow: string;
-  first: string;
-  second?: string;
-  detail: string;
-  accent: string;
+const Lock: React.FC<{
+  x: number;
+  y: number;
+  size: number;
+  closed: number;
+  color: string;
+}> = ({x, y, size, closed, color}) => {
+  const shackleY = interpolate(closed, [0, 1], [size * 0.18, size * 0.34]);
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <path
+        d={`M ${size * 0.25} ${size * 0.46} V ${shackleY} C ${
+          size * 0.25
+        } ${-size * 0.06}, ${size * 0.75} ${-size * 0.06}, ${
+          size * 0.75
+        } ${shackleY} V ${size * 0.46}`}
+        fill="none"
+        stroke={color}
+        strokeWidth={size * 0.11}
+        strokeLinecap="round"
+      />
+      <rect
+        x={size * 0.12}
+        y={size * 0.42}
+        width={size * 0.76}
+        height={size * 0.56}
+        rx={size * 0.13}
+        fill={color}
+      />
+      <circle
+        cx={size * 0.5}
+        cy={size * 0.67}
+        r={size * 0.075}
+        fill={C.white}
+        opacity={0.94}
+      />
+      <rect
+        x={size * 0.465}
+        y={size * 0.69}
+        width={size * 0.07}
+        height={size * 0.15}
+        rx={size * 0.035}
+        fill={C.white}
+        opacity={0.94}
+      />
+    </g>
+  );
 };
 
-const HEADLINE_PHASES: HeadlinePhase[] = [
+type ResourceKind = "cloud" | "mail" | "finance" | "admin";
+
+const ResourceIcon: React.FC<{
+  kind: ResourceKind;
+  x: number;
+  y: number;
+  color: string;
+}> = ({kind, x, y, color}) => {
+  if (kind === "cloud") {
+    return (
+      <g
+        transform={`translate(${x} ${y})`}
+        fill="none"
+        stroke={color}
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M10 43 C2 39, 3 25, 14 22 C17 7, 38 5, 45 18 C58 15, 66 24, 64 34 C63 42, 56 47, 46 47 H15 C13 47, 11 46, 10 43" />
+      </g>
+    );
+  }
+  if (kind === "mail") {
+    return (
+      <g
+        transform={`translate(${x} ${y})`}
+        fill="none"
+        stroke={color}
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x={4} y={10} width={60} height={44} rx={8} />
+        <path d="M8 16 L34 36 L60 16" />
+      </g>
+    );
+  }
+  if (kind === "finance") {
+    return (
+      <g
+        transform={`translate(${x} ${y})`}
+        fill="none"
+        stroke={color}
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M5 21 L34 7 L63 21 Z" />
+        <path d="M10 25 H58 M12 53 H56 M18 27 V51 M34 27 V51 M50 27 V51" />
+      </g>
+    );
+  }
+  return (
+    <g
+      transform={`translate(${x} ${y})`}
+      fill="none"
+      stroke={color}
+      strokeWidth={4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x={7} y={8} width={55} height={48} rx={8} />
+      <path d="M23 24 L15 32 L23 40 M46 24 L54 32 L46 40 M31 44 L39 20" />
+    </g>
+  );
+};
+
+type Resource = {
+  x: number;
+  y: number;
+  label: string;
+  kind: ResourceKind;
+  side: "left" | "right";
+  path: [Point, Point, Point, Point];
+};
+
+const RESOURCES: Resource[] = [
   {
-    start: 0,
-    inEnd: 16,
-    outStart: 80,
-    end: 104,
-    eyebrow: "ARTIFACT INTAKE / ISOLATED VM",
-    first: "SOFTWARE PACKAGE",
-    second: "ENTERING SANDBOX",
-    detail: "ZERO-TRUST DEPENDENCY INSPECTION",
-    accent: COLORS.cyan,
+    x: 105,
+    y: 266,
+    label: "CLOUD FILES",
+    kind: "cloud",
+    side: "left",
+    path: [
+      {x: 435, y: 341},
+      {x: 590, y: 341},
+      {x: 660, y: 410},
+      {x: 785, y: 438},
+    ],
   },
   {
-    start: 78,
-    inEnd: 104,
-    outStart: 238,
-    end: 262,
-    eyebrow: "DEPENDENCY RESOLUTION / 12 PACKAGES",
-    first: "BUILDING",
-    second: "DEPENDENCY GRAPH",
-    detail: "MANIFEST / SIGNATURE / BEHAVIOR",
-    accent: COLORS.blue,
+    x: 105,
+    y: 736,
+    label: "EMAIL SERVICE",
+    kind: "mail",
+    side: "left",
+    path: [
+      {x: 435, y: 811},
+      {x: 590, y: 811},
+      {x: 660, y: 692},
+      {x: 785, y: 660},
+    ],
   },
   {
-    start: 236,
-    inEnd: 258,
-    outStart: 294,
-    end: 316,
-    eyebrow: "PROVENANCE SCAN / TRANSITIVE LAYER",
-    first: "VERIFYING",
-    second: "PACKAGE TRUST",
-    detail: "SIGNATURES AND INSTALL HOOKS",
-    accent: COLORS.cyan,
+    x: 1485,
+    y: 266,
+    label: "FINANCE DATA",
+    kind: "finance",
+    side: "right",
+    path: [
+      {x: 1485, y: 341},
+      {x: 1325, y: 341},
+      {x: 1255, y: 410},
+      {x: 1135, y: 438},
+    ],
   },
   {
-    start: 292,
-    inEnd: 320,
-    outStart: 458,
-    end: 488,
-    eyebrow: "MALICIOUS DEPENDENCY / RISK 94",
-    first: "SUPPLY CHAIN",
-    second: "ATTACK DETECTED",
-    detail: "POSTINSTALL EXECUTION / EGRESS ATTEMPT",
-    accent: COLORS.red,
-  },
-  {
-    start: 472,
-    inEnd: 504,
-    outStart: 644,
-    end: 674,
-    eyebrow: "AUTONOMOUS RESPONSE / POLICY SX-84",
-    first: "ISOLATING",
-    second: "TRANSITIVE BRANCH",
-    detail: "SEVER / LIFT / AIR-GAP",
-    accent: COLORS.amber,
-  },
-  {
-    start: 642,
-    inEnd: 680,
-    outStart: 800,
-    end: 818,
-    eyebrow: "INTEGRITY RESTORED / 12 OF 12 VERIFIED",
-    first: "COMPROMISED PACKAGE",
-    second: "ISOLATED",
-    detail: "CLEAN BUILD RESTORED / EGRESS CLOSED",
-    accent: COLORS.cyan,
-  },
-  {
-    start: 818,
-    inEnd: 838,
-    outStart: 866,
-    end: 888,
-    eyebrow: "SANDBOX CONTROL / SECURE RESET",
-    first: "VALIDATING",
-    second: "CLEAN STATE",
-    detail: "MEMORY PURGE / SESSION RECYCLE",
-    accent: COLORS.blue,
-  },
-  {
-    start: 866,
-    inEnd: 892,
-    outStart: 900,
-    end: 902,
-    eyebrow: "ARTIFACT INTAKE / ISOLATED VM",
-    first: "SOFTWARE PACKAGE",
-    second: "ENTERING SANDBOX",
-    detail: "ZERO-TRUST DEPENDENCY INSPECTION",
-    accent: COLORS.cyan,
+    x: 1485,
+    y: 736,
+    label: "ADMIN CONSOLE",
+    kind: "admin",
+    side: "right",
+    path: [
+      {x: 1485, y: 811},
+      {x: 1325, y: 811},
+      {x: 1255, y: 692},
+      {x: 1135, y: 660},
+    ],
   },
 ];
 
-const StatusHeadline: React.FC<{frame: number}> = ({frame}) => (
-  <div
-    style={{
-      position: "absolute",
-      left: 92,
-      top: 92,
-      width: 830,
-      height: 224,
-      pointerEvents: "none",
-    }}
-  >
-    {HEADLINE_PHASES.map((phase, index) => {
-      const opacity =
-        index === 0
-          ? 1 - smooth(frame, phase.outStart, phase.end)
-          : windowOpacity(
-              frame,
-              phase.start,
-              phase.inEnd,
-              phase.outStart,
-              phase.end,
-            );
-      const rise = interpolate(opacity, [0, 1], [18, 0], {
-        extrapolateLeft: "clamp",
-        extrapolateRight: "clamp",
-      });
-      return (
-        <div
-          key={`${phase.first}-${index}`}
-          style={{
-            position: "absolute",
-            inset: 0,
-            opacity,
-            transform: `translateY(${rise}px)`,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              color: phase.accent,
-              fontFamily: "monospace",
-              fontSize: 14,
-              fontWeight: 700,
-              letterSpacing: 3.2,
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                width: 42,
-                height: 3,
-                background: phase.accent,
-                boxShadow: `0 0 16px ${phase.accent}`,
-              }}
-            />
-            {phase.eyebrow}
-          </div>
-          <div
-            style={{
-              marginTop: 14,
-              color: COLORS.white,
-              fontFamily: "'Arial Narrow', 'Helvetica Neue', Arial, sans-serif",
-              fontSize: phase.first.length > 20 ? 50 : 58,
-              fontWeight: 900,
-              letterSpacing: -1.4,
-              lineHeight: 0.9,
-              textTransform: "uppercase",
-              textShadow: "0 8px 32px rgba(0,0,0,0.55)",
-            }}
-          >
-            <div>{phase.first}</div>
-            {phase.second ? (
-              <div style={{color: phase.accent}}>{phase.second}</div>
-            ) : null}
-          </div>
-          <div
-            style={{
-              marginTop: 16,
-              color: COLORS.muted,
-              fontFamily: "monospace",
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: 2.2,
-            }}
-          >
-            {phase.detail}
-          </div>
-        </div>
-      );
-    })}
-  </div>
-);
-
-const RiskPanel: React.FC<{
+const ResourceCard: React.FC<{
+  resource: Resource;
+  index: number;
   frame: number;
-  reset: number;
-}> = ({frame, reset}) => {
-  const riskRise = smooth(frame, 270, 446);
-  const riskFall = smooth(frame, 548, 680);
-  const storyRisk = mix(mix(8, 94, riskRise), 0, riskFall);
-  const risk = Math.round(mix(storyRisk, 8, reset));
-  const threat = riskRise * (1 - riskFall) * (1 - reset);
-  const panelIn = 1;
-  const signatureState =
-    reset > 0.7
-      ? "MATCH"
-      : frame < 270
-        ? "MATCH"
-        : frame < 650
-          ? "INVALID"
-          : "BLOCKED";
-  const behaviorState =
-    reset > 0.7
-      ? "IDLE"
-      : frame < 320
-        ? "IDLE"
-        : frame < 650
-          ? "MALICIOUS"
-          : "CLEAN";
-  const egressState =
-    reset > 0.7
-      ? "CLOSED"
-      : frame < 405
-        ? "CLOSED"
-        : frame < 620
-          ? "ATTEMPT"
-          : "CLOSED";
-  const accent =
-    threat > 0.15 ? COLORS.red : frame > 650 ? COLORS.cyan : COLORS.blue;
+}> = ({resource, index, frame}) => {
+  const enter = progress(frame, 48 + index * 13, 138 + index * 13);
+  const risk = progress(frame, 344, 500);
+  const revoked = progress(
+    frame,
+    650 + index * 34,
+    730 + index * 34,
+    Easing.inOut(Easing.cubic),
+  );
+  const settle = progress(frame, 790, 900);
+  const yOffset = interpolate(enter, [0, 1], [26, 0]);
+  const xOffset =
+    interpolate(enter, [0, 1], [resource.side === "left" ? -38 : 38, 0]) *
+    (1 - enter);
+  const outline = interpolateColors(
+    Math.max(risk * (1 - revoked), revoked),
+    [0, 0.55, 1],
+    [C.mint, C.amber, C.navy],
+  );
+  const iconColor = interpolateColors(
+    revoked,
+    [0, 0.72, 1],
+    [risk > 0.55 ? C.coral : C.cyanDark, C.coral, C.navy],
+  );
+  const flash =
+    revoked > 0 && revoked < 1
+      ? 0.5 + 0.5 * Math.sin(frame * 0.32 + index)
+      : 0;
+  const connectedOpacity = interpolate(revoked, [0, 0.24], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const lockedOpacity = interpolate(revoked, [0.48, 0.78], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const labelFontSize =
+    resource.label.length >= 13
+      ? 20
+      : resource.label.length >= 12
+        ? 22
+        : 24;
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        right: 92,
-        top: 80,
-        width: 326,
-        opacity: panelIn,
-        transform: `translateX(${(1 - panelIn) * 36}px)`,
-        color: COLORS.white,
-        fontFamily: "monospace",
-      }}
+    <g
+      transform={`translate(${resource.x + xOffset} ${
+        resource.y + yOffset
+      })`}
+      opacity={enter}
     >
-      <div
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(6,22,31,0.94), rgba(2,8,13,0.82))",
-          border: `1px solid ${accent}66`,
-          boxShadow: `0 0 36px ${accent}12, inset 0 0 28px rgba(18,64,78,0.14)`,
-          padding: "18px 20px 17px",
-          clipPath:
-            "polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%)",
-        }}
+      <rect
+        x={8}
+        y={14}
+        width={330}
+        height={150}
+        rx={25}
+        fill={C.navy}
+        opacity={0.12}
+        filter="url(#card-shadow)"
+      />
+      <rect
+        x={0}
+        y={0}
+        width={330}
+        height={150}
+        rx={25}
+        fill={C.glass}
+        fillOpacity={0.94}
+        stroke={outline}
+        strokeWidth={interpolate(revoked, [0, 0.5, 1], [2.5, 5, 3])}
+      />
+      <rect
+        x={15}
+        y={15}
+        width={94}
+        height={120}
+        rx={18}
+        fill={iconColor}
+        fillOpacity={0.09 + flash * 0.06}
+      />
+      <ResourceIcon kind={resource.kind} x={28} y={42} color={iconColor} />
+      <text
+        x={126}
+        y={62}
+        fill={C.navy}
+        fontFamily={FONT}
+        fontSize={labelFontSize}
+        fontWeight={800}
+        letterSpacing={0.1}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: 2,
-            color: COLORS.muted,
-          }}
+        {resource.label}
+      </text>
+      <g opacity={connectedOpacity}>
+        <circle cx={137} cy={103} r={6} fill={risk > 0.62 ? C.amber : C.mint} />
+        <text
+          x={153}
+          y={110}
+          fill={risk > 0.62 ? C.coralDark : C.mintDark}
+          fontFamily={FONT}
+          fontSize={19}
+          fontWeight={800}
+          letterSpacing={1.4}
         >
-          <span>AI RISK ENGINE</span>
-          <span style={{color: accent}}>
-            {risk === 0 ? "SECURE" : risk > 70 ? "CRITICAL" : "ANALYZING"}
-          </span>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 9,
-            marginTop: 12,
-          }}
+          {risk > 0.62 ? "CHECKING" : "CONNECTED"}
+        </text>
+      </g>
+      <g opacity={lockedOpacity}>
+        <Lock
+          x={270}
+          y={78}
+          size={44}
+          closed={lockedOpacity}
+          color={C.navy}
+        />
+        <circle cx={137} cy={103} r={6} fill={C.navy} />
+        <text
+          x={153}
+          y={110}
+          fill={C.navy}
+          fontFamily={FONT}
+          fontSize={19}
+          fontWeight={900}
+          letterSpacing={1.7}
         >
-          <span
-            style={{
-              color: accent,
-              fontFamily: "'Arial Narrow', Arial, sans-serif",
-              fontSize: 62,
-              fontWeight: 900,
-              lineHeight: 0.9,
-              textShadow: `0 0 24px ${accent}55`,
-            }}
-          >
-            {String(risk).padStart(2, "0")}
-          </span>
-          <span
-            style={{
-              color: COLORS.muted,
-              fontSize: 11,
-              letterSpacing: 2,
-            }}
-          >
-            RISK / 100
-          </span>
-        </div>
-
-        <div
-          style={{
-            height: 5,
-            marginTop: 14,
-            background: "#10232d",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${risk}%`,
-              height: "100%",
-              background: accent,
-              boxShadow: `0 0 12px ${accent}`,
-            }}
-          />
-        </div>
-
-        <div style={{marginTop: 16}}>
-          {[
-            ["SIGNATURE", signatureState],
-            ["BEHAVIOR", behaviorState],
-            ["EGRESS", egressState],
-          ].map(([label, value]) => {
-            const danger =
-              value === "INVALID" ||
-              value === "MALICIOUS" ||
-              value === "ATTEMPT";
-            return (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "7px 0",
-                  borderTop: "1px solid rgba(87,153,170,0.16)",
-                  fontSize: 11,
-                  letterSpacing: 1.5,
-                }}
-              >
-                <span style={{color: COLORS.muted}}>{label}</span>
-                <span style={{color: danger ? COLORS.red : COLORS.cyan}}>
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+          LOCKED
+        </text>
+      </g>
+      <rect
+        x={4}
+        y={4}
+        width={322}
+        height={142}
+        rx={21}
+        fill="none"
+        stroke={C.white}
+        strokeOpacity={0.72 - settle * 0.18}
+        strokeWidth={1.5}
+      />
+    </g>
   );
 };
 
-const TopSystemRail: React.FC<{frame: number}> = ({frame}) => {
-  const cycle = (frame / 900) * Math.PI * 2;
+const ConnectionRibbon: React.FC<{
+  resource: Resource;
+  index: number;
+  frame: number;
+}> = ({resource, index, frame}) => {
+  const [p0, p1, p2, p3] = resource.path;
+  const path = `M ${p0.x} ${p0.y} C ${p1.x} ${p1.y} ${p2.x} ${p2.y} ${p3.x} ${p3.y}`;
+  const draw = progress(frame, 92 + index * 14, 188 + index * 14);
+  const risk = progress(frame, 350, 510);
+  const revoked = progress(
+    frame,
+    650 + index * 34,
+    730 + index * 34,
+    Easing.inOut(Easing.cubic),
+  );
+  const visible = Math.max(0.0001, draw * (1 - revoked));
+  const tokenOpacity = draw * (1 - revoked) * (1 - progress(frame, 510, 610));
+  const t1 = (frame * 0.008 + index * 0.22) % 1;
+  const t2 = (t1 + 0.42) % 1;
+  const token1 = cubicPoint(p0, p1, p2, p3, t1);
+  const token2 = cubicPoint(p0, p1, p2, p3, t2);
+  const activeColor = interpolateColors(risk, [0, 0.62, 1], [
+    C.mint,
+    C.amber,
+    C.coral,
+  ]);
+  const cutT = Math.max(0, 0.96 - revoked * 0.82);
+  const cutPoint = cubicPoint(p0, p1, p2, p3, cutT);
+  const cutOpacity = Math.sin(Math.PI * revoked);
+
+  return (
+    <g>
+      <path
+        d={path}
+        fill="none"
+        stroke={C.lineDark}
+        strokeOpacity={0.48 * draw}
+        strokeWidth={19}
+        strokeLinecap="round"
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke={C.white}
+        strokeOpacity={0.72 * draw}
+        strokeWidth={13}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={`${visible} 1`}
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke={activeColor}
+        strokeOpacity={0.96}
+        strokeWidth={8}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={`${visible} 1`}
+      />
+      {[token1, token2].map((point, tokenIndex) => (
+        <g
+          key={tokenIndex}
+          opacity={tokenOpacity}
+          transform={`translate(${point.x} ${point.y})`}
+        >
+          <circle r={11} fill={C.white} opacity={0.95} />
+          <circle r={7} fill={activeColor} />
+          <circle r={17} fill="none" stroke={activeColor} strokeOpacity={0.2} />
+        </g>
+      ))}
+      <g
+        opacity={cutOpacity}
+        transform={`translate(${cutPoint.x} ${cutPoint.y}) rotate(45)`}
+      >
+        <circle r={22} fill={C.white} stroke={C.coral} strokeWidth={3} />
+        <path
+          d="M-9 0 H9 M0 -9 V9"
+          stroke={C.coralDark}
+          strokeWidth={4}
+          strokeLinecap="round"
+        />
+      </g>
+    </g>
+  );
+};
+
+const Iris: React.FC<{frame: number}> = ({frame}) => {
+  const appear = progress(frame, 36, 150);
+  const risk = progress(frame, 350, 510);
+  const check = progress(frame, 500, 640, Easing.inOut(Easing.cubic));
+  const revoke = progress(frame, 640, 820, Easing.inOut(Easing.cubic));
+  const inner = interpolate(check, [0, 1], [328, 253]);
+  const rotation = interpolate(frame, [0, 1200], [0, 36]);
+  const segmentColor = interpolateColors(Math.max(risk * 0.84, revoke), [
+    0,
+    0.52,
+    1,
+  ], [C.cyan, C.amber, C.coral]);
+  const ringPulse = risk > 0.1 && revoke < 1
+    ? 0.5 + 0.5 * Math.sin(frame * 0.22)
+    : 0;
+
+  return (
+    <g opacity={appear}>
+      <circle
+        cx={960}
+        cy={548}
+        r={373}
+        fill={C.white}
+        fillOpacity={0.23}
+        stroke={C.white}
+        strokeOpacity={0.8}
+        strokeWidth={2}
+      />
+      <circle
+        cx={960}
+        cy={548}
+        r={356}
+        fill="none"
+        stroke={segmentColor}
+        strokeOpacity={0.25 + ringPulse * 0.18}
+        strokeWidth={2 + ringPulse * 2}
+      />
+      {Array.from({length: 12}, (_, index) => {
+        const start = index * 30 + 3;
+        const end = index * 30 + 27;
+        const stagger = progress(frame, 44 + index * 3, 125 + index * 3);
+        const localRotate =
+          rotation + index * 0.18 + Math.sin(frame * 0.012 + index) * 0.45;
+        return (
+          <path
+            key={index}
+            d={annularSegmentPath(960, 548, 348, inner, start, end)}
+            fill={segmentColor}
+            fillOpacity={0.085 + risk * 0.13 + revoke * 0.11}
+            stroke={segmentColor}
+            strokeOpacity={0.34 + risk * 0.34}
+            strokeWidth={1.8}
+            opacity={stagger}
+            transform={`rotate(${localRotate} 960 548)`}
+          />
+        );
+      })}
+      <circle
+        cx={960}
+        cy={548}
+        r={inner - 10}
+        fill="none"
+        stroke={segmentColor}
+        strokeOpacity={0.24 + check * 0.43}
+        strokeWidth={2}
+        strokeDasharray="7 11"
+        transform={`rotate(${-rotation * 2} 960 548)`}
+      />
+      {risk > 0 ? (
+        <>
+          <circle
+            cx={960}
+            cy={548}
+            r={interpolate(check, [0, 1], [420, 282])}
+            fill="none"
+            stroke={segmentColor}
+            strokeWidth={3}
+            strokeOpacity={(1 - check) * 0.42}
+          />
+          <circle
+            cx={960}
+            cy={548}
+            r={interpolate(check, [0, 1], [465, 302])}
+            fill="none"
+            stroke={segmentColor}
+            strokeWidth={1.5}
+            strokeOpacity={(1 - check) * 0.24}
+          />
+        </>
+      ) : null}
+    </g>
+  );
+};
+
+/*
+ * FingerprintPattern paths from Lucide Static v1.27.0.
+ * Source: https://lucide.dev/icons/fingerprint-pattern
+ * ISC License — Copyright (c) 2026 Lucide Icons and Contributors.
+ * Permission to use, copy, modify, and/or distribute for any purpose with or
+ * without fee is granted when this copyright and permission notice is kept.
+ */
+const FingerprintPattern: React.FC<{
+  x: number;
+  y: number;
+  risk: number;
+}> = ({x, y, risk}) => {
+  const color = interpolateColors(risk, [0, 0.55, 1], [
+    C.cyanDark,
+    C.amber,
+    C.coral,
+  ]);
+  return (
+    <g
+      transform={`translate(${x} ${y}) scale(2.65)`}
+      fill="none"
+      stroke={color}
+      strokeWidth={1.28}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+      <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+      <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
+      <path d="M2 12a10 10 0 0 1 18-6" />
+      <path d="M2 16h.01" />
+      <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+      <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+      <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+      <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+    </g>
+  );
+};
+
+const CredentialCard: React.FC<{frame: number}> = ({frame}) => {
+  const enter = progress(frame, 50, 145);
+  const risk = progress(frame, 350, 505, Easing.inOut(Easing.cubic));
+  const check = progress(frame, 500, 640, Easing.inOut(Easing.cubic));
+  const revoke = progress(frame, 640, 820, Easing.inOut(Easing.cubic));
+  const settled = progress(frame, 820, 910);
+  const score = Math.round(interpolate(risk, [0, 1], [12, 94]));
+  const cardStroke = interpolateColors(Math.max(risk, revoke), [0, 0.55, 1], [
+    C.cyan,
+    C.amber,
+    C.coral,
+  ]);
+  const scale = interpolate(enter, [0, 1], [0.88, 1]);
+  const tilt = interpolate(enter, [0, 1], [-5, 0]);
+  const scanY = 40 + ((frame * 2.35) % 330);
+  const statusColor = interpolateColors(risk, [0, 0.55, 1], [
+    C.mint,
+    C.amber,
+    C.coral,
+  ]);
+  const stamp = progress(frame, 760, 835, Easing.out(Easing.back(1.4)));
+  const detailOpacity = 1 - progress(frame, 778, 824);
+
+  return (
+    <g
+      opacity={enter}
+      transform={`translate(960 548) scale(${scale}) rotate(${tilt}) translate(-960 -548)`}
+    >
+      <rect
+        x={792}
+        y={344}
+        width={360}
+        height={430}
+        rx={34}
+        fill={C.navy}
+        opacity={0.16}
+        filter="url(#card-shadow)"
+      />
+      <rect
+        x={780}
+        y={330}
+        width={360}
+        height={430}
+        rx={34}
+        fill={C.glass}
+        fillOpacity={0.965}
+        stroke={cardStroke}
+        strokeWidth={interpolate(check, [0, 1], [3, 6])}
+      />
+      <rect
+        x={796}
+        y={346}
+        width={328}
+        height={398}
+        rx={25}
+        fill="none"
+        stroke={C.white}
+        strokeWidth={2}
+        strokeOpacity={0.86}
+      />
+      <rect
+        x={780}
+        y={330}
+        width={360}
+        height={79}
+        rx={34}
+        fill={C.navy}
+      />
+      <rect x={780} y={376} width={360} height={33} fill={C.navy} />
+      <circle cx={818} cy={370} r={7} fill={statusColor} />
+      <text
+        x={840}
+        y={377}
+        fill={C.white}
+        fontFamily={FONT}
+        fontSize={14}
+        fontWeight={800}
+        letterSpacing={1.1}
+      >
+        IDENTITY CREDENTIAL
+      </text>
+      <rect
+        x={1064}
+        y={352}
+        width={58}
+        height={35}
+        rx={11}
+        fill={C.white}
+        fillOpacity={0.1}
+        stroke={C.white}
+        strokeOpacity={0.22}
+      />
+      <text
+        x={1093}
+        y={375.5}
+        fill={C.white}
+        fillOpacity={0.78}
+        fontFamily={FONT}
+        fontSize={14}
+        fontWeight={850}
+        textAnchor="middle"
+        letterSpacing={0.8}
+      >
+        7A41
+      </text>
+
+      <Avatar
+        cx={852}
+        cy={484}
+        r={49}
+        color={risk > 0.62 ? C.coral : C.cyanDark}
+      />
+      <text
+        x={920}
+        y={467}
+        fill={C.slate}
+        fontFamily={FONT}
+        fontSize={12.8}
+        fontWeight={800}
+        letterSpacing={0.85}
+      >
+        WORKFORCE IDENTITY
+      </text>
+      <text
+        x={920}
+        y={506}
+        fill={C.navy}
+        fontFamily={FONT}
+        fontSize={31}
+        fontWeight={900}
+      >
+        USER 7A41
+      </text>
+      <text
+        x={920}
+        y={537}
+        fill={C.slate}
+        fontFamily={FONT}
+        fontSize={16.5}
+        fontWeight={650}
+      >
+        PRIVILEGED ACCESS
+      </text>
+
+      <rect
+        x={813}
+        y={568}
+        width={294}
+        height={88}
+        rx={18}
+        fill={statusColor}
+        fillOpacity={0.09}
+        stroke={statusColor}
+        strokeOpacity={0.42}
+        strokeWidth={2}
+      />
+      <text
+        x={835}
+        y={600}
+        fill={C.slate}
+        fontFamily={FONT}
+        fontSize={16}
+        fontWeight={800}
+        letterSpacing={1.4}
+      >
+        IDENTITY RISK
+      </text>
+      <text
+        x={835}
+        y={638}
+        fill={statusColor}
+        fontFamily={FONT}
+        fontSize={risk >= 0.5 && risk < 0.88 ? 30 : 35}
+        fontWeight={900}
+      >
+        {risk < 0.5 ? "LOW" : risk < 0.88 ? "ELEVATED" : "CRITICAL"}
+      </text>
+      <text
+        x={1082}
+        y={634}
+        fill={statusColor}
+        fontFamily={FONT}
+        fontSize={44}
+        fontWeight={900}
+        textAnchor="end"
+      >
+        {score}
+      </text>
+
+      <g opacity={detailOpacity}>
+        <rect
+          x={812}
+          y={666}
+          width={92}
+          height={72}
+          rx={17}
+          fill={statusColor}
+          fillOpacity={0.075}
+          stroke={statusColor}
+          strokeOpacity={0.2}
+          strokeWidth={1.5}
+        />
+        <FingerprintPattern x={826} y={670} risk={risk} />
+        <g transform="translate(914 682)">
+          {[
+            ["DEVICE", risk < 0.55 ? "MANAGED" : "UNKNOWN"],
+            ["LOCATION", risk < 0.55 ? "VERIFIED" : "MISMATCH"],
+            ["TOKEN", risk < 0.55 ? "VALID" : "REUSED"],
+          ].map(([label, value], index) => (
+            <g key={label} transform={`translate(0 ${index * 29})`}>
+              <text
+                x={0}
+                y={0}
+                fill={C.slate}
+                fontFamily={FONT}
+                fontSize={12.5}
+                fontWeight={750}
+                letterSpacing={0.85}
+              >
+                {label}
+              </text>
+              <text
+                x={196}
+                y={0}
+                fill={risk < 0.55 ? C.mintDark : C.coralDark}
+                fontFamily={FONT}
+                fontSize={13.2}
+                fontWeight={900}
+                textAnchor="end"
+                letterSpacing={0.55}
+              >
+                {value}
+              </text>
+            </g>
+          ))}
+        </g>
+      </g>
+
+      <g opacity={(1 - check) * 0.075}>
+        <rect
+          x={786}
+          y={scanY + 330}
+          width={348}
+          height={3}
+          rx={2}
+          fill={C.cyan}
+        />
+      </g>
+
+      <g
+        opacity={stamp}
+        transform={`translate(960 552) rotate(-8) scale(${interpolate(
+          stamp,
+          [0, 1],
+          [1.22, 1],
+        )}) translate(-960 -552)`}
+      >
+        <rect
+          x={806}
+          y={515}
+          width={308}
+          height={92}
+          rx={15}
+          fill={C.white}
+          fillOpacity={0.94}
+          stroke={C.coral}
+          strokeWidth={6}
+        />
+        <text
+          x={960}
+          y={575}
+          fill={C.coralDark}
+          fontFamily={FONT}
+          fontSize={42}
+          fontWeight={950}
+          letterSpacing={2.8}
+          textAnchor="middle"
+        >
+          REVOKED
+        </text>
+      </g>
+
+      <g opacity={settled * 0.78}>
+        <rect
+          x={800}
+          y={704}
+          width={320}
+          height={42}
+          rx={21}
+          fill={C.navy}
+        />
+        <text
+          x={960}
+          y={732}
+          fill={C.white}
+          fontFamily={FONT}
+          fontSize={17}
+          fontWeight={900}
+          letterSpacing={1.8}
+          textAnchor="middle"
+        >
+          IDENTITY QUARANTINED
+        </text>
+      </g>
+    </g>
+  );
+};
+
+const EvidencePill: React.FC<{
+  frame: number;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  label: string;
+  icon: string;
+}> = ({frame, start, end, x, y, label, icon}) => {
+  const opacity = windowOpacity(frame, start, end, 18);
+  const enter = progress(frame, start, start + 28, Easing.out(Easing.back(1.25)));
+  const yOffset = interpolate(enter, [0, 1], [18, 0]);
+  const isLongLabel = label.length > 14;
+  const pillWidth = isLongLabel ? 280 : 246;
+  return (
+    <g opacity={opacity} transform={`translate(${x} ${y + yOffset})`}>
+      <rect
+        x={6}
+        y={9}
+        width={pillWidth}
+        height={64}
+        rx={20}
+        fill={C.navy}
+        opacity={0.12}
+        filter="url(#card-shadow)"
+      />
+      <rect
+        x={0}
+        y={0}
+        width={pillWidth}
+        height={64}
+        rx={20}
+        fill={C.white}
+        stroke={C.coral}
+        strokeWidth={2.5}
+      />
+      <circle cx={32} cy={32} r={18} fill={C.coral} fillOpacity={0.12} />
+      <text
+        x={32}
+        y={40}
+        fill={C.coralDark}
+        fontFamily={FONT}
+        fontSize={22}
+        fontWeight={900}
+        textAnchor="middle"
+      >
+        {icon}
+      </text>
+      <text
+        x={62}
+        y={40}
+        fill={C.navy}
+        fontFamily={FONT}
+        fontSize={isLongLabel ? 16.5 : 18}
+        fontWeight={900}
+        letterSpacing={isLongLabel ? 0.45 : 0.75}
+      >
+        {label}
+      </text>
+    </g>
+  );
+};
+
+type Phase = {
+  start: number;
+  end: number;
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  color: string;
+};
+
+const PHASES: Phase[] = [
+  {
+    start: 80,
+    end: 318,
+    eyebrow: "AUTONOMOUS ZERO-TRUST",
+    title: "CONTINUOUS ACCESS VERIFIED",
+    subtitle: "Every request is evaluated before protected resources respond",
+    color: C.mintDark,
+  },
+  {
+    start: 330,
+    end: 498,
+    eyebrow: "BEHAVIOR ANALYTICS",
+    title: "RISK SIGNAL DETECTED",
+    subtitle: "Unfamiliar device  •  impossible travel  •  token reuse",
+    color: C.coralDark,
+  },
+  {
+    start: 510,
+    end: 635,
+    eyebrow: "REAL-TIME POLICY ENGINE",
+    title: "ZERO-TRUST POLICY CHECK",
+    subtitle: "Trust is never assumed — each signal is verified",
+    color: C.amber,
+  },
+  {
+    start: 650,
+    end: 838,
+    eyebrow: "AUTONOMOUS RESPONSE",
+    title: "REVOKING EVERY ACTIVE SESSION",
+    subtitle: "Permissions retract while access tokens are invalidated",
+    color: C.coralDark,
+  },
+  {
+    start: 850,
+    end: 1004,
+    eyebrow: "SELECTIVE CONTAINMENT",
+    title: "HEALTHY WORKFORCE UNAFFECTED",
+    subtitle: "Only the compromised identity is isolated",
+    color: C.mintDark,
+  },
+];
+
+const PhaseHeader: React.FC<{frame: number}> = ({frame}) => {
   return (
     <>
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 0,
-          height: 46,
-          borderBottom: "1px solid rgba(41,226,242,0.14)",
-          background:
-            "linear-gradient(90deg, rgba(2,8,13,0.88), rgba(5,20,29,0.68), rgba(2,8,13,0.88))",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 92px",
-          color: COLORS.muted,
-          fontFamily: "monospace",
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 2.1,
-        }}
-      >
-        <div
-          style={{
-            width: 17,
-            height: 17,
-            marginRight: 13,
-            transform: "rotate(45deg)",
-            border: `2px solid ${COLORS.cyan}`,
-            boxShadow: `0 0 14px ${COLORS.cyan}66`,
-          }}
-        />
-        <span style={{color: COLORS.white}}>
-          AI SOFTWARE SUPPLY CHAIN SANDBOX
-        </span>
-        <span style={{marginLeft: 18, color: COLORS.cyan}}>LIVE</span>
-        <div style={{flex: 1}} />
-        <span>VM-07</span>
-        <span style={{marginLeft: 25}}>NO TRUST ZONE</span>
-        <span style={{marginLeft: 25, color: COLORS.cyan}}>
-          {Math.round((0.78 + Math.sin(cycle) * 0.04) * 100)}% INTEGRITY
-        </span>
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          left: 92,
-          right: 92,
-          top: 58,
-          height: 2,
-          background:
-            "linear-gradient(90deg, rgba(41,226,242,0.62), rgba(57,141,255,0.14), transparent 65%)",
-        }}
-      />
+      {PHASES.map((phase) => {
+        const opacity = windowOpacity(frame, phase.start, phase.end, 16);
+        const enter = progress(frame, phase.start, phase.start + 28);
+        const y = interpolate(enter, [0, 1], [16, 0]);
+        return (
+          <div
+            key={phase.title}
+            style={{
+              position: "absolute",
+              left: 420,
+              top: 50 + y,
+              width: 1080,
+              textAlign: "center",
+              opacity,
+            }}
+          >
+            <div
+              style={{
+                color: phase.color,
+                fontFamily: FONT,
+                fontSize: 20,
+                fontWeight: 900,
+                letterSpacing: 4.2,
+                lineHeight: 1.15,
+                marginBottom: 10,
+              }}
+            >
+              {phase.eyebrow}
+            </div>
+            <div
+              style={{
+                color: C.navy,
+                fontFamily: FONT,
+                fontSize: 53,
+                fontWeight: 950,
+                letterSpacing: -1.5,
+                lineHeight: 1.02,
+              }}
+            >
+              {phase.title}
+            </div>
+            <div
+              style={{
+                color: C.slate,
+                fontFamily: FONT,
+                fontSize: 24,
+                fontWeight: 650,
+                letterSpacing: 0.2,
+                lineHeight: 1.25,
+                marginTop: 12,
+              }}
+            >
+              {phase.subtitle}
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 };
 
-const ProgressRail: React.FC<{frame: number; reset: number}> = ({
-  frame,
-  reset,
-}) => {
-  const stages = [
-    {label: "INGEST", start: 0},
-    {label: "RESOLVE", start: 80},
-    {label: "VERIFY", start: 190},
-    {label: "DETECT", start: 270},
-    {label: "ISOLATE", start: 540},
-    {label: "RESTORE", start: 670},
-  ];
-  const activeIndex =
-    reset > 0.84
-      ? 0
-      : frame >= 670
-        ? 5
-        : frame >= 540
-          ? 4
-          : frame >= 270
-            ? 3
-            : frame >= 190
-              ? 2
-              : frame >= 80
-                ? 1
-                : 0;
-  const progress = mix(clamp(frame / 840), 0, reset);
+const HealthyAccessBanner: React.FC<{frame: number}> = ({frame}) => {
+  const opacity = windowOpacity(frame, 842, 1000, 24);
+  const width = 790;
+  const healthyPulse = 0.5 + 0.5 * Math.sin(frame * 0.08);
+  return (
+    <g opacity={opacity}>
+      <rect
+        x={960 - width / 2}
+        y={936}
+        width={width}
+        height={86}
+        rx={30}
+        fill={C.white}
+        fillOpacity={0.96}
+        stroke={C.mint}
+        strokeWidth={3}
+        filter="url(#card-shadow)"
+      />
+      {[0, 1, 2].map((index) => (
+        <Avatar
+          key={index}
+          cx={662 + index * 52}
+          cy={979}
+          r={22}
+          color={C.mintDark}
+          opacity={0.72 + healthyPulse * 0.18}
+        />
+      ))}
+      <text
+        x={842}
+        y={971}
+        fill={C.navy}
+        fontFamily={FONT}
+        fontSize={23}
+        fontWeight={900}
+        letterSpacing={0.3}
+      >
+        142 HEALTHY SESSIONS CONTINUE
+      </text>
+      <text
+        x={842}
+        y={999}
+        fill={C.mintDark}
+        fontFamily={FONT}
+        fontSize={18}
+        fontWeight={800}
+        letterSpacing={1.6}
+      >
+        BUSINESS ACCESS REMAINS AVAILABLE
+      </text>
+      <circle cx={1330} cy={978} r={19} fill={C.mint} />
+      <path
+        d="M1321 978 L1327 984 L1340 970"
+        fill="none"
+        stroke={C.white}
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  );
+};
 
+const FinalPayoff: React.FC<{frame: number}> = ({frame}) => {
+  const opacity = windowOpacity(frame, 1008, 1152, 22);
+  const enter = progress(frame, 1008, 1045, Easing.out(Easing.back(1.1)));
+  const titleScale = interpolate(enter, [0, 1], [0.92, 1]);
+  const metrics = [
+    ["04", "PERMISSIONS REMOVED"],
+    ["03", "SESSIONS ENDED"],
+    ["00", "ACTIVE TOKENS"],
+  ];
+  return (
+    <g opacity={opacity}>
+      <rect
+        x={310}
+        y={52}
+        width={1300}
+        height={175}
+        rx={38}
+        fill={C.white}
+        fillOpacity={0.97}
+        stroke={C.navy}
+        strokeOpacity={0.13}
+        strokeWidth={2}
+        filter="url(#card-shadow)"
+      />
+      <g
+        transform={`translate(960 129) scale(${titleScale}) translate(-960 -129)`}
+      >
+        <circle cx={535} cy={132} r={42} fill={C.mint} />
+        <path
+          d="M515 132 L529 146 L556 116"
+          fill="none"
+          stroke={C.white}
+          strokeWidth={8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <text
+          x={600}
+          y={141}
+          fill={C.navy}
+          fontFamily={FONT}
+          fontSize={78}
+          fontWeight={950}
+          letterSpacing={-2.2}
+        >
+          ACCESS REVOKED
+        </text>
+      </g>
+      <text
+        x={960}
+        y={192}
+        fill={C.slate}
+        fontFamily={FONT}
+        fontSize={23}
+        fontWeight={700}
+        textAnchor="middle"
+        letterSpacing={0.3}
+      >
+        Compromised identity contained • protected resources secured
+      </text>
+
+      <rect
+        x={420}
+        y={880}
+        width={1080}
+        height={132}
+        rx={32}
+        fill={C.navy}
+        filter="url(#card-shadow)"
+      />
+      {metrics.map(([value, label], index) => {
+        const x = 600 + index * 360;
+        const stagger = progress(frame, 1028 + index * 14, 1070 + index * 14);
+        return (
+          <g key={label} opacity={stagger}>
+            {index > 0 ? (
+              <line
+                x1={x - 180}
+                y1={906}
+                x2={x - 180}
+                y2={986}
+                stroke={C.white}
+                strokeOpacity={0.16}
+              />
+            ) : null}
+            <text
+              x={x}
+              y={946}
+              fill={index === 2 ? C.mint : C.white}
+              fontFamily={FONT}
+              fontSize={46}
+              fontWeight={950}
+              textAnchor="middle"
+            >
+              {value}
+            </text>
+            <text
+              x={x}
+              y={978}
+              fill={C.white}
+              fillOpacity={0.7}
+              fontFamily={FONT}
+              fontSize={16}
+              fontWeight={850}
+              textAnchor="middle"
+              letterSpacing={1.55}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
+const CornerLabel: React.FC<{frame: number}> = ({frame}) => {
+  const opacity = windowOpacity(frame, 40, 1158, 30);
   return (
     <div
       style={{
         position: "absolute",
-        left: 92,
-        right: 92,
-        bottom: 48,
-        height: 70,
-        fontFamily: "monospace",
+        left: 74,
+        top: 64,
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        opacity,
       }}
     >
       <div
         style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 17,
-          height: 2,
-          background: "rgba(51,106,122,0.25)",
+          width: 13,
+          height: 13,
+          borderRadius: "50%",
+          background: C.cyan,
+          boxShadow: `0 0 0 7px rgba(50,172,209,0.12)`,
+        }}
+      />
+      <div
+        style={{
+          color: C.navy,
+          fontFamily: FONT,
+          fontSize: 19,
+          fontWeight: 900,
+          letterSpacing: 2.1,
         }}
       >
-        <div
-          style={{
-            width: `${progress * 100}%`,
-            height: "100%",
-            background:
-              activeIndex === 3
-                ? COLORS.red
-                : `linear-gradient(90deg, ${COLORS.blue}, ${COLORS.cyan})`,
-            boxShadow:
-              activeIndex === 3
-                ? `0 0 12px ${COLORS.red}`
-                : `0 0 12px ${COLORS.cyan}`,
-          }}
-        />
-      </div>
-      <div style={{display: "flex", justifyContent: "space-between"}}>
-        {stages.map((stage, index) => {
-          const active = index <= activeIndex;
-          const current = index === activeIndex;
-          const danger = index === 3 && current;
-          const color = danger
-            ? COLORS.red
-            : active
-              ? COLORS.cyan
-              : COLORS.dim;
-          return (
-            <div
-              key={stage.label}
-              style={{
-                width: 150,
-                position: "relative",
-                textAlign: index === 0 ? "left" : index === 5 ? "right" : "center",
-              }}
-            >
-              <div
-                style={{
-                  width: current ? 13 : 9,
-                  height: current ? 13 : 9,
-                  borderRadius: "50%",
-                  background: color,
-                  border: `2px solid ${COLORS.background}`,
-                  boxShadow: current ? `0 0 18px ${color}` : "none",
-                  margin:
-                    index === 0
-                      ? "12px 0 0 0"
-                      : index === 5
-                        ? "12px 0 0 auto"
-                        : "12px auto 0",
-                }}
-              />
-              <div
-                style={{
-                  marginTop: 12,
-                  color,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 1.8,
-                }}
-              >
-                {String(index + 1).padStart(2, "0")} / {stage.label}
-              </div>
-            </div>
-          );
-        })}
+        IDENTITY SECURITY
       </div>
     </div>
   );
 };
 
-const SignalBurst: React.FC<{frame: number}> = ({frame}) => {
-  const bursts = [
-    {center: 294, width: 12, color: COLORS.red},
-    {center: 455, width: 10, color: COLORS.cyan},
-    {center: 595, width: 11, color: COLORS.white},
-  ];
-
+const DecorativeDots: React.FC<{frame: number}> = ({frame}) => {
   return (
-    <AbsoluteFill style={{pointerEvents: "none"}}>
-      {bursts.map((burst, burstIndex) => {
-        const distance = Math.abs(frame - burst.center);
-        const intensity = clamp(1 - distance / burst.width);
-        if (intensity <= 0) return null;
+    <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
+      {Array.from({length: 24}, (_, index) => {
+        const angle = seeded(index + 2) * Math.PI * 2;
+        const radius = 440 + seeded(index + 91) * 340;
+        const x = 960 + Math.cos(angle) * radius;
+        const y = 550 + Math.sin(angle) * radius * 0.58;
+        const drift = Math.sin(frame * 0.018 + index) * 6;
         return (
-          <React.Fragment key={`burst-${burst.center}`}>
-            <AbsoluteFill
-              style={{
-                background: burst.color,
-                opacity: intensity * 0.035,
-                mixBlendMode: "screen",
-              }}
-            />
-            {range(12).map((index) => {
-              const seed = burstIndex * 30 + index;
-              const y = 110 + hash(seed + 4) * 820;
-              const width = 180 + hash(seed + 7) * 780;
-              const left = hash(seed + 12) * (WIDTH - width);
-              const direction = index % 2 === 0 ? 1 : -1;
-              return (
-                <div
-                  key={`burst-line-${burstIndex}-${index}`}
-                  style={{
-                    position: "absolute",
-                    left,
-                    top: y,
-                    width,
-                    height: index % 4 === 0 ? 4 : 1,
-                    background:
-                      index % 3 === 0 ? burst.color : COLORS.cyan,
-                    opacity: intensity * (0.24 + hash(seed) * 0.5),
-                    transform: `translateX(${
-                      direction * intensity * (15 + hash(seed + 2) * 44)
-                    }px)`,
-                    boxShadow: `0 0 12px ${burst.color}`,
-                  }}
-                />
-              );
-            })}
-            {range(4).map((index) => {
-              const width = 120 + hash(index + burst.center) * 300;
-              return (
-                <div
-                  key={`burst-block-${burstIndex}-${index}`}
-                  style={{
-                    position: "absolute",
-                    right: 100 + index * 210,
-                    top: 180 + index * 150,
-                    width,
-                    height: 18 + index * 4,
-                    border: `1px solid ${burst.color}`,
-                    opacity: intensity * 0.18,
-                    transform: `translateX(${
-                      (index % 2 ? -1 : 1) * intensity * 24
-                    }px)`,
-                  }}
-                />
-              );
-            })}
-          </React.Fragment>
+          <circle
+            key={index}
+            cx={x}
+            cy={y + drift}
+            r={1.8 + seeded(index + 55) * 2.1}
+            fill={index % 4 === 0 ? C.cyan : C.navy}
+            opacity={0.08 + seeded(index + 10) * 0.1}
+          />
         );
       })}
-    </AbsoluteFill>
-  );
-};
-
-const ValidationWipe: React.FC<{
-  frame: number;
-  reset: number;
-}> = ({frame, reset}) => {
-  const x = mix(-420, 2250, reset);
-  return (
-    <AbsoluteFill style={{pointerEvents: "none", opacity: reset}}>
-      <svg width={WIDTH} height={HEIGHT}>
-        <polygon
-          points={`${x - 260},0 ${x - 160},0 ${x + 400},1080 ${
-            x + 300
-          },1080`}
-          fill={COLORS.cyan}
-          fillOpacity="0.04"
-        />
-        <line
-          x1={x - 160}
-          y1="0"
-          x2={x + 400}
-          y2="1080"
-          stroke={COLORS.white}
-          strokeWidth="3"
-          opacity="0.6"
-          style={{filter: `drop-shadow(0 0 18px ${COLORS.cyan})`}}
-        />
-        <line
-          x1={x - 196}
-          y1="0"
-          x2={x + 364}
-          y2="1080"
-          stroke={COLORS.cyan}
-          strokeWidth="1"
-          opacity="0.5"
-        />
-      </svg>
-      <div
-        style={{
-          position: "absolute",
-          right: 96,
-          bottom: 140,
-          color: COLORS.cyan,
-          fontFamily: "monospace",
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 2,
-          opacity: windowOpacity(frame, 840, 850, 874, 890),
-        }}
-      >
-        VALIDATION WIPE / CLEAN STATE LOADED
-      </div>
-    </AbsoluteFill>
+    </svg>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const reset = smooth(frame, 840, Math.min(895, durationInFrames - 4));
-  const resolve = smooth(frame, 80, 190);
-  const suspect = smooth(frame, 270, 330);
-  const confirmPull = smooth(frame, 450, 540);
-  const isolate = smooth(frame, 540, 650) * (1 - reset);
-  const restore = smooth(frame, 670, 770) * (1 - reset);
-  const intake = smooth(frame, 0, 80);
-
-  const storyScale =
-    1.1 -
-    intake * 0.07 -
-    resolve * 0.09 +
-    suspect * 0.1 -
-    confirmPull * 0.07 +
-    restore * 0.01;
-  const cameraScale = mix(storyScale, 1.1, reset);
-  const storyX = suspect * 82 - isolate * 188 + restore * 106;
-  const storyY = suspect * 15 - isolate * 14 + restore * 3;
-  const cameraX = mix(storyX, 0, reset);
-  const cameraY = mix(storyY, 0, reset);
-  const cameraBreath = Math.sin((frame / 900) * Math.PI * 2) * 2.2;
+  const globalOpacity = windowOpacity(frame, 0, durationInFrames - 1, 38);
+  const riskPush = progress(frame, 335, 520, Easing.inOut(Easing.cubic));
+  const pullBack = progress(frame, 850, 1005, Easing.inOut(Easing.cubic));
+  const stageScale = interpolate(
+    riskPush - pullBack,
+    [-1, 0, 1],
+    [0.988, 1, 1.034],
+  );
+  const finalDim = progress(frame, 1008, 1044) * 0.56;
 
   return (
-    <AbsoluteFill
-      style={{
-        width: WIDTH,
-        height: HEIGHT,
-        overflow: "hidden",
-        backgroundColor: COLORS.background,
-      }}
-    >
-      <CyberBackdrop
-        frame={frame}
-        cameraX={cameraX}
-        cameraY={cameraY}
-      />
+    <AbsoluteFill>
+      <Background />
+      <AbsoluteFill style={{opacity: globalOpacity}}>
+        <DecorativeDots frame={frame} />
+        <svg width="1920" height="1080" style={{position: "absolute", inset: 0}}>
+          <defs>
+            <filter
+              id="card-shadow"
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+            >
+              <feGaussianBlur stdDeviation="13" />
+            </filter>
+            <filter
+              id="soft-shadow"
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+            >
+              <feGaussianBlur stdDeviation="24" />
+            </filter>
+          </defs>
 
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0}}
-      >
-        <SceneDefs />
-        <g
-          transform={`translate(${960 + cameraX} ${
-            600 + cameraY + cameraBreath
-          }) scale(${cameraScale}) translate(-960 -600)`}
-        >
-          <SandboxSlab frame={frame} reset={reset} />
-          <IncomingArtifact frame={frame} reset={reset} />
-          <DependencyGraph
-            frame={frame}
-            reset={reset}
-            isolate={isolate}
-            restore={restore}
-          />
-        </g>
-      </svg>
+          <g
+            opacity={1 - finalDim}
+            transform={`translate(960 555) scale(${stageScale}) translate(-960 -555)`}
+          >
+            <ellipse
+              cx={960}
+              cy={918}
+              rx={350}
+              ry={47}
+              fill={C.navy}
+              opacity={0.08}
+              filter="url(#soft-shadow)"
+            />
+            {RESOURCES.map((resource, index) => (
+              <ConnectionRibbon
+                key={`ribbon-${resource.label}`}
+                resource={resource}
+                index={index}
+                frame={frame}
+              />
+            ))}
+            <Iris frame={frame} />
+            {RESOURCES.map((resource, index) => (
+              <ResourceCard
+                key={resource.label}
+                resource={resource}
+                index={index}
+                frame={frame}
+              />
+            ))}
+            <CredentialCard frame={frame} />
 
-      <TopSystemRail frame={frame} />
-      <StatusHeadline frame={frame} />
-      <RiskPanel frame={frame} reset={reset} />
-      <ProgressRail frame={frame} reset={reset} />
-      <SignalBurst frame={frame} />
-      <ValidationWipe frame={frame} reset={reset} />
+            <EvidencePill
+              frame={frame}
+              start={348}
+              end={632}
+              x={570}
+              y={278}
+              label="NEW DEVICE"
+              icon="!"
+            />
+            <EvidencePill
+              frame={frame}
+              start={378}
+              end={632}
+              x={1104}
+              y={278}
+              label="IMPOSSIBLE TRAVEL"
+              icon="↗"
+            />
+            <EvidencePill
+              frame={frame}
+              start={408}
+              end={632}
+              x={837}
+              y={817}
+              label="TOKEN REUSE"
+              icon="×"
+            />
+          </g>
 
-      <AbsoluteFill
-        style={{
-          pointerEvents: "none",
-          boxShadow:
-            "inset 0 0 110px rgba(0,2,6,0.86), inset 0 0 28px rgba(8,42,55,0.2)",
-        }}
-      />
+          <HealthyAccessBanner frame={frame} />
+          <FinalPayoff frame={frame} />
+        </svg>
+        <CornerLabel frame={frame} />
+        <PhaseHeader frame={frame} />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
