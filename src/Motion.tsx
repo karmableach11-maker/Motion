@@ -3,593 +3,761 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
-  interpolateColors,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
 
-const DESIGN_WIDTH = 1920;
-const DESIGN_HEIGHT = 1080;
-const TAU = Math.PI * 2;
-
-const COLORS = {
-  desktopDeep: "#034d5d",
-  desktop: "#087b7c",
-  desktopLight: "#14a09a",
-  navy: "#151a62",
-  navyDeep: "#090d3f",
-  cobalt: "#303bd9",
-  cyan: "#46f4e7",
-  cyanSoft: "#b0fff8",
-  mint: "#7dffc7",
-  panel: "#dce5dc",
-  panelLight: "#f5f7ef",
-  panelMid: "#c4d1c8",
-  panelDark: "#7b918c",
-  ink: "#101b20",
-  inkSoft: "#41565a",
-};
-
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-const mix = (from: number, to: number, amount: number) =>
-  from + (to - from) * amount;
-const modulo = (value: number, length = 1) =>
-  ((value % length) + length) % length;
-
-const segment = (
-  progress: number,
-  start: number,
-  end: number,
-  easing: (value: number) => number = Easing.linear,
-) =>
-  interpolate(progress, [start, end], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing,
-  });
-
-const hash01 = (seed: number) => {
-  const value = Math.sin(seed * 91.731 + 18.177) * 47453.5453;
-  return value - Math.floor(value);
-};
-
-const PIXELS = Array.from({ length: 54 }, (_, index) => ({
-  x: hash01(index * 11 + 4) * DESIGN_WIDTH,
-  y: hash01(index * 17 + 8) * DESIGN_HEIGHT,
-  size: 3 + Math.floor(hash01(index * 19 + 3) * 6),
-  phase: hash01(index * 23 + 9),
-  speed: 5 + hash01(index * 29 + 1) * 13,
-  opacity: 0.08 + hash01(index * 31 + 2) * 0.22,
-}));
-
-const BLOCK_COUNT = 18;
-const PROGRESS_START = 0.057;
-const PROGRESS_COMPLETE = 0.88;
-const PROGRESS_STEP_TIMES = Array.from(
-  { length: BLOCK_COUNT },
-  (_, index) =>
-    PROGRESS_START +
-    (index / Math.max(1, BLOCK_COUNT - 1)) *
-      (PROGRESS_COMPLETE - PROGRESS_START),
+const WIDTH = 1920;
+const HEIGHT = 1080;
+const DURATION = 660;
+const FIRST_NOTIFICATION = 19;
+const NOTIFICATION_CADENCE = 13;
+const NOTIFICATION_COUNT = Math.ceil(
+  (DURATION - FIRST_NOTIFICATION) / NOTIFICATION_CADENCE,
 );
 
-const activeBlocksForTimeline = (timeline: number) =>
-  PROGRESS_STEP_TIMES.reduce(
-    (total, threshold) => total + (timeline >= threshold ? 1 : 0),
-    0,
-  );
+const clamp = {
+  extrapolateLeft: "clamp",
+  extrapolateRight: "clamp",
+} as const;
 
-const CornerGlyph: React.FC<{
-  left?: number;
-  right?: number;
-  top?: number;
-  bottom?: number;
-  flip?: boolean;
-  opacity: number;
-}> = ({ left, right, top, bottom, flip = false, opacity }) => (
-  <div
-    style={{
-      position: "absolute",
-      left,
-      right,
-      top,
-      bottom,
-      width: 148,
-      height: 148,
-      opacity,
-      transform: `scaleX(${flip ? -1 : 1})`,
-    }}
-  >
-    <div
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: 92,
-        height: 4,
-        background: COLORS.cyan,
-        boxShadow: "0 0 15px rgba(70,244,231,.45)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: 4,
-        height: 92,
-        background: COLORS.cyan,
-        boxShadow: "0 0 15px rgba(70,244,231,.45)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: 22,
-        top: 22,
-        width: 16,
-        height: 16,
-        border: "3px solid rgba(176,255,248,.8)",
-      }}
-    />
-  </div>
-);
+const easeOut = Easing.out(Easing.cubic);
 
-const AmbientDesktop: React.FC<{ time: number; progress: number }> = ({
-  time,
-  progress,
-}) => {
-  const gridX = modulo(time * 9, 64);
-  const gridY = modulo(time * 4.5, 64);
-  const scanY = modulo(time * 120, DESIGN_HEIGHT + 260) - 130;
-  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.22);
+type GlyphName =
+  | "mail"
+  | "play"
+  | "chat"
+  | "cart"
+  | "phone"
+  | "bell"
+  | "calendar"
+  | "heart"
+  | "cloud"
+  | "shield";
+
+type Notice = {
+  app: string;
+  message: string;
+  color: string;
+  color2: string;
+  glyph: GlyphName;
+  badge?: string;
+};
+
+const notices: readonly Notice[] = [
+  {
+    app: "Inbox",
+    message: "Project update is ready",
+    color: "#2098F3",
+    color2: "#67D6FF",
+    glyph: "mail",
+  },
+  {
+    app: "Stream",
+    message: "New video uploaded",
+    color: "#6A5CFF",
+    color2: "#9C8CFF",
+    glyph: "play",
+    badge: "●",
+  },
+  {
+    app: "Messages",
+    message: "New message received",
+    color: "#29C86D",
+    color2: "#62F49D",
+    glyph: "chat",
+  },
+  {
+    app: "Market",
+    message: "Your order is on the way",
+    color: "#F27B2D",
+    color2: "#FFB25C",
+    glyph: "cart",
+  },
+  {
+    app: "Connect",
+    message: "5 unread conversations",
+    color: "#8557EF",
+    color2: "#BB84FF",
+    glyph: "chat",
+  },
+  {
+    app: "Calls",
+    message: "2 missed calls",
+    color: "#F0424B",
+    color2: "#FF6E73",
+    glyph: "phone",
+  },
+  {
+    app: "Tasks",
+    message: "Meeting starts in 5 min",
+    color: "#F29B24",
+    color2: "#FFC758",
+    glyph: "bell",
+  },
+  {
+    app: "Social",
+    message: "Someone liked your post",
+    color: "#247EF3",
+    color2: "#58B0FF",
+    glyph: "heart",
+  },
+  {
+    app: "Calendar",
+    message: "Design review at 10:00",
+    color: "#12B9A4",
+    color2: "#54F1D6",
+    glyph: "calendar",
+  },
+  {
+    app: "Cloud",
+    message: "Files synced securely",
+    color: "#4B70F5",
+    color2: "#7CB9FF",
+    glyph: "cloud",
+  },
+  {
+    app: "Security",
+    message: "New sign-in verified",
+    color: "#12B989",
+    color2: "#56F3BE",
+    glyph: "shield",
+  },
+  {
+    app: "Pulse",
+    message: "Your weekly recap is ready",
+    color: "#EC3977",
+    color2: "#FF78A7",
+    glyph: "heart",
+  },
+] as const;
+
+const fract = (value: number) => value - Math.floor(value);
+
+const hash = (value: number) =>
+  fract(Math.sin(value * 127.1 + 311.7) * 43758.5453123);
+
+const UiGlyph: React.FC<{name: GlyphName}> = ({name}) => {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.9,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
 
   return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 46%, #139b98 0%, #087b7c 38%, #045f6c 72%, #033e50 100%)",
-      }}
+    <svg
+      viewBox="0 0 24 24"
+      width="26"
+      height="26"
+      aria-hidden
+      style={{display: "block"}}
     >
+      {name === "mail" ? (
+        <>
+          <rect x="3.2" y="5.2" width="17.6" height="13.6" rx="3" {...common} />
+          <path d="m4.5 7.1 7.5 5.6 7.5-5.6" {...common} />
+        </>
+      ) : null}
+      {name === "play" ? (
+        <>
+          <rect x="3.1" y="4.1" width="17.8" height="15.8" rx="4" {...common} />
+          <path d="m10 8.7 5.4 3.3-5.4 3.3Z" fill="currentColor" stroke="none" />
+        </>
+      ) : null}
+      {name === "chat" ? (
+        <path
+          d="M5.4 5.2h13.2a2.7 2.7 0 0 1 2.7 2.7v6.7a2.7 2.7 0 0 1-2.7 2.7h-7.1l-4.8 3v-3H5.4a2.7 2.7 0 0 1-2.7-2.7V7.9a2.7 2.7 0 0 1 2.7-2.7Z"
+          {...common}
+        />
+      ) : null}
+      {name === "cart" ? (
+        <>
+          <path d="M3.2 4.8h2.3l2 9.2h9.8l2.1-6.6H6.1" {...common} />
+          <circle cx="9" cy="18.4" r="1.35" fill="currentColor" />
+          <circle cx="16.7" cy="18.4" r="1.35" fill="currentColor" />
+        </>
+      ) : null}
+      {name === "phone" ? (
+        <path
+          d="M7.2 3.7 4.5 5.2c-.9.5-1.2 1.6-.9 2.6 2 6 6.7 10.8 12.8 12.7 1 .3 2.1-.1 2.6-1l1.4-2.8-4.6-2.3-1.4 2.1c-2.9-1.2-5.3-3.6-6.5-6.5L10 8.5Z"
+          {...common}
+        />
+      ) : null}
+      {name === "bell" ? (
+        <>
+          <path
+            d="M5.1 16.5h13.8l-1.8-2.4V10a5.1 5.1 0 0 0-10.2 0v4.1Z"
+            {...common}
+          />
+          <path d="M9.7 19a2.6 2.6 0 0 0 4.6 0" {...common} />
+        </>
+      ) : null}
+      {name === "calendar" ? (
+        <>
+          <rect x="3.2" y="5" width="17.6" height="16" rx="3" {...common} />
+          <path d="M7.5 3v4M16.5 3v4M3.5 9.3h17" {...common} />
+          <path d="M7.2 13h3M13.8 13h3M7.2 16.7h3M13.8 16.7h3" {...common} />
+        </>
+      ) : null}
+      {name === "heart" ? (
+        <path
+          d="M12 20.2S3.4 15.4 3.4 9.2A4.6 4.6 0 0 1 12 6.8a4.6 4.6 0 0 1 8.6 2.4c0 6.2-8.6 11-8.6 11Z"
+          {...common}
+        />
+      ) : null}
+      {name === "cloud" ? (
+        <path
+          d="M7.1 18.2h10.4a4 4 0 0 0 .3-8 6.1 6.1 0 0 0-11.5 1.2 3.5 3.5 0 0 0 .8 6.8Z"
+          {...common}
+        />
+      ) : null}
+      {name === "shield" ? (
+        <path
+          d="M12 2.9c2.4 1.8 5.1 2.5 7.4 2.8v5.5c0 4.5-2.6 7.9-7.4 10-4.8-2.1-7.4-5.5-7.4-10V5.7c2.3-.3 5-1 7.4-2.8Z"
+          {...common}
+        />
+      ) : null}
+    </svg>
+  );
+};
+
+const Atmosphere: React.FC = () => {
+  const frame = useCurrentFrame();
+  const slow = frame / DURATION;
+  const orbit = slow * 24;
+
+  return (
+    <AbsoluteFill style={{overflow: "hidden", backgroundColor: "#030510"}}>
       <AbsoluteFill
         style={{
-          opacity: 0.24,
-          backgroundImage:
-            "linear-gradient(rgba(139,255,247,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(139,255,247,.18) 1px, transparent 1px)",
-          backgroundSize: "64px 64px",
-          backgroundPosition: `${gridX}px ${gridY}px`,
-          maskImage:
-            "radial-gradient(circle at 50% 50%, #000 0%, rgba(0,0,0,.74) 44%, transparent 82%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 1110,
-          height: 1110,
-          transform: `translate(-50%, -50%) rotate(${time * 1.3}deg)`,
-          borderRadius: "50%",
-          border: "1px solid rgba(178,255,248,.13)",
-          boxShadow:
-            "0 0 0 92px rgba(130,255,246,.025), 0 0 0 184px rgba(130,255,246,.018)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 1290,
-          height: 460,
-          transform: `translate(-50%, -50%) rotate(${-7 + Math.sin(time * 0.16) * 1.2}deg)`,
           background:
-            "linear-gradient(90deg, transparent, rgba(87,255,240,.08), transparent)",
-          filter: "blur(36px)",
+            "radial-gradient(circle at 50% 48%, rgba(93,70,255,0.19) 0%, rgba(29,45,109,0.14) 23%, rgba(7,11,28,0.66) 50%, #02040B 82%)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: 0.62,
+          background:
+            "radial-gradient(ellipse at 21% 49%, rgba(17,66,127,0.12), transparent 36%), radial-gradient(ellipse at 80% 36%, rgba(99,36,151,0.10), transparent 34%)",
+          transform: `scale(${1.04 + Math.sin(slow * Math.PI) * 0.025})`,
         }}
       />
 
-      {PIXELS.map((pixel, index) => {
-        const y =
-          modulo(
-            pixel.y + time * pixel.speed + pixel.phase * DESIGN_HEIGHT,
-            DESIGN_HEIGHT + 80,
-          ) - 40;
-        const flicker =
-          0.38 +
-          0.62 *
-            Math.sin(
-              (time * (0.19 + (index % 5) * 0.025) + pixel.phase) * TAU,
-            ) **
-              2;
+      <svg
+        width={WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        style={{position: "absolute", inset: 0}}
+      >
+        <defs>
+          <linearGradient id="ring-stroke" x1="0" x2="1">
+            <stop offset="0" stopColor="#4EC8FF" stopOpacity="0" />
+            <stop offset="0.45" stopColor="#6570FF" stopOpacity="0.26" />
+            <stop offset="0.72" stopColor="#B15CFF" stopOpacity="0.18" />
+            <stop offset="1" stopColor="#B15CFF" stopOpacity="0" />
+          </linearGradient>
+          <radialGradient id="floor-glow">
+            <stop offset="0" stopColor="#6C5EFF" stopOpacity="0.28" />
+            <stop offset="0.42" stopColor="#3C58B9" stopOpacity="0.12" />
+            <stop offset="1" stopColor="#11162D" stopOpacity="0" />
+          </radialGradient>
+          <filter id="blur-24">
+            <feGaussianBlur stdDeviation="24" />
+          </filter>
+        </defs>
+
+        <g
+          transform={`translate(960 520) rotate(${orbit})`}
+          opacity="0.58"
+        >
+          <ellipse
+            rx="560"
+            ry="420"
+            fill="none"
+            stroke="url(#ring-stroke)"
+            strokeWidth="2"
+            strokeDasharray="410 210 95 350"
+          />
+          <ellipse
+            rx="705"
+            ry="520"
+            fill="none"
+            stroke="url(#ring-stroke)"
+            strokeWidth="1.4"
+            strokeDasharray="165 360 280 520"
+            transform="rotate(-19)"
+            opacity="0.55"
+          />
+          <ellipse
+            rx="430"
+            ry="322"
+            fill="none"
+            stroke="url(#ring-stroke)"
+            strokeWidth="1.2"
+            strokeDasharray="95 280 170 360"
+            transform="rotate(23)"
+            opacity="0.48"
+          />
+        </g>
+
+        <ellipse
+          cx="960"
+          cy="1004"
+          rx="460"
+          ry="78"
+          fill="url(#floor-glow)"
+          filter="url(#blur-24)"
+        />
+      </svg>
+
+      {Array.from({length: 44}).map((_, index) => {
+        const baseX = hash(index + 3.7) * WIDTH;
+        const baseY = hash(index + 29.2) * HEIGHT;
+        const driftX = Math.sin(frame * 0.008 + index * 1.7) * (8 + hash(index) * 18);
+        const driftY = Math.cos(frame * 0.006 + index * 0.9) * (7 + hash(index + 8) * 16);
+        const radius = 1.2 + hash(index + 19) * 2.4;
+        const nearCenter = Math.abs(baseX - WIDTH / 2) < 330;
+        const opacity = (0.12 + hash(index + 52) * 0.28) * (nearCenter ? 0.45 : 1);
+        const particleColor = index % 3 === 0 ? "#9E7BFF" : "#65C9FF";
+
         return (
           <div
-            key={`desktop-pixel-${index}`}
+            key={index}
             style={{
               position: "absolute",
-              left: pixel.x,
-              top: y,
-              width: pixel.size,
-              height: pixel.size,
-              opacity: pixel.opacity * flicker,
-              background:
-                index % 7 === 0 ? COLORS.cyanSoft : "rgba(87,255,240,.9)",
-              boxShadow:
-                index % 7 === 0 ? "0 0 13px rgba(104,255,241,.85)" : undefined,
+              left: baseX + driftX,
+              top: baseY + driftY,
+              width: radius * 2,
+              height: radius * 2,
+              borderRadius: "50%",
+              color: particleColor,
+              background: particleColor,
+              boxShadow: `0 0 ${8 + radius * 3}px currentColor`,
+              opacity,
             }}
           />
         );
       })}
 
-      <CornerGlyph left={82} top={72} opacity={0.28 + pulse * 0.12} />
-      <CornerGlyph
-        right={82}
-        bottom={72}
-        flip
-        opacity={0.2 + (1 - pulse) * 0.12}
-      />
+      {Array.from({length: 8}).map((_, index) => {
+        const side = index % 2 === 0 ? -1 : 1;
+        const row = Math.floor(index / 2);
+        const x = WIDTH / 2 + side * (390 + row * 76);
+        const y = 255 + row * 156;
+        const float = Math.sin(frame * 0.011 + index * 1.2) * 12;
+        const rotate = side * (7 + row * 2);
 
-      <div
-        style={{
-          position: "absolute",
-          left: 92,
-          bottom: 78,
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          color: "rgba(201,255,250,.56)",
-          fontFamily: "'Courier New', monospace",
-          fontSize: 15,
-          fontWeight: 700,
-          letterSpacing: 2.8,
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            background: COLORS.cyan,
-            boxShadow: "0 0 12px rgba(70,244,231,.8)",
-          }}
-        />
-        DESKTOP CHANNEL // 04
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 90,
-          top: 78,
-          color: "rgba(201,255,250,.48)",
-          fontFamily: "'Courier New', monospace",
-          fontSize: 15,
-          fontWeight: 700,
-          letterSpacing: 2.4,
-          textAlign: "right",
-          lineHeight: 1.7,
-        }}
-      >
-        SIGNAL {String(Math.round(92 + pulse * 7)).padStart(2, "0")}%
-        <br />
-        FRAME {String(Math.floor(progress * 600)).padStart(3, "0")}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: -240,
-          top: scanY,
-          width: 2400,
-          height: 150,
-          transform: "rotate(-4deg)",
-          opacity: 0.16,
-          background:
-            "linear-gradient(180deg, transparent, rgba(174,255,248,.62), transparent)",
-          filter: "blur(22px)",
-        }}
-      />
+        return (
+          <div
+            key={`ghost-${index}`}
+            style={{
+              position: "absolute",
+              left: x - 78,
+              top: y + float,
+              width: 156,
+              height: 54,
+              borderRadius: 18,
+              border: "1px solid rgba(126,145,255,0.16)",
+              background:
+                "linear-gradient(120deg, rgba(74,103,190,0.07), rgba(165,87,255,0.035))",
+              boxShadow: "0 0 34px rgba(70,91,207,0.07)",
+              opacity: 0.35 - row * 0.045,
+              filter: "blur(0.4px)",
+              transform: `rotate(${rotate}deg) scale(${0.96 + row * 0.03})`,
+            }}
+          />
+        );
+      })}
 
       <AbsoluteFill
         style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 44%, rgba(1,30,42,.2) 74%, rgba(1,20,35,.64) 100%)",
+          opacity: 0.13,
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)",
+          backgroundSize: "72px 72px",
+          maskImage:
+            "radial-gradient(circle at 50% 50%, black 0%, transparent 65%)",
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const PixelLoaderIcon: React.FC<{ time: number; complete: boolean }> = ({
-  time,
-  complete,
-}) => {
-  const activeIndex = Math.floor(time * 8) % 8;
-  const points = [
-    [1, 0],
-    [2, 0],
-    [2, 1],
-    [2, 2],
-    [1, 2],
-    [0, 2],
-    [0, 1],
-    [0, 0],
-  ];
+const NotificationCard: React.FC<{
+  index: number;
+  currentEvent: number;
+  shiftProgress: number;
+}> = ({index, currentEvent, shiftProgress}) => {
+  const frame = useCurrentFrame();
+  const notice = notices[index % notices.length];
+  const start = FIRST_NOTIFICATION + index * NOTIFICATION_CADENCE;
+  const age = frame - start;
+  const entrance = interpolate(age, [0, 10], [0, 1], {
+    ...clamp,
+    easing: easeOut,
+  });
 
-  return (
-    <div
-      style={{
-        width: 48,
-        height: 48,
-        position: "relative",
-        flex: "0 0 auto",
-      }}
-    >
-      {points.map(([x, y], index) => {
-        const distance = modulo(activeIndex - index, 8);
-        const alpha = complete
-          ? 1
-          : distance === 0
-            ? 1
-            : 0.16 + (7 - distance) * 0.045;
-        return (
-          <div
-            key={`loader-dot-${index}`}
-            style={{
-              position: "absolute",
-              left: x * 16,
-              top: y * 16,
-              width: 12,
-              height: 12,
-              background: complete ? COLORS.mint : COLORS.cobalt,
-              opacity: alpha,
-              boxShadow:
-                distance === 0 || complete
-                  ? `0 0 15px ${complete ? "rgba(125,255,199,.8)" : "rgba(48,59,217,.55)"}`
-                  : undefined,
-            }}
-          />
-        );
-      })}
-      {complete ? (
-        <div
-          style={{
-            position: "absolute",
-            left: 12,
-            top: 8,
-            width: 24,
-            height: 13,
-            transform: "rotate(-45deg)",
-            borderLeft: `5px solid ${COLORS.navy}`,
-            borderBottom: `5px solid ${COLORS.navy}`,
-          }}
-        />
-      ) : null}
-    </div>
-  );
-};
+  if (index > currentEvent || age < 0) {
+    return null;
+  }
 
-const WindowControl: React.FC<{
-  children: React.ReactNode;
-  danger?: boolean;
-}> = ({ children, danger = false }) => (
-  <div
-    style={{
-      width: 28,
-      height: 26,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      color: danger ? COLORS.panelLight : "rgba(245,247,239,.76)",
-      background: danger
-        ? "linear-gradient(180deg, rgba(255,115,126,.94), rgba(194,55,78,.95))"
-        : "rgba(223,235,229,.12)",
-      border: "1px solid rgba(238,255,251,.38)",
-      boxShadow: "inset 1px 1px rgba(255,255,255,.24)",
-      fontFamily: "Arial, sans-serif",
-      fontSize: 15,
-      fontWeight: 800,
-      lineHeight: 1,
-    }}
-  >
-    {children}
-  </div>
-);
+  const rank =
+    index === currentEvent
+      ? 0
+      : currentEvent - 1 - index + shiftProgress;
+  const top = 72 + rank * 112;
+  const enterY = interpolate(entrance, [0, 1], [-170, 0], clamp);
+  const enterScale = interpolate(entrance, [0, 1], [0.985, 1], clamp);
+  const upperFade = interpolate(top + enterY, [-12, 46], [0, 1], clamp);
+  const pulse = interpolate(age, [0, 2, 7], [0, 1, 0], clamp);
 
-const RetroButton: React.FC<{
-  children: React.ReactNode;
-  muted?: boolean;
-}> = ({ children, muted = false }) => (
-  <div
-    style={{
-      minWidth: 132,
-      height: 50,
-      padding: "0 22px",
-      boxSizing: "border-box",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      color: muted ? "rgba(58,75,77,.44)" : COLORS.ink,
-      background: muted
-        ? "linear-gradient(180deg, rgba(224,231,224,.58), rgba(188,201,192,.58))"
-        : `linear-gradient(180deg, ${COLORS.panelLight}, ${COLORS.panelMid})`,
-      border: `2px solid ${muted ? "rgba(108,128,123,.32)" : COLORS.panelDark}`,
-      boxShadow: muted
-        ? "inset 2px 2px rgba(255,255,255,.32)"
-        : "inset 3px 3px rgba(255,255,255,.92), inset -3px -3px rgba(69,88,84,.28), 4px 4px 0 rgba(42,67,65,.18)",
-      fontFamily: "'Courier New', monospace",
-      fontSize: 15,
-      fontWeight: 800,
-      letterSpacing: 1.5,
-    }}
-  >
-    {children}
-  </div>
-);
-
-const SegmentedProgress: React.FC<{
-  activeCount: number;
-  time: number;
-  complete: boolean;
-}> = ({ activeCount, time, complete }) => {
-  const steppedWidth = `${(activeCount / BLOCK_COUNT) * 100}%`;
-  const shine = modulo(time * 0.44, 1);
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        height: 76,
-        padding: 10,
-        boxSizing: "border-box",
-        overflow: "hidden",
-        background: "#9eaaa2",
-        border: `3px solid ${COLORS.panelDark}`,
-        boxShadow:
-          "inset 4px 4px 0 rgba(52,72,68,.42), inset -4px -4px 0 rgba(255,255,255,.78)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 11,
-          top: 11,
-          bottom: 11,
-          width: steppedWidth,
-          opacity: 0.18,
-          background: complete ? COLORS.mint : COLORS.cyan,
-          filter: "blur(12px)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "relative",
-          zIndex: 2,
-          height: "100%",
-          display: "grid",
-          gridTemplateColumns: `repeat(${BLOCK_COUNT}, 1fr)`,
-          gap: 6,
-        }}
-      >
-        {Array.from({ length: BLOCK_COUNT }, (_, index) => {
-          const active = index < activeCount;
-          const newest = active && index === activeCount - 1 && !complete;
-          const flash = newest ? 0.72 + Math.sin(time * TAU * 4.2) * 0.18 : 1;
-          return (
-            <div
-              key={`progress-block-${index}`}
-              style={{
-                position: "relative",
-                overflow: "hidden",
-                opacity: active ? flash : 0.28,
-                background: active
-                  ? complete
-                    ? "linear-gradient(180deg, #c5ffe2 0%, #69f6b7 46%, #27b987 100%)"
-                    : "linear-gradient(180deg, #7a89ff 0%, #303bd9 42%, #171a79 100%)"
-                  : "linear-gradient(180deg, #778985, #61726e)",
-                border: active
-                  ? "1px solid rgba(232,255,250,.72)"
-                  : "1px solid rgba(31,52,49,.42)",
-                boxShadow: active
-                  ? complete
-                    ? "0 0 13px rgba(105,246,183,.5), inset 2px 2px rgba(255,255,255,.36)"
-                    : "0 0 12px rgba(48,59,217,.42), inset 2px 2px rgba(255,255,255,.34)"
-                  : "inset 2px 2px rgba(255,255,255,.09)",
-              }}
-            >
-              {active ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: -18,
-                    top: -20,
-                    width: 18,
-                    height: 96,
-                    transform: `translateX(${shine * 72}px) rotate(18deg)`,
-                    background:
-                      "linear-gradient(90deg, transparent, rgba(255,255,255,.46), transparent)",
-                  }}
-                />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const statusForProgress = (progress: number) => {
-  if (progress >= 1) return "SYSTEM READY";
-  if (progress >= 0.78) return "FINALIZING";
-  if (progress >= 0.52) return "VERIFYING CACHE";
-  if (progress >= 0.26) return "LOADING MODULES";
-  return "CHECKING MEMORY";
-};
-
-const SystemDialog: React.FC<{
-  time: number;
-  timeline: number;
-}> = ({ time, timeline }) => {
-  const fadeIn = segment(timeline, 0, 0.0667, Easing.linear);
-  const settle = segment(timeline, 0, 0.0667, Easing.out(Easing.cubic));
-  const exit = 1 - segment(timeline, 0.9333, 1, Easing.linear);
-  const visibility = fadeIn * exit;
-  const visibleBlocks = activeBlocksForTimeline(timeline);
-  const loadProgress = visibleBlocks / BLOCK_COUNT;
-  const complete = visibleBlocks >= BLOCK_COUNT;
-  const dots = ".".repeat(Math.floor(time * 1.5) % 4);
-  const percentage = Math.round((visibleBlocks / BLOCK_COUNT) * 100);
-  const status = statusForProgress(loadProgress);
-  const shadowBreath = 0.5 + 0.5 * Math.sin(time * TAU * 0.34);
-  const borderColor = interpolateColors(
-    segment(loadProgress, 0.92, 1, Easing.out(Easing.cubic)),
-    [0, 1],
-    [COLORS.cyan, COLORS.mint],
-  );
+  if (top > 970 || rank < -0.5) {
+    return null;
+  }
 
   return (
     <div
       style={{
         position: "absolute",
-        left: "50%",
-        top: "50%",
-        width: 760,
-        height: 430,
-        opacity: visibility,
-        transform: `translate(-50%, calc(-50% + ${mix(10, 0, settle)}px)) scale(${mix(
-          0.985,
-          1,
-          settle,
-        )})`,
-        transformOrigin: "50% 50%",
+        left: 22,
+        right: 22,
+        top,
+        height: 96,
+        opacity: entrance * upperFade,
+        transform: `translateY(${enterY}px) scale(${enterScale})`,
+        transformOrigin: "50% 0%",
+        borderRadius: 24,
+        overflow: "hidden",
+        background:
+          "linear-gradient(104deg, rgba(21,28,57,0.91), rgba(12,16,39,0.83))",
+        border: "1px solid rgba(219,230,255,0.13)",
+        boxShadow: [
+          "0 14px 28px rgba(0,0,0,0.30)",
+          "inset 0 1px 0 rgba(255,255,255,0.10)",
+          `0 0 ${18 + pulse * 20}px rgba(106,91,255,${0.08 + pulse * 0.10})`,
+        ].join(", "),
+        backdropFilter: "blur(22px) saturate(135%)",
       }}
     >
       <div
         style={{
           position: "absolute",
-          left: 26,
-          top: 28,
-          right: -26,
-          bottom: -28,
-          opacity: 0.22 + shadowBreath * 0.08,
-          background: COLORS.navyDeep,
-          filter: "blur(2px)",
+          inset: 0,
+          opacity: 0.32,
+          background:
+            "linear-gradient(105deg, rgba(255,255,255,0.08), transparent 28%, transparent 75%, rgba(119,96,255,0.07))",
         }}
       />
 
       <div
         style={{
           position: "absolute",
-          inset: -9,
-          border: `2px solid ${borderColor}`,
-          opacity: 0.28 + shadowBreath * 0.18,
-          boxShadow: `0 0 ${34 + shadowBreath * 18}px rgba(70,244,231,.25)`,
+          left: 12,
+          top: 22,
+          width: 52,
+          height: 52,
+          borderRadius: 15,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "white",
+          background: `linear-gradient(145deg, ${notice.color2}, ${notice.color})`,
+          boxShadow: `0 7px 18px ${notice.color}55, inset 0 1px 0 rgba(255,255,255,0.35)`,
+        }}
+      >
+        <UiGlyph name={notice.glyph} />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 80,
+          top: 21,
+          right: 48,
+          color: "#F6F8FF",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: 18,
+          fontWeight: 720,
+          letterSpacing: "-0.25px",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {notice.app}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 80,
+          top: 54,
+          right: 24,
+          color: "rgba(226,231,248,0.67)",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: 14.5,
+          fontWeight: 480,
+          letterSpacing: "-0.1px",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {notice.message}
+        {notice.badge ? (
+          <span style={{color: "#FF496A", marginLeft: 7, fontSize: 12}}>
+            {notice.badge}
+          </span>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          right: 15,
+          top: 21,
+          color: "rgba(229,235,255,0.48)",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: 11.5,
+          fontWeight: 560,
+          letterSpacing: "0.15px",
+        }}
+      >
+        now
+      </div>
+    </div>
+  );
+};
+
+const LockScreen: React.FC = () => {
+  const frame = useCurrentFrame();
+  const rawEvent = (frame - FIRST_NOTIFICATION) / NOTIFICATION_CADENCE;
+  const currentEvent =
+    rawEvent >= 0
+      ? Math.min(NOTIFICATION_COUNT - 1, Math.floor(rawEvent))
+      : -1;
+  const eventStart =
+    FIRST_NOTIFICATION + Math.max(0, currentEvent) * NOTIFICATION_CADENCE;
+  const eventAge = currentEvent >= 0 ? frame - eventStart : 0;
+  const shiftProgress =
+    currentEvent >= 0
+      ? interpolate(eventAge, [0, 10], [0, 1], {
+          ...clamp,
+          easing: easeOut,
+        })
+      : 0;
+  const lightX = interpolate(frame, [0, DURATION - 1], [-170, 560]);
+  const clockOpacity = interpolate(frame, [70, 95], [1, 0], clamp);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 13,
+        overflow: "hidden",
+        borderRadius: 62,
+        background:
+          "radial-gradient(circle at 72% 28%, rgba(137,86,255,0.72) 0%, rgba(89,61,207,0.38) 24%, transparent 49%), radial-gradient(circle at 25% 78%, rgba(37,112,206,0.55), transparent 48%), linear-gradient(155deg, #172358 0%, #27215F 46%, #0C173D 100%)",
+        boxShadow:
+          "inset 0 0 0 1px rgba(225,232,255,0.19), inset 0 -80px 160px rgba(3,7,25,0.28)",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          width: 560,
+          height: 820,
+          left: lightX,
+          top: -190,
+          opacity: 0.22,
+          transform: "rotate(20deg)",
+          background:
+            "linear-gradient(90deg, transparent, rgba(142,211,255,0.22), transparent)",
+          filter: "blur(30px)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: -80,
+          right: -80,
+          top: 182,
+          height: 420,
+          borderRadius: "50%",
+          border: "1px solid rgba(178,166,255,0.10)",
+          transform: `rotate(-14deg) scale(${1 + Math.sin(frame * 0.008) * 0.018})`,
+          boxShadow:
+            "0 0 85px rgba(113,78,255,0.11), inset 0 0 70px rgba(91,120,255,0.05)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 400,
+          color: "rgba(245,247,255,0.83)",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          textAlign: "center",
+          textShadow: "0 10px 36px rgba(16,18,53,0.55)",
+          opacity: clockOpacity,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 130,
+            fontWeight: 260,
+            lineHeight: 0.94,
+            letterSpacing: "-8px",
+          }}
+        >
+          10:28
+        </div>
+        <div
+          style={{
+            marginTop: 16,
+            fontSize: 15,
+            fontWeight: 610,
+            letterSpacing: "2.6px",
+            color: "rgba(239,242,255,0.62)",
+          }}
+        >
+          MONDAY · JUN 9
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 20,
+          right: 20,
+          top: 0,
+          height: 58,
+          color: "#F7F8FF",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: 14,
+          fontWeight: 680,
+          letterSpacing: "-0.2px",
+        }}
+      >
+        <div style={{position: "absolute", left: 11, top: 17}}>10:28</div>
+        <div
+          style={{
+            position: "absolute",
+            right: 11,
+            top: 17,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <div style={{display: "flex", alignItems: "flex-end", gap: 2}}>
+            {[4, 7, 10, 13].map((height) => (
+              <span
+                key={height}
+                style={{
+                  display: "block",
+                  width: 2.4,
+                  height,
+                  borderRadius: 2,
+                  background: "currentColor",
+                }}
+              />
+            ))}
+          </div>
+          <div
+            style={{
+              width: 20,
+              height: 10,
+              border: "1.5px solid currentColor",
+              borderRadius: 3,
+              position: "relative",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: 2,
+                top: 2,
+                width: 13,
+                height: 4,
+                borderRadius: 1.5,
+                background: "currentColor",
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                right: -3.5,
+                top: 2.4,
+                width: 2,
+                height: 4,
+                borderRadius: 1,
+                background: "currentColor",
+                opacity: 0.75,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: 12,
+          width: 126,
+          height: 34,
+          marginLeft: -63,
+          borderRadius: 20,
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0.97), rgba(4,6,13,0.99))",
+          boxShadow:
+            "0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 2px rgba(74,92,144,0.26)",
+          zIndex: 30,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            top: 11,
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at 35% 35%, #334F91, #0A1230 55%, #020308)",
+            boxShadow: "0 0 5px rgba(81,115,221,0.45)",
+          }}
+        />
+      </div>
+
+      <div style={{position: "absolute", inset: 0, zIndex: 12}}>
+        {Array.from({length: NOTIFICATION_COUNT}).map((_, index) => (
+          <NotificationCard
+            key={index}
+            index={index}
+            currentEvent={currentEvent}
+            shiftProgress={shiftProgress}
+          />
+        ))}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: 14,
+          width: 150,
+          height: 5,
+          marginLeft: -75,
+          borderRadius: 5,
+          background: "rgba(245,248,255,0.72)",
+          boxShadow: "0 0 10px rgba(255,255,255,0.16)",
+          zIndex: 25,
         }}
       />
 
@@ -597,353 +765,157 @@ const SystemDialog: React.FC<{
         style={{
           position: "absolute",
           inset: 0,
-          overflow: "hidden",
-          background: `linear-gradient(145deg, ${COLORS.panelLight} 0%, ${COLORS.panel} 46%, ${COLORS.panelMid} 100%)`,
-          border: `4px solid ${COLORS.panelMid}`,
-          boxShadow:
-            "inset 4px 4px 0 rgba(255,255,255,.94), inset -4px -4px 0 rgba(61,83,79,.42), 0 30px 70px rgba(1,24,36,.42)",
+          pointerEvents: "none",
+          zIndex: 40,
+          opacity: 0.35,
+          background:
+            "linear-gradient(112deg, rgba(255,255,255,0.11) 0%, transparent 17%, transparent 72%, rgba(151,183,255,0.08) 100%)",
+          mixBlendMode: "screen",
         }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: 7,
-            top: 7,
-            right: 7,
-            height: 67,
-            display: "flex",
-            alignItems: "center",
-            padding: "0 15px 0 19px",
-            boxSizing: "border-box",
-            background:
-              "linear-gradient(90deg, #090d3f 0%, #171d71 44%, #2e3bd6 100%)",
-            borderBottom: "3px solid rgba(7,13,56,.56)",
-            boxShadow:
-              "inset 2px 2px rgba(158,177,255,.38), inset 0 -3px rgba(3,7,39,.44)",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 7px)",
-              gap: 3,
-              marginRight: 16,
-            }}
-          >
-            {Array.from({ length: 9 }, (_, index) => (
-              <div
-                key={`title-chip-${index}`}
-                style={{
-                  width: 7,
-                  height: 7,
-                  background:
-                    index === Math.floor(time * 8) % 9
-                      ? COLORS.cyanSoft
-                      : index % 2
-                        ? COLORS.cyan
-                        : "rgba(171,255,248,.38)",
-                  boxShadow:
-                    index === Math.floor(time * 8) % 9
-                      ? "0 0 12px rgba(176,255,248,.9)"
-                      : undefined,
-                }}
-              />
-            ))}
-          </div>
-
-          <div
-            style={{
-              color: COLORS.panelLight,
-              fontFamily: "'Courier New', monospace",
-              fontSize: 20,
-              fontWeight: 800,
-              letterSpacing: 2.4,
-              textShadow: "2px 2px rgba(1,4,35,.7)",
-            }}
-          >
-            SYSTEM LOADER
-          </div>
-
-          <div
-            style={{
-              marginLeft: 18,
-              color: "rgba(196,255,249,.55)",
-              fontFamily: "'Courier New', monospace",
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: 1.6,
-            }}
-          >
-            CORE://04
-          </div>
-
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              gap: 7,
-            }}
-          >
-            <WindowControl>_</WindowControl>
-            <WindowControl>□</WindowControl>
-            <WindowControl danger>×</WindowControl>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 49,
-            right: 49,
-            top: 107,
-            display: "flex",
-            alignItems: "center",
-            gap: 23,
-          }}
-        >
-          <PixelLoaderIcon time={time} complete={complete} />
-
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: 20,
-              }}
-            >
-              <div
-                style={{
-                  color: COLORS.ink,
-                  fontFamily: "'Courier New', monospace",
-                  fontSize: 28,
-                  fontWeight: 900,
-                  letterSpacing: 1.4,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {complete ? (
-                  "LOADING COMPLETE"
-                ) : (
-                  <>
-                    LOADING
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: "3ch",
-                        textAlign: "left",
-                      }}
-                    >
-                      {dots}
-                    </span>
-                  </>
-                )}
-              </div>
-              <div
-                style={{
-                  color: complete ? "#147f5e" : COLORS.navy,
-                  fontFamily: "'Courier New', monospace",
-                  fontSize: 28,
-                  fontWeight: 900,
-                  fontVariantNumeric: "tabular-nums",
-                  letterSpacing: 1,
-                }}
-              >
-                {String(percentage).padStart(3, "0")}%
-              </div>
-            </div>
-            <div
-              style={{
-                marginTop: 7,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                color: COLORS.inkSoft,
-                fontFamily: "'Courier New', monospace",
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 1.7,
-              }}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  background: complete ? COLORS.mint : COLORS.cobalt,
-                  boxShadow: complete
-                    ? "0 0 10px rgba(125,255,199,.8)"
-                    : "0 0 10px rgba(48,59,217,.42)",
-                }}
-              />
-              {status}
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 49,
-            right: 49,
-            top: 196,
-          }}
-        >
-          <SegmentedProgress
-            activeCount={visibleBlocks}
-            time={time}
-            complete={complete}
-          />
-
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              justifyContent: "space-between",
-              color: "rgba(30,51,53,.64)",
-              fontFamily: "'Courier New', monospace",
-              fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: 1.5,
-            }}
-          >
-            <span>MEM 064 MB</span>
-            <span>
-              BLOCK {String(visibleBlocks).padStart(2, "0")}/{BLOCK_COUNT}
-            </span>
-            <span>CRC {complete ? "OK" : "SCAN"}</span>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 49,
-            right: 49,
-            bottom: 40,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(8, 9px)",
-              gap: 5,
-              opacity: 0.56,
-            }}
-          >
-            {Array.from({ length: 24 }, (_, index) => {
-              const lit =
-                modulo(index + Math.floor(time * 6), 13) < 3 ||
-                index < Math.floor(loadProgress * 24);
-              return (
-                <div
-                  key={`diagnostic-pixel-${index}`}
-                  style={{
-                    width: 9,
-                    height: 5,
-                    background: lit
-                      ? complete
-                        ? COLORS.mint
-                        : COLORS.cobalt
-                      : "rgba(59,80,78,.22)",
-                  }}
-                />
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              gap: 16,
-            }}
-          >
-            <RetroButton muted>DETAILS</RetroButton>
-            <RetroButton>CANCEL</RetroButton>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 7,
-            right: 7,
-            bottom: 6,
-            height: 4,
-            opacity: 0.35,
-            background:
-              "repeating-linear-gradient(90deg, #2a3aa7 0 18px, transparent 18px 28px)",
-          }}
-        />
-      </div>
+      />
     </div>
   );
 };
 
-const ScreenFinish: React.FC<{ time: number }> = ({ time }) => (
-  <>
-    <AbsoluteFill
-      style={{
-        pointerEvents: "none",
-        opacity: 0.16,
-        transform: `translateY(${modulo(time * 18, 6)}px)`,
-        backgroundImage:
-          "repeating-linear-gradient(180deg, rgba(4,28,35,.5) 0px, rgba(4,28,35,.5) 1px, transparent 1px, transparent 5px)",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        pointerEvents: "none",
-        opacity: 0.08,
-        backgroundImage:
-          "repeating-linear-gradient(90deg, rgba(255,80,80,.18) 0 1px, rgba(70,255,221,.08) 1px 2px, rgba(71,94,255,.16) 2px 3px)",
-        backgroundSize: "3px 100%",
-        mixBlendMode: "screen",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        pointerEvents: "none",
-        boxShadow: "inset 0 0 150px rgba(0,14,27,.54)",
-      }}
-    />
-  </>
-);
-
-export const Motion: React.FC = () => {
+const Handset: React.FC = () => {
   const frame = useCurrentFrame();
-  const { durationInFrames, fps, width, height } = useVideoConfig();
-  const timeline = clamp01(frame / Math.max(1, durationInFrames - 1));
-  const time = frame / fps;
-  const unit = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
-  const offsetX = (width - DESIGN_WIDTH * unit) / 2;
-  const offsetY = (height - DESIGN_HEIGHT * unit) / 2;
+  const reveal = interpolate(frame, [0, 12], [0, 1], {
+    ...clamp,
+    easing: easeOut,
+  });
+  const revealScale = interpolate(reveal, [0, 1], [0.985, 1], clamp);
+  const push = interpolate(frame, [0, DURATION - 1], [0.995, 1.012], clamp);
+  const floatY = Math.sin(frame * 0.011) * 2.6;
+  const breathe = 1 + Math.sin(frame * 0.006 + 0.8) * 0.0015;
 
   return (
-    <AbsoluteFill
+    <div
       style={{
-        overflow: "hidden",
-        background: COLORS.desktop,
+        position: "absolute",
+        left: WIDTH / 2,
+        top: HEIGHT / 2 + 2,
+        width: 500,
+        height: 986,
+        opacity: reveal,
+        filter: `blur(${(1 - reveal) * 1.8}px)`,
+        transform: [
+          "translate(-50%, -50%)",
+          `translateY(${floatY}px)`,
+          "perspective(1600px)",
+          "rotateY(-1.4deg)",
+          "rotateX(0.65deg)",
+          `scale(${revealScale * push * breathe})`,
+        ].join(" "),
+        transformOrigin: "50% 55%",
       }}
     >
       <div
         style={{
           position: "absolute",
-          left: offsetX,
-          top: offsetY,
-          width: DESIGN_WIDTH,
-          height: DESIGN_HEIGHT,
-          transform: `scale(${unit})`,
-          transformOrigin: "top left",
-          overflow: "hidden",
+          left: -8,
+          right: -8,
+          top: 28,
+          bottom: -24,
+          borderRadius: 84,
+          background: "rgba(0,0,0,0.50)",
+          filter: "blur(36px)",
+          transform: "translateY(22px) scale(0.97)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: -9,
+          top: 176,
+          width: 7,
+          height: 88,
+          borderRadius: "5px 0 0 5px",
+          background:
+            "linear-gradient(180deg, #8190B7, #1C253F 20%, #060A16 72%, #47536F)",
+          boxShadow: "-3px 0 8px rgba(95,122,181,0.22)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: -9,
+          top: 284,
+          width: 7,
+          height: 130,
+          borderRadius: "5px 0 0 5px",
+          background:
+            "linear-gradient(180deg, #64779E, #10172A 24%, #060A14 75%, #3D4863)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          right: -9,
+          top: 232,
+          width: 7,
+          height: 152,
+          borderRadius: "0 5px 5px 0",
+          background:
+            "linear-gradient(180deg, #8092BD, #151D34 22%, #050914 72%, #46526F)",
+          boxShadow: "3px 0 9px rgba(83,111,177,0.18)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: 78,
+          padding: 0,
+          background:
+            "linear-gradient(118deg, #A7B5D5 0%, #465370 2.2%, #121827 5%, #050810 43%, #171E31 89%, #6F7E9E 97%, #C4CDE2 100%)",
+          boxShadow: [
+            "0 46px 100px rgba(0,0,0,0.57)",
+            "0 0 78px rgba(83,66,232,0.18)",
+            "inset 0 0 0 1px rgba(255,255,255,0.26)",
+            "inset 0 0 0 4px rgba(3,5,12,0.85)",
+          ].join(", "),
         }}
       >
-        <AmbientDesktop time={time} progress={timeline} />
-        <SystemDialog time={time} timeline={timeline} />
-        <ScreenFinish time={time} />
+        <LockScreen />
       </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 3,
+          borderRadius: 75,
+          pointerEvents: "none",
+          border: "1px solid rgba(226,236,255,0.13)",
+          boxShadow:
+            "inset 10px 0 18px rgba(255,255,255,0.025), inset -8px 0 17px rgba(127,151,216,0.06)",
+        }}
+      />
+    </div>
+  );
+};
+
+export const Motion: React.FC = () => {
+  return (
+    <AbsoluteFill
+      style={{
+        width: WIDTH,
+        height: HEIGHT,
+        overflow: "hidden",
+        backgroundColor: "#030510",
+      }}
+    >
+      <Atmosphere />
+      <Handset />
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          opacity: 0.13,
+          background:
+            "linear-gradient(90deg, rgba(0,0,0,0.36), transparent 22%, transparent 78%, rgba(0,0,0,0.34)), linear-gradient(180deg, rgba(1,2,8,0.24), transparent 24%, transparent 76%, rgba(0,0,0,0.28))",
+        }}
+      />
     </AbsoluteFill>
   );
 };
