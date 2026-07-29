@@ -1,536 +1,875 @@
-import React from 'react';
+import React from "react";
 import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  spring,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+	AbsoluteFill,
+	Easing,
+	interpolate,
+	spring,
+	useCurrentFrame,
+	useVideoConfig,
+} from "remotion";
 
-type StepSpec = {
-  number: string;
-  accent: string;
-  accentBright: string;
-  x: number;
-  start: number;
-  orbitDirection: 1 | -1;
-};
-
-const STEPS: StepSpec[] = [
-  {
-    number: '01',
-    accent: '#074B60',
-    accentBright: '#1282A0',
-    x: 400,
-    start: 42,
-    orbitDirection: 1,
-  },
-  {
-    number: '02',
-    accent: '#F01846',
-    accentBright: '#FF4C6D',
-    x: 960,
-    start: 252,
-    orbitDirection: -1,
-  },
-  {
-    number: '03',
-    accent: '#74BEC9',
-    accentBright: '#9DD9E0',
-    x: 1520,
-    start: 462,
-    orbitDirection: 1,
-  },
-];
-
-const CENTER_Y = 540;
 const clamp = {
-  extrapolateLeft: 'clamp' as const,
-  extrapolateRight: 'clamp' as const,
+	extrapolateLeft: "clamp" as const,
+	extrapolateRight: "clamp" as const,
 };
-const softEase = Easing.bezier(0.22, 1, 0.36, 1);
-const smoothEase = Easing.bezier(0.65, 0, 0.35, 1);
+
+const smooth = Easing.bezier(0.22, 0.78, 0.22, 1);
+const softInOut = Easing.inOut(Easing.cubic);
+
+const STEPS = [
+	{
+		x: 330,
+		accent: "#156CF7",
+		accentSoft: "#64B5FF",
+		accentDark: "#093B9B",
+		start: 18,
+		exit: 825,
+		badgeSide: "top" as const,
+		icon: "discover" as const,
+	},
+	{
+		x: 750,
+		accent: "#7658FF",
+		accentSoft: "#B39BFF",
+		accentDark: "#4324B7",
+		start: 144,
+		exit: 780,
+		badgeSide: "bottom" as const,
+		icon: "strategy" as const,
+	},
+	{
+		x: 1170,
+		accent: "#00B8D9",
+		accentSoft: "#69E8F5",
+		accentDark: "#007487",
+		start: 270,
+		exit: 735,
+		badgeSide: "top" as const,
+		icon: "build" as const,
+	},
+	{
+		x: 1590,
+		accent: "#19BF84",
+		accentSoft: "#76E8BC",
+		accentDark: "#08734E",
+		start: 396,
+		exit: 690,
+		badgeSide: "bottom" as const,
+		icon: "growth" as const,
+	},
+] as const;
+
+const NODE_Y = 540;
 
 const reveal = (frame: number, start: number, duration: number) =>
-  interpolate(frame, [start, start + duration], [0, 1], {
-    ...clamp,
-    easing: softEase,
-  });
+	interpolate(frame, [start, start + duration], [0, 1], {
+		...clamp,
+		easing: smooth,
+	});
 
-const polar = (cx: number, cy: number, radius: number, angle: number) => {
-  const radians = ((angle - 90) * Math.PI) / 180;
-  return {
-    x: cx + radius * Math.cos(radians),
-    y: cy + radius * Math.sin(radians),
-  };
-};
+const hide = (frame: number, start: number, duration: number) =>
+	interpolate(frame, [start, start + duration], [1, 0], {
+		...clamp,
+		easing: softInOut,
+	});
 
-const Background: React.FC<{frame: number; durationInFrames: number}> = ({
-  frame,
-  durationInFrames,
-}) => {
-  const cycle = frame / durationInFrames;
-  const drift = Math.sin(cycle * Math.PI * 2);
-  const specks = [
-    {x: 170, y: 206, r: 2.2, phase: 0.1},
-    {x: 316, y: 878, r: 1.7, phase: 0.8},
-    {x: 596, y: 162, r: 1.6, phase: 1.4},
-    {x: 772, y: 900, r: 2.4, phase: 2},
-    {x: 1090, y: 152, r: 2.1, phase: 2.5},
-    {x: 1272, y: 914, r: 1.8, phase: 3.1},
-    {x: 1608, y: 188, r: 2.3, phase: 3.8},
-    {x: 1770, y: 842, r: 1.7, phase: 4.4},
-  ];
+const BusinessGlyph: React.FC<{
+	type: (typeof STEPS)[number]["icon"];
+	x: number;
+	y: number;
+	color: string;
+	progress: number;
+}> = ({type, x, y, color, progress}) => {
+	const draw = 1 - progress;
+	const common = {
+		fill: "none",
+		stroke: color,
+		strokeWidth: 7,
+		strokeLinecap: "round" as const,
+		strokeLinejoin: "round" as const,
+		pathLength: 1,
+		strokeDasharray: 1,
+		strokeDashoffset: draw,
+	};
 
-  return (
-    <AbsoluteFill
-      style={{
-        overflow: 'hidden',
-        backgroundColor: '#F3F6F5',
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(circle at 12% 24%, rgba(8,75,96,0.055), transparent 31%), radial-gradient(circle at 50% 52%, rgba(240,24,70,0.035), transparent 28%), radial-gradient(circle at 88% 72%, rgba(116,190,201,0.075), transparent 34%), linear-gradient(135deg, #F8FAF9 0%, #F0F4F3 52%, #F7F9F8 100%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: 0.28,
-          backgroundImage:
-            'linear-gradient(rgba(8,75,96,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(8,75,96,0.035) 1px, transparent 1px)',
-          backgroundSize: '72px 72px',
-          maskImage:
-            'radial-gradient(ellipse at center, black 0%, rgba(0,0,0,0.45) 46%, transparent 78%)',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          width: 760,
-          height: 760,
-          left: 580 + drift * 24,
-          top: 166 - drift * 12,
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(255,255,255,0.92), rgba(255,255,255,0.18) 46%, transparent 70%)',
-          filter: 'blur(18px)',
-        }}
-      />
-      {specks.map((speck, index) => {
-        const phase = cycle * Math.PI * 2 + speck.phase;
-        return (
-          <div
-            key={index}
-            style={{
-              position: 'absolute',
-              left: speck.x + Math.sin(phase) * 12,
-              top: speck.y + Math.cos(phase) * 8,
-              width: speck.r * 2,
-              height: speck.r * 2,
-              borderRadius: '50%',
-              background: index % 3 === 1 ? '#F01846' : '#74BEC9',
-              opacity: 0.16 + (Math.sin(phase * 2) + 1) * 0.08,
-            }}
-          />
-        );
-      })}
-      <AbsoluteFill
-        style={{
-          boxShadow: 'inset 0 0 150px rgba(14,52,61,0.045)',
-        }}
-      />
-    </AbsoluteFill>
-  );
+	if (type === "discover") {
+		return (
+			<g>
+				<circle
+					cx={x}
+					cy={y}
+					r={42}
+					{...common}
+					strokeWidth={5}
+					opacity={0.34 + progress * 0.25}
+				/>
+				<path
+					d={`M ${x - 24} ${y + 22} L ${x - 9} ${y - 9} L ${x + 25} ${y - 24} L ${x + 10} ${y + 9} Z`}
+					{...common}
+				/>
+				<circle cx={x} cy={y} r={8} fill={color} opacity={progress} />
+				<path d={`M ${x} ${y - 58} V ${y - 48}`} {...common} strokeWidth={5} />
+				<path d={`M ${x + 49} ${y - 35} L ${x + 41} ${y - 29}`} {...common} strokeWidth={5} />
+			</g>
+		);
+	}
+
+	if (type === "strategy") {
+		return (
+			<g>
+				<path
+					d={`M ${x - 32} ${y + 22} L ${x} ${y - 30} L ${x + 37} ${y + 19} M ${x - 32} ${y + 22} L ${x + 37} ${y + 19}`}
+					{...common}
+				/>
+				{[
+					{x: x, y: y - 34},
+					{x: x - 37, y: y + 27},
+					{x: x + 42, y: y + 24},
+				].map((point, index) => (
+					<g key={index}>
+						<circle
+							cx={point.x}
+							cy={point.y}
+							r={15}
+							fill="white"
+							stroke={color}
+							strokeWidth={6}
+							opacity={progress}
+						/>
+						<circle cx={point.x} cy={point.y} r={5} fill={color} opacity={progress} />
+					</g>
+				))}
+			</g>
+		);
+	}
+
+	if (type === "build") {
+		return (
+			<g>
+				<path
+					d={`M ${x} ${y - 52} L ${x + 48} ${y - 25} L ${x} ${y + 2} L ${x - 48} ${y - 25} Z`}
+					{...common}
+				/>
+				<path
+					d={`M ${x - 48} ${y - 6} L ${x} ${y + 21} L ${x + 48} ${y - 6}`}
+					{...common}
+					opacity={0.76}
+				/>
+				<path
+					d={`M ${x - 48} ${y + 14} L ${x} ${y + 41} L ${x + 48} ${y + 14}`}
+					{...common}
+					opacity={0.46}
+				/>
+				<circle cx={x} cy={y - 25} r={7} fill={color} opacity={progress} />
+			</g>
+		);
+	}
+
+	return (
+		<g>
+			<path
+				d={`M ${x - 49} ${y + 39} V ${y + 14} H ${x - 28} V ${y + 39} M ${x - 13} ${y + 39} V ${y - 3} H ${x + 8} V ${y + 39} M ${x + 23} ${y + 39} V ${y - 22} H ${x + 44} V ${y + 39}`}
+				{...common}
+			/>
+			<path
+				d={`M ${x - 47} ${y - 21} L ${x - 12} ${y - 42} L ${x + 12} ${y - 31} L ${x + 49} ${y - 58} M ${x + 33} ${y - 58} H ${x + 49} V ${y - 42}`}
+				{...common}
+			/>
+		</g>
+	);
 };
 
 const Connector: React.FC<{
-  frame: number;
-  x1: number;
-  x2: number;
-  start: number;
-  fromColor: string;
-  toColor: string;
-  index: number;
-}> = ({frame, x1, x2, start, fromColor, toColor, index}) => {
-  const progress = reveal(frame, start, 116);
-  const portProgress = reveal(frame, start - 18, 34);
-  const receiverProgress = reveal(frame, start + 76, 40);
-  const lineLength = x2 - x1;
-  const energyProgress =
-    frame < start + 116
-      ? progress
-      : (Math.sin((frame - start - 116) * 0.035) + 1) / 2;
-  const energyX = x1 + lineLength * energyProgress;
-  const gradientId = `connector-gradient-${index}`;
+	path: string;
+	start: number;
+	exit: number;
+	colorA: string;
+	colorB: string;
+	index: number;
+	frame: number;
+}> = ({path, start, exit, colorA, colorB, index, frame}) => {
+	const enter = reveal(frame, start, 84);
+	const leave = hide(frame, exit, 62);
+	const progress = enter * leave;
+	const highlight = reveal(frame, start + 18, 68) * leave;
 
-  return (
-    <svg
-      width={1920}
-      height={1080}
-      viewBox="0 0 1920 1080"
-      style={{position: 'absolute', inset: 0, overflow: 'visible'}}
-    >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={fromColor} />
-          <stop offset="100%" stopColor={toColor} />
-        </linearGradient>
-        <filter
-          id={`connector-glow-${index}`}
-          x="-40%"
-          y="-500%"
-          width="180%"
-          height="1100%"
-        >
-          <feGaussianBlur stdDeviation="5" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <line
-        x1={x1}
-        y1={CENTER_Y}
-        x2={x2}
-        y2={CENTER_Y}
-        stroke="#C9D5D6"
-        strokeWidth={2}
-        strokeDasharray="5 9"
-        opacity={0.7 * portProgress}
-      />
-      <line
-        x1={x1}
-        y1={CENTER_Y}
-        x2={x2}
-        y2={CENTER_Y}
-        stroke={`url(#${gradientId})`}
-        strokeWidth={3}
-        strokeLinecap="round"
-        strokeDasharray={lineLength}
-        strokeDashoffset={lineLength * (1 - progress)}
-        filter={`url(#connector-glow-${index})`}
-        opacity={0.82}
-      />
-      <circle
-        cx={x1}
-        cy={CENTER_Y}
-        r={12 * portProgress}
-        fill="#F7FAF9"
-        stroke={fromColor}
-        strokeWidth={2.5}
-      />
-      <circle
-        cx={x1}
-        cy={CENTER_Y}
-        r={4.2 * portProgress}
-        fill={fromColor}
-      />
-      <circle
-        cx={x2}
-        cy={CENTER_Y}
-        r={12 * receiverProgress}
-        fill="#F7FAF9"
-        stroke={toColor}
-        strokeWidth={2.5}
-      />
-      <circle
-        cx={x2}
-        cy={CENTER_Y}
-        r={4.2 * receiverProgress}
-        fill={toColor}
-      />
-      <circle
-        cx={energyX}
-        cy={CENTER_Y}
-        r={5.5 * progress}
-        fill="#FFFFFF"
-        stroke={toColor}
-        strokeWidth={2}
-        opacity={0.95 * progress}
-        style={{
-          filter: `drop-shadow(0 0 7px ${toColor})`,
-        }}
-      />
-    </svg>
-  );
+	return (
+		<g opacity={progress}>
+			<path
+				d={path}
+				fill="none"
+				stroke={colorA}
+				strokeWidth={28}
+				strokeLinecap="round"
+				opacity={0.1}
+				filter="url(#connector-blur)"
+				pathLength={1}
+				strokeDasharray={1}
+				strokeDashoffset={1 - progress}
+			/>
+			<path
+				d={path}
+				fill="none"
+				stroke={`url(#connector-gradient-${index})`}
+				strokeWidth={11}
+				strokeLinecap="round"
+				pathLength={1}
+				strokeDasharray={1}
+				strokeDashoffset={1 - progress}
+			/>
+			<path
+				d={path}
+				fill="none"
+				stroke="white"
+				strokeWidth={2.4}
+				strokeLinecap="round"
+				opacity={0.64}
+				pathLength={1}
+				strokeDasharray={1}
+				strokeDashoffset={1 - highlight}
+			/>
+			<defs>
+				<linearGradient
+					id={`connector-gradient-${index}`}
+					gradientUnits="userSpaceOnUse"
+					x1="0"
+					y1={NODE_Y}
+					x2="1920"
+					y2={NODE_Y}
+				>
+					<stop offset="0%" stopColor={colorA} />
+					<stop offset="100%" stopColor={colorB} />
+				</linearGradient>
+			</defs>
+		</g>
+	);
 };
 
-const StepNode: React.FC<{step: StepSpec; frame: number; fps: number}> = ({
-  step,
-  frame,
-  fps,
-}) => {
-  const {number, accent, accentBright, x, start, orbitDirection} = step;
-  const entrance = spring({
-    frame: frame - start,
-    fps,
-    config: {damping: 16, stiffness: 108, mass: 0.9},
-    durationInFrames: 74,
-  });
-  const ringProgress = reveal(frame, start + 18, 104);
-  const detailProgress = reveal(frame, start + 72, 64);
-  const typeProgress = reveal(frame, start + 88, 48);
-  const settlePulse = interpolate(
-    frame,
-    [start + 112, start + 132, start + 154],
-    [0, 1, 0],
-    clamp,
-  );
-  const continuousPulse =
-    frame > start + 154
-      ? 0.5 + 0.5 * Math.sin((frame - start) * 0.027)
-      : 0;
-  const orbitAngle =
-    orbitDirection * ((frame - start) * 0.085 + (number === '02' ? 158 : 18));
-  const primaryOrbiter = polar(200, 200, 171, orbitAngle);
-  const secondaryOrbiter = polar(200, 200, 171, orbitAngle + 152);
-  const radiusMain = 132;
-  const radiusFine = 162;
-  const radiusDots = 174;
-  const mainCircumference = Math.PI * 2 * radiusMain;
-  const fineCircumference = Math.PI * 2 * radiusFine;
-  const nodeOpacity = interpolate(entrance, [0, 0.15, 1], [0, 1, 1], clamp);
-  const lift = interpolate(entrance, [0, 1], [20, 0]);
-  const scale = interpolate(entrance, [0, 0.62, 1], [0.72, 1.035, 1], clamp);
-  const gradientId = `ring-gradient-${number}`;
-  const glowId = `ring-glow-${number}`;
+const ProcessNode: React.FC<{
+	step: (typeof STEPS)[number];
+	index: number;
+	frame: number;
+	fps: number;
+	pulseX: number;
+	holdVisibility: number;
+}> = ({step, index, frame, fps, pulseX, holdVisibility}) => {
+	const {x, start, exit, accent, accentSoft, accentDark, badgeSide, icon} = step;
+	const intro = spring({
+		frame: Math.max(0, frame - (start + 24)),
+		fps,
+		durationInFrames: 68,
+		config: {damping: 17, stiffness: 118, mass: 0.86},
+	});
+	const enterOpacity = reveal(frame, start + 10, 36);
+	const leave = hide(frame, exit, 64);
+	const life = enterOpacity * leave;
+	const ringProgress = reveal(frame, start + 20, 82) * leave;
+	const centerProgress = reveal(frame, start + 46, 48) * leave;
+	const badgeProgress = reveal(frame, start + 55, 58) * leave;
+	const iconProgress = reveal(frame, start + 72, 54) * leave;
+	const exitBurst = interpolate(frame, [exit, exit + 54], [0, 1], clamp);
+	const pulseBoost =
+		Math.max(0, 1 - Math.abs(pulseX - x) / 125) * holdVisibility * leave;
+	const badgeY = badgeSide === "top" ? 244 : 836;
+	const stemStartY = badgeSide === "top" ? NODE_Y - 112 : NODE_Y + 112;
+	const stemEndY = badgeSide === "top" ? badgeY + 50 : badgeY - 50;
+	const stemDrawY = interpolate(
+		badgeProgress,
+		[0, 1],
+		[stemStartY, stemEndY],
+		clamp,
+	);
+	const scale = (0.78 + intro * 0.22) * (1 - exitBurst * 0.06);
+	const ringTurn = frame * (index % 2 === 0 ? 0.075 : -0.065) + index * 24;
+	const haloBreath = 0.88 + Math.sin(frame * 0.045 + index * 1.3) * 0.08;
+	const badgeFloat = Math.sin(frame * 0.037 + index * 1.8) * 4 * badgeProgress;
 
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x - 200,
-        top: CENTER_Y - 200,
-        width: 400,
-        height: 400,
-        opacity: nodeOpacity,
-        transform: `translateY(${lift}px) scale(${scale})`,
-        transformOrigin: '50% 50%',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 50,
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle at 42% 34%, #FFFFFF 0%, #FDFEFE 52%, #F0F5F4 100%)',
-          boxShadow: `0 28px 48px rgba(28,55,61,0.12), 0 7px 14px rgba(28,55,61,0.08), inset 0 0 0 1px rgba(255,255,255,0.95), 0 0 ${18 + settlePulse * 18}px ${accent}1F`,
-        }}
-      />
-      <svg
-        width={400}
-        height={400}
-        viewBox="0 0 400 400"
-        style={{position: 'absolute', inset: 0, overflow: 'visible'}}
-      >
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={accentBright} />
-            <stop offset="48%" stopColor={accent} />
-            <stop offset="100%" stopColor={accentBright} />
-          </linearGradient>
-          <filter id={glowId} x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+	return (
+		<g opacity={life}>
+			<path
+				d={`M ${x} ${stemStartY} L ${x} ${stemEndY}`}
+				fill="none"
+				stroke={accent}
+				strokeWidth={10}
+				strokeLinecap="round"
+				pathLength={1}
+				strokeDasharray={1}
+				strokeDashoffset={1 - badgeProgress}
+				filter="url(#soft-glow)"
+				opacity={0.22}
+			/>
+			<path
+				d={`M ${x} ${stemStartY} L ${x} ${stemEndY}`}
+				fill="none"
+				stroke={`url(#badge-stem-${index})`}
+				strokeWidth={6}
+				strokeLinecap="round"
+				pathLength={1}
+				strokeDasharray={1}
+				strokeDashoffset={1 - badgeProgress}
+			/>
 
-        <circle
-          cx={200}
-          cy={200}
-          r={radiusMain}
-          fill="none"
-          stroke="#DCE6E5"
-          strokeWidth={24}
-          opacity={0.9 * entrance}
-        />
-        <circle
-          cx={200}
-          cy={200}
-          r={radiusMain}
-          fill="none"
-          stroke={`url(#${gradientId})`}
-          strokeWidth={22}
-          strokeLinecap="round"
-          strokeDasharray={mainCircumference}
-          strokeDashoffset={mainCircumference * (1 - ringProgress)}
-          transform="rotate(-90 200 200)"
-          filter={`url(#${glowId})`}
-        />
-        <circle
-          cx={200}
-          cy={200}
-          r={radiusFine}
-          fill="none"
-          stroke={accent}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeDasharray={`${fineCircumference * 0.235} ${fineCircumference}`}
-          strokeDashoffset={fineCircumference * (1 - detailProgress)}
-          transform={`rotate(${22 + orbitAngle * 0.22} 200 200)`}
-          opacity={0.84}
-        />
-        <circle
-          cx={200}
-          cy={200}
-          r={radiusFine}
-          fill="none"
-          stroke={accentBright}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeDasharray={`${fineCircumference * 0.12} ${fineCircumference}`}
-          strokeDashoffset={fineCircumference * (1 - detailProgress)}
-          transform={`rotate(${220 - orbitAngle * 0.18} 200 200)`}
-          opacity={0.66}
-        />
-        <circle
-          cx={200}
-          cy={200}
-          r={radiusDots}
-          fill="none"
-          stroke={accent}
-          strokeWidth={2.4}
-          strokeLinecap="round"
-          strokeDasharray="1 12"
-          transform={`rotate(${orbitAngle * 0.3} 200 200)`}
-          opacity={0.58 * detailProgress}
-        />
-        <circle
-          cx={primaryOrbiter.x}
-          cy={primaryOrbiter.y}
-          r={6.5 * detailProgress}
-          fill="#FFFFFF"
-          stroke={accent}
-          strokeWidth={3}
-          style={{filter: `drop-shadow(0 0 5px ${accent})`}}
-        />
-        <circle
-          cx={secondaryOrbiter.x}
-          cy={secondaryOrbiter.y}
-          r={3.2 * detailProgress}
-          fill={accentBright}
-          opacity={0.82}
-        />
-        <circle
-          cx={200}
-          cy={200}
-          r={151 + continuousPulse * 2.5}
-          fill="none"
-          stroke={accentBright}
-          strokeWidth={1.5}
-          opacity={(0.08 + continuousPulse * 0.09) * detailProgress}
-        />
-      </svg>
+			<g
+				style={{
+					transformOrigin: `${x}px ${NODE_Y}px`,
+					transform: `scale(${scale})`,
+				}}
+			>
+				<circle
+					cx={x}
+					cy={NODE_Y}
+					r={142}
+					fill={accent}
+					opacity={(0.055 + pulseBoost * 0.12) * haloBreath}
+					filter="url(#large-blur)"
+				/>
+				<circle
+					cx={x}
+					cy={NODE_Y}
+					r={119}
+					fill="none"
+					stroke={accent}
+					strokeWidth={3}
+					opacity={0.13 * ringProgress}
+				/>
+				<g
+					style={{
+						transformOrigin: `${x}px ${NODE_Y}px`,
+						transform: `rotate(${ringTurn}deg)`,
+					}}
+				>
+					<circle
+						cx={x}
+						cy={NODE_Y}
+						r={124}
+						fill="none"
+						stroke={`url(#ring-gradient-${index})`}
+						strokeWidth={9}
+						strokeLinecap="round"
+						pathLength={1}
+						strokeDasharray="0.31 0.055 0.14 0.07 0.26 0.165"
+						strokeDashoffset={1 - ringProgress}
+						filter="url(#soft-glow)"
+					/>
+					<circle
+						cx={x}
+						cy={NODE_Y}
+						r={136}
+						fill="none"
+						stroke={accent}
+						strokeWidth={3}
+						strokeLinecap="round"
+						pathLength={1}
+						strokeDasharray="0.018 0.044"
+						strokeDashoffset={1 - ringProgress}
+						opacity={0.42}
+					/>
+				</g>
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingTop: 4,
-          fontFamily: 'Arial, Helvetica, sans-serif',
-          color: '#273337',
-          opacity: typeProgress,
-          transform: `translateY(${interpolate(
-            typeProgress,
-            [0, 1],
-            [13, 0],
-          )}px) scale(${interpolate(typeProgress, [0, 1], [0.92, 1])})`,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 68,
-            lineHeight: 0.8,
-            fontWeight: 800,
-            letterSpacing: -3,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {number}
-        </div>
-        <div
-          style={{
-            marginTop: 15,
-            fontSize: 17,
-            lineHeight: 1,
-            fontWeight: 700,
-            letterSpacing: 5.5,
-            color: accent,
-          }}
-        >
-          STEP
-        </div>
-      </div>
-    </div>
-  );
+				<ellipse
+					cx={x}
+					cy={NODE_Y + 104}
+					rx={78}
+					ry={18}
+					fill={accentDark}
+					opacity={0.14 * centerProgress}
+					filter="url(#shadow-blur)"
+				/>
+				<circle
+					cx={x}
+					cy={NODE_Y}
+					r={101}
+					fill={`url(#glass-${index})`}
+					stroke="rgba(255,255,255,0.95)"
+					strokeWidth={3}
+					filter="url(#node-shadow)"
+					opacity={centerProgress}
+				/>
+				<circle
+					cx={x}
+					cy={NODE_Y}
+					r={88}
+					fill={`url(#inner-glow-${index})`}
+					opacity={(0.72 + pulseBoost * 0.28) * centerProgress}
+				/>
+				<path
+					d={`M ${x - 63} ${NODE_Y - 60} A 86 86 0 0 1 ${x + 47} ${NODE_Y - 69}`}
+					fill="none"
+					stroke="white"
+					strokeWidth={8}
+					strokeLinecap="round"
+					opacity={0.62 * centerProgress}
+				/>
+				<BusinessGlyph
+					type={icon}
+					x={x}
+					y={NODE_Y}
+					color={accent}
+					progress={iconProgress}
+				/>
+			</g>
+
+			<line
+				x1={x}
+				y1={stemStartY}
+				x2={x}
+				y2={stemDrawY}
+				stroke={accent}
+				strokeWidth={7}
+				strokeLinecap="round"
+				opacity={0.9 * badgeProgress}
+			/>
+			<line
+				x1={x}
+				y1={stemStartY}
+				x2={x}
+				y2={stemDrawY}
+				stroke="white"
+				strokeWidth={2}
+				strokeLinecap="round"
+				opacity={0.55 * badgeProgress}
+			/>
+
+			<g
+				opacity={badgeProgress}
+				style={{
+					transformOrigin: `${x}px ${badgeY}px`,
+					transform: `translateY(${badgeFloat}px) scale(${0.74 + badgeProgress * 0.26})`,
+				}}
+			>
+				<circle
+					cx={x}
+					cy={badgeY}
+					r={60}
+					fill={accent}
+					opacity={0.17}
+					filter="url(#soft-glow)"
+				/>
+				<circle
+					cx={x}
+					cy={badgeY}
+					r={49}
+					fill={`url(#badge-gradient-${index})`}
+					stroke="white"
+					strokeWidth={3}
+					filter="url(#badge-shadow)"
+				/>
+				<circle
+					cx={x}
+					cy={badgeY}
+					r={39}
+					fill="none"
+					stroke="white"
+					strokeWidth={1.5}
+					opacity={0.36}
+				/>
+				<ellipse
+					cx={x - 12}
+					cy={badgeY - 16}
+					rx={18}
+					ry={10}
+					fill="white"
+					opacity={0.2}
+					transform={`rotate(-22 ${x - 12} ${badgeY - 16})`}
+				/>
+				<text
+					x={x}
+					y={badgeY + 10}
+					fill="white"
+					fontFamily="Arial, Helvetica, sans-serif"
+					fontSize={30}
+					fontWeight={700}
+					letterSpacing={1}
+					textAnchor="middle"
+				>
+					{String(index + 1).padStart(2, "0")}
+				</text>
+			</g>
+
+			{[0, 1, 2, 3, 4, 5].map((particle) => {
+				const angle = particle * 1.047 + index * 0.62;
+				const radius = 122 + exitBurst * (70 + particle * 9);
+				const px = x + Math.cos(angle) * radius;
+				const py = NODE_Y + Math.sin(angle) * radius;
+				const particleOpacity =
+					ringProgress *
+					(0.24 + (particle % 3) * 0.11) *
+					(1 - exitBurst) *
+					leave;
+				return (
+					<circle
+						key={particle}
+						cx={px}
+						cy={py}
+						r={particle % 2 === 0 ? 4.5 : 3}
+						fill={particle % 2 === 0 ? accentSoft : accent}
+						opacity={particleOpacity}
+					/>
+				);
+			})}
+
+			<defs>
+				<linearGradient id={`ring-gradient-${index}`} x1="0" y1="0" x2="1" y2="1">
+					<stop offset="0%" stopColor={accentSoft} />
+					<stop offset="48%" stopColor={accent} />
+					<stop offset="100%" stopColor={accentDark} />
+				</linearGradient>
+				<radialGradient id={`glass-${index}`} cx="35%" cy="25%" r="80%">
+					<stop offset="0%" stopColor="white" stopOpacity="0.98" />
+					<stop offset="58%" stopColor="#F9FCFF" stopOpacity="0.94" />
+					<stop offset="100%" stopColor={accentSoft} stopOpacity="0.18" />
+				</radialGradient>
+				<radialGradient id={`inner-glow-${index}`} cx="50%" cy="50%" r="62%">
+					<stop offset="0%" stopColor={accentSoft} stopOpacity="0.2" />
+					<stop offset="62%" stopColor={accent} stopOpacity="0.07" />
+					<stop offset="100%" stopColor={accent} stopOpacity="0" />
+				</radialGradient>
+				<linearGradient id={`badge-gradient-${index}`} x1="0" y1="0" x2="1" y2="1">
+					<stop offset="0%" stopColor={accentSoft} />
+					<stop offset="45%" stopColor={accent} />
+					<stop offset="100%" stopColor={accentDark} />
+				</linearGradient>
+				<linearGradient id={`badge-stem-${index}`} x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0%" stopColor={accentSoft} />
+					<stop offset="100%" stopColor={accent} />
+				</linearGradient>
+			</defs>
+		</g>
+	);
+};
+
+const Background: React.FC<{frame: number}> = ({frame}) => {
+	const driftX = Math.sin(frame * 0.005) * 26;
+	const driftY = Math.cos(frame * 0.004) * 18;
+	const orbPulse = 0.9 + Math.sin(frame * 0.018) * 0.08;
+
+	return (
+		<AbsoluteFill
+			style={{
+				background:
+					"radial-gradient(circle at 50% 43%, #FFFFFF 0%, #F8FBFF 48%, #EEF5FF 100%)",
+				overflow: "hidden",
+			}}
+		>
+			<div
+				style={{
+					position: "absolute",
+					width: 760,
+					height: 760,
+					borderRadius: "50%",
+					left: -320 + driftX,
+					top: -280 + driftY,
+					background:
+						"radial-gradient(circle, rgba(21,108,247,0.13) 0%, rgba(21,108,247,0) 70%)",
+					filter: "blur(34px)",
+					transform: `scale(${orbPulse})`,
+				}}
+			/>
+			<div
+				style={{
+					position: "absolute",
+					width: 840,
+					height: 840,
+					borderRadius: "50%",
+					right: -390 - driftX,
+					bottom: -350 - driftY,
+					background:
+						"radial-gradient(circle, rgba(25,191,132,0.12) 0%, rgba(25,191,132,0) 72%)",
+					filter: "blur(38px)",
+					transform: `scale(${1.02 - (orbPulse - 0.9)})`,
+				}}
+			/>
+			<svg width="100%" height="100%" viewBox="0 0 1920 1080">
+				<defs>
+					<pattern id="micro-grid" width="48" height="48" patternUnits="userSpaceOnUse">
+						<circle cx="2" cy="2" r="1.4" fill="#6E88AD" opacity="0.13" />
+					</pattern>
+					<linearGradient id="horizon-fade" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0%" stopColor="white" stopOpacity="0" />
+						<stop offset="42%" stopColor="white" stopOpacity="0.8" />
+						<stop offset="58%" stopColor="white" stopOpacity="0.8" />
+						<stop offset="100%" stopColor="white" stopOpacity="0" />
+					</linearGradient>
+					<mask id="grid-mask">
+						<rect width="1920" height="1080" fill="url(#horizon-fade)" />
+					</mask>
+				</defs>
+				<g
+					mask="url(#grid-mask)"
+					style={{transform: `translate(${driftX * 0.12}px, ${driftY * 0.12}px)`}}
+				>
+					<rect x="-60" y="-60" width="2040" height="1200" fill="url(#micro-grid)" />
+				</g>
+				<path
+					d="M 110 540 H 1810"
+					stroke="#8FA5C3"
+					strokeWidth="1.5"
+					strokeDasharray="3 16"
+					opacity="0.13"
+				/>
+			</svg>
+		</AbsoluteFill>
+	);
 };
 
 export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps, durationInFrames} = useVideoConfig();
-  const globalOpacity = interpolate(
-    frame,
-    [0, 24, durationInFrames - 72, durationInFrames - 1],
-    [0, 1, 1, 0],
-    clamp,
-  );
-  const cameraScale = interpolate(
-    frame,
-    [0, 150, 610, durationInFrames - 1],
-    [1.035, 1.012, 1, 1.018],
-    {...clamp, easing: smoothEase},
-  );
-  const cameraY = interpolate(
-    frame,
-    [0, 150, 610, durationInFrames - 1],
-    [10, 2, 0, -3],
-    {...clamp, easing: softEase},
-  );
+	const frame = useCurrentFrame();
+	const {fps} = useVideoConfig();
 
-  return (
-    <AbsoluteFill style={{backgroundColor: '#F3F6F5'}}>
-      <Background frame={frame} durationInFrames={durationInFrames} />
-      <AbsoluteFill
-        style={{
-          opacity: globalOpacity,
-          transform: `translateY(${cameraY}px) scale(${cameraScale})`,
-          transformOrigin: '50% 50%',
-        }}
-      >
-        <Connector
-          frame={frame}
-          x1={590}
-          x2={770}
-          start={170}
-          fromColor={STEPS[0].accent}
-          toColor={STEPS[1].accent}
-          index={0}
-        />
-        <Connector
-          frame={frame}
-          x1={1150}
-          x2={1330}
-          start={380}
-          fromColor={STEPS[1].accent}
-          toColor={STEPS[2].accent}
-          index={1}
-        />
-        {STEPS.map((step) => (
-          <StepNode key={step.number} step={step} frame={frame} fps={fps} />
-        ))}
-      </AbsoluteFill>
-    </AbsoluteFill>
-  );
+	const holdVisibility =
+		reveal(frame, 500, 45) * hide(frame, 675, 42);
+	const pulseCycle = ((frame - 510) % 210 + 210) % 210;
+	const pulseProgress = interpolate(pulseCycle, [0, 210], [0, 1]);
+	const pulseX = interpolate(pulseProgress, [0, 1], [116, 1804]);
+	const pulseFade =
+		holdVisibility *
+		interpolate(pulseProgress, [0, 0.08, 0.9, 1], [0, 1, 1, 0], clamp);
+	const cameraScale = interpolate(
+		frame,
+		[0, 520, 675, 900],
+		[1, 1.018, 1.022, 1],
+		{...clamp, easing: softInOut},
+	);
+	const cameraY = interpolate(frame, [0, 560, 900], [6, -4, 6], {
+		...clamp,
+		easing: softInOut,
+	});
+	const globalIn = reveal(frame, 0, 18);
+	const globalOut = hide(frame, 872, 22);
+
+	const connectorPaths = [
+		{
+			path: "M 112 540 H 192",
+			start: 8,
+			exit: 840,
+			colorA: "#84BFFF",
+			colorB: STEPS[0].accent,
+		},
+		{
+			path: "M 452 540 C 515 540 559 540 628 540",
+			start: 112,
+			exit: 798,
+			colorA: STEPS[0].accent,
+			colorB: STEPS[1].accent,
+		},
+		{
+			path: "M 872 540 C 935 540 979 540 1048 540",
+			start: 238,
+			exit: 753,
+			colorA: STEPS[1].accent,
+			colorB: STEPS[2].accent,
+		},
+		{
+			path: "M 1292 540 C 1355 540 1399 540 1468 540",
+			start: 364,
+			exit: 708,
+			colorA: STEPS[2].accent,
+			colorB: STEPS[3].accent,
+		},
+		{
+			path: "M 1712 540 H 1808",
+			start: 490,
+			exit: 688,
+			colorA: STEPS[3].accent,
+			colorB: "#86E8C8",
+		},
+	];
+
+	return (
+		<AbsoluteFill
+			style={{
+				fontFamily: "Arial, Helvetica, sans-serif",
+				backgroundColor: "#F5F9FF",
+			}}
+		>
+			<Background frame={frame} />
+			<div
+				style={{
+					position: "absolute",
+					inset: 0,
+					opacity: globalIn * globalOut,
+					transform: `translateY(${cameraY}px) scale(${cameraScale})`,
+					transformOrigin: "50% 50%",
+				}}
+			>
+				<svg width="1920" height="1080" viewBox="0 0 1920 1080">
+					<defs>
+						<filter id="connector-blur" x="-20%" y="-80%" width="140%" height="260%">
+							<feGaussianBlur stdDeviation="12" />
+						</filter>
+						<filter id="large-blur" x="-80%" y="-80%" width="260%" height="260%">
+							<feGaussianBlur stdDeviation="30" />
+						</filter>
+						<filter id="shadow-blur" x="-80%" y="-160%" width="260%" height="420%">
+							<feGaussianBlur stdDeviation="16" />
+						</filter>
+						<filter id="soft-glow" x="-100%" y="-100%" width="300%" height="300%">
+							<feGaussianBlur stdDeviation="4" result="blurred" />
+							<feMerge>
+								<feMergeNode in="blurred" />
+								<feMergeNode in="SourceGraphic" />
+							</feMerge>
+						</filter>
+						<filter id="node-shadow" x="-60%" y="-60%" width="220%" height="240%">
+							<feDropShadow
+								dx="0"
+								dy="20"
+								stdDeviation="19"
+								floodColor="#36547D"
+								floodOpacity="0.18"
+							/>
+							<feDropShadow
+								dx="0"
+								dy="3"
+								stdDeviation="4"
+								floodColor="#FFFFFF"
+								floodOpacity="0.9"
+							/>
+						</filter>
+						<filter id="badge-shadow" x="-100%" y="-100%" width="300%" height="320%">
+							<feDropShadow
+								dx="0"
+								dy="13"
+								stdDeviation="12"
+								floodColor="#1E3F70"
+								floodOpacity="0.24"
+							/>
+						</filter>
+						<radialGradient id="energy-pulse" cx="35%" cy="25%" r="75%">
+							<stop offset="0%" stopColor="white" />
+							<stop offset="38%" stopColor="#8AF8FF" />
+							<stop offset="100%" stopColor="#1675FF" />
+						</radialGradient>
+					</defs>
+
+					{connectorPaths.map((connector, index) => (
+						<Connector
+							key={index}
+							{...connector}
+							index={index}
+							frame={frame}
+						/>
+					))}
+
+					{STEPS.map((step, index) => (
+						<ProcessNode
+							key={step.x}
+							step={step}
+							index={index}
+							frame={frame}
+							fps={fps}
+							pulseX={pulseX}
+							holdVisibility={holdVisibility}
+						/>
+					))}
+
+					{[
+						{
+							x1: 468,
+							x2: 612,
+							colorA: STEPS[0].accent,
+							colorB: STEPS[1].accent,
+							start: 112,
+							exit: 798,
+						},
+						{
+							x1: 888,
+							x2: 1032,
+							colorA: STEPS[1].accent,
+							colorB: STEPS[2].accent,
+							start: 238,
+							exit: 753,
+						},
+						{
+							x1: 1308,
+							x2: 1452,
+							colorA: STEPS[2].accent,
+							colorB: STEPS[3].accent,
+							start: 364,
+							exit: 708,
+						},
+					].map((bridge, index) => {
+						const bridgeProgress =
+							reveal(frame, bridge.start, 84) *
+							hide(frame, bridge.exit, 62);
+						const bridgeX = interpolate(
+							bridgeProgress,
+							[0, 1],
+							[bridge.x1, bridge.x2],
+							clamp,
+						);
+						return (
+							<g key={`bridge-${index}`} opacity={bridgeProgress}>
+								<defs>
+									<linearGradient
+										id={`foreground-bridge-${index}`}
+										gradientUnits="userSpaceOnUse"
+										x1={bridge.x1}
+										y1={NODE_Y}
+										x2={bridge.x2}
+										y2={NODE_Y}
+									>
+										<stop offset="0%" stopColor={bridge.colorA} />
+										<stop offset="100%" stopColor={bridge.colorB} />
+									</linearGradient>
+								</defs>
+								<line
+									x1={bridge.x1}
+									y1={NODE_Y}
+									x2={bridgeX}
+									y2={NODE_Y}
+									stroke={bridge.colorA}
+									strokeWidth={24}
+									strokeLinecap="round"
+									opacity={0.12}
+									filter="url(#connector-blur)"
+								/>
+								<line
+									x1={bridge.x1}
+									y1={NODE_Y}
+									x2={bridgeX}
+									y2={NODE_Y}
+									stroke={`url(#foreground-bridge-${index})`}
+									strokeWidth={8}
+									strokeLinecap="round"
+								/>
+								<line
+									x1={bridge.x1}
+									y1={NODE_Y - 1.5}
+									x2={bridgeX}
+									y2={NODE_Y - 1.5}
+									stroke="white"
+									strokeWidth={2}
+									strokeLinecap="round"
+									opacity={0.58}
+								/>
+							</g>
+						);
+					})}
+
+					<g opacity={pulseFade} filter="url(#soft-glow)">
+						{[0, 1, 2, 3].map((trail) => (
+							<circle
+								key={trail}
+								cx={pulseX - trail * 22}
+								cy={NODE_Y}
+								r={trail === 0 ? 11 : 7 - trail}
+								fill={trail === 0 ? "url(#energy-pulse)" : "#61DDF1"}
+								opacity={1 - trail * 0.23}
+							/>
+						))}
+					</g>
+				</svg>
+			</div>
+			<div
+				style={{
+					position: "absolute",
+					inset: 0,
+					pointerEvents: "none",
+					background:
+						"linear-gradient(115deg, rgba(255,255,255,0.22), rgba(255,255,255,0) 32%, rgba(255,255,255,0) 68%, rgba(255,255,255,0.16))",
+				}}
+			/>
+		</AbsoluteFill>
+	);
 };
