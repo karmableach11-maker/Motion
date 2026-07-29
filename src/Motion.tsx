@@ -6,1323 +6,921 @@ import {
   useCurrentFrame,
 } from "remotion";
 
+const WIDTH = 1920;
+const HEIGHT = 1080;
+const DURATION = 900;
+const IMPACT_FRAME = 518;
+const OUTRO_FRAME = 704;
+
 const clamp = {
   extrapolateLeft: "clamp" as const,
   extrapolateRight: "clamp" as const,
 };
 
-const C = {
-  bg: "#02070c",
-  bg2: "#061119",
-  panel: "#07151d",
-  panel2: "#0a1d27",
-  edge: "#173845",
-  edgeBright: "#296477",
-  grid: "#102c37",
-  white: "#e9fbff",
-  muted: "#6f929e",
-  dim: "#375763",
-  cyan: "#22d9e8",
-  cyan2: "#8ff8ff",
-  blue: "#3f7cff",
-  amber: "#ffbd4a",
-  orange: "#ff7c45",
-  red: "#ff4f64",
-  green: "#54e59b",
-};
+const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
+const easeInOut = Easing.bezier(0.65, 0, 0.35, 1);
+const easeCrash = Easing.bezier(0.72, 0, 0.92, 0.42);
 
-const ease = (frame: number, start: number, duration = 40) =>
-  interpolate(frame, [start, start + duration], [0, 1], {
+const progress = (
+  frame: number,
+  start: number,
+  end: number,
+  easing = easeInOut,
+) =>
+  interpolate(frame, [start, end], [0, 1], {
     ...clamp,
-    easing: Easing.out(Easing.cubic),
+    easing,
   });
 
-const seed = (n: number) => {
-  const v = Math.sin(n * 91.731 + 17.417) * 43758.5453;
-  return v - Math.floor(v);
+const seeded = (index: number) => {
+  const value = Math.sin(index * 91.713 + 12.341) * 43758.5453;
+  return value - Math.floor(value);
 };
 
-const pointsPath = (points: readonly [number, number][]) =>
-  points
-    .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`)
-    .join(" ");
+const mix = (from: number, to: number, amount: number) =>
+  from + (to - from) * amount;
 
-const hexPoints = (cx: number, cy: number, r: number, rotate = -Math.PI / 2) =>
-  Array.from({length: 6}, (_, i) => {
-    const a = rotate + (i / 6) * Math.PI * 2;
-    return `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`;
-  }).join(" ");
+const candleStart = (index: number, count: number) => {
+  const wideGap = index * 14.5;
+  const acceleration =
+    (9.5 * index * Math.max(0, index - 1)) / (2 * Math.max(1, count - 1));
+  return 58 + wideGap - acceleration;
+};
 
-const Panel: React.FC<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-  code: string;
-  reveal: number;
-  active?: boolean;
-  accent?: string;
-  children: React.ReactNode;
-}> = ({
-  x,
-  y,
-  width,
-  height,
-  label,
-  code,
-  reveal,
-  active = false,
-  accent = C.cyan,
-  children,
-}) => {
-  const frame = useCurrentFrame();
-  const cut = 18;
-  const activePulse = active ? 0.5 + 0.5 * Math.sin(frame * 0.075) : 0;
-  const path = `M${cut} 0H${width - cut}L${width} ${cut}V${
-    height - 9
-  }L${width - 9} ${height}H9L0 ${height - 9}V${cut}Z`;
-  return (
-    <g
-      transform={`translate(${x} ${y + (1 - reveal) * 14})`}
-      opacity={reveal}
-    >
-      <path
-        d={path}
-        fill={C.panel}
-        fillOpacity={0.92 + activePulse * 0.035}
-        stroke={active ? accent : C.edge}
-        strokeWidth={active ? 1.8 : 1.15}
-        strokeOpacity={active ? 0.72 + activePulse * 0.28 : 1}
-      />
-      <path
-        d={`M${cut} 0H${Math.min(width - cut, 132)} M0 ${cut}V${Math.min(
-          height - 9,
-          82,
-        )} M${width - 78} ${height}H${width - 9}L${width} ${height - 9}`}
-        fill="none"
-        stroke={active ? accent : C.edgeBright}
-        strokeWidth={2.2 + activePulse * 0.55}
-        strokeLinecap="round"
-      />
-      <rect
-        x="16"
-        y="14"
-        width="5"
-        height="5"
-        fill={active ? accent : C.dim}
-        opacity={active ? 0.62 + activePulse * 0.38 : 1}
-      />
-      <text
-        x="31"
-        y="21"
-        fill={active ? C.white : C.muted}
-        fontSize="11"
-        fontWeight="700"
-        letterSpacing="2.2"
-      >
-        {label}
-      </text>
-      <text
-        x={width - 16}
-        y="21"
-        textAnchor="end"
-        fill={active ? accent : C.dim}
-        fontSize="8"
-        fontWeight="600"
-        letterSpacing="1.5"
-      >
-        {code}
-      </text>
+const CLOSES = [
+  55, 60, 58, 64, 62, 68, 72, 69, 75, 79, 76, 82, 86, 83, 89, 93, 90,
+  96, 99, 95, 102, 98, 105, 109, 106, 112, 108, 115, 111, 118, 114, 121,
+  118, 124, 120, 126, 121, 116, 108, 97, 82, 61, 39, 23,
+] as const;
+
+const CANDLE_SPACING = 84;
+const CHART_START_X = 250;
+const CRASH_INDEX = CLOSES.length - 1;
+const CRASH_X = CHART_START_X + CRASH_INDEX * CANDLE_SPACING;
+
+const priceY = (price: number) => 920 - price * 5.15;
+
+const CANDLES = CLOSES.map((close, index) => {
+  const previous = index === 0 ? close - 3 : CLOSES[index - 1];
+  const crashWeight = Math.max(0, index - 36);
+  const open =
+    index >= 38
+      ? previous + 2.5 + crashWeight * 0.7
+      : previous + (seeded(index + 201) - 0.5) * 5;
+  const high =
+    Math.max(open, close) +
+    2.4 +
+    seeded(index + 421) * (index >= 38 ? 5.5 : 7);
+  const low =
+    Math.min(open, close) -
+    2.4 -
+    seeded(index + 647) * (index >= 38 ? 9.5 : 6);
+  return {
+    open,
+    close,
+    high,
+    low,
+    x: CHART_START_X + index * CANDLE_SPACING,
+    start: candleStart(index, CLOSES.length),
+  };
+});
+
+const closingLine = CANDLES.map(
+  (candle, index) =>
+    `${index === 0 ? "M" : "L"}${candle.x},${priceY(candle.close)}`,
+).join(" ");
+
+const Background: React.FC<{
+  frame: number;
+  parallaxX: number;
+  tension: number;
+}> = ({frame, parallaxX, tension}) => {
+  const loopFrame = frame % (DURATION - 1);
+  const scan = (loopFrame * 2.8) % (HEIGHT + 520) - 260;
+
+  const dust = Array.from({length: 72}, (_, index) => {
+    const x =
+      (seeded(index + 4) * (WIDTH + 220) +
+        loopFrame * (0.11 + seeded(index + 80) * 0.3)) %
+        (WIDTH + 220) -
+      110;
+    const y =
+      (seeded(index + 170) * HEIGHT +
+        loopFrame * (0.18 + seeded(index + 251) * 0.46)) %
+      HEIGHT;
+    const red = index % 7 === 0 || (tension > 0.55 && index % 4 === 0);
+    return (
       <line
-        x1="16"
-        y1="34"
-        x2={width - 16}
-        y2="34"
-        stroke={active ? accent : C.edge}
-        strokeOpacity={active ? 0.65 : 0.8}
+        key={index}
+        x1={x}
+        x2={x + (red ? 1 : 0)}
+        y1={y}
+        y2={y + 7 + seeded(index + 341) * 26}
+        stroke={red ? "#ff214e" : "#18c7d9"}
+        strokeWidth={red ? 1.25 : 0.8}
+        opacity={
+          (0.07 + seeded(index + 409) * 0.22) *
+          (0.72 + Math.sin(loopFrame / 21 + index) * 0.28) *
+          (red ? 0.75 + tension * 0.7 : 1)
+        }
       />
-      {active ? (
-        <>
-          <circle
-            cx={width - 25}
-            cy="17"
-            r={3 + activePulse * 2}
-            fill={accent}
-            fillOpacity={0.42 + activePulse * 0.5}
+    );
+  });
+
+  const horizontalGrid = Array.from({length: 17}, (_, index) => {
+    const ratio = index / 16;
+    const y = 326 + Math.pow(ratio, 1.9) * 744;
+    return (
+      <line
+        key={index}
+        x1="-320"
+        x2="2240"
+        y1={y}
+        y2={y}
+        stroke={index % 4 === 0 ? "#116477" : "#0c3b49"}
+        strokeWidth={index % 4 === 0 ? 1.3 : 0.8}
+        opacity={0.11 + ratio * 0.18}
+      />
+    );
+  });
+
+  const verticalGrid = Array.from({length: 21}, (_, index) => {
+    const bottomX = -280 + index * 124;
+    const horizonX = 960 + (bottomX - 960) * 0.09;
+    return (
+      <line
+        key={index}
+        x1={horizonX}
+        x2={bottomX}
+        y1="326"
+        y2="1080"
+        stroke={index % 5 === 0 ? "#116477" : "#0b3a48"}
+        strokeWidth={index % 5 === 0 ? 1.2 : 0.75}
+        opacity=".16"
+      />
+    );
+  });
+
+  return (
+    <AbsoluteFill>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse at 50% 28%,rgba(8,54,66,.55),transparent 52%),radial-gradient(ellipse at 64% 72%,rgba(143,0,28,.18),transparent 42%),linear-gradient(180deg,#010609 0%,#020a0e 54%,#050307 100%)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 50% 55%,transparent 34%,rgba(0,0,0,.48) 86%,rgba(0,0,0,.82) 100%)",
+        }}
+      />
+
+      <svg
+        width={WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        style={{position: "absolute", inset: 0}}
+        aria-hidden
+      >
+        <defs>
+          <linearGradient id="bg-horizon" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#00d7eb" stopOpacity="0" />
+            <stop offset=".48" stopColor="#48efff" stopOpacity=".45" />
+            <stop offset=".74" stopColor="#ff1749" stopOpacity=".24" />
+            <stop offset="1" stopColor="#ff1749" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="bg-scan" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#8cf9ff" stopOpacity="0" />
+            <stop offset=".5" stopColor="#8cf9ff" stopOpacity=".22" />
+            <stop offset="1" stopColor="#8cf9ff" stopOpacity="0" />
+          </linearGradient>
+          <filter id="bg-soft">
+            <feGaussianBlur stdDeviation="10" />
+          </filter>
+        </defs>
+
+        <g transform={`translate(${parallaxX * 0.12} 0)`}>
+          {horizontalGrid}
+          {verticalGrid}
+          <line
+            x1="-120"
+            x2="2040"
+            y1="326"
+            y2="326"
+            stroke="url(#bg-horizon)"
+            strokeWidth="2"
+            opacity=".68"
           />
-          <path
-            d={`M${width - 84} 34H${width - 28}`}
-            stroke={accent}
-            strokeWidth="1.5"
-            strokeDasharray={`${8 + activePulse * 22} 56`}
-            strokeLinecap="round"
-          />
-        </>
-      ) : null}
-      <g opacity={interpolate(reveal, [0.35, 1], [0, 1], clamp)}>
-        {children}
+        </g>
+
+        <rect
+          x="0"
+          y={scan}
+          width={WIDTH}
+          height="210"
+          fill="url(#bg-scan)"
+          opacity=".16"
+          filter="url(#bg-soft)"
+        />
+
+        {dust}
+      </svg>
+
+      <div
+        style={{
+          position: "absolute",
+          left: "8%",
+          right: "8%",
+          bottom: 20,
+          height: 190,
+          background:
+            "radial-gradient(ellipse at center,rgba(255,18,58,.16),transparent 70%)",
+          filter: "blur(30px)",
+          opacity: 0.28 + tension * 0.52,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const AmbientHud: React.FC<{
+  frame: number;
+  opacity: number;
+}> = ({frame, opacity}) => {
+  const pulse = 0.66 + Math.sin(frame / 26) * 0.22;
+  const sweep = (frame * 5.4) % 1260;
+
+  return (
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{position: "absolute", inset: 0, opacity}}
+      aria-hidden
+    >
+      <defs>
+        <filter id="hud-cyan-glow">
+          <feGaussianBlur stdDeviation="4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <linearGradient id="hud-sweep" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#47f5ff" stopOpacity="0" />
+          <stop offset=".5" stopColor="#b8fdff" stopOpacity=".9" />
+          <stop offset="1" stopColor="#47f5ff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      <g
+        fill="none"
+        stroke="#18dced"
+        strokeLinecap="square"
+        filter="url(#hud-cyan-glow)"
+      >
+        <path d="M92 188V108Q92 86 114 86H226" strokeWidth="2" />
+        <path d="M1828 188V108Q1828 86 1806 86H1694" strokeWidth="2" />
+        <path d="M92 892V972Q92 994 114 994H226" strokeWidth="2" />
+        <path d="M1828 892V972Q1828 994 1806 994H1694" strokeWidth="2" />
+        <path d="M112 148V116Q112 106 122 106H178" strokeWidth="1" opacity=".5" />
+        <path
+          d="M1808 148V116Q1808 106 1798 106H1742"
+          strokeWidth="1"
+          opacity=".5"
+        />
       </g>
+
+      <g fill="#6bf7ff" opacity={pulse}>
+        <circle cx="226" cy="86" r="3" />
+        <circle cx="1694" cy="86" r="3" />
+        <circle cx="226" cy="994" r="3" />
+        <circle cx="1694" cy="994" r="3" />
+      </g>
+
+      <g opacity=".26">
+        {Array.from({length: 13}, (_, index) => (
+          <rect
+            key={index}
+            x={330 + index * 98}
+            y="83"
+            width={index % 3 === 0 ? 42 : 18}
+            height="2"
+            fill={index % 4 === 0 ? "#ff315b" : "#1ed7e8"}
+          />
+        ))}
+      </g>
+
+      <rect
+        x={330 + sweep}
+        y="80"
+        width="130"
+        height="7"
+        fill="url(#hud-sweep)"
+        opacity=".34"
+      />
+    </svg>
+  );
+};
+
+const LiquidityField: React.FC<{
+  frame: number;
+  visibility: number;
+}> = ({frame, visibility}) => {
+  const activation = progress(frame, 230, 390, easeOut);
+  const collapse = progress(frame, 474, 548, easeCrash);
+  const outro = 1 - progress(frame, OUTRO_FRAME + 20, 830);
+
+  return (
+    <g opacity={visibility * activation * outro}>
+      {Array.from({length: 22}, (_, index) => {
+        const side = index % 2 === 0 ? 1 : -1;
+        const y = 258 + index * 31 + seeded(index + 20) * 13;
+        const baseX = CRASH_X - 920 + seeded(index + 50) * 820;
+        const width = 240 + seeded(index + 92) * 570;
+        const contraction = collapse * (0.65 + seeded(index + 130) * 0.35);
+        const x = mix(baseX, CRASH_X - width * 0.1, contraction);
+        const opacity =
+          (0.08 + seeded(index + 171) * 0.16) *
+          (0.76 + Math.sin(frame / 12 + index) * 0.24) *
+          (1 - collapse * 0.58);
+        const color =
+          collapse > 0.48
+            ? "#ff2452"
+            : side > 0
+              ? "#18d6e7"
+              : "#b72cff";
+        return (
+          <g key={index} transform={`translate(${x} ${y})`}>
+            <rect
+              width={width * (1 - contraction * 0.72)}
+              height={index % 4 === 0 ? 3 : 1.5}
+              rx="1"
+              fill={color}
+              opacity={opacity}
+            />
+            <circle
+              cx={width * (1 - contraction * 0.72)}
+              cy={index % 4 === 0 ? 1.5 : 0.75}
+              r={index % 4 === 0 ? 3 : 1.5}
+              fill={color}
+              opacity={opacity * 1.8}
+            />
+          </g>
+        );
+      })}
     </g>
   );
 };
 
-const ShieldMark: React.FC<{
-  x: number;
-  y: number;
-  size: number;
-  color?: string;
-  pulse?: number;
-}> = ({x, y, size, color = C.cyan, pulse = 0}) => (
-  <g transform={`translate(${x} ${y})`}>
-    <path
-      d={`M0 ${-size * 0.52}L${size * 0.42} ${-size * 0.35}V${
-        size * 0.06
-      }C${size * 0.42} ${size * 0.34} ${size * 0.2} ${size * 0.5} 0 ${
-        size * 0.62
-      }C${-size * 0.2} ${size * 0.5} ${-size * 0.42} ${size * 0.34} ${
-        -size * 0.42
-      } ${size * 0.06}V${-size * 0.35}Z`}
-      fill={color}
-      fillOpacity={0.08 + pulse * 0.08}
-      stroke={color}
-      strokeWidth={size * 0.06}
-      strokeLinejoin="round"
+const Candle: React.FC<{
+  frame: number;
+  index: number;
+  sceneVisibility: number;
+}> = ({frame, index, sceneVisibility}) => {
+  const candle = CANDLES[index];
+  const enter = progress(frame, candle.start, candle.start + 28, easeOut);
+  const reverseIndex = CANDLES.length - 1 - index;
+  const exitStart = OUTRO_FRAME + reverseIndex * 3.2;
+  const exit = 1 - progress(frame, exitStart, exitStart + 42, easeInOut);
+  const visibility = enter * exit * sceneVisibility;
+
+  const isUp = candle.close >= candle.open;
+  const color = isUp ? "#22f2e5" : "#ff315b";
+  const coreColor = isUp ? "#c7fffb" : "#fff2f5";
+  const openY = priceY(candle.open);
+  const closeY = priceY(candle.close);
+  const highY = priceY(candle.high);
+  const lowY = priceY(candle.low);
+  const bodyTop = Math.min(openY, closeY);
+  const bodyBottom = Math.max(openY, closeY);
+  const bodyHeight = Math.max(7, bodyBottom - bodyTop);
+  const currentTop = mix(openY, bodyTop, enter);
+  const currentBottom = mix(openY, bodyBottom, enter);
+  const currentHigh = mix(openY, highY, enter);
+  const currentLow = mix(openY, lowY, enter);
+  const flash =
+    index >= 38
+      ? 0.82 + Math.sin((frame - candle.start) / 3.5) * 0.18
+      : 0.9 + Math.sin(frame / 17 + index) * 0.1;
+  const width = index >= 40 ? 36 : 30;
+
+  return (
+    <g opacity={visibility * flash}>
+      <line
+        x1={candle.x}
+        x2={candle.x}
+        y1={currentHigh}
+        y2={currentLow}
+        stroke={color}
+        strokeWidth={index >= 38 ? 4 : 2.5}
+        filter={isUp ? "url(#green-glow)" : "url(#red-glow)"}
+      />
+      <rect
+        x={candle.x - width / 2}
+        y={currentTop}
+        width={width}
+        height={Math.max(1, currentBottom - currentTop)}
+        rx="2"
+        fill={isUp ? "url(#green-candle)" : "url(#red-candle)"}
+        stroke={coreColor}
+        strokeWidth={index >= 38 ? 1.8 : 1.15}
+        filter={isUp ? "url(#green-glow)" : "url(#red-glow)"}
+      />
+      <line
+        x1={candle.x - width * 0.2}
+        x2={candle.x - width * 0.2}
+        y1={currentTop + 4}
+        y2={Math.min(currentBottom - 3, currentTop + bodyHeight * enter * 0.75)}
+        stroke="#ffffff"
+        strokeWidth="1.2"
+        opacity={isUp ? 0.54 : 0.74}
+      />
+      <ellipse
+        cx={candle.x}
+        cy={currentBottom + 8}
+        rx={width * 0.92}
+        ry="5"
+        fill={color}
+        opacity={0.11 + (index >= 38 ? 0.18 : 0.04)}
+        filter="url(#wide-blur)"
+      />
+    </g>
+  );
+};
+
+const VolumeBars: React.FC<{
+  frame: number;
+  visibility: number;
+}> = ({frame, visibility}) => (
+  <g opacity={visibility}>
+    <line
+      x1="90"
+      x2={CRASH_X + 240}
+      y1="969"
+      y2="969"
+      stroke="#1d6b75"
+      strokeWidth="1"
+      opacity=".3"
     />
-    <path
-      d={`M${-size * 0.16} 0L${-size * 0.035} ${size * 0.14}L${
-        size * 0.21
-      } ${-size * 0.16}`}
-      fill="none"
-      stroke={color}
-      strokeWidth={size * 0.07}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+    {CANDLES.map((candle, index) => {
+      const enter = progress(frame, candle.start + 8, candle.start + 32, easeOut);
+      const reverseIndex = CANDLES.length - 1 - index;
+      const exit =
+        1 -
+        progress(
+          frame,
+          OUTRO_FRAME + reverseIndex * 3.2,
+          OUTRO_FRAME + reverseIndex * 3.2 + 36,
+        );
+      const isUp = candle.close >= candle.open;
+      const crashBoost = index >= 38 ? (index - 37) * 18 : 0;
+      const volume =
+        24 +
+        Math.abs(candle.close - candle.open) * 3.2 +
+        seeded(index + 720) * 44 +
+        crashBoost;
+      return (
+        <rect
+          key={index}
+          x={candle.x - 15}
+          y={969 - volume * enter}
+          width="30"
+          height={volume * enter}
+          rx="2"
+          fill={isUp ? "#16cfc5" : "#ff234f"}
+          opacity={(index >= 38 ? 0.48 : 0.2) * exit}
+          filter={index >= 40 ? "url(#red-soft)" : undefined}
+        />
+      );
+    })}
   </g>
 );
 
-const RiskGauge: React.FC<{
-  cx: number;
-  cy: number;
-  radius: number;
-  value: number;
+const PriceTrace: React.FC<{
   frame: number;
-  active: boolean;
-}> = ({cx, cy, radius, value, frame, active}) => {
-  const start = Math.PI * 0.78;
-  const end = Math.PI * 2.22;
-  const count = 30;
-  const lit = Math.floor(value * count);
-  const needleA = start + (end - start) * value;
+  visibility: number;
+}> = ({frame, visibility}) => {
+  const draw = progress(frame, 68, IMPACT_FRAME, Easing.linear);
+  const erase = progress(frame, OUTRO_FRAME + 8, 850, easeInOut);
+  const dashOffset = 7800 * (1 - draw) - 7800 * erase;
   return (
-    <g>
-      {Array.from({length: count}, (_, i) => {
-        const a = start + ((end - start) * i) / (count - 1);
-        const x1 = cx + Math.cos(a) * (radius - 10);
-        const y1 = cy + Math.sin(a) * (radius - 10);
-        const x2 = cx + Math.cos(a) * radius;
-        const y2 = cy + Math.sin(a) * radius;
-        const color =
-          i < count * 0.52 ? C.cyan : i < count * 0.78 ? C.amber : C.red;
+    <g opacity={visibility * 0.42}>
+      <path
+        d={closingLine}
+        fill="none"
+        stroke="#ff3159"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="7800"
+        strokeDashoffset={dashOffset}
+        opacity=".12"
+        filter="url(#red-soft)"
+      />
+      <path
+        d={closingLine}
+        fill="none"
+        stroke="url(#trace-gradient)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="7800"
+        strokeDashoffset={dashOffset}
+        opacity=".72"
+      />
+    </g>
+  );
+};
+
+const ImpactWave: React.FC<{
+  frame: number;
+  visibility: number;
+}> = ({frame, visibility}) => {
+  const elapsed = frame - IMPACT_FRAME;
+  const impact = progress(frame, IMPACT_FRAME - 5, IMPACT_FRAME + 12, easeOut);
+  const impactOut = 1 - progress(frame, 655, 770);
+  const centerY = priceY(CANDLES[CRASH_INDEX].low);
+
+  if (elapsed < -10) {
+    return null;
+  }
+
+  const fragments = Array.from({length: 112}, (_, index) => {
+    const delay = seeded(index + 830) * 19;
+    const local = Math.max(0, elapsed - delay);
+    const life = 88 + seeded(index + 931) * 122;
+    const t = Math.min(1, local / life);
+    const angle =
+      -Math.PI * 0.96 + seeded(index + 1020) * Math.PI * 1.92;
+    const speed = 160 + seeded(index + 1117) * 650;
+    const x =
+      CRASH_X +
+      Math.cos(angle) * speed * t +
+      (seeded(index + 1201) - 0.5) * 85 * t;
+    const y =
+      centerY +
+      Math.sin(angle) * speed * 0.58 * t +
+      290 * t * t +
+      (seeded(index + 1307) - 0.5) * 40;
+    const tail =
+      7 +
+      seeded(index + 1429) * 26 +
+      (index % 9 === 0 ? 22 : 0);
+    const particleOpacity =
+      progress(local, 0, 8, easeOut) *
+      (1 - progress(local, life * 0.56, life)) *
+      impactOut;
+    const cyan = index % 13 === 0;
+    return (
+      <line
+        key={index}
+        x1={x}
+        x2={x - Math.cos(angle) * tail}
+        y1={y}
+        y2={y - Math.sin(angle) * tail * 0.58}
+        stroke={cyan ? "#7dfaff" : index % 4 === 0 ? "#fff2f5" : "#ff254f"}
+        strokeWidth={index % 7 === 0 ? 3 : 1.4}
+        strokeLinecap="round"
+        opacity={particleOpacity * visibility}
+        filter={index % 5 === 0 ? "url(#red-glow)" : undefined}
+      />
+    );
+  });
+
+  return (
+    <g opacity={visibility}>
+      {Array.from({length: 4}, (_, index) => {
+        const delay = index * 10;
+        const ringProgress = progress(
+          frame,
+          IMPACT_FRAME + delay,
+          IMPACT_FRAME + 92 + delay,
+          easeOut,
+        );
+        const ringOut =
+          1 -
+          progress(
+            frame,
+            IMPACT_FRAME + 34 + delay,
+            IMPACT_FRAME + 102 + delay,
+          );
+        return (
+          <ellipse
+            key={index}
+            cx={CRASH_X}
+            cy={centerY}
+            rx={38 + ringProgress * (230 + index * 76)}
+            ry={18 + ringProgress * (86 + index * 29)}
+            fill="none"
+            stroke={index === 0 ? "#fff6f7" : "#ff2451"}
+            strokeWidth={4 - index * 0.65}
+            opacity={ringOut * (0.88 - index * 0.14)}
+            filter="url(#red-glow)"
+          />
+        );
+      })}
+
+      <circle
+        cx={CRASH_X}
+        cy={centerY}
+        r={28 + impact * 34}
+        fill="url(#impact-radial)"
+        opacity={impact * impactOut}
+        filter="url(#red-soft)"
+      />
+
+      <path
+        d={`M${CRASH_X - 230} ${centerY}H${CRASH_X + 260}`}
+        stroke="#fff6f7"
+        strokeWidth="2.5"
+        strokeDasharray="10 18"
+        strokeDashoffset={-elapsed * 7}
+        opacity={impact * impactOut * 0.72}
+        filter="url(#red-glow)"
+      />
+
+      {fragments}
+    </g>
+  );
+};
+
+const CrashRain: React.FC<{
+  frame: number;
+  visibility: number;
+}> = ({frame, visibility}) => {
+  const activation = progress(frame, IMPACT_FRAME + 5, IMPACT_FRAME + 72, easeOut);
+  const fade = 1 - progress(frame, 672, 790);
+  const localFrame = Math.max(0, frame - IMPACT_FRAME);
+
+  return (
+    <g opacity={activation * fade * visibility}>
+      {Array.from({length: 76}, (_, index) => {
+        const rangeX = 1380;
+        const x =
+          CRASH_X -
+          980 +
+          ((seeded(index + 1510) * rangeX +
+            localFrame * (0.8 + seeded(index + 1597) * 2.4)) %
+            rangeX);
+        const y =
+          120 +
+          ((seeded(index + 1681) * 820 +
+            localFrame * (3.8 + seeded(index + 1777) * 7.5)) %
+            880);
+        const length = 16 + seeded(index + 1871) * 78;
         return (
           <line
-            key={i}
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            stroke={i <= lit ? color : C.edge}
-            strokeWidth={i % 5 === 0 ? 4 : 2}
-            strokeLinecap="round"
-            opacity={
-              i <= lit
-                ? 0.78 + (0.5 + 0.5 * Math.sin(frame * 0.045 - i * 0.22)) * 0.2
-                : 0.46 + (0.5 + 0.5 * Math.sin(frame * 0.025 + i)) * 0.16
-            }
+            key={index}
+            x1={x}
+            x2={x + 5 + seeded(index + 1911) * 10}
+            y1={y}
+            y2={y + length}
+            stroke={index % 11 === 0 ? "#fff4f6" : "#ff234f"}
+            strokeWidth={index % 8 === 0 ? 2.8 : 1.15}
+            opacity={0.12 + seeded(index + 1997) * 0.52}
+            filter={index % 6 === 0 ? "url(#red-glow)" : undefined}
           />
         );
       })}
-      <circle cx={cx} cy={cy} r={radius - 24} fill={C.bg} stroke={C.edge} />
+    </g>
+  );
+};
+
+const MarketWorld: React.FC<{
+  frame: number;
+  sceneVisibility: number;
+}> = ({frame, sceneVisibility}) => {
+  const tension = progress(frame, 270, IMPACT_FRAME, easeCrash);
+  const lastY = priceY(CANDLES[CRASH_INDEX].close);
+  const guideVisibility =
+    progress(frame, 130, 260, easeOut) *
+    (1 - progress(frame, 654, 786)) *
+    sceneVisibility;
+
+  return (
+    <svg
+      width={CRASH_X + 520}
+      height={HEIGHT}
+      viewBox={`0 0 ${CRASH_X + 520} ${HEIGHT}`}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        overflow: "visible",
+      }}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="green-candle" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#087f86" />
+          <stop offset=".45" stopColor="#2bf2e3" />
+          <stop offset="1" stopColor="#bafff8" />
+        </linearGradient>
+        <linearGradient id="red-candle" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#700018" />
+          <stop offset=".45" stopColor="#ff244e" />
+          <stop offset="1" stopColor="#ff9cad" />
+        </linearGradient>
+        <linearGradient id="trace-gradient" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#1af3e4" />
+          <stop offset=".72" stopColor="#b34eff" />
+          <stop offset=".88" stopColor="#ff3159" />
+          <stop offset="1" stopColor="#fff5f7" />
+        </linearGradient>
+        <radialGradient id="impact-radial">
+          <stop offset="0" stopColor="#ffffff" stopOpacity=".96" />
+          <stop offset=".16" stopColor="#ffb0bd" stopOpacity=".9" />
+          <stop offset=".48" stopColor="#ff214d" stopOpacity=".55" />
+          <stop offset="1" stopColor="#ff0036" stopOpacity="0" />
+        </radialGradient>
+        <filter id="green-glow" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="red-glow" x="-150%" y="-150%" width="400%" height="400%">
+          <feGaussianBlur stdDeviation="7" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="red-soft" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="15" />
+        </filter>
+        <filter id="wide-blur" x="-200%" y="-300%" width="500%" height="700%">
+          <feGaussianBlur stdDeviation="10" />
+        </filter>
+        <linearGradient id="guide-line" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#ff3159" stopOpacity="0" />
+          <stop offset=".58" stopColor="#ff3159" stopOpacity=".1" />
+          <stop offset="1" stopColor="#ff6e88" stopOpacity=".72" />
+        </linearGradient>
+      </defs>
+
+      <LiquidityField frame={frame} visibility={sceneVisibility} />
+
+      <g opacity={guideVisibility}>
+        {Array.from({length: 8}, (_, index) => {
+          const y = 300 + index * 81;
+          return (
+            <line
+              key={index}
+              x1="100"
+              x2={CRASH_X + 220}
+              y1={y}
+              y2={y}
+              stroke={index > 4 ? "#ff234f" : "#13a9b7"}
+              strokeWidth="1"
+              strokeDasharray="2 16"
+              opacity={0.14 + index * 0.012}
+            />
+          );
+        })}
+      </g>
+
+      <PriceTrace frame={frame} visibility={sceneVisibility} />
+      <VolumeBars frame={frame} visibility={sceneVisibility} />
+
+      {CANDLES.map((_, index) => (
+        <Candle
+          key={index}
+          frame={frame}
+          index={index}
+          sceneVisibility={sceneVisibility}
+        />
+      ))}
+
       <line
-        x1={cx}
-        y1={cy}
-        x2={cx + Math.cos(needleA) * (radius - 31)}
-        y2={cy + Math.sin(needleA) * (radius - 31)}
-        stroke={active ? C.red : C.white}
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <circle cx={cx} cy={cy} r="7" fill={C.panel2} stroke={active ? C.red : C.white} />
-      <text
-        x={cx}
-        y={cy + 40}
-        textAnchor="middle"
-        fill={C.white}
-        fontSize="33"
-        fontWeight="700"
-      >
-        {Math.round(value * 100)}
-      </text>
-      <text
-        x={cx}
-        y={cy + 59}
-        textAnchor="middle"
-        fill={active ? C.red : C.muted}
-        fontSize="8"
-        letterSpacing="2"
-      >
-        RISK INDEX
-      </text>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={radius + 8 + Math.sin(frame * 0.045) * 2}
-        fill="none"
-        stroke={active ? C.red : C.edge}
-        strokeOpacity={active ? 0.18 : 0.1}
-      />
-    </g>
-  );
-};
-
-// Natural Earth / world-atlas 110m data, projected to Natural Earth 1 and
-// simplified for a crisp self-contained HUD map.
-const WORLD_LAND_PATH = "M489.5 242.3L500.3 251.1L502.3 264.5L496.4 267.5L490.4 267.4L480.2 254.1L482.4 242.7ZM402.9 174.2L402.7 178.5L396.2 178.4L394.1 189.4L385.7 190.1ZM198 123.7L192.2 119.5L195.1 108.1L192.1 99.6L183.8 98.4L201.8 78.8L223.1 77.3L241.1 82.9L267.9 83.7L275.7 74.5L281.7 83.9L292 78.9L291 84.1L262.8 97.2L261.6 105.5L276.9 109.8L277.5 118.7L280.7 110.8L288.2 106.7L291.2 94.1L298.3 93.9L304.1 96.8L304.9 103L311.8 98.4L313.4 107.1L321.8 114L289.9 128.8L302.6 123.2L301.7 130.1L309.4 128.4L307.4 132.4L297 136.3L301.2 132.4L296.1 132.7L293.8 127.3L265.2 140.9L267.8 132.2L259.6 125.3ZM289.6 69.7L279.9 65.3L302.8 67.9ZM320.9 118.4L317.8 121.9L323.5 123.2L322.8 129.2L312 127ZM284.8 88.2L289.4 91.1L277.6 91.5ZM301.1 73.6L314.3 77.2L312.5 80.8L321.8 84.6L316.9 88.5L311.4 85.9L314.3 91.8L307.9 91.1L310.5 94.9L292.8 89.4L305.1 83.8L300.4 78.7L282.8 76.8L288.1 71.3ZM279.9 70.2L285.4 70.7L275.6 74.2ZM240.3 69.6L247.5 71.5L229 74.6ZM263 67L266 66.8L247.4 68.1ZM260.3 72.2L264.1 78.2L260 80.8L238.8 78.3L247 77.5L238.9 77.2L242.7 72.9ZM268.9 72.9L275 70.9L273 75L265.5 73.3ZM287.9 58.6L300 60.7L288.5 62.5ZM296.3 56.6L337.4 55.5L303.1 66.4L290.5 65.8L307.2 58.9ZM198 123.7L259.6 125.3L267.8 132.2L264.7 140.9L293.8 127.3L296.2 133.5L276.8 146L274.7 151.4L275 146.8L273.3 149L274.1 155.4L261.1 165.2L260.1 180.1L255.6 168.8L250.6 167.7L233.8 169.9L226.3 178.6L212.1 164.5L191.9 162.6L186.8 157.6L185 144.1ZM201.8 78.8L183.8 98.4L192.1 99.6L195.1 108.1L192.5 110.5L191.7 103.2L184.3 100.1L174.6 97.2L163.6 100.9L169.5 96.3L132 111.4L154.1 101.4L145.3 102L147.1 99.1L143.4 98L160.1 88.9L150.3 87.1L161.6 86.2L160.8 80.5L181.3 75.6ZM577.7 123.2L567.8 133.2L570.2 139.3L558.3 137L549.4 143.2L527.7 131.7L523.3 133L525.3 141.7L518.5 140.6L513.1 134L517.8 132.4L517 128.7L510 129.8L504.3 125.1L510.3 117.6L529.7 119.6L527.7 112.3L539.9 109.2L549.1 113.5L554.3 111.2L563.1 119.5ZM525.3 141.7L523.3 133L527.7 131.7L548.7 143.2L552.9 139.5L557.7 142.8L548.3 145.8L549.9 151.6L529.5 138.3ZM709.1 246.2L722.3 254.5L727.4 265.2L716 258.2L708.1 261.7ZM729.8 253.9L723.7 253.7L731.7 249.9ZM709.1 246.2L708.1 261.7L701.3 260L702.5 252.9L692.5 249.8L690.6 246.7L694.1 245.3L687.7 242.3L694.8 241.9L697.6 248L701.8 244.1ZM661.5 230.2L664 237.9L658 249.6L645.9 247L644.8 235.3L653.4 237.2L657.4 229.8ZM685.2 246.7L688.1 249.2L682.1 248.1ZM672.1 238L676.8 236.7L666.2 241.3L672.9 241.5L669.1 244.6L672.2 252.7L668 246.3L665.3 253.5L666.2 238.7ZM668 260.3L671.3 259.3L665 261ZM642 255.3L656.5 259.9L635.6 256.3ZM634 242.6L636.7 253.9L615.2 227.1ZM298.7 364.7L306.1 370.5L300.4 369.7ZM307 312L311.2 327.9L297.4 337.8L301.4 341.4L296 348.4L300.2 352.3L296.3 360.4L299.3 364L292.4 363.3L287.6 357.1L282.1 314.7L287.1 292L305 299.9L304 304.6L309.8 305.2L312.4 300.8ZM298.7 364.7L303.1 370.7L288.2 365.1L295.5 367.9ZM279.3 281.8L286 294.7L282.1 314.7L287.6 357.1L298.5 363.9L295.4 367.4L287.2 363.8L281.5 350.9L284.3 345.8L279.1 328.5ZM480.1 250.7L480.4 271.5L465.2 266.4L464.4 257.4L455.7 259.2L453.4 254L444.9 253.8L452.8 248.4L459.9 228.1L480.9 229.1L483.9 234.8ZM505.3 244L504 233.4L524.1 211.5L519.5 227.4ZM500.3 251.1L489.5 242.3L492.3 227L498.1 231.5L505.8 230.8L505.3 244ZM470.2 220.5L464.7 210.2L470.1 187.8L493.9 187.8L497.6 197.3L489.4 219.4L486.7 211L484 216.8L471.2 215.7ZM468 193.5L466.6 213.6L451.3 222.4L447.5 205.9L452 191.6L449.7 185.7ZM275.6 193.2L275.2 197.2L269.7 196.5ZM275.2 197.2L275.9 192.8L282.2 195.8ZM563.9 60.8L568.8 62.5L561.5 63.2ZM637.1 67.9L641.3 68.4L634 67.6ZM499.7 70.9L519.5 65.7L506.6 69.9L503.7 73.6L508.2 76.8L498.6 75.3ZM139.5 80.3L141.9 85.7L148.1 86.4L129.5 88.5ZM710.5 88.5L707.2 89.3L715.6 94.2L706.3 99.4L694.9 99.4L702.5 110.4L700 119.1L688.1 106.2L690.8 93.6L687.8 97.9L680.3 96L682.1 100.9L660.5 101.2L655.6 110.7L669.2 114.4L673.9 125L671.1 136.8L664.9 139.6L662.1 133.1L665.7 132.7L664.8 124.9L658.4 126.5L640.4 114.2L633.1 114L632.4 122.6L615.7 123.1L595.4 116.8L595 122.1L584.9 119.6L577.7 123.2L563.1 119.5L554.3 111.2L549.1 113.5L539.9 109.2L527.7 112.3L529.7 119.6L505.2 120.4L504.3 125.1L510 129.8L506.4 134L510 142.1L487.7 132.5L492.2 122.4L476.4 116.6L473.5 108.9L468.7 107.5L467 98L471.8 93L464.5 80.1L484.9 83.4L472.8 85.1L480.3 90.9L490.3 86.3L488 81.1L493.7 85L503.8 80.6L514 81.7L513.6 78.6L527.6 82.1L522 76.2L524.9 72.3L530 73.9L535.7 86L538.2 82.8L532.2 72.7L543.8 74.8L540 71.1L568.9 63.6L586.2 67L582.2 70.1L609.4 71.3L621.2 76.7L632.9 75.3L631 72.7L669.8 79.4L697.3 79.5ZM481.5 130.8L487.3 131.9L482.8 134.5ZM441.1 60.2L450.3 61.4L442.9 65.3L434.6 60.2ZM468.2 79.1L448.1 81.1L440.5 90.4L438.7 101.6L429.6 102.2L428.3 94.9L449.7 78.6L463 75.9ZM357.5 55.5L403.4 57.5L392.3 59.3L395.4 59.4L393.4 64.9L388.7 65.5L391.3 69.9L382.6 73.7L386.6 76.9L379.4 77.8L385.5 78L356 87.5L347.2 98.9L339.5 97.2L334.2 86.2L341.4 78.4L335.7 77.7L341.1 77.1L335.1 75L334.4 67.6L315.9 63ZM452.2 308.1L459.2 307.8L459.6 299L462.8 303.6L482.5 293L480.8 303.7L485.1 303.7L484 307.4L470 320.9L456.5 322.1ZM191.9 162.6L212.1 164.5L215.5 170.4L220.3 169.2L227.1 178.5L224 186.7L226.6 195.3L235.7 195.2L245.4 188.8L242.7 196.7L236.1 197.7L232.7 205.5L211.1 196.6L196 164.3L201.3 184.9L196.6 181.2ZM307 312L315.1 316.4L315.9 322L306.8 320.8ZM316.5 320.5L307 312L313.6 302.2L303.9 292.6L302 278.8L286.7 267.5L286.6 263.2L276.1 266.2L268.7 257.9L276.8 250.3L276.8 236L285.6 238.2L290.1 234.8L287.2 230.4L295.6 227.7L299 236.9L311.5 235L314.9 230.1L316.7 240.2L338 246.9L349 257.5L341.3 271.1L337.9 292.2L325.1 299.2ZM278.2 266L286.6 263.2L286.7 267.5L302 278.8L303.6 287.5L295.6 286.7L294.4 292.9L284.3 294.4ZM276.8 250.3L268.7 257.9L280.2 269.9L278 283.6L265.7 274.8L253.2 251.3L255.4 248.1L258.9 250.8L266 240.2ZM282.9 237.1L276.8 236L276.8 250.3L276.4 246.5L258.3 236.8L261.7 219.8L267.3 213.7L275.1 211.3L270.3 218.3L272.8 223.5L282.1 225.6ZM261.9 219.5L260.7 222.9L258.4 218.7L255.5 222.8L250.4 220.5L251.4 217.3ZM251.4 217.3L250.4 220.5L244.7 214.2ZM249.4 214.1L241.6 209.4L251.3 204.4ZM251.3 204.4L242.3 209.2L238.5 205.8L241.9 202.4ZM232.7 205.5L236.1 197.7L239.9 197.7L238.5 205.8ZM295.6 227.7L287.2 230.4L290.1 234.8L284 238.3L282.1 225.6L272.8 223.5L271.2 215.3L274.7 212.1L274.4 218.4L277.6 211.2L280.9 215L293.8 214.6L297.8 220.2ZM304.1 235.5L297.7 235.8L294.3 225.9L297.8 220.2ZM308.2 234.6L301.9 232.1L303 225.9L309.5 226.4ZM314.1 230.2L308.2 234.6L309.5 226.4ZM431.2 122.7L434.6 123.7L431.1 129L433.8 136.1L417.2 137.7L417.8 130.7L411.7 124.5L424.5 118.8ZM265.4 240.4L258.9 250.8L255.2 250.6L255.8 238.2ZM255.5 184.9L270.8 191.8L263.5 192.9L256.3 186.2L249.7 188ZM482.5 293L476.2 291.1L471 282.2L481.4 276.9L486.5 279.8ZM479 292.6L461.4 303.9L462.2 283.4L471 282.2ZM459.6 299L459.2 307.8L452.2 308.1L443.7 281.2L470.7 281.8L462.2 283.4ZM386 207.8L384.2 205.1L390.5 200.6L396.6 210.5L386 210.7L391.9 208ZM396.6 210.5L396.3 203.5L408.8 203.2L407.2 180.7L428.6 194.5L427.4 203.1L411.9 208.1L409 215.4ZM385.7 190.1L394.1 189.4L396.2 178.4L402.7 178.5L402.8 174.9L410.2 180.7L407.2 180.7L408.8 203.2L395.3 205.3L386.6 201.7ZM425.5 225.2L421.6 215.2L425.8 211ZM449.7 185.7L448.9 210.4L431.1 207.1L427.4 212.4L422.1 209.5L420.8 204.6L427.4 203.1L428.6 194.5L444 184.2ZM425.5 225.2L428.9 207.4L446.6 207.8L449.7 211.4L437.4 228.7ZM449.5 209.5L452.7 236L439.8 234.6L437.9 227.1L444 223.5ZM420 213.9L422.2 226L416 228.9L414 214ZM403.6 215.8L414.2 217.2L414.1 228.2L404.2 229.7ZM392.1 210.2L401.4 210.8L403.1 221.8L397.3 216.2L392.9 218.9L389.1 213.8ZM402.7 221.8L404.2 229.7L396.6 224L399.1 220.1ZM392.9 218.9L397.3 216.2L399.1 220.1L396.6 224ZM409 215.4L417.8 204.5L424.4 210.1L414 214L414.2 217.2ZM476.1 227.6L459.9 228.1L452.8 234.7L449.6 227.1L466.6 213.6ZM457.8 231.7L452.8 248.4L444.4 252L443.5 246.6L449.6 243.2L446.8 234.7L452.7 236ZM443.1 234.7L449.3 237.2L449.6 243.2L442.7 249.5L438 242.7ZM482.8 259.8L487.8 263L487.5 273.2L474.6 282.7L466.9 281.7L464.6 270.7L468.9 270.7L468.8 266L480.4 271.5L478.1 261.8ZM486.9 262L490.9 280L486.4 272.6ZM490.4 267.4L502.3 264.5L502.8 274.9L490 287.1L490.7 297.4L483.5 303.7L486.5 279.8L481.3 275.2L487.5 273.2L490.9 280ZM445.2 254.5L453.4 254L455.7 259.2L464.4 257.4L465.2 266.4L469 266.7L468.9 270.7L464.6 270.7L466.9 281.7L443.7 281.2L448 266.9ZM520.9 269.7L522.1 277.4L510.2 301L506.7 294.2L508.9 281.4ZM438.6 167.9L434.6 158.9L438.2 151.1L442.3 161.2ZM402.8 174.9L417.4 163.2L417.7 155L436.1 152.1L438.5 178L444 184.2L426.4 194.8ZM489.2 162.9L495.3 160.6L496.4 163.5L491 170.6ZM522.9 182.4L531.8 178.9L530.1 186.6ZM514.2 168.7L515.5 172.1L511.7 170.8ZM496.4 163.5L499.3 153.5L505.7 151.5L515.4 168.8L508 170.6ZM530.5 186.1L532.3 180.8L539.8 187L536.3 195L527.5 200.5L524.8 194.9L530.7 192.5ZM628.9 211.1L629.2 206.3L638.1 206.3L636.7 214ZM633.7 206.2L629.2 206.3L628.9 211.1L623.6 208.2L622.7 218.1L627.1 226.6L620.6 220.2L622.9 211.8L617.8 193.2L622.3 192.3L624.3 198.5L629.9 196.7ZM638.1 206.3L633.7 206.2L629.9 196.7L624.3 198.5L623.6 187L629.8 190.7ZM621.3 191.5L616.5 196.2L622.9 211.8L621.2 216.5L616.6 199.8L610.8 202L605.2 189L612 172.8L614.8 183.2L622.8 188.1ZM632.9 215.2L638.8 207.9L624.6 186.6L630.5 184.5L636.8 188.8L633 194.8L642.3 208.2L634.9 219.6ZM664.9 139.6L664.9 139.6L664.9 139.6ZM664.4 139.2L661.5 145.4L664.2 148.7L659.3 150.4L655.1 145ZM661 150.2L664.2 148.1L669.1 156.5L664.7 158.2ZM578.3 123.1L584.9 119.6L595 122.1L595.4 116.8L615.7 123.1L629.8 121.7L630.7 126.7L639.1 129.1L626.5 132.8L626.1 138L617.1 141L600 138.4ZM612 172.8L605.7 187.7L603.9 180.7L595.6 177.1L598.3 188.5L582.8 202.3L583 215.5L578.5 221.2L565.8 189.3L561.6 190.4L556.1 183.7L561.6 182.1L557.7 176L566.7 163.2L562.7 158.3L570 155.5L577.8 171.5L588.9 176.5L594.6 177.2L595.2 173.2L602.3 176.2L606 170.4ZM605.7 187.7L605.6 190.9L602.9 185.9L598.4 187.6L595.6 177.1L603.9 180.7ZM594.1 173.7L594.6 177.2L588.9 176.5L578.1 169.3ZM570 155.5L562.7 158.3L566.7 163.2L557.7 176L561.6 182.1L542.4 180.4L545.5 176.4L539.6 169.1L550.3 168.9L557.9 153.1ZM547.2 151.1L554.8 148.4L557.8 152.6L563.9 151.6L557 154.1L550.3 168.9L543 170.3L539.6 169.1L537.9 155.2ZM549.9 151.6L548.3 145.8L553.1 142.5L551.7 145.9L559.7 146.2L563.4 150.9L557.8 152.6L554.8 148.4ZM552.9 139.5L570.2 139.3L556.2 146.5L551.7 145.9L557.7 142.8ZM518.5 140.6L527.4 141.7L529.5 138.3L547.2 151.1L540 156.1L529.4 149.5L523.2 151.5L519.7 144.7L523.1 142.6ZM515.4 168.8L508 159.2L504.8 145.5L517.4 152.2L528 149.3L537.3 153.2L539.6 169.1L545.5 176.4L542.4 180.4L534 178.8ZM489.5 162.2L490.4 152.4L501 151.4L499.3 158.1ZM438.7 101.6L446.4 82.3L457 82.4L458.2 86.4L449.3 93.2L451.5 98.9L447.4 107.6L442.5 109.3ZM468.7 107.5L477.5 113.8L474.5 118.4L461.9 117.8L461.2 112.5ZM476.4 116.6L492.2 122.4L492.3 126.3L472.9 132.3L472.1 125.8L460 125.1L461.9 117.8ZM461.2 112.5L461.2 123.7L449 120.5L444.8 114.6L450.7 110.4ZM450.8 125.8L446.8 129.7L437.3 128.1L444.6 124ZM460 125.1L458.6 130L449.6 128.7ZM468.3 125.5L475.1 129.7L472 131.9ZM472 131.9L473.1 136.1L462.6 135.8L457.1 130.4L468.3 125.5ZM465.9 108.7L461.2 112.5L456.4 107.8ZM466.7 104.6L465.9 108.7L456.4 107.8L458.5 104ZM467.2 100.2L466.7 104.6L459.4 100.9ZM444.8 112.9L443.6 127.3L433.6 126.9L432.5 113L437.3 110.1ZM462 134.8L473.1 136.1L472.5 140.1L463.2 141.7ZM463.2 141.7L470 141.1L462.8 144.2L464.5 153.3L458.2 145.7ZM505.7 151.5L477.1 154L469.6 146.1L482.8 140L500.1 141.1ZM469 140.5L474.5 141.7L469.8 144.5ZM459.6 142.8L457.8 145.5L456.9 138.5ZM450.4 129.5L455.8 132.5L449.1 133.5L454.5 139L445.2 132.7ZM437.5 127.2L438.2 130L431 130.1ZM431 119.6L430.2 122.5L424.5 118.8ZM432.1 113.5L431 119.6L425.9 118.4ZM403.1 140.4L408 141.5L404.9 152.3ZM405.7 151.7L408 141.5L402.5 137.7L425.6 139L415.9 152.7ZM409.1 112.6L402.3 117.3L406.8 109.8ZM752.9 290.2L753.9 293.3L750 287.8ZM754.5 335.4L749 339.3L754.6 322.1L755.6 328.7L761 329.8ZM735.7 343.7L747.7 337.5L733.7 349.2L725.9 349.9ZM698.4 337.2L691.8 343.7L693 337ZM665.9 316.8L647.8 323.6L642.7 321.5L648.9 291.8L663.4 286.8L675.3 273.8L683 275.6L689.9 266.5L698.1 268.2L695 275.7L703.3 282.1L710.7 265.4L724 302.1L706.8 329.2L693.1 332.5L688.3 330.6L687.4 321.9L683.9 324L688 318.4L682.6 323.1L676.6 315ZM587.3 222.2L584.5 225.9L583.6 216.7ZM641 196.8L638.9 194L642.9 192.3ZM570.2 139.3L567.8 133.2L578.3 123.1L600 138.4L624.3 138.9L626.5 132.8L639.1 129.1L629.8 125.7L635 113.6L658.4 126.5L664.8 124.9L664.4 139.2L643.5 147.8L654.8 152.1L650.1 156.9L659.8 169.1L656.4 181.7L642.1 191.7L630.5 184.5L623.3 189.7L614.8 183.2L615.1 174.6L609 170L595.7 175.1L579.1 168.2L559.7 146.2ZM439.1 128.6L445.3 129.5L443.4 135.2L454.7 144L450.7 149.6L438.9 135.6L433 134.8L432.6 130.7ZM448.1 149.2L449 152.8L443.8 150.5ZM437.3 110.1L433.9 106.7L438.1 104ZM414.6 113.7L409.4 106.1L411.5 102.1L416.7 104.1L414.6 107.9L422.6 118.5L409.6 121.1ZM396.9 85.5L398.1 88.2L389.5 91.6L380.9 87.2ZM507.1 140.4L515.2 144.2L513.1 148.8L506.3 145.1ZM494.4 136.7L507.8 142L498.1 141.2ZM678.3 220.1L676.8 226.8L672.8 221.5L669.4 223L676.1 216.9ZM662 217.9L659.5 220.2L663.6 213.1ZM667 196.8L667.3 206L672.6 210.3L663.2 203.5L663.6 196.1ZM675.6 211.2L674.7 216L673 210.2ZM624.9 224.7L630.8 226.9L633.7 237L627.8 233.5ZM661.5 230.2L657.4 229.8L655 236.7L645.2 236.9L658.8 223.6L664.1 227.2ZM464.5 80.1L471.8 93L458.5 99.4L454.7 93.5L460.9 88.2L452.1 80.1ZM446.8 118.9L454 122.6L446 124.8L442 120.8ZM494 205.8L497.6 197.3L507.7 209.9ZM689.4 146.8L690.6 156.4L673.9 159.4L674.5 165.3L671.3 160.8L685.8 149.1L684 142ZM688.5 135.5L691.2 137.1L688.4 140.1L682.9 141.1L681.5 131.7ZM303 288L311.7 297.2L309.8 305.2L304 304.6L305 299.9L294.4 292.9L295.6 286.7ZM524.8 194.9L525.8 203L508.5 210.1L507.7 198.3L515.1 199.8ZM488.8 170.2L496.4 163.5L513.4 171L524 185.4L530.5 186.1L530.7 192.5L506.6 201.2ZM350.9 417.1L359.9 420.5L345.5 421.5ZM307.2 404.4L310.4 399.6L316 406.1ZM187.8 427.5L236.5 427.9L218.3 426.2L205.7 422.3L216.2 420.4L192 415L203.4 416L207.5 411.9L250.3 409.1L272.6 412.1L263.9 407L316.6 407.8L313.2 395.5L325.4 388L316.7 397.7L329.4 409.1L308.6 414.7L315.2 416.9L309.7 417.7L342.9 425.5L380.6 421L369.3 417.6L394.3 411.8L404.3 404.4L461.6 402.8L473 398.8L479.8 401.4L507.4 393.3L528.4 397.7L525.6 406.3L560.5 394.2L609.6 396.3L637.4 392.3L638.1 395.7L650.9 395.6L680.1 405.2L657.2 413.9L655.3 418.4L638.8 422L642 426.4L652.2 427.5L623.2 432L216.8 432ZM415.8 156.3L417.4 163.2L402.9 171.4L390.4 188.9L385.8 189.1L408.6 154.9ZM493.9 187.8L470.1 187.8L469.2 164.9L487 165.7L487 174.3L483.5 169.2ZM470.1 187.8L468 193.5L440.5 182.1L438.6 167.9L442.3 161.2L457.4 168L460.6 162.2L468.6 164.1ZM517.7 221.1L512.1 228.2L501.1 231.9L487.4 221.6L496.9 204.5L504.6 208.1L509.2 218.3ZM519.8 213L517.7 221.1L506.8 215ZM489.5 242.3L480.7 243.2L484 231.1L490.7 231.6ZM454.7 138.6L449.4 132.5L455.8 133.4ZM454.6 130.9L462 134L461.9 139.3L455.8 136.5ZM483.2 231.7L468.8 219.6L472.6 215.3L484 216.8L487.6 211.1L487.4 221.6L492.3 227Z";
-const WORLD_BORDER_PATH = "M502.3 264.5L490.4 267.4L480.2 254.1L483.1 242.5L489.5 242.3L500.3 251.1M385.8 189.1L390.4 188.9L397.4 176.1L402.9 174.2L402.7 178.5L396.2 178.4L394.1 189.4L385.7 190.1M192.5 110.5L195.1 108.1L192.1 99.6L187.3 101.5L183.8 98.4L201.8 78.8M296.1 132.7L293.8 127.3L287.9 133L264.7 140.9L267.8 132.2L259.6 125.3L198 123.7M227.1 178.5L212.1 164.5L191.9 162.6M510 129.8L504.3 125.1L505.2 120.4L510.3 117.6L529.7 119.6L526.5 117L527.7 112.3L539.9 109.2L549.1 113.5L554.3 111.2L563.1 119.5L577.7 123.2L567.8 133.2L570.2 139.3L558.3 137L548.7 143.2L540.7 136L527.7 131.7L523.3 133L525.3 141.7L518.5 140.6M552.9 139.5L557.7 142.8L548.3 145.8L549.9 151.6L529.5 138.3L525.3 141.7M708.1 261.7L708.7 254L709.1 246.2M675.3 261.2L675.5 261.6L675.5 262.3M644.8 235.3L646.6 238.2L653.4 237.2L657.4 229.8L661.5 230.2M303.4 369.8L298.7 364.7M298.5 363.9L288.5 359.5L284.9 340.6L282.3 310L287.1 292L294.1 292.4L305 299.9L304 304.6L313.6 302.2L307 312L306.8 320.8M278 283.6L285.7 294.1M482.8 259.8L478.1 261.8L478.9 271.5L475.4 267.6L465.2 266.4L464.4 257.4L455.7 259.2L453.4 254L445.2 254.5M444.9 253.8L452.8 248.4L459.9 228.1L480.9 229.1L483.9 234.8L480.1 250.7M505.3 244L504 233.4L517.7 221.1L519.8 213M489.5 242.3L492.3 227L498.1 231.5L505.8 230.8M497.6 197.3L489.4 219.4L486.7 211L484 216.8L472.6 215.3L470.2 220.5L467.9 218.8L464.7 210.2L470.1 187.8L493.9 187.8M466.6 213.6L451.3 222.4L447.5 205.9L452 191.6L449.7 185.7L468 193.5M275.6 193.2L275.2 197.2M457 109.7L459.7 111.6L454.4 111.4M664.9 139.6L662.1 133.1L665.7 132.7L664.8 124.9L658.4 126.5L637.3 113.6L632.3 115.2L632.4 122.6L615.7 123.1L595.4 116.8L595 122.1L584.9 119.6L577.7 123.2M511.2 140.5L494.4 136.7M489.8 128.1L492.2 122.4L476.4 116.6L477.5 113.8L466.7 104.6L467.2 100.2M467 98L471.8 93L464.6 81.6L468.2 79.1M481.5 130.8L484.4 131.3M464.5 80.1L462.8 77.9L446.4 82.3L439.6 92.4L438.7 101.6M452.2 308.1L459.2 307.8L459.6 299L462.8 303.6L479 292.6L482.5 293L483.7 298L480.8 303.7L485.1 303.7M477.1 309L474.4 313L477.1 309M241.8 196.1L236.1 197.7L232.7 205.5M307 312L316.5 320.5M311.5 301.3L308.3 293.2L303.9 292.6L303.9 283.2L302 278.8L298.2 278.7L297 272.8L286.7 267.5L286.6 263.2L276.1 266.2L276.1 262.6L272.7 263.9L268.7 257.9L270.7 252.6L276.8 250.3L276.8 236L285.6 238.2L290.1 234.8L287.2 230.4L295.6 227.7L299 236.9L311.5 235L314.1 230.2M303 288L295.6 286.7L294.4 292.9M279.3 281.8L278.2 266M255.4 248.1L257.8 251.8L266 240.2L270.2 245.5L276.4 246.5L276.8 250.3M265.4 240.4L258.3 236.8M260.7 222.9L261.9 219.5M274.7 212.1L270.3 218.3L272.8 223.5L282.1 225.6L282.9 237.1M250.4 220.5L251.4 217.3M245.2 213.7L249.4 214.1M242.3 209.2L251.3 204.4M241.5 208.3L238.5 205.8L241.2 202.7M236.9 207.4L238.5 205.8M239.9 197.7L239.8 202.3M297.8 220.2L295.6 227.7M303 225.9L301.1 230.4L304.1 235.5M309.5 226.4L308.2 234.6M424.5 118.8L434.6 123.7L431.1 129L433.8 136.1M425.6 139L416.5 136.7M479 292.6L471 282.2L481.4 276.9L486.5 279.8L482.5 293M459.6 299L462.2 283.4L471 282.2M443.7 281.2L470.7 282M386.6 201.7L392.8 202L396.7 209.8L386 210.7M385.7 208.8L391.9 208L386 207.8M395.3 205.3L408.8 203.2L407.2 180.7L428.6 194.5L427.4 203.1L411.9 208.1L409 215.4L403.6 215.8L401.4 210.8L396.6 210.5M402.8 174.9L410.2 180.7M423.8 225.5L421.6 215.2L425.8 211L425.5 225.2M449.5 209.5L431.1 207.1L427.4 212.4M424.4 211.7L420.8 204.6M428.6 194.5L444 184.2L449.7 185.7M448.9 210.4L444 223.5L437.4 228.7M451.3 222.4L452.7 236L439.8 234.6M422.2 226L421.8 214M414.1 228.2L414 214L420 213.9M409 215.4L414.2 217.2M404.2 229.7L403.6 215.8M402.7 221.8L397.3 216.2L392.9 218.9M389.1 213.8L392.1 210.2M396.6 224L399.1 220.1M457.8 231.7L452.8 234.7M470.2 220.5L476.1 227.6M446.6 251.4L444.4 252M442.7 249.5L449.3 244.8L446.8 234.7M439.5 237.7L443.1 234.7M486.9 262L487.5 273.2L481.4 276.9M466.9 281.7L464.6 270.7L468.9 270.7L468.8 266M490.4 267.4L490.9 280L487.5 273.2M483.5 303.7L483.5 302.6L483.2 301.5M479.5 246.8L482.5 245.8M488.3 161.3L488.7 169.8L487 165.7M489.6 157.6L489.6 160.8M489.2 162.9L489.4 164.4L489.2 165.1M442.3 161.2L438.6 167.9L434.8 160.7L436.1 152.1M402.9 174.2L417.4 163.2L415.8 156.3M438.6 167.9L438.5 178L444 184.2M489.5 162.2L495.3 160.6L496.4 163.5L488.8 170.2M531.3 178.1L531.8 178.9M532.3 180.8L530.1 186.6L522.9 182.4M522.4 181.5L521.8 181.7L521.2 181.2M515.5 172.1L511.7 170.8L514.2 168.7M495.3 160.6L501 151.4L505.7 151.5L515.4 168.8M511.7 170.8L496.4 163.5M527.5 200.5L524.8 194.9L530.7 192.5L530.5 186.1M628.9 211.1L629.2 206.3L638.1 206.3L638.9 210.8L632.9 215.2M629.1 225.3L624.9 224.7M621.2 216.5L622.9 211.8L617.8 193.2L622.3 192.3L624.3 198.5L629.9 196.7L633.7 206.2M621.3 191.5L624.6 186.6L629.8 190.7L638.1 206.3M605.6 190.9L608.6 176.8L613.2 172.6L614.8 183.2L623 189.1M624.6 186.6L630.5 184.5L636.8 188.8M664.2 148.1L661 150.2M655.1 145L664.4 139.2M629.8 121.7L630.7 126.7L639.1 129.1L626.5 132.8L626.1 138L617.1 141L600 138.4L578.3 123.1M605.7 187.7L602.1 184.2L603.9 180.7L595.6 177.1L598.4 187.6M556.1 183.7L561.6 182.1L557.7 176L566.7 163.2L562.7 158.3L570 155.5L573.8 165L579.1 168.2L577.8 171.5L584.8 174.9L594.6 177.2L595.2 173.2L602.3 176.2L601.2 174L609 170L612 172.8M595.7 175.1L601.2 174M579.1 168.2L594.1 173.7M542.4 180.4L545.5 176.4L539.6 169.1L550.3 168.9L555.3 164.1L557.9 153.1L563.9 151.6L570 155.5M549.9 151.6L554.8 148.4L557.8 152.6L563.9 151.6M539.6 169.1L537.9 155.2L547.2 151.1M554.2 144.2L551.7 145.9L559.7 146.2L563.4 150.9M570.2 139.3L559.7 146.2M537.9 155.2L529.4 149.5L523.2 151.5M505.7 151.5L504.8 145.5L513.1 148.8M489.6 154.7L501 151.4M507.8 147.8L502 142.2L508.4 147.7M452.1 80.1L458.2 86.4M476.4 116.6L461.9 117.8L461.2 112.5L468.7 107.5M474.6 132.3L472.1 125.8L460 125.1L461.9 117.8M460.8 123.5L447.7 119.6L444.8 112.9M459.7 111.6L460.7 111.8L461.2 112.5M461.3 126.3L454 131.3L449.6 128.7M450.8 125.8L446.8 129.7L437.3 128.1L443.6 127.3L444.6 124L460 125.1M472 131.9L468.3 125.5M473.1 136.1L462.6 135.8L457.1 130.4M456.4 107.8L465.9 108.7M461.5 103.9L466.7 104.6M446.8 118.9L442 120.8L444.6 124M437.5 127.2L433.6 126.9M431.2 122.7L432.1 113.5M434.8 110.2L436.2 110.5L437.3 110.1M472.5 140.1L463.2 141.7L462 134.8M469 140.5L469.1 142.9M458.2 145.7L463.2 141.7M498.1 141.2L500.1 141.1L502 142.2M456.3 140.4L459.6 142.8M454.6 130.9L455.1 133.4L449.1 133.5L454.5 139M445.3 131.9L450.4 129.5M439.1 128.6L432.6 130.7M430.2 122.5L430.4 121.2L430.8 121.1M425.9 118.4L431 119.6M403.1 140.4L408 141.5L405.7 151.7M406.8 109.8L409.1 112.6M445.3 129.5L445.2 130.7L445.7 131.7M504.6 141.9L507.1 140.4M654 229.3L656.4 227.1M450.7 124.7L454 122.6M507.7 209.9L501.3 205.6L494 205.8M506.6 201.2L507.7 198.3L515.1 199.8L524.8 194.9M485.6 156.6L483.2 156.4M470.1 187.8L469.2 164.9M492.3 227L487.4 221.6L489.4 219.4M506.2 210.3L509.2 218.3L517.7 221.1M507.9 212.8L507.2 214.1M482.4 242.7L481.1 243.5L480.7 243.2M483.2 231.7L489.7 230M455.1 133.4L454.7 138.6M458.6 140.4L461.9 139.3M460.4 139.5L455.8 136.5M457.8 138.2L457.5 138.7";
-
-type GeoNode = {
-  name: string;
-  x: number;
-  y: number;
-  status: "trusted" | "watch" | "threat";
-};
-
-const GEO_NODES: GeoNode[] = [
-  {name: "YVR", x: 197.9, y: 123, status: "trusted"},
-  {name: "NYC", x: 280.4, y: 143.2, status: "watch"},
-  {name: "SAO", x: 326.9, y: 296.2, status: "trusted"},
-  {name: "LHR", x: 419.8, y: 118, status: "trusted"},
-  {name: "FRA", x: 435.6, y: 121.2, status: "threat"},
-  {name: "LOS", x: 427, y: 224.6, status: "watch"},
-  {name: "DXB", x: 530, y: 180.1, status: "trusted"},
-  {name: "BOM", x: 566.9, y: 194.7, status: "watch"},
-  {name: "SIN", x: 632.8, y: 237, status: "trusted"},
-  {name: "JKT", x: 638.6, y: 254.8, status: "threat"},
-  {name: "TYO", x: 689, y: 155, status: "threat"},
-  {name: "SYD", x: 713, y: 320.8, status: "trusted"},
-];
-
-const GEO_ROUTES = [
-  [0, 4, C.cyan],
-  [1, 3, C.amber],
-  [2, 5, C.cyan],
-  [6, 8, C.amber],
-  [10, 9, C.red],
-  [11, 8, C.red],
-] as const;
-
-const quadraticPoint = (
-  from: GeoNode,
-  to: GeoNode,
-  curve: number,
-  progress: number,
-) => {
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2 - curve;
-  const t = progress;
-  const u = 1 - t;
-  return {
-    x: u * u * from.x + 2 * u * t * mx + t * t * to.x,
-    y: u * u * from.y + 2 * u * t * my + t * t * to.y,
-  };
-};
-
-const WorldThreatMap: React.FC<{
-  frame: number;
-  activeThreat: number;
-  active: boolean;
-}> = ({frame, activeThreat, active}) => {
-  const hotRoute = activeThreat % GEO_ROUTES.length;
-  const phase = ((frame - 100) % 150 + 150) % 150;
-  const routeProgress = interpolate(phase, [0, 88], [0, 1], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const localPulse = 0.5 + 0.5 * Math.sin(frame * 0.09);
-  const packetProgress = (frame % 120) / 120;
-  return (
-    <g>
-      <rect x="22" y="44" width="796" height="414" rx="12" fill={C.bg} fillOpacity="0.56" />
-      {[108, 180, 252, 324, 396].map((y) => (
-        <path
-          key={`lat-${y}`}
-          d={`M44 ${y}Q420 ${y + (y - 252) * 0.055} 796 ${y}`}
-          fill="none"
-          stroke={C.grid}
-          strokeOpacity="0.48"
-          strokeDasharray="3 8"
-        />
-      ))}
-      {[130, 226, 322, 418, 514, 610, 706].map((x) => (
-        <path
-          key={`lon-${x}`}
-          d={`M${x} 60Q${x + (x - 418) * 0.045} 250 ${x} 426`}
-          fill="none"
-          stroke={C.grid}
-          strokeOpacity="0.42"
-          strokeDasharray="3 8"
-        />
-      ))}
-      <path
-        d={WORLD_LAND_PATH}
-        fill="url(#map-land)"
-        fillRule="evenodd"
-        stroke={active ? C.cyan : C.edgeBright}
-        strokeWidth={active ? 1.05 : 0.8}
-        strokeOpacity={active ? 0.82 : 0.64}
-      />
-      <path
-        d={WORLD_BORDER_PATH}
-        fill="none"
-        stroke={C.cyan2}
-        strokeWidth="0.45"
-        strokeOpacity={0.2 + (active ? localPulse * 0.12 : 0)}
-      />
-      {GEO_ROUTES.map(([fromIndex, toIndex, routeColor], i) => {
-        const from = GEO_NODES[fromIndex];
-        const to = GEO_NODES[toIndex];
-        const hot = i === hotRoute;
-        const curve = 34 + Math.abs(to.x - from.x) * 0.075;
-        const mx = (from.x + to.x) / 2;
-        const my = (from.y + to.y) / 2 - curve;
-        const packet = quadraticPoint(from, to, curve, (packetProgress + i * 0.17) % 1);
-        const draw = hot ? routeProgress : 1;
-        const routePath = `M${from.x} ${from.y}Q${mx} ${my} ${to.x} ${to.y}`;
-        return (
-          <g key={`${from.name}-${to.name}`}>
-            <path
-              d={routePath}
-              fill="none"
-              stroke={routeColor}
-              strokeWidth={hot ? 2.1 : 0.9}
-              strokeOpacity={hot ? 0.88 : 0.28}
-              strokeDasharray="520"
-              strokeDashoffset={520 * (1 - draw)}
-              strokeLinecap="round"
-            />
-            <path
-              d={routePath}
-              fill="none"
-              stroke={routeColor}
-              strokeWidth="0.7"
-              strokeOpacity={hot ? 0.7 : 0.2}
-              strokeDasharray="2 8"
-            />
-            <circle
-              cx={packet.x}
-              cy={packet.y}
-              r={hot ? 3.2 : 1.7}
-              fill={routeColor}
-              filter={hot ? "url(#small-glow)" : undefined}
-              opacity={hot ? 0.95 : 0.45}
-            />
-          </g>
-        );
-      })}
-      {GEO_NODES.map((node, i) => {
-        const endpoint = GEO_ROUTES[hotRoute][1];
-        const hot = i === endpoint;
-        const color =
-          node.status === "threat" ? C.red : node.status === "watch" ? C.amber : C.cyan;
-        const pulse = 0.5 + 0.5 * Math.sin(frame * 0.08 + i * 0.82);
-        return (
-          <g key={node.name}>
-            {hot ? (
-              <>
-                <circle
-                  cx={node.x}
-                  cy={node.y}
-                  r={9 + pulse * 7}
-                  fill="none"
-                  stroke={C.red}
-                  strokeWidth="1.4"
-                  strokeOpacity={0.56 - pulse * 0.22}
-                />
-                <circle
-                  cx={node.x}
-                  cy={node.y}
-                  r={19 + pulse * 10}
-                  fill="none"
-                  stroke={C.red}
-                  strokeOpacity={0.26 - pulse * 0.1}
-                  strokeDasharray="3 5"
-                />
-              </>
-            ) : null}
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={hot ? 5.2 : 3.2 + pulse * 0.45}
-              fill={C.bg}
-              stroke={color}
-              strokeWidth={hot ? 2.3 : 1.25}
-            />
-            <circle cx={node.x} cy={node.y} r={hot ? 2.4 : 1.4} fill={color} />
-            <text
-              x={node.x + 7}
-              y={node.y - 7}
-              fill={hot ? C.white : C.muted}
-              fontSize={hot ? 8.4 : 7}
-              fontWeight={hot ? 700 : 500}
-              letterSpacing="0.7"
-              opacity={hot || active ? 0.92 : 0.62}
-            >
-              {node.name}
-            </text>
-          </g>
-        );
-      })}
-      <g transform="translate(42 65)">
-        <circle cx="0" cy="0" r={4 + localPulse * 1.5} fill={active ? C.green : C.cyan} />
-        <text x="13" y="3" fill={C.white} fontSize="8" fontWeight="700" letterSpacing="1.2">
-          LIVE GLOBAL TELEMETRY
-        </text>
-      </g>
-      <g transform="translate(630 390)">
-        <rect width="168" height="52" rx="7" fill={C.bg2} fillOpacity="0.9" stroke={C.edge} />
-        <text x="12" y="17" fill={C.dim} fontSize="7" letterSpacing="1.1">
-          ACTIVE GEO ROUTE
-        </text>
-        <text x="12" y="37" fill={C.white} fontSize="10" fontWeight="700" letterSpacing="1.2">
-          {GEO_NODES[GEO_ROUTES[hotRoute][0]].name}
-          {"  →  "}
-          {GEO_NODES[GEO_ROUTES[hotRoute][1]].name}
-        </text>
-        <circle
-          cx="150"
-          cy="31"
-          r={4 + localPulse * 1.6}
-          fill={GEO_ROUTES[hotRoute][2]}
-          opacity="0.9"
-        />
-      </g>
-      <text x="24" y="477" fill={C.dim} fontSize="8" letterSpacing="1.6">
-        WORLD THREAT MATRIX / GEOLOCATION CORRELATION / ACTIVE ROUTING
-      </text>
-      <text x="812" y="477" textAnchor="end" fill={C.muted} fontSize="8" letterSpacing="1.5">
-        {String(37 + (Math.floor(frame / 43) % 9)).padStart(2, "0")} REGIONS ONLINE
-      </text>
-      <path
-        d="M28 451H224"
-        stroke={active ? C.cyan : C.edgeBright}
+        x1={CRASH_X - 700}
+        x2={CRASH_X + 330}
+        y1={lastY}
+        y2={lastY}
+        stroke="url(#guide-line)"
         strokeWidth="1.5"
-        strokeDasharray="5 7"
-        strokeOpacity={active ? 0.64 + localPulse * 0.24 : 0.4}
+        strokeDasharray="11 12"
+        strokeDashoffset={-frame * (2 + tension * 7)}
+        opacity={progress(frame, 430, 540, easeOut) * (1 - progress(frame, 690, 780))}
+        filter="url(#red-glow)"
       />
-      <circle
-        cx="224"
-        cy="451"
-        r={2.2 + localPulse * 1.2}
-        fill={active ? C.cyan2 : C.cyan}
-        opacity={active ? 0.8 : 0.34}
-      />
-    </g>
+
+      <CrashRain frame={frame} visibility={sceneVisibility} />
+      <ImpactWave frame={frame} visibility={sceneVisibility} />
+    </svg>
   );
 };
 
-const MiniSparkline: React.FC<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+const ChromaticCrashFlash: React.FC<{
   frame: number;
-  seedValue: number;
-  color: string;
-}> = ({x, y, width, height, frame, seedValue, color}) => {
-  const pts = Array.from({length: 24}, (_, i) => {
-    const p = i / 23;
-    const v =
-      0.18 +
-      seed(seedValue + i) * 0.54 +
-      Math.sin(frame * 0.018 + i * 0.62 + seedValue) * 0.08;
-    return [x + p * width, y + height * (1 - Math.min(0.94, Math.max(0.08, v)))] as [
-      number,
-      number,
-    ];
-  });
-  return (
-    <g>
-      <path
-        d={`${pointsPath(pts)} L${x + width} ${y + height} L${x} ${y + height}Z`}
-        fill={color}
-        fillOpacity="0.08"
-      />
-      <path
-        d={pointsPath(pts)}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </g>
-  );
-};
+}> = ({frame}) => {
+  const primary =
+    progress(frame, IMPACT_FRAME - 3, IMPACT_FRAME + 4, easeOut) *
+    (1 - progress(frame, IMPACT_FRAME + 4, IMPACT_FRAME + 24));
+  const echo =
+    progress(frame, IMPACT_FRAME + 28, IMPACT_FRAME + 36, easeOut) *
+    (1 - progress(frame, IMPACT_FRAME + 36, IMPACT_FRAME + 62));
+  const amount = primary + echo * 0.28;
 
-const TerminalLog: React.FC<{
-  frame: number;
-  x: number;
-  y: number;
-  width: number;
-  active: boolean;
-}> = ({frame, x, y, width, active}) => {
-  const rows = [
-    ["18:42:11.204", "AUTH", "MFA token verified", "OK"],
-    ["18:42:11.376", "EDGE", "packet signature match", "OK"],
-    ["18:42:11.552", "WAF", "injection pattern denied", "BLOCK"],
-    ["18:42:11.719", "DNS", "anomaly score elevated", "WATCH"],
-    ["18:42:11.883", "EDR", "isolated endpoint 7F-22", "LOCK"],
-    ["18:42:12.061", "CORE", "policy matrix synchronized", "OK"],
-  ];
-  const hot = Math.floor(frame / 54) % rows.length;
   return (
-    <g transform={`translate(${x} ${y})`}>
-      {rows.map((row, i) => {
-        const isHot = i === hot;
-        const stateColor =
-          row[3] === "BLOCK" || row[3] === "LOCK"
-            ? C.red
-            : row[3] === "WATCH"
-              ? C.amber
-              : C.green;
-        return (
-          <g key={i} transform={`translate(0 ${i * 29})`}>
-            <rect
-              x="0"
-              y="-14"
-              width={width}
-              height="23"
-              fill={isHot ? stateColor : C.cyan}
-              fillOpacity={isHot ? (active ? 0.1 : 0.035) : i % 2 === 0 ? 0.018 : 0}
-            />
-            <rect
-              x="0"
-              y="-14"
-              width="3"
-              height="23"
-              fill={isHot ? stateColor : C.edge}
-              opacity={isHot ? (active ? 1 : 0.56) : 1}
-            />
-            <text x="13" y="1" fill={C.dim} fontSize="8.5">
-              {row[0]}
-            </text>
-            <text
-              x="102"
-              y="1"
-              fill={isHot ? C.white : C.muted}
-              fontSize="8.5"
-              fontWeight="700"
-              letterSpacing="1"
-            >
-              {row[1]}
-            </text>
-            <text x="156" y="1" fill={isHot ? C.white : C.muted} fontSize="8.5">
-              {row[2]}
-            </text>
-            <text
-              x={width - 8}
-              y="1"
-              textAnchor="end"
-              fill={stateColor}
-              fontSize="8"
-              fontWeight="700"
-              letterSpacing="1"
-            >
-              {row[3]}
-            </text>
-          </g>
-        );
-      })}
-      <rect
-        x="13"
-        y={rows.length * 29 - 12}
-        width={active && Math.floor(frame / 18) % 2 === 0 ? 7 : 2}
-        height="11"
-        fill={active ? C.cyan2 : C.dim}
-      />
-    </g>
-  );
-};
-
-const Donut: React.FC<{
-  cx: number;
-  cy: number;
-  radius: number;
-  values: number[];
-  colors: string[];
-  active: boolean;
-  frame: number;
-}> = ({cx, cy, radius, values, colors, active, frame}) => {
-  const total = values.reduce((a, b) => a + b, 0);
-  let offset = 0;
-  return (
-    <g transform={`rotate(-90 ${cx} ${cy})`}>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={radius}
-        fill="none"
-        stroke={C.edge}
-        strokeWidth="15"
-      />
-      {values.map((v, i) => {
-        const portion = v / total;
-        const dash = 2 * Math.PI * radius * portion;
-        const circumference = 2 * Math.PI * radius;
-        const selected = i === Math.floor(frame / 72) % values.length;
-        const el = (
-          <circle
-            key={i}
-            cx={cx}
-            cy={cy}
-            r={radius}
-            fill="none"
-            stroke={colors[i]}
-            strokeWidth={selected ? (active ? 19 : 16.5) : 15}
-            strokeDasharray={`${Math.max(0, dash - 5)} ${circumference}`}
-            strokeDashoffset={-offset}
-            strokeLinecap="round"
-            opacity={selected ? 0.98 : active || i !== 2 ? 0.88 : 0.64}
-          />
-        );
-        offset += dash;
-        return el;
-      })}
-      {[0, Math.PI].map((offsetAngle, i) => {
-        const a = frame * 0.012 * (i === 0 ? 1 : -0.72) + offsetAngle;
-        return (
-          <circle
-            key={`orbit-${i}`}
-            cx={cx + Math.cos(a) * (radius + 18)}
-            cy={cy + Math.sin(a) * (radius + 18)}
-            r={active ? 3.2 : 2.1}
-            fill={i === 0 ? C.cyan2 : C.amber}
-            opacity={active ? 0.9 : 0.4}
-          />
-        );
-      })}
-    </g>
-  );
-};
-
-const ProtocolTiles: React.FC<{
-  x: number;
-  y: number;
-  frame: number;
-  active: boolean;
-}> = ({x, y, frame, active}) => {
-  const labels = ["TLS", "EDR", "MFA", "WAF", "DLP", "SIEM", "XDR", "DNS"];
-  const hot = Math.floor(frame / 45) % labels.length;
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      {labels.map((label, i) => {
-        const px = (i % 4) * 74;
-        const py = Math.floor(i / 4) * 54;
-        const on = i === hot;
-        return (
-          <g key={label} transform={`translate(${px} ${py})`}>
-            <polygon
-              points="8,0 58,0 66,8 66,38 58,46 8,46 0,38 0,8"
-              fill={on ? C.cyan : C.bg}
-              fillOpacity={on ? (active ? 0.12 : 0.045) : 0.55}
-              stroke={on ? C.cyan : C.edge}
-              strokeWidth={on ? (active ? 1.8 : 1.25) : 1}
-            />
-            <circle
-              cx="13"
-              cy="12"
-              r={on ? 2.5 + (0.5 + 0.5 * Math.sin(frame * 0.11)) * 1.2 : 2.5}
-              fill={on ? C.cyan2 : C.dim}
-            />
-            <text
-              x="33"
-              y="30"
-              textAnchor="middle"
-              fill={on ? C.white : C.muted}
-              fontSize="9"
-              fontWeight="700"
-              letterSpacing="1.3"
-            >
-              {label}
-            </text>
-          </g>
-        );
-      })}
-    </g>
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        opacity: amount,
+        background:
+          "radial-gradient(circle at 63% 72%,rgba(255,255,255,.78) 0%,rgba(255,55,91,.34) 18%,rgba(255,0,46,.09) 42%,transparent 70%)",
+        mixBlendMode: "screen",
+      }}
+    />
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
 
-  if (frame === 0 || frame >= 899) {
-    return <AbsoluteFill style={{backgroundColor: C.bg}} />;
-  }
+  const sceneIn = progress(frame, 28, 86, easeOut);
+  const sceneOut = 1 - progress(frame, 760, 891, easeInOut);
+  const sceneVisibility = sceneIn * sceneOut;
 
-  const intro = ease(frame, 4, 72);
-  const outro = interpolate(frame, [826, 899], [1, 0], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const opacity = intro * outro;
-  const activeGroup = frame < 126 ? -1 : Math.floor((frame - 126) / 84) % 6;
-  const activeThreat = Math.floor(Math.max(0, frame - 160) / 132);
-  const riskValue =
-    0.68 +
-    Math.sin(frame * 0.012) * 0.035 +
-    (activeGroup === 0 ? 0.065 : 0);
-  const blocked = 1248 + Math.floor(frame / 31) % 37;
-  const packets = 8.42 + ((frame % 180) / 180) * 0.37;
-  const timeCode = `${String(18 + Math.floor(frame / 3600)).padStart(2, "0")}:${String(
-    42 + Math.floor(frame / 3600),
-  ).padStart(2, "0")}:${String(11 + Math.floor(frame / 60) % 49).padStart(2, "0")}`;
+  const tracking = progress(frame, 70, IMPACT_FRAME, easeCrash);
+  const cameraReturn = progress(frame, 706, 899, easeInOut);
+  const trackedX = mix(0, 1125 - CRASH_X, tracking);
+  const cameraX = mix(trackedX, 0, cameraReturn);
 
-  const reveals = {
-    header: ease(frame, 4, 48),
-    leftTop: ease(frame, 26, 44),
-    map: ease(frame, 42, 56),
-    rightTop: ease(frame, 58, 46),
-    leftBottom: ease(frame, 72, 44),
-    terminal: ease(frame, 86, 46),
-    footer: ease(frame, 102, 42),
-  };
+  const pushIn =
+    progress(frame, 454, IMPACT_FRAME + 22, easeCrash) *
+    (1 - progress(frame, 640, 738, easeInOut));
+  const pullBack =
+    progress(frame, 646, 758, easeOut) *
+    (1 - progress(frame, 814, 899, easeInOut));
+  const cameraScale = 1 + pushIn * 0.115 - pullBack * 0.14;
+  const cameraY =
+    -48 * progress(frame, 448, IMPACT_FRAME + 12, easeCrash) * (1 - cameraReturn);
+
+  const shakeWindow =
+    progress(frame, IMPACT_FRAME - 2, IMPACT_FRAME + 4, easeOut) *
+    (1 - progress(frame, IMPACT_FRAME + 4, IMPACT_FRAME + 36));
+  const shakeX =
+    (Math.sin(frame * 2.63) * 12 + Math.sin(frame * 5.17) * 5) * shakeWindow;
+  const shakeY =
+    (Math.cos(frame * 2.19) * 8 + Math.sin(frame * 4.31) * 4) * shakeWindow;
+
+  const tension =
+    progress(frame, 280, IMPACT_FRAME + 20, easeCrash) *
+    (1 - progress(frame, 678, 899, easeInOut));
+  const hudOpacity =
+    progress(frame, 18, 94, easeOut) * (1 - progress(frame, 770, 893));
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: C.bg,
-        color: C.white,
+        backgroundColor: "#010609",
         overflow: "hidden",
-        fontFamily:
-          '"IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace',
       }}
     >
-      <svg
-        width="1920"
-        height="1080"
-        viewBox="0 0 1920 1080"
-        style={{position: "absolute", inset: 0, opacity}}
+      <Background frame={frame} parallaxX={cameraX} tension={tension} />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          transformOrigin: "960px 540px",
+          transform: `translate3d(${cameraX + shakeX}px, ${cameraY + shakeY}px, 0) scale(${cameraScale})`,
+        }}
       >
-        <defs>
-          <radialGradient id="bg-vignette" cx="50%" cy="46%" r="68%">
-            <stop offset="0%" stopColor="#0b202a" />
-            <stop offset="52%" stopColor="#061119" />
-            <stop offset="100%" stopColor="#010408" />
-          </radialGradient>
-          <linearGradient id="header-line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={C.cyan} stopOpacity="0" />
-            <stop offset="24%" stopColor={C.cyan} stopOpacity="0.65" />
-            <stop offset="76%" stopColor={C.blue} stopOpacity="0.48" />
-            <stop offset="100%" stopColor={C.blue} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="risk-bar" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={C.cyan} />
-            <stop offset="58%" stopColor={C.amber} />
-            <stop offset="100%" stopColor={C.red} />
-          </linearGradient>
-          <linearGradient id="map-land" x1="0" y1="0" x2="0.8" y2="1">
-            <stop offset="0%" stopColor="#103d4b" />
-            <stop offset="48%" stopColor="#0b2e3a" />
-            <stop offset="100%" stopColor="#091d28" />
-          </linearGradient>
-          <pattern id="micro-grid" width="34" height="34" patternUnits="userSpaceOnUse">
-            <path
-              d="M34 0H0V34"
-              fill="none"
-              stroke={C.grid}
-              strokeWidth="0.7"
-              strokeOpacity="0.34"
-            />
-            <circle cx="0" cy="0" r="1" fill={C.edge} opacity="0.55" />
-          </pattern>
-          <filter id="small-glow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="2.4" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <clipPath id="map-clip">
-            <path d="M18 0H822L840 18V511L831 520H9L0 511V18Z" />
-          </clipPath>
-        </defs>
+        <MarketWorld frame={frame} sceneVisibility={sceneVisibility} />
+      </div>
 
-        <rect width="1920" height="1080" fill="url(#bg-vignette)" />
-        <rect
-          x="40"
-          y="34"
-          width="1840"
-          height="1000"
-          fill="url(#micro-grid)"
-          opacity="0.56"
-        />
-        <g>
-          {Array.from({length: 34}, (_, i) => {
-            const x = 66 + seed(i + 401) * 1788;
-            const y = 54 + seed(i + 733) * 950;
-            const pulse = 0.28 + 0.55 * (0.5 + 0.5 * Math.sin(frame * 0.025 + i * 1.31));
-            return (
-              <circle
-                key={i}
-                cx={x}
-                cy={y}
-                r={i % 7 === 0 ? 1.6 : 0.8}
-                fill={i % 9 === 0 ? C.blue : C.cyan}
-                opacity={pulse * (i % 7 === 0 ? 0.34 : 0.16)}
-              />
-            );
-          })}
-        </g>
-        <path
-          d="M40 178H1880 M382 34V1034 M1514 34V1034"
-          stroke={C.grid}
-          strokeOpacity="0.36"
-        />
+      <AmbientHud frame={frame} opacity={hudOpacity} />
+      <ChromaticCrashFlash frame={frame} />
 
-        <g opacity={reveals.header}>
-          <path
-            d="M58 76H74L92 58H356L374 76H1544L1562 58H1828L1846 76V140H58Z"
-            fill={C.panel}
-            fillOpacity="0.88"
-            stroke={C.edge}
-          />
-          <ShieldMark
-            x={105}
-            y={98}
-            size={45}
-            color={activeGroup === 0 ? C.red : C.cyan}
-            pulse={0.5 + 0.5 * Math.sin(frame * 0.055)}
-          />
-          <text x="149" y="94" fill={C.white} fontSize="17" fontWeight="700" letterSpacing="4">
-            CYBER DEFENSE
-          </text>
-          <text x="149" y="116" fill={C.muted} fontSize="9" letterSpacing="2.1">
-            OPERATIONS / REAL-TIME THREAT CONTROL
-          </text>
-          <rect x="414" y="73" width="1" height="51" fill={C.edgeBright} />
-          {[
-            ["STATUS", "FORTIFIED", C.green],
-            ["SENSORS", "284 ONLINE", C.cyan],
-            ["POLICY", "ZERO TRUST", C.blue],
-          ].map((item, i) => (
-            <g key={item[0]} transform={`translate(${452 + i * 184} 0)`}>
-              <text x="0" y="91" fill={C.dim} fontSize="8" letterSpacing="1.5">
-                {item[0]}
-              </text>
-              <circle cx="4" cy="111" r="3" fill={item[2]} />
-              <text x="16" y="115" fill={C.white} fontSize="11" fontWeight="700">
-                {item[1]}
-              </text>
-            </g>
-          ))}
-          <rect x="1043" y="73" width="1" height="51" fill={C.edgeBright} />
-          <text x="1080" y="91" fill={C.dim} fontSize="8" letterSpacing="1.5">
-            SYSTEM LOAD
-          </text>
-          <rect x="1080" y="103" width="230" height="9" rx="4.5" fill={C.bg} stroke={C.edge} />
-          <rect
-            x="1082"
-            y="105"
-            width={162 + Math.sin(frame * 0.017) * 9}
-            height="5"
-            rx="2.5"
-            fill={activeGroup === 5 ? C.amber : C.cyan}
-          />
-          <text x="1326" y="112" fill={C.white} fontSize="10" fontWeight="700">
-            {String(71 + Math.floor(3 + Math.sin(frame * 0.017) * 3)).padStart(2, "0")}%
-          </text>
-          <rect x="1384" y="73" width="1" height="51" fill={C.edgeBright} />
-          <text x="1424" y="91" fill={C.dim} fontSize="8" letterSpacing="1.5">
-            SECURE CLOCK / UTC
-          </text>
-          <text x="1424" y="117" fill={C.white} fontSize="21" fontWeight="700" letterSpacing="2">
-            {timeCode}
-          </text>
-          <circle
-            cx="1789"
-            cy="99"
-            r="18"
-            fill={activeGroup === 0 ? C.red : C.green}
-            fillOpacity="0.08"
-            stroke={activeGroup === 0 ? C.red : C.green}
-          />
-          <circle
-            cx="1789"
-            cy="99"
-            r={4 + (0.5 + 0.5 * Math.sin(frame * 0.09)) * 2}
-            fill={activeGroup === 0 ? C.red : C.green}
-          />
-          <text x="1789" y="130" textAnchor="middle" fill={C.muted} fontSize="7" letterSpacing="1.2">
-            LIVE
-          </text>
-          <rect x="150" y="136" width="1620" height="2" fill="url(#header-line)" />
-        </g>
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          boxShadow:
+            "inset 0 0 210px rgba(0,0,0,.92), inset 0 -110px 160px rgba(0,0,0,.58)",
+        }}
+      />
 
-        <Panel
-          x={58}
-          y={164}
-          width={306}
-          height={362}
-          label="THREAT LEVEL"
-          code="RISK/01"
-          reveal={reveals.leftTop}
-          active={activeGroup === 0}
-          accent={C.red}
-        >
-          <RiskGauge
-            cx={153}
-            cy={171}
-            radius={96}
-            value={riskValue}
-            frame={frame}
-            active={activeGroup === 0}
-          />
-          <rect x="29" y="285" width="248" height="7" rx="3.5" fill={C.bg} stroke={C.edge} />
-          <rect
-            x="31"
-            y="287"
-            width={244 * riskValue}
-            height="3"
-            rx="1.5"
-            fill="url(#risk-bar)"
-          />
-          {["LOW", "ELEVATED", "CRITICAL"].map((t, i) => (
-            <text
-              key={t}
-              x={31 + i * 122}
-              y="311"
-              textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}
-              fill={i === 2 && activeGroup === 0 ? C.red : C.dim}
-              fontSize="7"
-              letterSpacing="1.1"
-            >
-              {t}
-            </text>
-          ))}
-          <text x="29" y="338" fill={C.muted} fontSize="8" letterSpacing="1.1">
-            ADAPTIVE RESPONSE ENABLED
-          </text>
-          <circle cx="269" cy="335" r="3" fill={activeGroup === 0 ? C.red : C.green} />
-        </Panel>
-
-        <Panel
-          x={382}
-          y={164}
-          width={840}
-          height={536}
-          label="GLOBAL THREAT MAP"
-          code={`GEO/${String((activeThreat % GEO_ROUTES.length) + 1).padStart(2, "0")}`}
-          reveal={reveals.map}
-          active={activeGroup === 1}
-          accent={C.cyan}
-        >
-          <g transform="translate(0 10)" clipPath="url(#map-clip)">
-            <WorldThreatMap frame={frame} activeThreat={activeThreat} active={activeGroup === 1} />
-          </g>
-          <g transform="translate(654 57)">
-            {[
-              ["TRUSTED", C.cyan],
-              ["WATCH", C.amber],
-              ["THREAT", C.red],
-            ].map((item, i) => (
-              <g key={item[0]} transform={`translate(0 ${i * 21})`}>
-                <polygon points={hexPoints(5, 0, 5)} fill={item[1]} />
-                <text x="17" y="3" fill={C.muted} fontSize="7.5" letterSpacing="1">
-                  {item[0]}
-                </text>
-              </g>
-            ))}
-          </g>
-        </Panel>
-
-        <Panel
-          x={1240}
-          y={164}
-          width={622}
-          height={278}
-          label="ACTIVE INCIDENTS"
-          code="QUEUE/07"
-          reveal={reveals.rightTop}
-          active={activeGroup === 2}
-          accent={C.red}
-        >
-          {([
-            ["C-941", "CREDENTIAL ABUSE", "CRITICAL", C.red, 0.91],
-            ["H-372", "HOST ANOMALY", "HIGH", C.orange, 0.76],
-            ["N-184", "DNS TUNNEL", "ELEVATED", C.amber, 0.58],
-            ["W-056", "WAF PROBE", "CONTAINED", C.green, 0.34],
-          ] as const).map((row, i) => {
-            const hot = activeGroup === 2 && Math.floor(frame / 48) % 4 === i;
-            return (
-              <g key={row[0]} transform={`translate(18 ${61 + i * 48})`}>
-                <rect
-                  x="0"
-                  y="-17"
-                  width="586"
-                  height="39"
-                  fill={hot ? row[3] : i % 2 === 0 ? C.cyan : C.bg}
-                  fillOpacity={hot ? 0.08 : i % 2 === 0 ? 0.018 : 0.25}
-                  stroke={hot ? row[3] : C.edge}
-                  strokeOpacity={hot ? 0.75 : 0.45}
-                />
-                <rect x="0" y="-17" width="4" height="39" fill={row[3]} />
-                <text x="15" y="0" fill={C.white} fontSize="9" fontWeight="700">
-                  {row[0]}
-                </text>
-                <text x="74" y="0" fill={hot ? C.white : C.muted} fontSize="9" letterSpacing="0.8">
-                  {row[1]}
-                </text>
-                <rect x="299" y="-7" width="156" height="5" rx="2.5" fill={C.bg} />
-                <rect
-                  x="299"
-                  y="-7"
-                  width={
-                    156 *
-                    Number(row[4]) *
-                    (0.97 + 0.03 * Math.sin(frame * 0.027 + i * 1.6))
-                  }
-                  height="5"
-                  rx="2.5"
-                  fill={row[3]}
-                  opacity={0.78 + (hot ? 0.22 : 0)}
-                />
-                <text x="474" y="0" fill={row[3]} fontSize="8" fontWeight="700" letterSpacing="1">
-                  {row[2]}
-                </text>
-                <polygon
-                  points={hexPoints(565, -4, 7)}
-                  fill="none"
-                  stroke={hot ? row[3] : C.dim}
-                  strokeWidth={hot ? 2 : 1}
-                />
-              </g>
-            );
-          })}
-        </Panel>
-
-        <Panel
-          x={1240}
-          y={460}
-          width={622}
-          height={240}
-          label="ATTACK SURFACE"
-          code="VECTOR/12"
-          reveal={reveals.rightTop}
-          active={activeGroup === 3}
-          accent={C.amber}
-        >
-          <Donut
-            cx={112}
-            cy={134}
-            radius={66}
-            values={[43, 25, 18, 14]}
-            colors={[C.cyan, C.blue, C.amber, C.red]}
-            active={activeGroup === 3}
-            frame={frame}
-          />
-          <text
-            x="112"
-            y="129"
-            textAnchor="middle"
-            fill={C.white}
-            fontSize="25"
-            fontWeight="700"
-            transform="rotate(0 112 134)"
-          >
-            284
-          </text>
-          <text x="112" y="148" textAnchor="middle" fill={C.muted} fontSize="7" letterSpacing="1.2">
-            ENDPOINTS
-          </text>
-          {[
-            ["CLOUD", "43%", C.cyan],
-            ["EDGE", "25%", C.blue],
-            ["IDENTITY", "18%", C.amber],
-            ["REMOTE", "14%", C.red],
-          ].map((item, i) => (
-            <g key={item[0]} transform={`translate(226 ${74 + i * 33})`}>
-              <rect x="0" y="-8" width="5" height="16" fill={item[2]} />
-              <text x="17" y="3" fill={C.muted} fontSize="8.5" letterSpacing="1">
-                {item[0]}
-              </text>
-              <text x="330" y="3" textAnchor="end" fill={C.white} fontSize="10" fontWeight="700">
-                {item[1]}
-              </text>
-              <line x1="94" y1="0" x2="299" y2="0" stroke={C.edge} />
-              <line
-                x1="94"
-                y1="0"
-                x2={
-                  94 +
-                  (205 *
-                    (Number.parseInt(item[1], 10) +
-                      Math.sin(frame * 0.022 + i * 1.4) * 1.4)) /
-                    50
-                }
-                y2="0"
-                stroke={item[2]}
-                strokeWidth="2"
-                opacity={0.72 + (0.5 + 0.5 * Math.sin(frame * 0.035 + i)) * 0.28}
-              />
-            </g>
-          ))}
-        </Panel>
-
-        <Panel
-          x={58}
-          y={544}
-          width={306}
-          height={336}
-          label="DEFENSE LAYERS"
-          code="STACK/08"
-          reveal={reveals.leftBottom}
-          active={activeGroup === 4}
-          accent={C.cyan}
-        >
-          <ProtocolTiles x={13} y={54} frame={frame} active={activeGroup === 4} />
-          <line x1="14" y1="171" x2="292" y2="171" stroke={C.edge} />
-          <text x="14" y="194" fill={C.dim} fontSize="8" letterSpacing="1.3">
-            ENCRYPTED TRAFFIC
-          </text>
-          <text x="292" y="194" textAnchor="end" fill={C.white} fontSize="12" fontWeight="700">
-            {packets.toFixed(2)} TB
-          </text>
-          <MiniSparkline
-            x={14}
-            y={210}
-            width={278}
-            height={67}
-            frame={frame}
-            seedValue={41}
-            color={activeGroup === 4 ? C.cyan2 : C.cyan}
-          />
-          <text x="14" y="299" fill={C.muted} fontSize="8">
-            INSPECTED {Math.floor(98.2 + Math.sin(frame * 0.01) * 0.3).toFixed(1)}%
-          </text>
-          <text x="292" y="299" textAnchor="end" fill={C.green} fontSize="8" fontWeight="700">
-            NOMINAL
-          </text>
-        </Panel>
-
-        <Panel
-          x={382}
-          y={718}
-          width={840}
-          height={270}
-          label="SECURITY EVENT STREAM"
-          code="SIEM/LIVE"
-          reveal={reveals.terminal}
-          active={activeGroup === 5}
-          accent={C.cyan}
-        >
-          <TerminalLog frame={frame} x={18} y={60} width={804} active={activeGroup === 5} />
-          <text x="20" y="242" fill={C.dim} fontSize="8" letterSpacing="1.1">
-            BUFFER 0341 / HASH VERIFIED / POLICY ENFORCEMENT ACTIVE
-          </text>
-          <text x="818" y="242" textAnchor="end" fill={C.cyan} fontSize="8" fontWeight="700">
-            LISTENING_
-          </text>
-        </Panel>
-
-        <Panel
-          x={1240}
-          y={718}
-          width={622}
-          height={270}
-          label="RESPONSE METRICS"
-          code="SOC/24H"
-          reveal={reveals.footer}
-          active={activeGroup === 0}
-          accent={C.green}
-        >
-          {[
-            ["BLOCKED", String(blocked), C.red],
-            ["CONTAINED", "32", C.amber],
-            ["PATCHED", "87", C.green],
-          ].map((m, i) => (
-            <g key={m[0]} transform={`translate(${18 + i * 199} 56)`}>
-              <rect x="0" y="0" width="184" height="75" fill={C.bg} stroke={C.edge} />
-              <rect x="0" y="0" width="4" height="75" fill={m[2]} />
-              <text x="15" y="24" fill={C.muted} fontSize="8" letterSpacing="1.2">
-                {m[0]}
-              </text>
-              <text x="15" y="57" fill={C.white} fontSize="26" fontWeight="700">
-                {m[1]}
-              </text>
-              <circle cx="164" cy="20" r="4" fill={m[2]} />
-            </g>
-          ))}
-          <text x="18" y="160" fill={C.dim} fontSize="8" letterSpacing="1.3">
-            MEAN RESPONSE TIME
-          </text>
-          <text x="604" y="160" textAnchor="end" fill={C.white} fontSize="12" fontWeight="700">
-            02m 14s
-          </text>
-          <rect x="18" y="176" width="586" height="8" rx="4" fill={C.bg} stroke={C.edge} />
-          {Array.from({length: 38}, (_, i) => (
-            <rect
-              key={i}
-              x={21 + i * 15.3}
-              y="179"
-              width="9"
-              height="2"
-              fill={
-                i === (Math.floor(frame / 18) * 11) % 38
-                  ? C.white
-                  : i < 31
-                    ? i > 25
-                      ? C.green
-                      : C.cyan
-                    : C.edge
-              }
-              opacity={
-                i < 31
-                  ? 0.65 + (0.5 + 0.5 * Math.sin(frame * 0.045 - i * 0.2)) * 0.35
-                  : 0.55
-              }
-            />
-          ))}
-          <text x="18" y="213" fill={C.muted} fontSize="8">
-            AUTOMATED PLAYBOOKS
-          </text>
-          <text x="604" y="213" textAnchor="end" fill={C.green} fontSize="8" fontWeight="700">
-            96.7% SUCCESS
-          </text>
-          <MiniSparkline
-            x={315}
-            y={193}
-            width={289}
-            height={31}
-            frame={frame}
-            seedValue={87}
-            color={C.green}
-          />
-        </Panel>
-
-        <g opacity={reveals.footer}>
-          <path d="M58 1012H1862" stroke={C.edge} />
-          <path d="M58 1012H542" stroke={C.cyan} strokeOpacity="0.62" />
-          <text x="58" y="1033" fill={C.dim} fontSize="8" letterSpacing="1.5">
-            SECURE OPERATIONS FABRIC / REGION 04
-          </text>
-          <text x="960" y="1033" textAnchor="middle" fill={C.muted} fontSize="8" letterSpacing="1.4">
-            NO GLOBAL SCAN / LOCAL EVENT TELEMETRY
-          </text>
-          <text x="1862" y="1033" textAnchor="end" fill={C.dim} fontSize="8" letterSpacing="1.5">
-            BUILD 08.14.772 / SIGNED
-          </text>
-        </g>
-      </svg>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.13,
+          backgroundImage:
+            "repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(255,255,255,.035) 4px)",
+          mixBlendMode: "overlay",
+          pointerEvents: "none",
+        }}
+      />
     </AbsoluteFill>
   );
 };
