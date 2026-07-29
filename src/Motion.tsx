@@ -10,6 +10,10 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const TOTAL_FRAMES = 900;
 const TAU = Math.PI * 2;
+const CENTER_X = 960;
+const CENTER_Y = 525;
+const ORBIT_RX = 480;
+const ORBIT_RY = 278;
 
 const phase = (
   frame: number,
@@ -24,227 +28,138 @@ const phase = (
   });
 
 const seeded = (seed: number): number => {
-  const value = Math.sin(seed * 84.731 + 11.927) * 43758.5453;
+  const value = Math.sin(seed * 78.233 + 19.117) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const MOTES = Array.from({ length: 72 }, (_, index) => ({
-  x: seeded(index + 10) * WIDTH,
-  y: seeded(index + 110) * HEIGHT,
-  size: 0.8 + seeded(index + 210) * 2.8,
-  opacity: 0.05 + seeded(index + 310) * 0.2,
-  speed: 0.35 + seeded(index + 410) * 1.25,
-  offset: seeded(index + 510) * TAU,
-}));
+const pointOnOrbit = (
+  angle: number,
+  rx = ORBIT_RX,
+  ry = ORBIT_RY,
+): { readonly x: number; readonly y: number } => {
+  const radians = (angle * Math.PI) / 180;
+  return {
+    x: CENTER_X + Math.cos(radians) * rx,
+    y: CENTER_Y + Math.sin(radians) * ry,
+  };
+};
 
-const STREAMS = Array.from({ length: 8 }, (_, index) => ({
-  y: 90 + seeded(index + 610) * 900,
-  width: 150 + seeded(index + 710) * 340,
-  speed: 0.42 + seeded(index + 810) * 0.8,
-  offset: seeded(index + 910) * 2400,
-}));
+const tangentAngle = (angle: number): number => {
+  const radians = (angle * Math.PI) / 180;
+  return (
+    (Math.atan2(
+      ORBIT_RY * Math.cos(radians),
+      -ORBIT_RX * Math.sin(radians),
+    ) *
+      180) /
+    Math.PI
+  );
+};
+
+type Glyph = "leaf" | "drop" | "wind" | "sun" | "loop";
 
 type Stage = {
-  readonly id: "a" | "b" | "c" | "d";
-  readonly x: number;
-  readonly y: number;
+  readonly id: string;
+  readonly angle: number;
   readonly start: number;
   readonly accent: string;
-  readonly secondary: string;
-  readonly soft: string;
-  readonly bayY: number;
-  readonly glyph: "orbit" | "diamond" | "network" | "petal";
+  readonly deep: string;
+  readonly pale: string;
+  readonly glyph: Glyph;
+  readonly card: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly leaderPath: string;
+  readonly anchor: { readonly x: number; readonly y: number };
 };
 
 const STAGES: readonly Stage[] = [
   {
-    id: "a",
-    x: 300,
-    y: 340,
-    start: 48,
-    accent: "#53d9ff",
-    secondary: "#436cff",
-    soft: "#c9f5ff",
-    bayY: 502,
-    glyph: "orbit",
+    id: "seed",
+    angle: -90,
+    start: 78,
+    accent: "#49bd78",
+    deep: "#16845d",
+    pale: "#dff8df",
+    glyph: "leaf",
+    card: { x: 770, y: 54, width: 380, height: 146 },
+    leaderPath: "M960 232 C960 220 960 214 960 200",
+    anchor: { x: 960, y: 200 },
   },
   {
-    id: "b",
-    x: 740,
-    y: 700,
-    start: 168,
-    accent: "#a78bff",
-    secondary: "#704dff",
-    soft: "#eee6ff",
-    bayY: 378,
-    glyph: "diamond",
+    id: "water",
+    angle: -18,
+    start: 170,
+    accent: "#39bdc4",
+    deep: "#167d91",
+    pale: "#dcf8f5",
+    glyph: "drop",
+    card: { x: 1495, y: 304, width: 350, height: 158 },
+    leaderPath: "M1492 438 C1510 427 1504 395 1495 383",
+    anchor: { x: 1495, y: 383 },
   },
   {
-    id: "c",
-    x: 1180,
-    y: 340,
-    start: 288,
-    accent: "#ff9d6d",
-    secondary: "#ff557f",
-    soft: "#ffe5d4",
-    bayY: 502,
-    glyph: "network",
-  },
-  {
-    id: "d",
-    x: 1620,
-    y: 700,
-    start: 408,
-    accent: "#57e4b4",
-    secondary: "#20b9d7",
-    soft: "#dcfff2",
-    bayY: 378,
-    glyph: "petal",
-  },
-];
-
-const CONNECTIONS = [
-  {
-    id: "ab",
-    path: "M300 340 C470 340 570 700 740 700",
-    start: 142,
-    end: 242,
-    colorA: STAGES[0].accent,
-    colorB: STAGES[1].accent,
-  },
-  {
-    id: "bc",
-    path: "M740 700 C910 700 1010 340 1180 340",
+    id: "air",
+    angle: 54,
     start: 262,
-    end: 362,
-    colorA: STAGES[1].accent,
-    colorB: STAGES[2].accent,
+    accent: "#539fe6",
+    deep: "#3766b4",
+    pale: "#e2efff",
+    glyph: "wind",
+    card: { x: 1265, y: 832, width: 380, height: 158 },
+    leaderPath: "M1294 787 C1320 810 1378 816 1455 832",
+    anchor: { x: 1455, y: 832 },
   },
   {
-    id: "cd",
-    path: "M1180 340 C1350 340 1450 700 1620 700",
-    start: 382,
-    end: 482,
-    colorA: STAGES[2].accent,
-    colorB: STAGES[3].accent,
+    id: "energy",
+    angle: 126,
+    start: 354,
+    accent: "#efb44c",
+    deep: "#c87925",
+    pale: "#fff0ca",
+    glyph: "sun",
+    card: { x: 275, y: 832, width: 380, height: 158 },
+    leaderPath: "M626 787 C600 810 542 816 465 832",
+    anchor: { x: 465, y: 832 },
+  },
+  {
+    id: "renew",
+    angle: 198,
+    start: 446,
+    accent: "#ed7c68",
+    deep: "#b74359",
+    pale: "#ffe5db",
+    glyph: "loop",
+    card: { x: 75, y: 304, width: 350, height: 158 },
+    leaderPath: "M428 438 C410 427 416 395 425 383",
+    anchor: { x: 425, y: 383 },
   },
 ] as const;
 
-const Background: React.FC<{ readonly frame: number }> = ({ frame }) => (
-  <>
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(ellipse at 50% 48%, #16213c 0%, #0a1023 38%, #040815 70%, #01030a 100%)",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        opacity: 0.27,
-        backgroundImage:
-          "linear-gradient(rgba(177,205,255,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(177,205,255,0.055) 1px, transparent 1px)",
-        backgroundSize: "68px 68px",
-        backgroundPosition: `${(frame * 0.022) % 68}px ${(frame * 0.015) % 68}px`,
-        maskImage:
-          "radial-gradient(ellipse at 50% 50%, black 0%, rgba(0,0,0,0.82) 51%, transparent 91%)",
-      }}
-    />
-    {STAGES.map((stage, index) => (
-      <div
-        key={stage.id}
-        style={{
-          position: "absolute",
-          left: stage.x - 340,
-          top: stage.y - 340,
-          width: 680,
-          height: 680,
-          borderRadius: "50%",
-          background: `radial-gradient(circle, ${stage.accent}1f 0%, ${stage.secondary}09 41%, transparent 72%)`,
-          filter: "blur(48px)",
-          opacity:
-            0.64 +
-            Math.sin(frame / (126 + index * 11) + index * 1.4) * 0.045,
-        }}
-      />
-    ))}
-    <div
-      style={{
-        position: "absolute",
-        left: 420,
-        top: -410,
-        width: 1080,
-        height: 730,
-        borderRadius: "50%",
-        background:
-          "radial-gradient(ellipse, rgba(112,130,255,0.15), rgba(87,218,255,0.03) 48%, transparent 72%)",
-        filter: "blur(70px)",
-      }}
-    />
-    {STREAMS.map((stream, index) => {
-      const x =
-        ((frame * stream.speed * 1.25 + stream.offset) %
-          (WIDTH + stream.width + 420)) -
-        stream.width -
-        210;
-      return (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left: x,
-            top: stream.y,
-            width: stream.width,
-            height: 1,
-            background:
-              "linear-gradient(90deg, transparent, rgba(195,218,255,0.82), transparent)",
-            opacity: 0.025 + index * 0.005,
-          }}
-        />
-      );
-    })}
-    {MOTES.map((mote, index) => {
-      const driftX =
-        Math.sin(frame / (75 + mote.speed * 23) + mote.offset) * 4.5;
-      const driftY =
-        Math.cos(frame / (92 + mote.speed * 17) + mote.offset) * 5.5;
-      const twinkle = 0.58 + Math.sin(frame / 42 + mote.offset) * 0.42;
-      const colors = ["#53d9ff", "#a78bff", "#ff8c72", "#57e4b4"];
-      const color = colors[index % colors.length];
+const FLOATERS = Array.from({ length: 38 }, (_, index) => ({
+  x: seeded(index + 20) * WIDTH,
+  y: seeded(index + 120) * HEIGHT,
+  size: 3 + seeded(index + 220) * 8,
+  drift: 0.6 + seeded(index + 320) * 1.4,
+  phase: seeded(index + 420) * TAU,
+  opacity: 0.08 + seeded(index + 520) * 0.16,
+  type: index % 4,
+}));
 
-      return (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left: mote.x + driftX,
-            top: mote.y + driftY,
-            width: mote.size,
-            height: mote.size,
-            borderRadius: "50%",
-            background: color,
-            opacity: mote.opacity * twinkle,
-            boxShadow: `0 0 10px ${color}`,
-          }}
-        />
-      );
-    })}
-    <div
-      style={{
-        position: "absolute",
-        inset: 32,
-        borderRadius: 34,
-        border: "1px solid rgba(218,230,255,0.05)",
-        boxShadow: "inset 0 0 80px rgba(101,126,210,0.025)",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(ellipse at center, transparent 43%, rgba(1,3,10,0.38) 100%)",
-      }}
-    />
-  </>
-);
+const TOPOS = [
+  "M-90 192 C212 82 384 306 688 202 C982 102 1148 38 1438 176 C1652 278 1824 188 2028 84",
+  "M-84 286 C196 174 416 388 704 282 C982 180 1182 112 1458 258 C1650 360 1816 286 2028 180",
+  "M-88 382 C206 272 424 486 714 376 C1002 266 1186 220 1450 356 C1640 456 1810 390 2022 282",
+  "M-84 480 C206 372 436 578 720 474 C1010 368 1188 314 1452 454 C1640 552 1818 488 2024 382",
+  "M-86 580 C212 470 432 676 724 572 C1008 472 1180 410 1458 554 C1652 652 1818 586 2026 478",
+  "M-84 680 C212 574 434 778 724 672 C1012 566 1192 518 1456 652 C1650 752 1824 688 2022 582",
+  "M-88 780 C204 674 436 878 726 770 C1010 668 1190 612 1458 754 C1650 852 1816 790 2026 680",
+  "M-82 878 C210 770 428 976 722 870 C1008 766 1190 712 1456 852 C1654 954 1822 888 2022 780",
+  "M-90 976 C206 868 430 1074 720 968 C1012 864 1190 810 1452 950 C1648 1052 1818 986 2028 878",
+] as const;
 
 const CornerGuides: React.FC<{
   readonly color: string;
@@ -261,16 +176,18 @@ const CornerGuides: React.FC<{
         key={index}
         style={{
           position: "absolute",
-          width: 17,
-          height: 17,
+          width: 18,
+          height: 18,
           left: corner.left,
           right: corner.right,
           top: corner.top,
           bottom: corner.bottom,
-          borderLeft: corner.borderLeft ? `1px solid ${color}` : undefined,
-          borderRight: corner.borderRight ? `1px solid ${color}` : undefined,
-          borderTop: corner.borderTop ? `1px solid ${color}` : undefined,
-          borderBottom: corner.borderBottom ? `1px solid ${color}` : undefined,
+          borderLeft: corner.borderLeft ? `1.5px solid ${color}` : undefined,
+          borderRight: corner.borderRight ? `1.5px solid ${color}` : undefined,
+          borderTop: corner.borderTop ? `1.5px solid ${color}` : undefined,
+          borderBottom: corner.borderBottom
+            ? `1.5px solid ${color}`
+            : undefined,
           opacity,
         }}
       />
@@ -278,10 +195,160 @@ const CornerGuides: React.FC<{
   </>
 );
 
-const ProcessConnectors: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const complete = phase(frame, 520, 650);
-  const path =
-    "M300 340 C470 340 570 700 740 700 C910 700 1010 340 1180 340 C1350 340 1450 700 1620 700";
+const MineralBackground: React.FC<{ readonly frame: number }> = ({ frame }) => (
+  <>
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(circle at 52% 42%, #fbfcf6 0%, #f4f4e9 38%, #e9eee5 72%, #dce5dc 100%)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: -220 + Math.sin(frame / 170) * 10,
+        top: -250,
+        width: 870,
+        height: 760,
+        borderRadius: "44% 56% 58% 42% / 55% 42% 58% 45%",
+        background:
+          "radial-gradient(ellipse at 55% 52%, rgba(108,210,169,0.28), rgba(94,202,180,0.09) 46%, transparent 72%)",
+        filter: "blur(24px)",
+        transform: `rotate(${-8 + Math.sin(frame / 240) * 1.5}deg)`,
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        right: -250 + Math.cos(frame / 210) * 11,
+        top: 60,
+        width: 830,
+        height: 720,
+        borderRadius: "58% 42% 46% 54% / 44% 56% 44% 56%",
+        background:
+          "radial-gradient(ellipse at 44% 52%, rgba(91,165,232,0.22), rgba(108,193,215,0.075) 48%, transparent 73%)",
+        filter: "blur(30px)",
+        transform: `rotate(${12 + Math.cos(frame / 260) * 1.6}deg)`,
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: 510,
+        bottom: -520,
+        width: 970,
+        height: 820,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(ellipse, rgba(243,190,101,0.19), rgba(234,131,103,0.055) 50%, transparent 72%)",
+        filter: "blur(46px)",
+      }}
+    />
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{
+        position: "absolute",
+        inset: 0,
+        opacity: 0.38,
+        transform: `translateY(${Math.sin(frame / 210) * 2.5}px)`,
+      }}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="topo-stroke" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#6ba985" stopOpacity="0.08" />
+          <stop offset="45%" stopColor="#79a8aa" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#7c92a4" stopOpacity="0.055" />
+        </linearGradient>
+      </defs>
+      {TOPOS.map((path, index) => (
+        <path
+          key={index}
+          d={path}
+          fill="none"
+          stroke="url(#topo-stroke)"
+          strokeWidth={index % 3 === 0 ? 1.6 : 1}
+          strokeDasharray={index % 2 === 0 ? "2 13" : undefined}
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+    {FLOATERS.map((floater, index) => {
+      const x =
+        floater.x +
+        Math.sin(frame / (76 + floater.drift * 22) + floater.phase) * 8;
+      const y =
+        floater.y +
+        Math.cos(frame / (92 + floater.drift * 19) + floater.phase) * 10;
+      const rotation = frame * (0.035 + floater.drift * 0.018) + index * 24;
+      const colors = ["#63b985", "#61abc4", "#dfad5a", "#da806b"];
+      const color = colors[floater.type];
+
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: x,
+            top: y,
+            width: floater.size,
+            height: floater.type === 2 ? floater.size * 0.72 : floater.size,
+            borderRadius:
+              floater.type === 0
+                ? "50%"
+                : floater.type === 1
+                  ? "70% 30% 62% 38%"
+                  : floater.type === 2
+                    ? 2
+                    : "50% 50% 20% 80%",
+            background:
+              floater.type === 3
+                ? "transparent"
+                : `linear-gradient(145deg, rgba(255,255,255,0.76), ${color})`,
+            border:
+              floater.type === 3
+                ? `1.4px solid ${color}`
+                : "1px solid rgba(255,255,255,0.58)",
+            opacity: floater.opacity,
+            transform: `rotate(${rotation}deg)`,
+            boxShadow: `0 7px 16px ${color}22`,
+          }}
+        />
+      );
+    })}
+    <AbsoluteFill
+      style={{
+        opacity: 0.26,
+        backgroundImage:
+          "radial-gradient(circle at 20% 18%, rgba(42,86,68,0.11) 0.7px, transparent 0.9px), radial-gradient(circle at 80% 72%, rgba(58,91,109,0.09) 0.6px, transparent 0.9px)",
+        backgroundSize: "13px 13px, 17px 17px",
+        mixBlendMode: "multiply",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        inset: 30,
+        borderRadius: 38,
+        border: "1px solid rgba(73,111,91,0.11)",
+        boxShadow:
+          "inset 0 0 90px rgba(255,255,255,0.34), 0 0 0 1px rgba(255,255,255,0.38)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(ellipse at center, transparent 55%, rgba(87,111,94,0.12) 100%)",
+      }}
+    />
+  </>
+);
+
+const CycleTrack: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const completion = phase(frame, 558, 680, Easing.inOut(Easing.cubic));
+  const settle = phase(frame, 660, 742);
 
   return (
     <svg
@@ -292,100 +359,183 @@ const ProcessConnectors: React.FC<{ readonly frame: number }> = ({ frame }) => {
       aria-hidden
     >
       <defs>
-        {CONNECTIONS.map((connection) => (
-          <linearGradient
-            key={connection.id}
-            id={`connection-${connection.id}`}
-            x1="0"
-            y1="0"
-            x2="1"
-            y2="0"
-          >
-            <stop offset="0%" stopColor={connection.colorA} />
-            <stop offset="100%" stopColor={connection.colorB} />
-          </linearGradient>
-        ))}
-        <linearGradient id="complete-path" x1="300" y1="0" x2="1620" y2="0">
-          <stop offset="0%" stopColor="#53d9ff" />
-          <stop offset="33%" stopColor="#a78bff" />
-          <stop offset="67%" stopColor="#ff866f" />
-          <stop offset="100%" stopColor="#57e4b4" />
-        </linearGradient>
-        <filter id="connector-glow" x="-30%" y="-50%" width="160%" height="200%">
+        <filter id="track-shadow" x="-30%" y="-40%" width="160%" height="200%">
+          <feGaussianBlur stdDeviation="12" />
+        </filter>
+        <filter id="track-glow" x="-30%" y="-80%" width="160%" height="260%">
           <feGaussianBlur stdDeviation="5" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+        {STAGES.map((stage, index) => (
+          <linearGradient
+            key={stage.id}
+            id={`track-${stage.id}`}
+            x1={index % 2 === 0 ? "0" : "1"}
+            y1="0"
+            x2={index % 2 === 0 ? "1" : "0"}
+            y2="1"
+          >
+            <stop offset="0%" stopColor={stage.deep} />
+            <stop offset="66%" stopColor={stage.accent} />
+            <stop offset="100%" stopColor={stage.pale} />
+          </linearGradient>
+        ))}
+        <linearGradient
+          id="track-complete"
+          x1="480"
+          y1="525"
+          x2="1440"
+          y2="525"
+        >
+          <stop offset="0%" stopColor="#ed7c68" />
+          <stop offset="23%" stopColor="#efb44c" />
+          <stop offset="46%" stopColor="#49bd78" />
+          <stop offset="70%" stopColor="#39bdc4" />
+          <stop offset="100%" stopColor="#539fe6" />
+        </linearGradient>
       </defs>
-      <path
-        d={path}
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y + 26}
+        rx={ORBIT_RX + 8}
+        ry={ORBIT_RY + 5}
         fill="none"
-        stroke="rgba(190,211,255,0.075)"
-        strokeWidth="19"
-        strokeLinecap="round"
+        stroke="rgba(45,72,59,0.18)"
+        strokeWidth="38"
+        filter="url(#track-shadow)"
+        opacity="0.56"
       />
-      <path
-        d={path}
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y}
+        rx={ORBIT_RX}
+        ry={ORBIT_RY}
         fill="none"
-        stroke="rgba(214,229,255,0.16)"
-        strokeWidth="1.2"
-        strokeDasharray="3 14"
-        strokeLinecap="round"
+        stroke="rgba(255,255,255,0.7)"
+        strokeWidth="25"
       />
-      {CONNECTIONS.map((connection) => {
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y}
+        rx={ORBIT_RX}
+        ry={ORBIT_RY}
+        fill="none"
+        stroke="rgba(62,99,80,0.15)"
+        strokeWidth="2"
+        strokeDasharray="3 13"
+        strokeDashoffset={-frame * 0.08}
+      />
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y - 1}
+        rx={ORBIT_RX - 11}
+        ry={ORBIT_RY - 7}
+        fill="none"
+        stroke="rgba(255,255,255,0.66)"
+        strokeWidth="1.4"
+      />
+      {STAGES.map((stage, index) => {
         const reveal = phase(
           frame,
-          connection.start,
-          connection.end,
+          stage.start,
+          stage.start + 86,
           Easing.inOut(Easing.cubic),
         );
+        const startOffset = 0.25 - index * 0.2;
+        const endAngle = stage.angle + 55;
+        const endPoint = pointOnOrbit(endAngle);
+        const tangent = tangentAngle(endAngle);
+        const arrowReveal = phase(frame, stage.start + 58, stage.start + 96);
+
         return (
-          <path
-            key={connection.id}
-            d={connection.path}
-            fill="none"
-            stroke={`url(#connection-${connection.id})`}
-            strokeWidth="3.4"
-            strokeLinecap="round"
-            pathLength="1"
-            strokeDasharray="1"
-            strokeDashoffset={1 - reveal}
-            filter="url(#connector-glow)"
-          />
+          <React.Fragment key={stage.id}>
+            <ellipse
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              rx={ORBIT_RX}
+              ry={ORBIT_RY}
+              fill="none"
+              stroke={`url(#track-${stage.id})`}
+              strokeWidth="12"
+              strokeLinecap="round"
+              pathLength="1"
+              strokeDasharray={`${0.158 * reveal} 1`}
+              strokeDashoffset={startOffset}
+              filter="url(#track-glow)"
+            />
+            <g
+              transform={`translate(${endPoint.x} ${endPoint.y}) rotate(${tangent}) scale(${0.72 + arrowReveal * 0.28})`}
+              opacity={arrowReveal}
+            >
+              <circle
+                cx="0"
+                cy="0"
+                r="19"
+                fill={stage.accent}
+                opacity="0.12"
+              />
+              <path
+                d="M-10 -8L10 0L-10 8Z"
+                fill={stage.deep}
+                stroke="rgba(255,255,255,0.72)"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+            </g>
+          </React.Fragment>
         );
       })}
-      <path
-        d={path}
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y}
+        rx={ORBIT_RX}
+        ry={ORBIT_RY}
         fill="none"
-        stroke="url(#complete-path)"
-        strokeWidth={2 + complete * 2}
+        stroke="url(#track-complete)"
+        strokeWidth={2.5 + completion * 3.2}
         strokeLinecap="round"
         pathLength="1"
-        strokeDasharray={`${0.08 + complete * 0.06} 0.1`}
-        strokeDashoffset={-(frame - 540) * 0.006}
-        opacity={complete * 0.65}
-        filter="url(#connector-glow)"
+        strokeDasharray={`${0.07 + completion * 0.035} ${0.06 - completion * 0.018}`}
+        strokeDashoffset={-frame * 0.0028}
+        opacity={completion * 0.64}
+        filter="url(#track-glow)"
       />
-      {Array.from({ length: 4 }, (_, index) => {
+      {Array.from({ length: 7 }, (_, index) => {
         const travel =
-          ((frame - 570) * 0.00155 + index * 0.25 + 1) % 1;
-        const x = 300 + 1320 * travel;
-        const y = 520 - 180 * Math.cos(Math.PI * 3 * travel);
-        const active = complete * phase(frame, 580 + index * 10, 650 + index * 10);
-        const color =
-          travel < 0.25
-            ? "#72e2ff"
-            : travel < 0.5
-              ? "#b89cff"
-              : travel < 0.75
-                ? "#ffa47e"
-                : "#72edc2";
+          (((frame - 590) * (0.00115 + index * 0.000025) +
+            index / 7 +
+            1) %
+            1) *
+          TAU;
+        const x = CENTER_X + Math.cos(travel) * ORBIT_RX;
+        const y = CENTER_Y + Math.sin(travel) * ORBIT_RY;
+        const colors = STAGES.map((stage) => stage.accent);
+        const color = colors[index % colors.length];
+        const active =
+          completion * phase(frame, 585 + index * 8, 650 + index * 8);
+
         return (
           <React.Fragment key={index}>
-            <circle cx={x} cy={y} r="15" fill={color} opacity={active * 0.08} />
-            <circle cx={x} cy={y} r="4.5" fill="#ffffff" opacity={active * 0.88} />
+            <circle
+              cx={x}
+              cy={y}
+              r={18 + settle * 3}
+              fill={color}
+              opacity={active * 0.1}
+            />
+            <circle
+              cx={x}
+              cy={y}
+              r="5.2"
+              fill="#ffffff"
+              stroke={color}
+              strokeWidth="2.8"
+              opacity={active}
+              filter="url(#track-glow)"
+            />
           </React.Fragment>
         );
       })}
@@ -398,303 +548,477 @@ const StageGlyph: React.FC<{
   readonly reveal: number;
   readonly frame: number;
 }> = ({ stage, reveal, frame }) => {
-  const stroke = 1 - reveal;
+  const draw = 1 - reveal;
   const common = {
     fill: "none",
-    stroke: stage.soft,
-    strokeWidth: 2.2,
+    stroke: stage.deep,
+    strokeWidth: 2.4,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     pathLength: 1,
     strokeDasharray: 1,
-    strokeDashoffset: stroke,
-    opacity: 0.9,
+    strokeDashoffset: draw,
   };
 
   return (
-    <svg width={104} height={104} viewBox="0 0 104 104" aria-hidden>
-      {stage.glyph === "orbit" ? (
+    <svg width="92" height="72" viewBox="0 0 92 72" aria-hidden>
+      {stage.glyph === "leaf" ? (
         <>
-          <circle cx="52" cy="52" r="21" {...common} />
-          <circle
-            cx="52"
-            cy="52"
-            r="34"
-            fill="none"
+          <path
+            d="M18 49C19 24 39 10 70 14C69 43 50 59 22 54C34 46 46 38 59 25"
+            {...common}
+          />
+          <path
+            d="M25 54C37 52 50 50 64 51"
+            {...common}
             stroke={stage.accent}
-            strokeWidth="1.5"
-            strokeDasharray="3 8"
-            opacity={reveal * 0.52}
-            transform={`rotate(${frame * 0.16} 52 52)`}
           />
-          <circle
-            cx={52 + Math.cos(frame * 0.018) * 34}
-            cy={52 + Math.sin(frame * 0.018) * 34}
-            r="4"
-            fill={stage.accent}
-            opacity={reveal}
+        </>
+      ) : stage.glyph === "drop" ? (
+        <>
+          <path
+            d="M46 10C55 25 69 38 69 49C69 62 59 68 46 68C33 68 23 61 23 49C23 38 37 24 46 10Z"
+            {...common}
           />
-          <circle cx="52" cy="52" r="7" fill={stage.accent} opacity={reveal * 0.7} />
+          <path
+            d="M34 49C36 56 41 59 48 59"
+            {...common}
+            stroke={stage.accent}
+          />
         </>
-      ) : stage.glyph === "diamond" ? (
+      ) : stage.glyph === "wind" ? (
         <>
-          <path d="M52 20L82 52L52 84L22 52Z" {...common} />
-          <path d="M52 32L70 52L52 72L34 52Z" {...common} />
-          <circle cx="52" cy="52" r="5" fill={stage.accent} opacity={reveal} />
+          <path d="M13 24H62C74 24 75 10 64 10C58 10 55 13 53 17" {...common} />
+          <path d="M13 36H73C84 36 84 50 74 50C68 50 65 47 63 43" {...common} />
+          <path d="M13 48H45C56 48 56 62 46 62C41 62 38 59 36 55" {...common} />
         </>
-      ) : stage.glyph === "network" ? (
+      ) : stage.glyph === "sun" ? (
         <>
-          <path d="M29 33L52 22L76 36L75 68L49 82L27 66Z" {...common} />
-          <path d="M29 33L52 52L76 36M52 52L75 68M52 52L49 82M52 52L27 66" {...common} />
-          {[
-            [29, 33],
-            [52, 22],
-            [76, 36],
-            [75, 68],
-            [49, 82],
-            [27, 66],
-            [52, 52],
-          ].map(([cx, cy], index) => (
-            <circle
-              key={index}
-              cx={cx}
-              cy={cy}
-              r={index === 6 ? 5.5 : 3.6}
-              fill={index === 6 ? stage.accent : stage.soft}
-              opacity={reveal}
-            />
-          ))}
+          <circle cx="46" cy="36" r="15" {...common} />
+          {Array.from({ length: 8 }, (_, index) => {
+            const angle = (index / 8) * TAU + frame * 0.0008;
+            const x1 = 46 + Math.cos(angle) * 23;
+            const y1 = 36 + Math.sin(angle) * 23;
+            const x2 = 46 + Math.cos(angle) * 31;
+            const y2 = 36 + Math.sin(angle) * 31;
+            return (
+              <path
+                key={index}
+                d={`M${x1} ${y1}L${x2} ${y2}`}
+                {...common}
+                stroke={index % 2 === 0 ? stage.deep : stage.accent}
+              />
+            );
+          })}
         </>
       ) : (
         <>
-          {[0, 90, 180, 270].map((rotation) => (
-            <ellipse
-              key={rotation}
-              cx="52"
-              cy="35"
-              rx="12"
-              ry="22"
-              transform={`rotate(${rotation} 52 52)`}
-              {...common}
-            />
-          ))}
-          <circle cx="52" cy="52" r="8" fill={stage.accent} opacity={reveal * 0.74} />
+          <path
+            d="M18 38C18 22 30 12 45 12C57 12 67 19 71 29"
+            {...common}
+          />
+          <path d="M64 22L72 30L78 21" {...common} stroke={stage.accent} />
+          <path
+            d="M74 36C74 52 62 62 47 62C35 62 25 55 21 45"
+            {...common}
+          />
+          <path d="M28 52L20 44L14 53" {...common} stroke={stage.accent} />
         </>
       )}
     </svg>
   );
 };
 
-const EmptyContentBay: React.FC<{
+const EmptyCallout: React.FC<{
   readonly frame: number;
   readonly stage: Stage;
-}> = ({ frame, stage }) => {
-  const reveal = phase(frame, stage.start + 72, stage.start + 142);
-  const detail = phase(frame, stage.start + 104, stage.start + 164);
-  const isBelow = stage.bayY > stage.y;
-  const bayX = stage.x - 170;
-  const leaderTop = isBelow ? stage.y + 122 : stage.bayY + 148;
-  const leaderHeight = isBelow
-    ? Math.max(0, stage.bayY - leaderTop)
-    : Math.max(0, stage.y - 122 - leaderTop);
+  readonly index: number;
+}> = ({ frame, stage, index }) => {
+  const leader = phase(
+    frame,
+    stage.start + 46,
+    stage.start + 102,
+    Easing.inOut(Easing.cubic),
+  );
+  const reveal = phase(
+    frame,
+    stage.start + 82,
+    stage.start + 142,
+    Easing.out(Easing.back(1.02)),
+  );
+  const detail = phase(frame, stage.start + 112, stage.start + 168);
+  const verticalDirection = stage.card.y < CENTER_Y ? -1 : 1;
 
   return (
     <>
+      <svg
+        width={WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        style={{ position: "absolute", inset: 0, zIndex: 8 }}
+        aria-hidden
+      >
+        <defs>
+          <filter
+            id={`leader-glow-${stage.id}`}
+            x="-50%"
+            y="-80%"
+            width="200%"
+            height="260%"
+          >
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path
+          d={stage.leaderPath}
+          fill="none"
+          stroke="rgba(61,91,75,0.16)"
+          strokeWidth="8"
+          strokeLinecap="round"
+        />
+        <path
+          d={stage.leaderPath}
+          fill="none"
+          stroke={stage.accent}
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          pathLength="1"
+          strokeDasharray="1"
+          strokeDashoffset={1 - leader}
+          filter={`url(#leader-glow-${stage.id})`}
+        />
+        <circle
+          cx={stage.anchor.x}
+          cy={stage.anchor.y}
+          r="7"
+          fill="#ffffff"
+          stroke={stage.accent}
+          strokeWidth="3"
+          opacity={detail}
+        />
+      </svg>
       <div
         style={{
           position: "absolute",
-          left: stage.x - 1,
-          top: leaderTop,
-          width: 2,
-          height: leaderHeight,
-          opacity: detail,
-          background: `linear-gradient(${isBelow ? "180deg" : "0deg"}, ${stage.accent}aa, transparent)`,
-          boxShadow: `0 0 12px ${stage.accent}66`,
-          zIndex: 11,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: bayX,
-          top: stage.bayY,
-          width: 340,
-          height: 148,
-          borderRadius: 30,
+          left: stage.card.x,
+          top: stage.card.y,
+          width: stage.card.width,
+          height: stage.card.height,
           opacity: reveal,
-          transform: `translateY(${(1 - reveal) * (isBelow ? 18 : -18)}px) scale(${0.96 + reveal * 0.04})`,
-          transformOrigin: isBelow ? "50% 0%" : "50% 100%",
+          transform: `translateY(${(1 - reveal) * verticalDirection * 18}px) scale(${0.96 + reveal * 0.04})`,
+          transformOrigin:
+            verticalDirection < 0 ? "50% 100%" : "50% 0%",
+          borderRadius: 35,
           background:
-            "linear-gradient(145deg, rgba(255,255,255,0.115), rgba(255,255,255,0.025) 43%, rgba(3,7,22,0.34) 100%)",
-          border: "1px solid rgba(228,238,255,0.16)",
-          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -18px 40px rgba(2,5,17,0.16), 0 22px 65px rgba(0,0,0,0.25), 0 0 34px ${stage.accent}0d`,
-          backdropFilter: "blur(24px) saturate(138%)",
+            "linear-gradient(145deg, rgba(255,255,255,0.78), rgba(255,255,255,0.34) 48%, rgba(238,245,239,0.56) 100%)",
+          border: "1px solid rgba(255,255,255,0.9)",
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.94), inset 0 -18px 36px rgba(66,101,82,0.055), 0 24px 52px rgba(54,82,67,0.14), 0 7px 18px ${stage.accent}18`,
+          backdropFilter: "blur(26px) saturate(128%)",
           overflow: "hidden",
-          zIndex: 14,
+          zIndex: 10,
         }}
       >
         <div
           style={{
             position: "absolute",
-            left: 18,
-            right: 18,
-            top: 18,
-            bottom: 18,
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            background: `linear-gradient(180deg, ${stage.pale}, ${stage.accent}, ${stage.deep})`,
+            opacity: detail * 0.9,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 24,
+            right: 22,
+            top: 22,
+            bottom: 22,
           }}
         >
-          <CornerGuides color={stage.soft} opacity={detail * 0.28} />
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: isBelow ? -18 : undefined,
-              bottom: isBelow ? undefined : -18,
-              width: 68 * detail,
-              height: 3,
-              borderRadius: 8,
-              transform: "translateX(-50%)",
-              background: `linear-gradient(90deg, transparent, ${stage.accent}, transparent)`,
-              boxShadow: `0 0 18px ${stage.accent}88`,
-            }}
-          />
+          <CornerGuides color={stage.deep} opacity={detail * 0.3} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: 34,
+            top: "50%",
+            width: 64,
+            height: 64,
+            borderRadius:
+              index % 2 === 0
+                ? "42% 58% 52% 48% / 48% 44% 56% 52%"
+                : "50%",
+            transform: `translateY(-50%) rotate(${index * 18}deg)`,
+            background: `radial-gradient(circle at 34% 26%, rgba(255,255,255,0.95), ${stage.pale} 42%, ${stage.accent} 100%)`,
+            border: "1px solid rgba(255,255,255,0.92)",
+            boxShadow: `inset 0 2px 7px rgba(255,255,255,0.76), 0 12px 23px ${stage.accent}24`,
+            opacity: detail,
+          }}
+        >
           <div
             style={{
               position: "absolute",
               left: "50%",
               top: "50%",
-              width: 116,
-              height: 54,
+              width: 17,
+              height: 17,
+              borderRadius: "50%",
               transform: "translate(-50%, -50%)",
-              borderRadius: 18,
-              border: `1px solid ${stage.soft}12`,
-              background: `radial-gradient(circle, ${stage.accent}0d, transparent 72%)`,
-              opacity: detail * 0.7,
+              background: "rgba(255,255,255,0.72)",
+              border: `1px solid ${stage.deep}44`,
+              boxShadow: `0 0 0 7px ${stage.accent}18`,
             }}
           />
         </div>
         <div
           style={{
             position: "absolute",
-            left: -70 + detail * 420,
-            top: -50,
-            width: 90,
-            height: 250,
+            left: 122,
+            right: 30,
+            top: 28,
+            bottom: 28,
+            borderRadius: 22,
+            border: `1px solid ${stage.deep}14`,
+            background: `radial-gradient(ellipse at 36% 45%, ${stage.accent}0b, transparent 68%)`,
+            opacity: detail,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: -80 + detail * (stage.card.width + 170),
+            top: -70,
+            width: 82,
+            height: stage.card.height + 140,
             transform: "rotate(18deg)",
             background:
-              "linear-gradient(90deg, transparent, rgba(255,255,255,0.055), transparent)",
-            opacity: 0.5,
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent)",
+            opacity: 0.45,
           }}
         />
       </div>
-      <div
-        style={{
-          position: "absolute",
-          left: stage.x - 7,
-          top: isBelow ? stage.bayY - 7 : stage.bayY + 141,
-          width: 14,
-          height: 14,
-          borderRadius: "50%",
-          opacity: detail,
-          background: stage.accent,
-          border: "2px solid rgba(255,255,255,0.74)",
-          boxShadow: `0 0 20px ${stage.accent}`,
-          zIndex: 16,
-        }}
-      />
     </>
   );
 };
 
-const CircularStage: React.FC<{
+const OrganicStation: React.FC<{
   readonly frame: number;
   readonly stage: Stage;
   readonly index: number;
 }> = ({ frame, stage, index }) => {
+  const point = pointOnOrbit(stage.angle);
+  const angle = tangentAngle(stage.angle);
   const shell = phase(
     frame,
-    stage.start,
-    stage.start + 64,
-    Easing.out(Easing.back(1.08)),
-  );
-  const arc = phase(
-    frame,
     stage.start + 18,
-    stage.start + 112,
-    Easing.inOut(Easing.cubic),
+    stage.start + 76,
+    Easing.out(Easing.back(1.12)),
   );
-  const detail = phase(frame, stage.start + 52, stage.start + 126);
-  const arrow = phase(frame, stage.start + 94, stage.start + 132);
-  const complete = phase(frame, 540, 666);
-  const leaderAngle = (135 + 266.4 * arc) * (Math.PI / 180);
-  const endpointAngle = (135 + 266.4) * (Math.PI / 180);
-  const leaderX = 130 + Math.cos(leaderAngle) * 111;
-  const leaderY = 130 + Math.sin(leaderAngle) * 111;
-  const endX = 130 + Math.cos(endpointAngle) * 111;
-  const endY = 130 + Math.sin(endpointAngle) * 111;
-  const active = Math.sin((frame - 560) / 30 + index * 0.7) * 0.5 + 0.5;
-  const pulse = complete * active;
+  const detail = phase(frame, stage.start + 54, stage.start + 122);
+  const complete = phase(frame, 570, 680);
+  const pulse =
+    complete *
+    (0.5 + Math.sin((frame - 560) / 28 + index * 0.78) * 0.5);
+  const float = Math.sin(frame / 58 + index * 1.25) * 2.3 * complete;
 
   return (
     <>
-      <EmptyContentBay frame={frame} stage={stage} />
+      <EmptyCallout
+        frame={frame}
+        stage={stage}
+        index={index}
+      />
       <div
         style={{
           position: "absolute",
-          left: stage.x - 150,
-          top: stage.y - 150,
-          width: 300,
-          height: 300,
+          left: point.x - 93,
+          top: point.y - 61 + float,
+          width: 186,
+          height: 122,
           opacity: shell,
-          transform: `scale(${0.72 + shell * 0.28})`,
-          zIndex: 20,
+          transform: `rotate(${angle}deg) scale(${0.68 + shell * 0.32})`,
+          zIndex: 15,
         }}
       >
         <div
           style={{
             position: "absolute",
-            inset: 8,
+            left: 12,
+            right: 12,
+            top: 31,
+            height: 90,
             borderRadius: "50%",
-            background: `radial-gradient(circle, ${stage.accent}${complete > 0.01 ? "24" : "18"} 0%, ${stage.secondary}0d 40%, transparent 70%)`,
-            filter: "blur(20px)",
-            transform: `scale(${1 + pulse * 0.07})`,
-            opacity: 0.72 + pulse * 0.22,
+            background: "rgba(45,73,58,0.18)",
+            filter: "blur(17px)",
+            transform: `translateY(${14 + pulse * 4}px) scaleX(${0.86 + pulse * 0.08})`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius:
+              index % 2 === 0
+                ? "46% 54% 48% 52% / 58% 43% 57% 42%"
+                : "54% 46% 57% 43% / 44% 56% 44% 56%",
+            background: `radial-gradient(circle at 31% 24%, rgba(255,255,255,0.96), ${stage.pale} 34%, ${stage.accent} 70%, ${stage.deep} 118%)`,
+            border: "2px solid rgba(255,255,255,0.88)",
+            boxShadow: `inset 0 5px 16px rgba(255,255,255,0.68), inset 0 -18px 30px rgba(26,76,53,0.16), 0 16px 28px rgba(45,73,58,0.19), 0 0 ${24 + pulse * 22}px ${stage.accent}3d`,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 12,
+              top: 10,
+              width: 88,
+              height: 35,
+              borderRadius: "50%",
+              transform: "rotate(-9deg)",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.8), transparent)",
+              filter: "blur(3px)",
+              opacity: 0.78,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 13,
+              borderRadius: "inherit",
+              border: `1px solid ${stage.deep}22`,
+              opacity: detail,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: `rotate(${-angle}deg)`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: detail,
+          }}
+        >
+          <StageGlyph stage={stage} reveal={detail} frame={frame} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: -7,
+            top: 54,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            background: "#ffffff",
+            border: `3px solid ${stage.accent}`,
+            boxShadow: `0 4px 10px rgba(40,74,56,0.18), 0 0 16px ${stage.accent}`,
+            opacity: detail,
+          }}
+        />
+      </div>
+    </>
+  );
+};
+
+const RegenerativeCore: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const shell = phase(
+    frame,
+    30,
+    110,
+    Easing.out(Easing.back(1.08)),
+  );
+  const detail = phase(frame, 64, 146);
+  const complete = phase(frame, 566, 700, Easing.out(Easing.cubic));
+  const settle = phase(frame, 690, 770);
+  const breathe = Math.sin(frame / 46) * 0.5 + 0.5;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: CENTER_X - 168,
+        top: CENTER_Y - 168,
+        width: 336,
+        height: 336,
+        opacity: shell,
+        transform: `scale(${0.72 + shell * 0.28 + complete * breathe * 0.012}) translateY(${complete * -4}px)`,
+        zIndex: 12,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 32,
+          right: 32,
+          top: 223,
+          height: 88,
+          borderRadius: "50%",
+          background: "rgba(47,79,61,0.23)",
+          filter: "blur(24px)",
+          transform: `scaleX(${0.78 + settle * 0.08})`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 10,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 33% 25%, rgba(255,255,255,0.94), rgba(255,255,255,0.42) 22%, rgba(169,225,193,0.28) 52%, rgba(61,149,108,0.22) 75%, rgba(35,101,74,0.13) 100%)",
+          border: "2px solid rgba(255,255,255,0.88)",
+          boxShadow: `inset 0 10px 24px rgba(255,255,255,0.65), inset 0 -40px 74px rgba(46,129,88,0.13), 0 33px 62px rgba(43,74,58,0.18), 0 0 ${48 + complete * 34}px rgba(72,190,121,0.2)`,
+          backdropFilter: "blur(28px) saturate(135%)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 43,
+            top: 25,
+            width: 128,
+            height: 54,
+            borderRadius: "50%",
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.76), transparent)",
+            transform: "rotate(-25deg)",
+            filter: "blur(5px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 23,
+            borderRadius: "50%",
+            border: "1px solid rgba(46,111,78,0.16)",
+            boxShadow: "inset 0 0 42px rgba(255,255,255,0.28)",
           }}
         />
         <svg
-          width={260}
-          height={260}
-          viewBox="0 0 260 260"
-          style={{
-            position: "absolute",
-            left: 20,
-            top: 20,
-            overflow: "visible",
-          }}
+          width="316"
+          height="316"
+          viewBox="0 0 316 316"
+          style={{ position: "absolute", inset: 0 }}
           aria-hidden
         >
           <defs>
-            <linearGradient
-              id={`arc-${stage.id}`}
-              x1="30"
-              y1="200"
-              x2="230"
-              y2="60"
-            >
-              <stop offset="0%" stopColor={stage.secondary} />
-              <stop offset="58%" stopColor={stage.accent} />
-              <stop offset="100%" stopColor="#ffffff" />
+            <linearGradient id="core-leaf" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#17875f" />
+              <stop offset="48%" stopColor="#43bd7b" />
+              <stop offset="100%" stopColor="#65c7c0" />
             </linearGradient>
-            <radialGradient id={`halo-${stage.id}`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={stage.accent} stopOpacity="0.14" />
-              <stop offset="100%" stopColor={stage.accent} stopOpacity="0" />
-            </radialGradient>
-            <filter
-              id={`stage-glow-${stage.id}`}
-              x="-60%"
-              y="-60%"
-              width="220%"
-              height="220%"
-            >
+            <filter id="core-glow" x="-60%" y="-60%" width="220%" height="220%">
               <feGaussianBlur stdDeviation="5" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
@@ -703,208 +1027,167 @@ const CircularStage: React.FC<{
             </filter>
           </defs>
           <circle
-            cx="130"
-            cy="130"
-            r="121"
-            fill={`url(#halo-${stage.id})`}
-            opacity={detail * 0.5 + pulse * 0.2}
-          />
-          <circle
-            cx="130"
-            cy="130"
-            r="118"
+            cx="158"
+            cy="158"
+            r="112"
             fill="none"
-            stroke="rgba(224,236,255,0.12)"
-            strokeWidth="1.2"
-            strokeDasharray="3 11"
-            opacity={detail * 0.82}
-            transform={`rotate(${frame * (index % 2 === 0 ? 0.1 : -0.1)} 130 130)`}
-          />
-          <circle
-            cx="130"
-            cy="130"
-            r="111"
-            fill="none"
-            stroke={`url(#arc-${stage.id})`}
-            strokeWidth="5"
-            strokeLinecap="round"
-            pathLength="1"
-            strokeDasharray={`${0.74 * arc} 1`}
-            transform="rotate(135 130 130)"
-            filter={`url(#stage-glow-${stage.id})`}
-          />
-          {arc > 0.01 ? (
-            <>
-              <circle
-                cx={leaderX}
-                cy={leaderY}
-                r="13"
-                fill={stage.accent}
-                opacity="0.12"
-              />
-              <circle cx={leaderX} cy={leaderY} r="4.5" fill="#ffffff" />
-            </>
-          ) : null}
-          <g
-            transform={`translate(${endX} ${endY}) rotate(${131.4})`}
-            opacity={arrow}
-          >
-            <path
-              d="M-9 -7L9 0L-9 7Z"
-              fill={stage.accent}
-              filter={`url(#stage-glow-${stage.id})`}
-            />
-          </g>
-          <circle
-            cx={130 + Math.cos((135 * Math.PI) / 180) * 111}
-            cy={130 + Math.sin((135 * Math.PI) / 180) * 111}
-            r="6.5"
-            fill={stage.secondary}
-            stroke="rgba(255,255,255,0.76)"
-            strokeWidth="2"
+            stroke="rgba(35,117,81,0.15)"
+            strokeWidth="1.4"
+            strokeDasharray="3 12"
+            strokeDashoffset={frame * 0.14}
             opacity={detail}
-            filter={`url(#stage-glow-${stage.id})`}
+          />
+          <circle
+            cx="158"
+            cy="158"
+            r="95"
+            fill="none"
+            stroke="url(#core-leaf)"
+            strokeWidth={2 + complete * 2.2}
+            pathLength="1"
+            strokeDasharray={`${0.78 * detail + complete * 0.22} 1`}
+            strokeLinecap="round"
+            opacity={0.44 + complete * 0.44}
+            filter="url(#core-glow)"
+            transform={`rotate(${-90 + frame * 0.025} 158 158)`}
+          />
+          {[0, 120, 240].map((rotation, index) => {
+            const local = phase(frame, 82 + index * 14, 154 + index * 14);
+            return (
+              <g
+                key={rotation}
+                transform={`rotate(${rotation + complete * 6} 158 158)`}
+              >
+                <path
+                  d="M158 158C112 145 94 104 116 75C155 81 179 111 158 158Z"
+                  fill={`rgba(${index === 0 ? "73,189,120" : index === 1 ? "57,189,196" : "239,180,76"},${0.08 + complete * 0.06})`}
+                  stroke={index === 0 ? "#208d63" : index === 1 ? "#278b9b" : "#cc842a"}
+                  strokeWidth="2.7"
+                  pathLength="1"
+                  strokeDasharray="1"
+                  strokeDashoffset={1 - local}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter="url(#core-glow)"
+                />
+                <path
+                  d="M158 158C145 130 134 108 117 77"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.8)"
+                  strokeWidth="1.6"
+                  pathLength="1"
+                  strokeDasharray="1"
+                  strokeDashoffset={1 - local}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          })}
+          <circle
+            cx="158"
+            cy="158"
+            r={20 + complete * 4}
+            fill="rgba(255,255,255,0.76)"
+            stroke="#3bab78"
+            strokeWidth="2.4"
+            opacity={detail}
+          />
+          <circle
+            cx="158"
+            cy="158"
+            r={7 + breathe * complete * 2}
+            fill="#2aaa70"
+            opacity={detail}
+            filter="url(#core-glow)"
           />
         </svg>
         <div
           style={{
             position: "absolute",
-            left: 68,
-            top: 68,
-            width: 164,
-            height: 164,
-            borderRadius: "50%",
-            background: `radial-gradient(circle at 34% 28%, rgba(255,255,255,0.24), ${stage.accent}20 30%, ${stage.secondary}10 56%, rgba(2,6,20,0.58) 100%)`,
-            border: "1px solid rgba(232,241,255,0.2)",
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -24px 48px rgba(0,0,0,0.2), 0 22px 58px rgba(0,0,0,0.28), 0 0 ${30 + pulse * 24}px ${stage.accent}22`,
-            backdropFilter: "blur(22px) saturate(145%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            inset: -60,
+            background: `conic-gradient(from ${frame * 0.06}deg, transparent, rgba(255,255,255,0.16), transparent 22%, rgba(83,200,154,0.09), transparent 53%)`,
+            opacity: detail * 0.6,
           }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 11,
-              borderRadius: "50%",
-              border: `1px solid ${stage.soft}16`,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              inset: 22,
-              borderRadius: "50%",
-              background: `conic-gradient(from ${frame * 0.2 + index * 35}deg, transparent, ${stage.accent}10, transparent 34%, ${stage.secondary}0c, transparent 72%)`,
-              opacity: detail,
-            }}
-          />
-          <StageGlyph stage={stage} reveal={detail} frame={frame} />
-          <div
-            style={{
-              position: "absolute",
-              left: 34,
-              top: 23,
-              width: 52,
-              height: 18,
-              borderRadius: "50%",
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,0.2), transparent)",
-              transform: "rotate(-24deg)",
-              filter: "blur(5px)",
-              opacity: detail * 0.75,
-            }}
-          />
-        </div>
+        />
       </div>
-    </>
+      {Array.from({ length: 5 }, (_, index) => {
+        const angle = (index / 5) * TAU + frame * 0.004;
+        const radius = 155 + complete * 8;
+        return (
+          <div
+            key={index}
+            style={{
+              position: "absolute",
+              left: 168 + Math.cos(angle) * radius - 4.5,
+              top: 168 + Math.sin(angle) * radius - 4.5,
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              background: STAGES[index].accent,
+              border: "2px solid rgba(255,255,255,0.86)",
+              boxShadow: `0 0 16px ${STAGES[index].accent}`,
+              opacity: complete,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 };
 
-const CompletionField: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const reveal = phase(frame, 548, 660, Easing.out(Easing.cubic));
-  const settle = phase(frame, 650, 740);
-  const radius = 420;
-  const circumference = TAU * radius;
+const CompletionHalo: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const reveal = phase(frame, 588, 700, Easing.out(Easing.cubic));
+  const settle = phase(frame, 690, 770);
 
   return (
     <svg
       width={WIDTH}
       height={HEIGHT}
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      style={{ position: "absolute", inset: 0, zIndex: 8 }}
+      style={{ position: "absolute", inset: 0, zIndex: 4 }}
       aria-hidden
     >
       <defs>
-        <linearGradient id="completion-ring" x1="470" y1="540" x2="1450" y2="540">
-          <stop offset="0%" stopColor="#53d9ff" stopOpacity="0" />
-          <stop offset="22%" stopColor="#53d9ff" />
-          <stop offset="46%" stopColor="#a78bff" />
-          <stop offset="69%" stopColor="#ff8d72" />
-          <stop offset="88%" stopColor="#57e4b4" />
-          <stop offset="100%" stopColor="#57e4b4" stopOpacity="0" />
-        </linearGradient>
-        <filter id="completion-glow" x="-30%" y="-60%" width="160%" height="220%">
-          <feGaussianBlur stdDeviation="7" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        <radialGradient id="completion-field">
+          <stop offset="0%" stopColor="#57bf89" stopOpacity="0.11" />
+          <stop offset="55%" stopColor="#7bc8b3" stopOpacity="0.035" />
+          <stop offset="100%" stopColor="#7bc8b3" stopOpacity="0" />
+        </radialGradient>
       </defs>
       <ellipse
-        cx="960"
-        cy="520"
-        rx="790"
-        ry="420"
-        fill="none"
-        stroke="url(#completion-ring)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        pathLength="1"
-        strokeDasharray={`${0.86 * reveal} 1`}
-        transform="rotate(7 960 520)"
-        opacity={reveal * 0.42}
-        filter="url(#completion-glow)"
+        cx={CENTER_X}
+        cy={CENTER_Y}
+        rx={660 + settle * 18}
+        ry={390 + settle * 12}
+        fill="url(#completion-field)"
+        opacity={reveal}
       />
-      <circle
-        cx="960"
-        cy="520"
-        r={radius}
+      <ellipse
+        cx={CENTER_X}
+        cy={CENTER_Y}
+        rx={610 + settle * 12}
+        ry={350 + settle * 8}
         fill="none"
-        stroke="rgba(215,228,255,0.08)"
-        strokeWidth="1"
-        strokeDasharray="5 18"
-        strokeDashoffset={frame * 0.18}
-        opacity={settle * 0.58}
-        transform="scale(2 1)"
+        stroke="rgba(47,132,92,0.12)"
+        strokeWidth="1.4"
+        strokeDasharray="2 17"
+        strokeDashoffset={frame * 0.16}
+        opacity={reveal}
       />
       {STAGES.map((stage, index) => {
-        const local = phase(frame, 590 + index * 16, 665 + index * 16);
+        const point = pointOnOrbit(stage.angle, ORBIT_RX + 92, ORBIT_RY + 56);
+        const local = phase(frame, 610 + index * 12, 690 + index * 12);
         return (
-          <React.Fragment key={stage.id}>
-            <circle
-              cx={stage.x}
-              cy={stage.y}
-              r={138 + settle * 8}
-              fill="none"
-              stroke={stage.accent}
-              strokeWidth="1.4"
-              opacity={local * 0.16}
-            />
-            <circle
-              cx={stage.x}
-              cy={stage.y}
-              r={154 + settle * 10}
-              fill="none"
-              stroke={stage.soft}
-              strokeWidth="1"
-              strokeDasharray="3 16"
-              opacity={local * 0.12}
-              transform={`rotate(${frame * (index % 2 === 0 ? 0.08 : -0.08)} ${stage.x} ${stage.y})`}
-            />
-          </React.Fragment>
+          <circle
+            key={stage.id}
+            cx={point.x}
+            cy={point.y}
+            r={24 + settle * 7}
+            fill="none"
+            stroke={stage.accent}
+            strokeWidth="1.4"
+            opacity={local * 0.2}
+          />
         );
       })}
     </svg>
@@ -913,30 +1196,34 @@ const CompletionField: React.FC<{ readonly frame: number }> = ({ frame }) => {
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const fadeIn = phase(frame, 0, 30, Easing.out(Easing.quad));
+  const fadeIn = phase(frame, 0, 34, Easing.out(Easing.quad));
   const fadeOut =
     1 - phase(frame, 850, TOTAL_FRAMES - 1, Easing.in(Easing.quad));
-  const camera = phase(frame, 40, 820, Easing.inOut(Easing.quad));
+  const build = phase(frame, 22, 640, Easing.inOut(Easing.quad));
+  const settle = phase(frame, 670, 820, Easing.inOut(Easing.quad));
+  const scale = 0.986 + build * 0.018 - settle * 0.008;
+  const drift = Math.sin(frame / 170) * 1.4;
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "#01030a",
+        backgroundColor: "#dce5dc",
         overflow: "hidden",
       }}
     >
       <AbsoluteFill style={{ opacity: fadeIn * fadeOut }}>
-        <Background frame={frame} />
+        <MineralBackground frame={frame} />
         <AbsoluteFill
           style={{
-            transform: `scale(${1 + camera * 0.008}) translateY(${Math.sin(frame / 180) * 1.2}px)`,
+            transform: `translateY(${drift}px) scale(${scale})`,
             transformOrigin: "50% 50%",
           }}
         >
-          <ProcessConnectors frame={frame} />
-          <CompletionField frame={frame} />
+          <CompletionHalo frame={frame} />
+          <CycleTrack frame={frame} />
+          <RegenerativeCore frame={frame} />
           {STAGES.map((stage, index) => (
-            <CircularStage
+            <OrganicStation
               key={stage.id}
               frame={frame}
               stage={stage}
