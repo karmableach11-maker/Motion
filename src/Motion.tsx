@@ -3,1537 +3,616 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
+  interpolateColors,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
-const TOTAL_FRAMES = 900;
 const TAU = Math.PI * 2;
 
-const clamp = (value: number, min = 0, max = 1): number =>
-  Math.max(min, Math.min(max, value));
+const COLORS = {
+  deep: "#061535",
+  midnight: "#0a2051",
+  teal: "#0a6877",
+  cyan: "#49f4e3",
+  cyanSoft: "#b9fff7",
+  cobalt: "#4d5bff",
+  indigo: "#242975",
+  amber: "#ffca61",
+  amberSoft: "#ffe9aa",
+  mint: "#62f6b5",
+  mintSoft: "#c8ffe9",
+  coral: "#ff7a7f",
+  panel: "#dce7df",
+  panelLight: "#f5f8ef",
+  panelMid: "#bdcbc3",
+  panelDark: "#718985",
+  ink: "#10212a",
+  inkSoft: "#4d6467",
+};
 
-const phase = (
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const mix = (from: number, to: number, amount: number) =>
+  from + (to - from) * amount;
+const modulo = (value: number, length = 1) =>
+  ((value % length) + length) % length;
+
+const segment = (
   frame: number,
   start: number,
   end: number,
-  easing: (value: number) => number = Easing.out(Easing.cubic),
-): number =>
+  easing: (value: number) => number = Easing.linear,
+) =>
   interpolate(frame, [start, end], [0, 1], {
+    easing,
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
-    easing,
   });
 
-const seeded = (seed: number): number => {
-  const value = Math.sin(seed * 91.317 + 17.131) * 43758.5453;
+const hash01 = (seed: number) => {
+  const value = Math.sin(seed * 91.177 + 17.731) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const PANEL: React.CSSProperties = {
-  border: "1px solid rgba(111,218,255,0.18)",
-  background:
-    "linear-gradient(145deg, rgba(10,29,45,0.94), rgba(4,15,27,0.9))",
-  boxShadow:
-    "0 28px 85px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.045)",
+const getMigrationProgress = (frame: number) => {
+  if (frame < 54) return 0;
+  if (frame < 240) {
+    return mix(0, 0.22, segment(frame, 54, 240, Easing.inOut(Easing.cubic)));
+  }
+  if (frame < 390) {
+    return mix(
+      0.22,
+      0.42,
+      segment(frame, 240, 390, Easing.inOut(Easing.cubic)),
+    );
+  }
+  if (frame < 650) {
+    return mix(
+      0.42,
+      0.86,
+      segment(frame, 390, 650, Easing.inOut(Easing.cubic)),
+    );
+  }
+  if (frame < 762) {
+    return mix(0.86, 1, segment(frame, 650, 762, Easing.inOut(Easing.cubic)));
+  }
+  return 1;
 };
 
-const STARS = Array.from({ length: 72 }, (_, index) => ({
-  x: seeded(index + 1) * WIDTH,
-  y: seeded(index + 101) * HEIGHT,
-  size: 0.8 + seeded(index + 201) * 2.4,
-  opacity: 0.1 + seeded(index + 301) * 0.34,
-  phase: seeded(index + 401) * TAU,
+const phaseOpacity = (frame: number, start: number, end: number, fade = 10) =>
+  segment(frame, start, start + fade, Easing.out(Easing.cubic)) *
+  (1 - segment(frame, end - fade, end, Easing.in(Easing.cubic)));
+
+const AMBIENT_PIXELS = Array.from({ length: 58 }, (_, index) => ({
+  x: hash01(index * 7 + 3) * WIDTH,
+  y: hash01(index * 13 + 9) * HEIGHT,
+  size: 2 + Math.floor(hash01(index * 17 + 2) * 5),
+  phase: hash01(index * 19 + 5),
+  speed: 7 + hash01(index * 23 + 1) * 17,
+  opacity: 0.05 + hash01(index * 29 + 7) * 0.17,
 }));
 
-const STREAMS = Array.from({ length: 11 }, (_, index) => ({
-  y: 95 + seeded(index + 501) * 885,
-  length: 100 + seeded(index + 601) * 250,
-  speed: 0.35 + seeded(index + 701) * 0.75,
-  offset: seeded(index + 801) * 2300,
-}));
+const RECORD_ROWS = [
+  "CUSTOMER.DB",
+  "ORDERS.DAT",
+  "ARCHIVE.BIN",
+  "INDEX.CAT",
+  "LEDGER.LOG",
+] as const;
 
-const CheckMark: React.FC<{
+const STAGES = [
+  { label: "INVENTORY", threshold: 0.22 },
+  { label: "TRANSFORM", threshold: 0.42 },
+  { label: "TRANSFER", threshold: 0.86 },
+  { label: "VERIFY", threshold: 1 },
+] as const;
+
+const DotMatrixText: React.FC<{
+  readonly children: React.ReactNode;
   readonly color?: string;
   readonly size?: number;
-}> = ({ color = "#5ff2c2", size = 24 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-    <path
-      d="M5 12.6L9.3 16.9L19.2 7.1"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2.6"
-    />
-  </svg>
-);
-
-const CrossMark: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-}> = ({ color = "#ff6d83", size = 24 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-    <path
-      d="M7 7L17 17M17 7L7 17"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeWidth="2.6"
-    />
-  </svg>
-);
-
-const ShieldIcon: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-  readonly checked?: boolean;
-}> = ({ color = "#6fe7ff", size = 34, checked = false }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
-    <path
-      d="M18 3.8L31 8.6V17.2C31 25.2 26 30.7 18 33.2C10 30.7 5 25.2 5 17.2V8.6L18 3.8Z"
-      fill={`${color}15`}
-      stroke={color}
-      strokeLinejoin="round"
-      strokeWidth="1.8"
-    />
-    {checked ? (
-      <path
-        d="M11.4 18.3L15.8 22.7L24.9 13.5"
-        fill="none"
-        stroke={color}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2.3"
-      />
-    ) : (
-      <>
-        <circle cx="18" cy="16.2" r="3.2" fill="none" stroke={color} strokeWidth="1.8" />
-        <path d="M18 19.5V24" stroke={color} strokeLinecap="round" strokeWidth="2" />
-      </>
-    )}
-  </svg>
-);
-
-const FingerprintIcon: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-}> = ({ color = "#73e9ff", size = 38 }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden>
-    <path
-      d="M7.4 18.4C7.4 11.7 12.9 6.2 19.7 6.2C26.4 6.2 31.8 11.5 31.9 18.1M11.2 21.4V18.5C11.2 13.7 15 9.9 19.7 9.9C24.4 9.9 28.1 13.6 28.1 18.3V22.9M15 24V18.7C15 16 17.1 13.8 19.8 13.8C22.5 13.8 24.5 15.9 24.5 18.6V25.4M19.8 18.2V23.5C19.8 29.1 17.2 33 14.7 35M28.1 26.3C27.5 30.5 25.5 33.5 23.6 35.3M10.8 25.7C10.4 29.1 9.2 31.5 7.8 33.3"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeWidth="1.9"
-    />
-  </svg>
-);
-
-const ChipIcon: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-}> = ({ color = "#9a91ff", size = 36 }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
-    <rect x="8" y="8" width="20" height="20" rx="4" fill={`${color}15`} stroke={color} strokeWidth="1.8" />
-    <rect x="13" y="13" width="10" height="10" rx="2" fill="none" stroke={color} strokeWidth="1.6" />
-    <path
-      d="M12 3.5V8M18 3.5V8M24 3.5V8M12 28V32.5M18 28V32.5M24 28V32.5M3.5 12H8M3.5 18H8M3.5 24H8M28 12H32.5M28 18H32.5M28 24H32.5"
-      stroke={color}
-      strokeLinecap="round"
-      strokeWidth="1.7"
-    />
-  </svg>
-);
-
-const LinkIcon: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-}> = ({ color = "#60efc1", size = 36 }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
-    <path
-      d="M15.2 21L12 24.2C9.7 26.5 6 26.5 3.7 24.2C1.4 21.9 1.4 18.2 3.7 15.9L9 10.6C11.3 8.3 15 8.3 17.3 10.6"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeWidth="2.2"
-      transform="translate(5 0)"
-    />
-    <path
-      d="M20.8 15L24 11.8C26.3 9.5 30 9.5 32.3 11.8C34.6 14.1 34.6 17.8 32.3 20.1L27 25.4C24.7 27.7 21 27.7 18.7 25.4"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeWidth="2.2"
-      transform="translate(-5 0)"
-    />
-    <path d="M13.8 22.2L22.2 13.8" stroke={color} strokeLinecap="round" strokeWidth="2.2" />
-  </svg>
-);
-
-const PolicyIcon: React.FC<{
-  readonly color?: string;
-  readonly size?: number;
-}> = ({ color = "#ffbc6d", size = 36 }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
-    <path
-      d="M9 4.5H23L29 10.5V31.5H9V4.5Z"
-      fill={`${color}12`}
-      stroke={color}
-      strokeLinejoin="round"
-      strokeWidth="1.8"
-    />
-    <path d="M23 4.5V10.5H29M13.5 16H24.5M13.5 21H24.5M13.5 26H21" stroke={color} strokeLinecap="round" strokeWidth="1.8" />
-  </svg>
-);
-
-const ResourceIcon: React.FC<{
-  readonly type: "support" | "notes" | "pii" | "refund";
-  readonly color: string;
-}> = ({ type, color }) => (
-  <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden>
-    {type === "support" ? (
-      <>
-        <path d="M6 7H24V20H13L8 24V20H6V7Z" fill={`${color}12`} stroke={color} strokeLinejoin="round" strokeWidth="1.7" />
-        <path d="M10 11H20M10 15H18" stroke={color} strokeLinecap="round" strokeWidth="1.6" />
-      </>
-    ) : null}
-    {type === "notes" ? (
-      <>
-        <path d="M8 4.5H21.5L25 8V25.5H8V4.5Z" fill={`${color}12`} stroke={color} strokeLinejoin="round" strokeWidth="1.7" />
-        <path d="M12 11H21M12 15H21M12 19H18" stroke={color} strokeLinecap="round" strokeWidth="1.6" />
-      </>
-    ) : null}
-    {type === "pii" ? (
-      <>
-        <circle cx="15" cy="10.5" r="4" fill="none" stroke={color} strokeWidth="1.7" />
-        <path d="M7.5 24C8.5 18.8 11.2 16.5 15 16.5C18.8 16.5 21.5 18.8 22.5 24" fill={`${color}12`} stroke={color} strokeLinecap="round" strokeWidth="1.7" />
-      </>
-    ) : null}
-    {type === "refund" ? (
-      <>
-        <path d="M8 10H22V22H8V10Z" fill={`${color}12`} stroke={color} strokeWidth="1.7" />
-        <path d="M5 7H19M5 7L8.5 3.8M5 7L8.5 10.2M25 25H11M25 25L21.5 21.8M25 25L21.5 28.2" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
-      </>
-    ) : null}
-  </svg>
-);
-
-const Atmosphere: React.FC<{ readonly frame: number }> = ({ frame }) => (
-  <>
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(circle at 46% 42%, rgba(18,111,145,0.18), transparent 35%), radial-gradient(circle at 86% 22%, rgba(92,76,186,0.13), transparent 31%), linear-gradient(150deg, #020913 0%, #04111d 48%, #020810 100%)",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        opacity: 0.17,
-        backgroundImage:
-          "linear-gradient(rgba(105,216,255,0.085) 1px, transparent 1px), linear-gradient(90deg, rgba(105,216,255,0.085) 1px, transparent 1px)",
-        backgroundSize: "64px 64px",
-        transform: "perspective(900px) rotateX(56deg) scale(1.6) translateY(145px)",
-        transformOrigin: "center bottom",
-      }}
-    />
-    {STARS.map((star, index) => {
-      const pulse = 0.64 + 0.36 * Math.sin(frame * 0.018 + star.phase);
-      return (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left: star.x,
-            top: star.y,
-            width: star.size,
-            height: star.size,
-            borderRadius: "50%",
-            background: "#9eeeff",
-            opacity: star.opacity * pulse,
-            boxShadow: "0 0 8px rgba(102,228,255,0.65)",
-          }}
-        />
-      );
-    })}
-    {STREAMS.map((stream, index) => {
-      const x = ((frame * stream.speed + stream.offset) % 2350) - 300;
-      return (
-        <div
-          key={index}
-          style={{
-            position: "absolute",
-            left: x,
-            top: stream.y,
-            width: stream.length,
-            height: 1,
-            opacity: 0.16,
-            background:
-              "linear-gradient(90deg, transparent, rgba(92,229,255,0.82), transparent)",
-            filter: "blur(0.3px)",
-          }}
-        />
-      );
-    })}
-    <div
-      style={{
-        position: "absolute",
-        left: -180,
-        top: 80,
-        width: 720,
-        height: 720,
-        borderRadius: "50%",
-        background: "rgba(27,163,205,0.08)",
-        filter: "blur(130px)",
-      }}
-    />
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(ellipse at center, transparent 42%, rgba(0,3,8,0.68) 100%)",
-      }}
-    />
-  </>
-);
-
-const Header: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const active = phase(frame, 58, 94);
-  const lineWidth = phase(frame, 18, 72);
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: 92,
-        right: 92,
-        top: 46,
-        height: 78,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        opacity: reveal,
-        transform: `translateY(${(1 - reveal) * -18}px)`,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: 14,
-            background:
-              "linear-gradient(145deg, rgba(93,229,255,0.2), rgba(81,105,255,0.1))",
-            border: "1px solid rgba(111,232,255,0.34)",
-            boxShadow: "0 0 28px rgba(77,214,255,0.16)",
-          }}
-        >
-          <ShieldIcon color="#72eaff" size={34} />
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: 31,
-              fontWeight: 700,
-              letterSpacing: 0.2,
-              color: "#edfaff",
-              lineHeight: 1.1,
-            }}
-          >
-            AI Agent Identity &amp; Authorization Audit
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              color: "rgba(157,210,229,0.78)",
-              fontSize: 15,
-              fontWeight: 600,
-              letterSpacing: 2.2,
-              textTransform: "uppercase",
-            }}
-          >
-            Continuous zero-trust control plane
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div
-          style={{
-            height: 42,
-            display: "flex",
-            alignItems: "center",
-            gap: 11,
-            padding: "0 17px",
-            borderRadius: 12,
-            background: "rgba(80,240,188,0.075)",
-            border: "1px solid rgba(87,239,193,0.24)",
-            color: "#66eec2",
-            fontSize: 15,
-            fontWeight: 750,
-            letterSpacing: 1.5,
-          }}
-        >
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "#65f0bf",
-              boxShadow: `0 0 ${8 + Math.sin(frame * 0.09) * 3}px #65f0bf`,
-              opacity: active,
-            }}
-          />
-          AUDIT LIVE
-        </div>
-        <div
-          style={{
-            color: "rgba(174,217,233,0.72)",
-            fontSize: 15,
-            fontWeight: 650,
-            letterSpacing: 1,
-          }}
-        >
-          SESSION&nbsp; A9-2047
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          bottom: -1,
-          width: `${lineWidth * 100}%`,
-          height: 1,
-          background:
-            "linear-gradient(90deg, rgba(103,228,255,0.48), rgba(103,228,255,0.06), transparent)",
-        }}
-      />
-    </div>
-  );
-};
-
-const AgentCore: React.FC<{
-  readonly frame: number;
-  readonly verified: number;
-}> = ({ frame, verified }) => {
-  const spin = frame * 0.003;
-  const pulse = 0.65 + Math.sin(frame * 0.055) * 0.2;
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 170,
-        height: 170,
-        display: "grid",
-        placeItems: "center",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 7,
-          borderRadius: "50%",
-          border: "1px solid rgba(102,226,255,0.22)",
-          transform: `rotate(${spin}rad)`,
-        }}
-      >
-        {[0, 1, 2].map((index) => {
-          const angle = (index / 3) * TAU;
-          return (
-            <div
-              key={index}
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: index === 1 ? "#9d91ff" : "#6feaff",
-                boxShadow: "0 0 14px currentColor",
-                transform: `translate(-50%, -50%) rotate(${angle}rad) translateX(77px)`,
-              }}
-            />
-          );
-        })}
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          inset: 24,
-          borderRadius: "50%",
-          border: "1px dashed rgba(144,136,255,0.35)",
-          transform: `rotate(${-spin * 1.8}rad)`,
-        }}
-      />
-      <div
-        style={{
-          width: 105,
-          height: 105,
-          borderRadius: 29,
-          display: "grid",
-          placeItems: "center",
-          background:
-            "radial-gradient(circle at 32% 28%, rgba(116,234,255,0.3), rgba(34,77,105,0.62) 48%, rgba(8,23,38,0.95))",
-          border: "1px solid rgba(126,234,255,0.45)",
-          boxShadow: `0 0 ${34 + pulse * 14}px rgba(64,210,255,0.2), inset 0 0 25px rgba(103,224,255,0.08)`,
-        }}
-      >
-        <ChipIcon color={verified > 0.5 ? "#5ff0bf" : "#78eaff"} size={56} />
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 2,
-          bottom: 12,
-          width: 36,
-          height: 36,
-          borderRadius: 12,
-          display: "grid",
-          placeItems: "center",
-          background: verified > 0.5 ? "#0b3e35" : "#0b2c40",
-          border: `1px solid ${verified > 0.5 ? "rgba(87,240,188,0.55)" : "rgba(104,225,255,0.38)"}`,
-          boxShadow:
-            verified > 0.5
-              ? "0 0 22px rgba(87,240,188,0.24)"
-              : "0 0 18px rgba(88,216,255,0.18)",
-          transform: `scale(${0.85 + verified * 0.15})`,
-        }}
-      >
-        {verified > 0.5 ? (
-          <CheckMark color="#67f1c2" size={23} />
-        ) : (
-          <FingerprintIcon color="#78eaff" size={23} />
-        )}
-      </div>
-    </div>
-  );
-};
-
-const DataRow: React.FC<{
-  readonly label: string;
-  readonly value: string;
-  readonly accent?: string;
-}> = ({ label, value, accent = "#d9f6ff" }) => (
+  readonly letterSpacing?: number;
+  readonly align?: "left" | "center" | "right";
+  readonly style?: React.CSSProperties;
+}> = ({
+  children,
+  color = COLORS.ink,
+  size = 22,
+  letterSpacing = 2.2,
+  align = "left",
+  style,
+}) => (
   <div
     style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: 38,
-      borderBottom: "1px solid rgba(112,214,245,0.095)",
+      color,
+      fontFamily: "'Courier New', monospace",
+      fontSize: size,
+      fontWeight: 800,
+      letterSpacing,
+      lineHeight: 1.08,
+      textAlign: align,
+      fontVariantNumeric: "tabular-nums",
+      ...style,
     }}
   >
-    <span
-      style={{
-        fontSize: 15,
-        color: "rgba(153,204,222,0.74)",
-        fontWeight: 600,
-        letterSpacing: 0.3,
-      }}
-    >
-      {label}
-    </span>
-    <span
-      style={{
-        fontSize: 16,
-        color: accent,
-        fontWeight: 680,
-        letterSpacing: 0.2,
-      }}
-    >
-      {value}
-    </span>
+    {children}
   </div>
 );
 
-const AgentIdentityCard: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const verified = phase(frame, 376, 420);
-  const trust = phase(frame, 115, 402, Easing.inOut(Easing.cubic));
-  const trustValue = Math.round(trust * 98);
-  const signature = phase(frame, 300, 370);
+const CheckGlyph: React.FC<{
+  readonly size?: number;
+  readonly color?: string;
+  readonly stroke?: number;
+}> = ({ size = 18, color = COLORS.mint, stroke = 2.8 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <path
+      d="M5 12.5L9.2 16.6L19 7"
+      fill="none"
+      stroke={color}
+      strokeWidth={stroke}
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+    />
+  </svg>
+);
+
+const ArrowGlyph: React.FC<{ readonly color: string }> = ({ color }) => (
+  <svg width="24" height="24" viewBox="0 0 24 24">
+    <path
+      d="M4 12H19M14 7L19 12L14 17"
+      fill="none"
+      stroke={color}
+      strokeWidth="2.5"
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+    />
+  </svg>
+);
+
+const CLOUD_SVG_PATH =
+  "M343.454,170.099c0.01-0.583,0.022-1.165,0.022-1.75c0-55.728-45.177-100.905-100.905-100.905c-48.025,0-88.209,33.551-98.403,78.492c-9.505-5.321-20.454-8.368-32.122-8.368c-36.407,0-65.92,29.514-65.92,65.92c0,1.488,0.067,2.959,0.164,4.423C19.262,217.944,0,243.959,0,274.479c0,39.207,31.784,70.991,70.991,70.991h253.183c49.009,0,88.739-39.73,88.739-88.739C412.913,214.343,383.192,178.903,343.454,170.099z";
+
+const CloudGlyph: React.FC<{
+  readonly progress: number;
+  readonly time: number;
+  readonly complete: number;
+}> = ({ progress, time, complete }) => {
+  const fillY = 354 - progress * 298;
+  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.72);
+  const accent = interpolateColors(
+    complete,
+    [0, 1],
+    [COLORS.cyan, COLORS.mint],
+  );
+  const accentSoft = interpolateColors(
+    complete,
+    [0, 1],
+    [COLORS.cyanSoft, COLORS.mintSoft],
+  );
+  const tracerOffset = -modulo(time * 0.115, 1);
+
   return (
-    <div
+    <svg width="330" height="250" viewBox="-11 50 435 315">
+      <defs>
+        <clipPath id="migration-cloud-svg-clip">
+          <path d={CLOUD_SVG_PATH} />
+        </clipPath>
+        <linearGradient
+          id="migration-cloud-body"
+          x1="0"
+          y1="0"
+          x2="0.88"
+          y2="1"
+        >
+          <stop offset="0" stopColor="rgba(25,79,119,.98)" />
+          <stop offset="0.44" stopColor="rgba(9,38,82,.98)" />
+          <stop offset="1" stopColor="rgba(4,22,56,.99)" />
+        </linearGradient>
+        <linearGradient
+          id="migration-cloud-data"
+          x1="0"
+          y1="1"
+          x2="0.82"
+          y2="0"
+        >
+          <stop offset="0" stopColor={COLORS.cobalt} />
+          <stop offset="0.58" stopColor={accent} />
+          <stop offset="1" stopColor={accentSoft} />
+        </linearGradient>
+        <linearGradient
+          id="migration-cloud-sheen"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="1"
+        >
+          <stop offset="0" stopColor="rgba(225,255,252,.34)" />
+          <stop offset="0.28" stopColor="rgba(126,255,243,.08)" />
+          <stop offset="0.64" stopColor="rgba(63,114,176,0)" />
+          <stop offset="1" stopColor="rgba(98,246,181,.18)" />
+        </linearGradient>
+        <pattern
+          id="migration-cloud-grid"
+          width="28"
+          height="28"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M28 0H0V28"
+            fill="none"
+            stroke="rgba(184,255,248,.22)"
+            strokeWidth="1"
+          />
+          <rect
+            x="2"
+            y="2"
+            width="3"
+            height="3"
+            fill="rgba(194,255,249,.38)"
+          />
+        </pattern>
+        <filter
+          id="migration-cloud-bloom"
+          x="-35%"
+          y="-45%"
+          width="170%"
+          height="190%"
+        >
+          <feGaussianBlur stdDeviation="8" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter
+          id="migration-cloud-soft-glow"
+          x="-40%"
+          y="-50%"
+          width="180%"
+          height="200%"
+        >
+          <feGaussianBlur stdDeviation="15" />
+        </filter>
+      </defs>
+
+      <path
+        d={CLOUD_SVG_PATH}
+        fill="none"
+        stroke={accent}
+        strokeWidth="15"
+        opacity={0.17 + pulse * 0.08}
+        filter="url(#migration-cloud-soft-glow)"
+      />
+
+      <path
+        d={CLOUD_SVG_PATH}
+        fill="url(#migration-cloud-body)"
+        stroke="rgba(169,255,248,.3)"
+        strokeWidth="8"
+        strokeLinejoin="round"
+      />
+
+      <g clipPath="url(#migration-cloud-svg-clip)">
+        <rect
+          x="-18"
+          y={fillY}
+          width="460"
+          height={378 - fillY}
+          fill="url(#migration-cloud-data)"
+          opacity={0.24 + progress * 0.68}
+        />
+        <rect
+          x="-18"
+          y={fillY}
+          width="460"
+          height={378 - fillY}
+          fill="url(#migration-cloud-grid)"
+          opacity={0.12 + progress * 0.33}
+          transform={"translate(" + modulo(time * 9, 28) + " " + modulo(time * 5, 28) + ")"}
+        />
+
+        <path
+          d={
+            "M-20 " +
+            (fillY + Math.sin(time * 1.7) * 4) +
+            " C72 " +
+            (fillY - 12) +
+            " 136 " +
+            (fillY + 12) +
+            " 208 " +
+            (fillY + 1) +
+            " S342 " +
+            (fillY - 9) +
+            " 445 " +
+            (fillY + 2)
+          }
+          fill="none"
+          stroke={accentSoft}
+          strokeWidth="5"
+          opacity={0.76}
+          filter="url(#migration-cloud-bloom)"
+        />
+
+        {Array.from({ length: 14 }, (_, index) => {
+          const x = -8 + modulo(index * 51 + time * (18 + (index % 4) * 4), 445);
+          const y = 82 + modulo(index * 67 + time * (23 + (index % 3) * 5), 255);
+          const bitOpacity =
+            y > fillY ? 0.2 + progress * 0.56 : 0.05 + progress * 0.12;
+          return (
+            <g key={"cloud-data-" + index} opacity={bitOpacity}>
+              <rect
+                x={x}
+                y={y}
+                width={index % 3 === 0 ? 18 : 9}
+                height="8"
+                fill={index % 5 === 0 ? COLORS.mintSoft : COLORS.cyanSoft}
+              />
+              {index % 4 === 0 ? (
+                <rect
+                  x={x + 22}
+                  y={y}
+                  width="5"
+                  height="8"
+                  fill={COLORS.cyan}
+                  opacity="0.7"
+                />
+              ) : null}
+            </g>
+          );
+        })}
+
+        <path
+          d="M42 145H102L128 119H190M222 105H282L310 133H369M47 283H111L141 253H223L247 276H348"
+          fill="none"
+          stroke={accentSoft}
+          strokeWidth="2"
+          opacity={0.11 + progress * 0.24}
+          strokeDasharray="7 7"
+          strokeDashoffset={-time * 18}
+        />
+
+        <path
+          d={CLOUD_SVG_PATH}
+          fill="url(#migration-cloud-sheen)"
+          opacity={0.5}
+          transform="translate(-3 -4)"
+        />
+      </g>
+
+      <path
+        d={CLOUD_SVG_PATH}
+        pathLength={1}
+        fill="none"
+        stroke={accent}
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        filter="url(#migration-cloud-bloom)"
+        opacity={0.75 + pulse * 0.18}
+      />
+      <path
+        d={CLOUD_SVG_PATH}
+        pathLength={1}
+        fill="none"
+        stroke={accentSoft}
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="0.105 0.895"
+        strokeDashoffset={tracerOffset}
+        filter="url(#migration-cloud-bloom)"
+        opacity={0.82}
+      />
+
+      {[
+        { x: 46, y: 211 },
+        { x: 145, y: 145 },
+        { x: 343, y: 170 },
+        { x: 392, y: 300 },
+      ].map((node, index) => (
+        <g key={"cloud-node-" + index}>
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r={4.5 + pulse * 1.5}
+            fill={accentSoft}
+            opacity={0.54 + progress * 0.3}
+          />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r={10 + pulse * 2}
+            fill="none"
+            stroke={accent}
+            strokeWidth="1.5"
+            opacity={0.16 + progress * 0.22}
+          />
+        </g>
+      ))}
+    </svg>
+  );
+};
+
+const Background: React.FC<{ readonly time: number }> = ({ time }) => {
+  const gridX = modulo(time * 10, 64);
+  const gridY = modulo(time * 5, 64);
+  const scanY = modulo(time * 118, HEIGHT + 280) - 140;
+  const orbit = time * 1.2;
+
+  return (
+    <AbsoluteFill
       style={{
-        position: "absolute",
-        left: 92,
-        top: 157,
-        width: 500,
-        height: 624,
-        borderRadius: 25,
         overflow: "hidden",
-        ...PANEL,
-        opacity: reveal,
-        transform: `translateX(${(1 - reveal) * -74}px)`,
+        background:
+          "radial-gradient(circle at 50% 44%, #126f7c 0%, #0a3b67 42%, #081d48 74%, #050e28 100%)",
       }}
     >
+      <AbsoluteFill
+        style={{
+          opacity: 0.23,
+          backgroundImage:
+            "linear-gradient(rgba(118,255,239,.17) 1px, transparent 1px), linear-gradient(90deg, rgba(118,255,239,.17) 1px, transparent 1px)",
+          backgroundSize: "64px 64px",
+          backgroundPosition: `${gridX}px ${gridY}px`,
+          maskImage:
+            "radial-gradient(ellipse at 50% 50%, #000 0%, rgba(0,0,0,.76) 49%, transparent 88%)",
+        }}
+      />
+
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(135deg, rgba(94,224,255,0.05), transparent 38%, rgba(121,105,255,0.04))",
+          left: "50%",
+          top: "49%",
+          width: 1460,
+          height: 780,
+          transform: `translate(-50%, -50%) rotate(${orbit}deg)`,
+          borderRadius: "50%",
+          border: "1px solid rgba(115,255,241,.11)",
+          boxShadow:
+            "0 0 0 82px rgba(79,235,226,.025), 0 0 0 164px rgba(79,235,226,.018)",
         }}
       />
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "47%",
+          width: 1420,
+          height: 280,
+          transform: `translate(-50%, -50%) rotate(${
+            -8 + Math.sin(time * 0.22) * 1.5
+          }deg)`,
+          background:
+            "linear-gradient(90deg, transparent, rgba(67,255,236,.09), transparent)",
+          filter: "blur(42px)",
+        }}
+      />
+
+      {AMBIENT_PIXELS.map((pixel, index) => {
+        const y =
+          modulo(
+            pixel.y + time * pixel.speed + pixel.phase * HEIGHT,
+            HEIGHT + 80,
+          ) - 40;
+        const flicker =
+          0.3 +
+          0.7 *
+            Math.sin(
+              (time * (0.17 + (index % 5) * 0.025) + pixel.phase) * TAU,
+            ) **
+              2;
+        return (
+          <div
+            key={`ambient-${index}`}
+            style={{
+              position: "absolute",
+              left: pixel.x,
+              top: y,
+              width: pixel.size,
+              height: pixel.size,
+              opacity: pixel.opacity * flicker,
+              background: index % 7 === 0 ? COLORS.cyanSoft : COLORS.cyan,
+              boxShadow:
+                index % 7 === 0 ? "0 0 12px rgba(92,255,239,.75)" : undefined,
+            }}
+          />
+        );
+      })}
+
       <div
         style={{
           position: "absolute",
           left: 0,
-          top: 0,
-          width: `${phase(frame, 78, 155) * 100}%`,
+          right: 0,
+          top: scanY,
           height: 2,
+          opacity: 0.17,
           background:
-            "linear-gradient(90deg, transparent, #6ee8ff, rgba(113,105,255,0.4))",
-          boxShadow: "0 0 16px rgba(96,225,255,0.45)",
+            "linear-gradient(90deg, transparent, rgba(190,255,249,.9), transparent)",
+          boxShadow: "0 0 18px rgba(88,255,239,.5)",
         }}
       />
-      <div style={{ position: "relative", padding: "26px 28px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span
-            style={{
-              color: "#82e8ff",
-              fontSize: 16,
-              fontWeight: 750,
-              letterSpacing: 1.9,
-              textTransform: "uppercase",
-            }}
-          >
-            Autonomous Agent Identity
-          </span>
-          <span
-            style={{
-              padding: "7px 11px",
-              borderRadius: 8,
-              color: verified > 0.5 ? "#65f0bf" : "#8cdef4",
-              background:
-                verified > 0.5
-                  ? "rgba(76,236,183,0.09)"
-                  : "rgba(85,199,233,0.08)",
-              border: `1px solid ${
-                verified > 0.5
-                  ? "rgba(85,239,188,0.25)"
-                  : "rgba(102,214,244,0.2)"
-              }`,
-              fontSize: 14,
-              fontWeight: 750,
-              letterSpacing: 1.1,
-            }}
-          >
-            {verified > 0.5 ? "VERIFIED" : "VERIFYING"}
-          </span>
-        </div>
 
-        <div
-          style={{
-            marginTop: 22,
-            display: "flex",
-            alignItems: "center",
-            gap: 23,
-          }}
-        >
-          <AgentCore frame={frame} verified={verified} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                color: "#f0fbff",
-                fontSize: 25,
-                fontWeight: 720,
-                lineHeight: 1.13,
-                letterSpacing: -0.35,
-              }}
-            >
-              support-resolution-agent
-            </div>
-            <div
-              style={{
-                marginTop: 9,
-                color: "rgba(159,210,228,0.72)",
-                fontSize: 15,
-                fontWeight: 630,
-                letterSpacing: 0.5,
-              }}
-            >
-              AGENT ID&nbsp; AGT-7F3A-91C2
-            </div>
-            <div
-              style={{
-                marginTop: 19,
-                display: "flex",
-                alignItems: "flex-end",
-                gap: 10,
-              }}
-            >
-              <span
-                style={{
-                  color: verified > 0.5 ? "#62efbd" : "#72e8ff",
-                  fontSize: 42,
-                  fontWeight: 760,
-                  lineHeight: 0.9,
-                  fontVariantNumeric: "tabular-nums",
-                  textShadow: "0 0 24px rgba(84,230,255,0.18)",
-                }}
-              >
-                {trustValue}
-              </span>
-              <span
-                style={{
-                  color: "rgba(153,204,222,0.68)",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  letterSpacing: 1.4,
-                  paddingBottom: 3,
-                }}
-              >
-                TRUST SCORE
-              </span>
-            </div>
-            <div
-              style={{
-                marginTop: 12,
-                height: 5,
-                borderRadius: 4,
-                overflow: "hidden",
-                background: "rgba(103,221,244,0.1)",
-              }}
-            >
-              <div
-                style={{
-                  width: `${trust * 100}%`,
-                  height: "100%",
-                  borderRadius: 4,
-                  background:
-                    verified > 0.5
-                      ? "linear-gradient(90deg, #55dba8, #68f1c0)"
-                      : "linear-gradient(90deg, #647cff, #64e6ff)",
-                  boxShadow: "0 0 11px rgba(94,229,255,0.46)",
-                }}
-              />
-            </div>
-          </div>
-        </div>
+      <AbsoluteFill
+        style={{
+          opacity: 0.1,
+          backgroundImage:
+            "repeating-linear-gradient(180deg, transparent 0px, transparent 3px, rgba(4,13,35,.7) 4px)",
+        }}
+      />
 
-        <div
-          style={{
-            marginTop: 21,
-            padding: "10px 16px 4px",
-            borderRadius: 15,
-            background: "rgba(2,11,21,0.4)",
-            border: "1px solid rgba(103,212,244,0.095)",
-          }}
-        >
-          <DataRow label="Accountable owner" value="Customer Operations" />
-          <DataRow label="Approved workload" value="prod-eu-07" />
-          <DataRow label="Credential" value="DID:agent:7f3a" />
-          <DataRow label="Runtime build" value="v3.8.12 / signed" accent="#73e8ff" />
-        </div>
-
-        <div
-          style={{
-            marginTop: 18,
-            height: 70,
-            borderRadius: 15,
-            padding: "0 17px",
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            background:
-              verified > 0.5
-                ? "linear-gradient(90deg, rgba(68,235,180,0.09), rgba(37,126,112,0.04))"
-                : "rgba(75,198,230,0.045)",
-            border: `1px solid ${
-              verified > 0.5
-                ? "rgba(84,240,188,0.25)"
-                : "rgba(93,215,243,0.14)"
-            }`,
-          }}
-        >
-          <FingerprintIcon
-            color={verified > 0.5 ? "#61efbf" : "#79e7ff"}
-            size={35}
-          />
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                color: verified > 0.5 ? "#bcffe8" : "#d9f7ff",
-                fontSize: 16,
-                fontWeight: 720,
-                letterSpacing: 0.4,
-              }}
-            >
-              Cryptographic signature
-            </div>
-            <div
-              style={{
-                marginTop: 6,
-                color: "rgba(151,205,222,0.7)",
-                fontSize: 14,
-                fontWeight: 620,
-                letterSpacing: 1,
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {signature < 1
-                ? `VALIDATING ${Math.round(signature * 100)
-                    .toString()
-                    .padStart(2, "0")}%`
-                : "SIGNATURE VALID • KEY CURRENT"}
-            </div>
-          </div>
-          {verified > 0.5 ? (
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 11,
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(83,239,187,0.1)",
-                border: "1px solid rgba(83,239,187,0.27)",
-              }}
-            >
-              <CheckMark size={23} />
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
+      <AbsoluteFill
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 48%, rgba(2,8,27,.58) 100%)",
+        }}
+      />
+    </AbsoluteFill>
   );
 };
 
-type ValidationSpec = {
-  readonly title: string;
-  readonly detail: string;
-  readonly start: number;
-  readonly end: number;
-  readonly color: string;
-  readonly icon: "fingerprint" | "chip" | "link" | "policy";
-};
-
-const VALIDATIONS: readonly ValidationSpec[] = [
-  {
-    title: "Identity proof",
-    detail: "Credential chain is valid",
-    start: 170,
-    end: 230,
-    color: "#6fe7ff",
-    icon: "fingerprint",
-  },
-  {
-    title: "Workload attestation",
-    detail: "Runtime hash matches build",
-    start: 232,
-    end: 292,
-    color: "#9b92ff",
-    icon: "chip",
-  },
-  {
-    title: "Human ownership",
-    detail: "Accountable owner confirmed",
-    start: 294,
-    end: 354,
-    color: "#60efc1",
-    icon: "link",
-  },
-  {
-    title: "Policy binding",
-    detail: "Least-privilege rules attached",
-    start: 356,
-    end: 416,
-    color: "#ffbd6d",
-    icon: "policy",
-  },
-] as const;
-
-const ValidationIcon: React.FC<{
-  readonly type: ValidationSpec["icon"];
-  readonly color: string;
-}> = ({ type, color }) => {
-  if (type === "fingerprint") {
-    return <FingerprintIcon color={color} size={36} />;
-  }
-  if (type === "chip") {
-    return <ChipIcon color={color} size={36} />;
-  }
-  if (type === "link") {
-    return <LinkIcon color={color} size={36} />;
-  }
-  return <PolicyIcon color={color} size={36} />;
-};
-
-const ValidationStack: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const overall = phase(frame, 170, 416, Easing.inOut(Easing.cubic));
-  return (
+const BeveledPanel: React.FC<{
+  readonly children: React.ReactNode;
+  readonly style?: React.CSSProperties;
+  readonly accent?: string;
+  readonly dark?: boolean;
+}> = ({ children, style, accent = COLORS.cyan, dark = false }) => (
+  <div
+    style={{
+      position: "absolute",
+      background: dark
+        ? "linear-gradient(155deg, rgba(13,33,70,.97), rgba(6,21,54,.98))"
+        : `linear-gradient(145deg, ${COLORS.panelLight}, ${COLORS.panel} 53%, ${COLORS.panelMid})`,
+      border: dark
+        ? "2px solid rgba(123,255,241,.34)"
+        : "3px solid rgba(247,255,249,.92)",
+      boxShadow: dark
+        ? `0 0 0 2px rgba(5,18,47,.92), 0 24px 70px rgba(2,7,26,.45), inset 0 0 36px rgba(68,234,222,.045)`
+        : `0 0 0 3px ${COLORS.panelDark}, 0 0 0 6px rgba(7,23,51,.9), 0 26px 70px rgba(2,7,24,.42), inset 8px 8px 0 rgba(255,255,255,.72), inset -8px -8px 0 rgba(72,96,94,.18)`,
+      clipPath:
+        "polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px)",
+      overflow: "hidden",
+      ...style,
+    }}
+  >
     <div
       style={{
         position: "absolute",
-        left: 620,
-        top: 157,
-        width: 520,
-        height: 624,
-        borderRadius: 25,
-        ...PANEL,
-        opacity: reveal,
-        transform: `translateY(${(1 - reveal) * 38}px)`,
+        left: 20,
+        right: 20,
+        top: 0,
+        height: 3,
+        background: accent,
+        boxShadow: `0 0 16px ${accent}`,
+        opacity: 0.72,
       }}
-    >
-      <div style={{ padding: "27px 27px 25px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                color: "#e8f9ff",
-                fontSize: 22,
-                fontWeight: 720,
-                letterSpacing: -0.1,
-              }}
-            >
-              Verification chain
-            </div>
-            <div
-              style={{
-                marginTop: 7,
-                color: "rgba(150,203,222,0.68)",
-                fontSize: 15,
-                fontWeight: 620,
-              }}
-            >
-              Four independent trust controls
-            </div>
-          </div>
-          <div
-            style={{
-              width: 66,
-              height: 66,
-              borderRadius: "50%",
-              display: "grid",
-              placeItems: "center",
-              background: `conic-gradient(#65e8ff ${overall * 360}deg, rgba(102,220,246,0.09) 0deg)`,
-              boxShadow: "0 0 24px rgba(94,225,255,0.12)",
-            }}
-          >
-            <div
-              style={{
-                width: 54,
-                height: 54,
-                borderRadius: "50%",
-                display: "grid",
-                placeItems: "center",
-                background: "#081724",
-                color: overall >= 1 ? "#61efbd" : "#d7f8ff",
-                fontSize: 17,
-                fontWeight: 760,
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {Math.round(overall * 4)}/4
-            </div>
-          </div>
-        </div>
+    />
+    {children}
+  </div>
+);
 
-        <div
-          style={{
-            position: "relative",
-            marginTop: 22,
-            display: "flex",
-            flexDirection: "column",
-            gap: 13,
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              left: 29,
-              top: 55,
-              bottom: 55,
-              width: 2,
-              background: "rgba(91,213,241,0.09)",
-            }}
-          >
-            <div
-              style={{
-                width: "100%",
-                height: `${overall * 100}%`,
-                background:
-                  "linear-gradient(180deg, #6fe8ff, #9a90ff 42%, #62efc0 72%, #ffbd6d)",
-                boxShadow: "0 0 10px rgba(98,227,255,0.44)",
-              }}
-            />
-          </div>
+const LegacyServer: React.FC<{
+  readonly progress: number;
+  readonly time: number;
+  readonly complete: number;
+}> = ({ progress, time, complete }) => {
+  const remaining = Math.max(0, Math.round((1 - progress) * 2048));
+  const reelRotation = time * 94 * (1 - complete * 0.78);
 
-          {VALIDATIONS.map((item, index) => {
-            const itemIn = phase(frame, item.start - 25, item.start + 10);
-            const scan = phase(frame, item.start, item.end, Easing.inOut(Easing.cubic));
-            const done = phase(frame, item.end - 8, item.end + 18);
-            return (
-              <div
-                key={item.title}
-                style={{
-                  position: "relative",
-                  height: 98,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 16,
-                  padding: "0 15px",
-                  borderRadius: 16,
-                  overflow: "hidden",
-                  opacity: itemIn,
-                  transform: `translateX(${(1 - itemIn) * 26}px)`,
-                  background:
-                    done > 0.5
-                      ? `linear-gradient(90deg, ${item.color}12, rgba(6,20,32,0.5))`
-                      : "rgba(5,18,30,0.54)",
-                  border: `1px solid ${
-                    done > 0.5 ? `${item.color}38` : "rgba(100,211,240,0.1)"
-                  }`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 58,
-                    height: 58,
-                    flex: "0 0 auto",
-                    borderRadius: 15,
-                    display: "grid",
-                    placeItems: "center",
-                    background: `${item.color}0f`,
-                    border: `1px solid ${item.color}2b`,
-                    boxShadow:
-                      scan > 0 && done < 0.5
-                        ? `0 0 22px ${item.color}22`
-                        : "none",
-                  }}
-                >
-                  <ValidationIcon type={item.icon} color={item.color} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      color: "#e7f9ff",
-                      fontSize: 18,
-                      fontWeight: 710,
-                    }}
-                  >
-                    {item.title}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 7,
-                      color: "rgba(154,205,223,0.72)",
-                      fontSize: 15,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {done > 0.5 ? item.detail : "Checking control evidence…"}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 10,
-                      height: 3,
-                      borderRadius: 3,
-                      overflow: "hidden",
-                      background: "rgba(120,216,238,0.08)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${scan * 100}%`,
-                        height: "100%",
-                        background: `linear-gradient(90deg, ${item.color}88, ${item.color})`,
-                        boxShadow: `0 0 8px ${item.color}77`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div
-                  style={{
-                    width: 42,
-                    height: 42,
-                    flex: "0 0 auto",
-                    borderRadius: 12,
-                    display: "grid",
-                    placeItems: "center",
-                    color: done > 0.5 ? "#5ff0bf" : "#a8d8e7",
-                    background:
-                      done > 0.5
-                        ? "rgba(84,239,187,0.08)"
-                        : "rgba(102,218,244,0.04)",
-                    border: `1px solid ${
-                      done > 0.5
-                        ? "rgba(84,239,187,0.23)"
-                        : "rgba(102,218,244,0.1)"
-                    }`,
-                    fontSize: 14,
-                    fontWeight: 750,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {done > 0.5 ? (
-                    <CheckMark color="#62efbf" size={24} />
-                  ) : (
-                    `${Math.round(scan * 100)}`
-                  )}
-                </div>
-                {scan > 0 && done < 0.5 ? (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `${scan * 100 - 16}%`,
-                      top: 0,
-                      width: 65,
-                      height: "100%",
-                      background: `linear-gradient(90deg, transparent, ${item.color}16, transparent)`,
-                    }}
-                  />
-                ) : null}
-                <div
-                  style={{
-                    position: "absolute",
-                    left: -15,
-                    top: 42,
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: done > 0.5 ? item.color : "rgba(96,214,240,0.25)",
-                    boxShadow: done > 0.5 ? `0 0 12px ${item.color}` : "none",
-                    opacity: itemIn,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-type AccessSpec = {
-  readonly resource: string;
-  readonly permission: string;
-  readonly result: "ALLOW" | "DENY";
-  readonly type: "support" | "notes" | "pii" | "refund";
-  readonly start: number;
-  readonly end: number;
-};
-
-const ACCESS_REQUESTS: readonly AccessSpec[] = [
-  {
-    resource: "Support cases",
-    permission: "READ",
-    result: "ALLOW",
-    type: "support",
-    start: 430,
-    end: 485,
-  },
-  {
-    resource: "Case notes",
-    permission: "WRITE",
-    result: "ALLOW",
-    type: "notes",
-    start: 492,
-    end: 547,
-  },
-  {
-    resource: "Customer PII",
-    permission: "READ",
-    result: "DENY",
-    type: "pii",
-    start: 554,
-    end: 609,
-  },
-  {
-    resource: "Refund workflow",
-    permission: "EXECUTE",
-    result: "ALLOW",
-    type: "refund",
-    start: 616,
-    end: 671,
-  },
-] as const;
-
-const AccessControl: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const token = phase(frame, 674, 724, Easing.out(Easing.back(1.15)));
-  const policyPulse = phase(frame, 402, 430);
   return (
-    <div
+    <BeveledPanel
+      accent={COLORS.amber}
       style={{
-        position: "absolute",
-        left: 1168,
-        top: 157,
-        width: 660,
-        height: 624,
-        borderRadius: 25,
-        ...PANEL,
-        opacity: reveal,
-        transform: `translateX(${(1 - reveal) * 62}px)`,
-      }}
-    >
-      <div style={{ padding: "27px 27px" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                color: "#eafaff",
-                fontSize: 22,
-                fontWeight: 720,
-              }}
-            >
-              Authorization decision
-            </div>
-            <div
-              style={{
-                marginTop: 7,
-                color: "rgba(153,205,222,0.7)",
-                fontSize: 15,
-                fontWeight: 620,
-              }}
-            >
-              Requested scopes evaluated in real time
-            </div>
-          </div>
-          <div
-            style={{
-              width: 128,
-              height: 44,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              borderRadius: 12,
-              color: token > 0.5 ? "#63f0c0" : "#7ce8ff",
-              background:
-                token > 0.5
-                  ? "rgba(76,238,186,0.08)"
-                  : "rgba(90,215,246,0.06)",
-              border: `1px solid ${
-                token > 0.5
-                  ? "rgba(82,240,188,0.24)"
-                  : "rgba(102,221,247,0.17)"
-              }`,
-              fontSize: 14,
-              fontWeight: 760,
-              letterSpacing: 1.1,
-            }}
-          >
-            <ShieldIcon
-              color={token > 0.5 ? "#60efbd" : "#74e8ff"}
-              size={24}
-              checked={token > 0.5}
-            />
-            {token > 0.5 ? "ENFORCED" : "POLICY"}
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "relative",
-            marginTop: 22,
-            height: 390,
-            borderRadius: 18,
-            padding: "15px",
-            background: "rgba(2,11,20,0.42)",
-            border: "1px solid rgba(103,211,240,0.09)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              left: 36,
-              top: 35,
-              bottom: 35,
-              width: 2,
-              background: "rgba(100,215,242,0.08)",
-            }}
-          />
-          {ACCESS_REQUESTS.map((request, index) => {
-            const rowIn = phase(frame, request.start - 22, request.start + 8);
-            const decision = phase(
-              frame,
-              request.start,
-              request.end,
-              Easing.inOut(Easing.cubic),
-            );
-            const done = phase(frame, request.end - 6, request.end + 18);
-            const allowed = request.result === "ALLOW";
-            const color = allowed ? "#5ff0bd" : "#ff7084";
-            return (
-              <div
-                key={request.resource}
-                style={{
-                  position: "relative",
-                  height: 82,
-                  marginBottom: index === ACCESS_REQUESTS.length - 1 ? 0 : 10,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "0 15px",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  opacity: rowIn,
-                  transform: `translateX(${(1 - rowIn) * 30}px)`,
-                  background:
-                    done > 0.5
-                      ? `linear-gradient(90deg, ${color}11, rgba(4,18,30,0.7))`
-                      : "rgba(8,24,38,0.62)",
-                  border: `1px solid ${
-                    done > 0.5 ? `${color}35` : "rgba(105,216,244,0.1)"
-                  }`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    flex: "0 0 auto",
-                    borderRadius: 13,
-                    display: "grid",
-                    placeItems: "center",
-                    background: `${color}0d`,
-                    border: `1px solid ${done > 0.5 ? `${color}2b` : "rgba(106,218,244,0.1)"}`,
-                  }}
-                >
-                  <ResourceIcon
-                    type={request.type}
-                    color={done > 0.5 ? color : "#79dff5"}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      color: "#e5f8ff",
-                      fontSize: 18,
-                      fontWeight: 710,
-                    }}
-                  >
-                    {request.resource}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
-                      color: "rgba(152,204,222,0.72)",
-                      fontSize: 14,
-                      fontWeight: 660,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    SCOPE
-                    <span style={{ color: "#9adff0", fontWeight: 750 }}>
-                      {request.permission}
-                    </span>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    width: 90,
-                    height: 38,
-                    flex: "0 0 auto",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 7,
-                    borderRadius: 10,
-                    color: done > 0.5 ? color : "#a9d9e6",
-                    background: done > 0.5 ? `${color}0f` : "rgba(104,213,240,0.04)",
-                    border: `1px solid ${done > 0.5 ? `${color}32` : "rgba(105,216,243,0.1)"}`,
-                    fontSize: 14,
-                    fontWeight: 780,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {done > 0.5 ? (
-                    allowed ? (
-                      <CheckMark color={color} size={18} />
-                    ) : (
-                      <CrossMark color={color} size={18} />
-                    )
-                  ) : null}
-                  {done > 0.5 ? request.result : `${Math.round(decision * 100)}`}
-                </div>
-                {decision > 0 && done < 0.5 ? (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: 0,
-                      width: `${decision * 100}%`,
-                      height: 2,
-                      background: "linear-gradient(90deg, #717bff, #6fe9ff)",
-                      boxShadow: "0 0 10px rgba(100,228,255,0.6)",
-                    }}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-          <div
-            style={{
-              position: "absolute",
-              left: 12,
-              top: 26 + phase(frame, 430, 671, Easing.inOut(Easing.cubic)) * 326,
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: "#71eaff",
-              boxShadow: "0 0 17px rgba(102,230,255,0.85)",
-              opacity: policyPulse,
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            marginTop: 18,
-            height: 86,
-            borderRadius: 17,
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            padding: "0 18px",
-            opacity: token,
-            transform: `translateY(${(1 - token) * 18}px)`,
-            background:
-              "linear-gradient(100deg, rgba(66,237,180,0.13), rgba(48,116,105,0.045))",
-            border: "1px solid rgba(85,240,188,0.28)",
-            boxShadow: "0 0 28px rgba(70,232,181,0.07)",
-          }}
-        >
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              flex: "0 0 auto",
-              borderRadius: 15,
-              display: "grid",
-              placeItems: "center",
-              background: "rgba(77,239,186,0.1)",
-              border: "1px solid rgba(83,241,188,0.28)",
-            }}
-          >
-            <ShieldIcon color="#61f0be" size={34} checked />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                color: "#c7ffea",
-                fontSize: 18,
-                fontWeight: 740,
-              }}
-            >
-              Least-privilege token issued
-            </div>
-            <div
-              style={{
-                marginTop: 7,
-                color: "rgba(158,222,201,0.78)",
-                fontSize: 14,
-                fontWeight: 650,
-                letterSpacing: 0.7,
-              }}
-            >
-              3 scopes granted • 1 sensitive scope blocked • Expires in 15 min
-            </div>
-          </div>
-          <div
-            style={{
-              color: "#65f0bf",
-              fontSize: 15,
-              fontWeight: 780,
-              letterSpacing: 1.3,
-            }}
-          >
-            TOKEN&nbsp; 7C4A
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const LOGS = [
-  {
-    time: "12:42:07",
-    event: "Cryptographic credential accepted",
-    status: "VALID",
-    color: "#68e9ff",
-    start: 446,
-  },
-  {
-    time: "12:42:09",
-    event: "Approved runtime successfully attested",
-    status: "MATCH",
-    color: "#9d94ff",
-    start: 510,
-  },
-  {
-    time: "12:42:11",
-    event: "Customer PII scope blocked by policy",
-    status: "BLOCKED",
-    color: "#ff7488",
-    start: 575,
-  },
-  {
-    time: "12:42:13",
-    event: "Scoped authorization token issued",
-    status: "SEALED",
-    color: "#61efbd",
-    start: 690,
-  },
-] as const;
-
-const AuditTrail: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const seal = phase(frame, 708, 756, Easing.out(Easing.back(1.2)));
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: 92,
-        right: 92,
-        top: 807,
-        height: 202,
-        borderRadius: 24,
-        ...PANEL,
-        opacity: reveal,
-        transform: `translateY(${(1 - reveal) * 34}px)`,
+        left: 104,
+        top: 226,
+        width: 420,
+        height: 522,
+        opacity: 1 - complete * 0.28,
+        transform: `translateX(${-complete * 12}px)`,
       }}
     >
       <div
@@ -1543,138 +622,1097 @@ const AuditTrail: React.FC<{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: "1px solid rgba(105,214,242,0.11)",
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,.56), rgba(133,153,146,.18))",
+          borderBottom: `3px solid ${COLORS.panelDark}`,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              display: "grid",
-              placeItems: "center",
-              background: "rgba(98,225,255,0.07)",
-              border: "1px solid rgba(103,224,251,0.17)",
-            }}
-          >
-            <PolicyIcon color="#76e8ff" size={22} />
-          </div>
-          <span
-            style={{
-              color: "#e5f8ff",
-              fontSize: 18,
-              fontWeight: 720,
-            }}
-          >
-            Immutable audit trail
-          </span>
-          <span
-            style={{
-              color: "rgba(151,203,221,0.66)",
-              fontSize: 14,
-              fontWeight: 650,
-              letterSpacing: 1,
-            }}
-          >
-            EVENT STREAM / 4 RECORDS
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            color: seal > 0.5 ? "#62efbd" : "rgba(157,207,223,0.7)",
-            fontSize: 14,
-            fontWeight: 750,
-            letterSpacing: 1.2,
-          }}
-        >
-          {seal > 0.5 ? <CheckMark color="#62efbd" size={19} /> : null}
-          {seal > 0.5 ? "AUDIT SEALED" : "RECORDING"}
+        <DotMatrixText size={19} letterSpacing={1.8}>
+          LEGACY SERVER
+        </DotMatrixText>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[0, 1, 2].map((index) => (
+            <div
+              key={`legacy-led-${index}`}
+              style={{
+                width: 10,
+                height: 10,
+                background:
+                  index === 0
+                    ? interpolateColors(
+                        complete,
+                        [0, 1],
+                        [COLORS.amber, COLORS.mint],
+                      )
+                    : index === 1
+                      ? COLORS.cyan
+                      : COLORS.inkSoft,
+                boxShadow:
+                  index < 2
+                    ? `0 0 10px ${index === 0 ? COLORS.amber : COLORS.cyan}`
+                    : undefined,
+              }}
+            />
+          ))}
         </div>
       </div>
 
       <div
         style={{
-          height: 145,
-          padding: "17px 20px 18px",
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 14,
+          position: "absolute",
+          left: 24,
+          right: 24,
+          top: 76,
+          height: 126,
+          border: `3px solid ${COLORS.panelDark}`,
+          background: "linear-gradient(155deg, #0b2034, #071422 68%, #102d3c)",
+          boxShadow:
+            "inset 0 0 0 4px rgba(0,0,0,.38), inset 0 0 30px rgba(70,244,231,.07)",
         }}
       >
-        {LOGS.map((log) => {
-          const itemIn = phase(frame, log.start, log.start + 32);
+        <div
+          style={{
+            position: "absolute",
+            left: 20,
+            top: 17,
+            width: 92,
+            height: 92,
+          }}
+        >
+          {[0, 1].map((index) => (
+            <div
+              key={`reel-${index}`}
+              style={{
+                position: "absolute",
+                left: index * 54,
+                top: 18,
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                border: `5px solid ${COLORS.panelMid}`,
+                background:
+                  "radial-gradient(circle, #112c3c 0 7px, #82928c 8px 11px, transparent 12px)",
+                transform: `rotate(${
+                  index === 0 ? reelRotation : -reelRotation * 1.12
+                }deg)`,
+                boxShadow: "0 0 0 2px #435a59",
+              }}
+            >
+              {[0, 1, 2].map((spoke) => (
+                <div
+                  key={`spoke-${index}-${spoke}`}
+                  style={{
+                    position: "absolute",
+                    left: 19,
+                    top: 4,
+                    width: 4,
+                    height: 32,
+                    background: COLORS.panelDark,
+                    transform: `rotate(${spoke * 120}deg)`,
+                    transformOrigin: "2px 20px",
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            right: 18,
+            top: 20,
+            width: 206,
+          }}
+        >
+          <DotMatrixText color={COLORS.amberSoft} size={15} letterSpacing={1.4}>
+            VOLUME /dev/rk04
+          </DotMatrixText>
+          <DotMatrixText
+            color={COLORS.cyan}
+            size={28}
+            letterSpacing={1.2}
+            style={{ marginTop: 11 }}
+          >
+            {remaining.toString().padStart(4, "0")} GB
+          </DotMatrixText>
+          <DotMatrixText
+            color="rgba(190,255,247,.55)"
+            size={12}
+            letterSpacing={1.3}
+            style={{ marginTop: 9 }}
+          >
+            COBOL / EBCDIC / RAID-5
+          </DotMatrixText>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 24,
+          right: 24,
+          top: 220,
+          bottom: 54,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        {RECORD_ROWS.map((record, index) => {
+          const rowThreshold = 0.12 + index * 0.16;
+          const rowMigrated = clamp01(
+            (progress - rowThreshold) / Math.max(0.001, 1 - rowThreshold),
+          );
+          const light =
+            progress < rowThreshold
+              ? COLORS.amber
+              : rowMigrated < 0.92
+                ? COLORS.cyan
+                : COLORS.mint;
           return (
             <div
-              key={log.event}
+              key={record}
               style={{
-                position: "relative",
-                borderRadius: 15,
-                padding: "15px 16px",
-                overflow: "hidden",
-                opacity: itemIn,
-                transform: `translateY(${(1 - itemIn) * 15}px)`,
-                background: `linear-gradient(110deg, ${log.color}0b, rgba(4,17,28,0.58))`,
-                border: `1px solid ${log.color}23`,
+                height: 48,
+                display: "grid",
+                gridTemplateColumns: "20px 126px 1fr 48px",
+                alignItems: "center",
+                gap: 8,
+                padding: "0 12px",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,.55), rgba(95,118,113,.13))",
+                borderTop: "2px solid rgba(255,255,255,.7)",
+                borderBottom: `2px solid ${COLORS.panelDark}`,
               }}
             >
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span
-                  style={{
-                    color: "rgba(159,209,225,0.7)",
-                    fontSize: 14,
-                    fontWeight: 650,
-                    fontVariantNumeric: "tabular-nums",
-                    letterSpacing: 0.7,
-                  }}
-                >
-                  {log.time}
-                </span>
-                <span
-                  style={{
-                    padding: "4px 7px",
-                    borderRadius: 6,
-                    color: log.color,
-                    background: `${log.color}0e`,
-                    fontSize: 12,
-                    fontWeight: 780,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {log.status}
-                </span>
-              </div>
-              <div
-                style={{
-                  marginTop: 12,
-                  maxWidth: 315,
-                  color: "#dff5fb",
-                  fontSize: 15,
-                  fontWeight: 650,
-                  lineHeight: 1.35,
-                }}
-              >
-                {log.event}
-              </div>
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  bottom: 0,
-                  width: `${itemIn * 100}%`,
-                  height: 2,
-                  background: `linear-gradient(90deg, ${log.color}, transparent)`,
+                  width: 9,
+                  height: 9,
+                  background: light,
+                  boxShadow: `0 0 8px ${light}`,
                 }}
               />
+              <DotMatrixText size={13} letterSpacing={0.8}>
+                {record}
+              </DotMatrixText>
+              <div
+                style={{
+                  height: 12,
+                  padding: 2,
+                  background: COLORS.ink,
+                  boxShadow: "inset 0 0 0 2px #435a59",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${Math.max(0, 1 - rowMigrated) * 100}%`,
+                    height: "100%",
+                    background: rowMigrated > 0.94 ? COLORS.mint : COLORS.amber,
+                  }}
+                />
+              </div>
+              <DotMatrixText
+                size={11}
+                letterSpacing={0.6}
+                color={rowMigrated > 0.94 ? "#126c50" : COLORS.inkSoft}
+                align="right"
+              >
+                {rowMigrated > 0.94 ? "MOVED" : "READ"}
+              </DotMatrixText>
+            </div>
+          );
+        })}
+      </div>
+
+      <DotMatrixText
+        size={13}
+        letterSpacing={1.4}
+        color={interpolateColors(complete, [0, 1], [COLORS.inkSoft, "#196b50"])}
+        style={{ position: "absolute", left: 25, bottom: 20 }}
+      >
+        <span style={{ position: "relative", display: "block", height: 15 }}>
+          <span
+            style={{
+              position: "absolute",
+              left: 0,
+              opacity: 1 - segment(complete, 0, 0.46),
+            }}
+          >
+            PORT 3270 // ACTIVE
+          </span>
+          <span
+            style={{
+              position: "absolute",
+              left: 0,
+              opacity: segment(complete, 0.54, 1),
+            }}
+          >
+            SOURCE ARCHIVED // READ-ONLY
+          </span>
+        </span>
+      </DotMatrixText>
+    </BeveledPanel>
+  );
+};
+
+const DestinationCloud: React.FC<{
+  readonly progress: number;
+  readonly time: number;
+  readonly complete: number;
+}> = ({ progress, time, complete }) => {
+  const records = Math.round(progress * 2487560);
+  const destinationAccent = interpolateColors(
+    complete,
+    [0, 1],
+    [COLORS.cyan, COLORS.mint],
+  );
+
+  return (
+    <BeveledPanel
+      dark
+      accent={destinationAccent}
+      style={{
+        left: 1396,
+        top: 226,
+        width: 420,
+        height: 522,
+        transform: `translateX(${complete * 12}px)`,
+        boxShadow: `0 0 0 2px rgba(5,18,47,.92), 0 24px 70px rgba(2,7,26,.45), 0 0 ${
+          24 + complete * 42
+        }px rgba(73,244,227,${0.1 + complete * 0.15})`,
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          padding: "0 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background:
+            "linear-gradient(180deg, rgba(84,130,169,.18), rgba(7,21,55,.16))",
+          borderBottom: "2px solid rgba(125,255,241,.24)",
+        }}
+      >
+        <DotMatrixText color={COLORS.cyanSoft} size={19} letterSpacing={1.8}>
+          CLOUD SYSTEM
+        </DotMatrixText>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            color: destinationAccent,
+            fontFamily: "'Courier New', monospace",
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: 1.5,
+          }}
+        >
+          <span
+            style={{
+              width: 9,
+              height: 9,
+              background: destinationAccent,
+              boxShadow: `0 0 10px ${destinationAccent}`,
+            }}
+          />
+          <span
+            style={{
+              position: "relative",
+              display: "block",
+              width: 82,
+              height: 14,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                right: 0,
+                opacity: 1 - segment(complete, 0, 0.46),
+              }}
+            >
+              RECEIVING
+            </span>
+            <span
+              style={{
+                position: "absolute",
+                right: 0,
+                opacity: segment(complete, 0.54, 1),
+              }}
+            >
+              ONLINE
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 45,
+          top: 78,
+          width: 330,
+          height: 250,
+        }}
+      >
+        <CloudGlyph progress={progress} time={time} complete={complete} />
+
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: 113,
+            transform: `translate(-50%, -50%) scale(${mix(
+              0.84,
+              1,
+              segment(frameSafe(progress), 0.6, 1),
+            )})`,
+            width: 86,
+            height: 86,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: segment(progress, 0.52, 0.72),
+            background: "rgba(5,26,55,.76)",
+            border: `3px solid ${destinationAccent}`,
+            borderRadius: "50%",
+            boxShadow: `0 0 26px rgba(73,244,227,.28)`,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: 1 - segment(complete, 0, 0.46),
+              transform: `scale(${mix(1, 0.82, complete)})`,
+            }}
+          >
+            <svg width="48" height="48" viewBox="0 0 48 48">
+              <path
+                d="M14 22V16C14 10.5 18.5 6 24 6S34 10.5 34 16V22"
+                fill="none"
+                stroke={COLORS.cyanSoft}
+                strokeWidth="4"
+              />
+              <rect
+                x="9"
+                y="21"
+                width="30"
+                height="23"
+                fill="rgba(73,244,227,.16)"
+                stroke={COLORS.cyanSoft}
+                strokeWidth="3"
+              />
+              <rect x="21" y="29" width="6" height="9" fill={COLORS.cyanSoft} />
+            </svg>
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: segment(complete, 0.54, 1),
+              transform: `scale(${mix(0.82, 1, complete)})`,
+            }}
+          >
+            <CheckGlyph size={48} color={COLORS.mintSoft} stroke={3.2} />
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 24,
+          right: 24,
+          bottom: 24,
+          height: 162,
+          padding: "17px 20px",
+          border: "2px solid rgba(114,255,240,.23)",
+          background: "rgba(3,18,48,.64)",
+          display: "grid",
+          gridTemplateRows: "1fr 1fr 1fr",
+          gap: 8,
+        }}
+      >
+        {[
+          {
+            label: "RECORDS",
+            value: records.toLocaleString("en-US"),
+            color: COLORS.cyanSoft,
+          },
+          {
+            label: "SCHEMA",
+            value: progress < 0.42 ? "MAPPING" : "POSTGRES 17",
+            color: progress < 0.42 ? COLORS.amber : COLORS.mint,
+          },
+          {
+            label: "ENCRYPTION",
+            value: progress < 0.3 ? "NEGOTIATING" : "AES-256",
+            color: progress < 0.3 ? COLORS.amber : COLORS.mint,
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid rgba(115,255,241,.13)",
+            }}
+          >
+            <DotMatrixText
+              size={12}
+              letterSpacing={1.5}
+              color="rgba(192,255,248,.55)"
+            >
+              {item.label}
+            </DotMatrixText>
+            <DotMatrixText
+              size={15}
+              letterSpacing={1}
+              color={item.color}
+              align="right"
+            >
+              {item.value}
+            </DotMatrixText>
+          </div>
+        ))}
+      </div>
+    </BeveledPanel>
+  );
+};
+
+const frameSafe = (value: number) => value;
+
+const TransferPacket: React.FC<{
+  readonly index: number;
+  readonly frame: number;
+  readonly active: number;
+  readonly complete: number;
+}> = ({ index, frame, active, complete }) => {
+  const local = modulo((frame - 226 - index * 31) / 166);
+  const visible =
+    active *
+    segment(local, 0, 0.08, Easing.out(Easing.cubic)) *
+    (1 - segment(local, 0.9, 1, Easing.in(Easing.cubic))) *
+    (1 - complete);
+  const x = mix(536, 1390, local);
+  const y =
+    556 -
+    Math.sin(local * Math.PI) * (54 + (index % 3) * 13) +
+    Math.sin((local * 3 + index) * Math.PI) * 5;
+  const color =
+    index % 4 === 0
+      ? COLORS.amberSoft
+      : index % 3 === 0
+        ? COLORS.mintSoft
+        : COLORS.cyanSoft;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        width: index % 3 === 0 ? 30 : 20,
+        height: 13,
+        transform: `translate(-50%, -50%) rotate(${Math.sin(local * Math.PI) * 5}deg)`,
+        opacity: visible,
+        background: color,
+        border: "2px solid rgba(255,255,255,.72)",
+        boxShadow: `0 0 15px ${color}`,
+        zIndex: 7,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          right: "110%",
+          top: 4,
+          width: 34 + index * 2,
+          height: 2,
+          background: `linear-gradient(90deg, transparent, ${color})`,
+          opacity: 0.48,
+        }}
+      />
+    </div>
+  );
+};
+
+const TransferBridge: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly progress: number;
+  readonly complete: number;
+}> = ({ frame, time, progress, complete }) => {
+  const activeTransfer =
+    segment(frame, 210, 238) * (1 - segment(frame, 748, 770));
+  const displayPercent =
+    progress >= 1 ? 100 : Math.min(99, Math.floor(progress * 100));
+  const checksumProgress = clamp01((progress - 0.42) / 0.58);
+  const checksumPercent =
+    checksumProgress >= 1
+      ? 100
+      : Math.min(99, Math.floor(checksumProgress * 100));
+  const packets = Math.round(progress * 2487560);
+  const speed =
+    frame < 210
+      ? "0 MB/s"
+      : complete > 0.75
+        ? "IDLE"
+        : `${Math.round(620 + Math.sin(time * 2.3) * 56)} MB/s`;
+  const regularOpacity = 1 - segment(frame, 762, 774, Easing.in(Easing.cubic));
+  const heroOpacity = segment(frame, 778, 800, Easing.out(Easing.cubic));
+  const accent = interpolateColors(
+    complete,
+    [0, 1],
+    [COLORS.cyan, COLORS.mint],
+  );
+
+  const statusItems = [
+    { start: 0, end: 240, label: "INVENTORY SCAN", color: COLORS.amber },
+    {
+      start: 240,
+      end: 390,
+      label: "TRANSFORMING SCHEMA",
+      color: COLORS.cobalt,
+    },
+    { start: 390, end: 650, label: "TRANSFERRING RECORDS", color: COLORS.cyan },
+    { start: 650, end: 774, label: "VERIFYING CHECKSUM", color: COLORS.mint },
+  ] as const;
+
+  return (
+    <>
+      <svg
+        width={WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        style={{ position: "absolute", inset: 0, zIndex: 3 }}
+      >
+        <defs>
+          <linearGradient
+            id="migration-route-gradient"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="0"
+          >
+            <stop offset="0" stopColor={COLORS.amber} />
+            <stop offset="0.48" stopColor={COLORS.cyan} />
+            <stop offset="1" stopColor={accent} />
+          </linearGradient>
+          <filter id="migration-route-glow">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path
+          d="M520 556 C720 462 821 472 960 524 C1099 472 1200 462 1400 556"
+          fill="none"
+          stroke="rgba(104,255,241,.14)"
+          strokeWidth="28"
+        />
+        <path
+          d="M520 556 C720 462 821 472 960 524 C1099 472 1200 462 1400 556"
+          fill="none"
+          stroke="rgba(10,23,58,.9)"
+          strokeWidth="16"
+        />
+        <path
+          d="M520 556 C720 462 821 472 960 524 C1099 472 1200 462 1400 556"
+          fill="none"
+          stroke="url(#migration-route-gradient)"
+          strokeWidth="4"
+          strokeDasharray="16 12"
+          strokeDashoffset={-time * 82}
+          filter="url(#migration-route-glow)"
+          opacity={0.48 + activeTransfer * 0.45}
+        />
+      </svg>
+
+      {Array.from({ length: 10 }, (_, index) => (
+        <TransferPacket
+          key={`packet-${index}`}
+          index={index}
+          frame={frame}
+          active={activeTransfer}
+          complete={complete}
+        />
+      ))}
+
+      <BeveledPanel
+        dark
+        accent={accent}
+        style={{
+          left: 590,
+          top: 226,
+          width: 740,
+          height: 522,
+          zIndex: 5,
+          boxShadow: `0 0 0 2px rgba(5,18,47,.92), 0 24px 70px rgba(2,7,26,.52), 0 0 ${
+            24 + complete * 42
+          }px rgba(73,244,227,${0.08 + complete * 0.14})`,
+        }}
+      >
+        <div
+          style={{
+            height: 56,
+            padding: "0 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background:
+              "linear-gradient(180deg, rgba(84,130,169,.18), rgba(7,21,55,.16))",
+            borderBottom: "2px solid rgba(125,255,241,.24)",
+          }}
+        >
+          <DotMatrixText color={COLORS.cyanSoft} size={19} letterSpacing={1.8}>
+            DATA BRIDGE // CHANNEL A
+          </DotMatrixText>
+          <DotMatrixText
+            color="rgba(191,255,248,.5)"
+            size={12}
+            letterSpacing={1.4}
+          >
+            TLS 1.3 / CRC64
+          </DotMatrixText>
+        </div>
+
+        <div style={{ opacity: regularOpacity }}>
+          <div
+            style={{
+              position: "absolute",
+              left: 36,
+              right: 36,
+              top: 87,
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ height: 70, position: "relative", width: 390 }}>
+              {statusItems.map((item) => (
+                <DotMatrixText
+                  key={item.label}
+                  color={item.color}
+                  size={24}
+                  letterSpacing={2.2}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    opacity: phaseOpacity(frame, item.start, item.end, 10),
+                    textShadow: `0 0 16px ${item.color}`,
+                  }}
+                >
+                  {item.label}
+                </DotMatrixText>
+              ))}
+              <DotMatrixText
+                size={12}
+                letterSpacing={1.7}
+                color="rgba(189,255,248,.47)"
+                style={{ position: "absolute", left: 0, top: 39 }}
+              >
+                BATCH / 08C4-79A2 / NO ROLLBACK
+              </DotMatrixText>
+            </div>
+
+            <DotMatrixText
+              color={accent}
+              size={68}
+              letterSpacing={-2}
+              align="right"
+              style={{
+                marginTop: -8,
+                lineHeight: 0.88,
+                textShadow: `0 0 22px ${accent}`,
+              }}
+            >
+              {displayPercent.toString().padStart(3, "0")}%
+            </DotMatrixText>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 36,
+              right: 36,
+              top: 178,
+              height: 58,
+              padding: 8,
+              display: "grid",
+              gridTemplateColumns: "repeat(24, 1fr)",
+              gap: 6,
+              background: "rgba(2,14,39,.76)",
+              border: "2px solid rgba(124,255,242,.21)",
+              boxShadow: "inset 0 0 0 3px rgba(0,0,0,.32)",
+            }}
+          >
+            {Array.from({ length: 24 }, (_, index) => {
+              const threshold = (index + 1) / 24;
+              const active = progress >= threshold;
+              const newest =
+                active &&
+                progress < Math.min(1, threshold + 1 / 24) &&
+                progress < 1;
+              return (
+                <div
+                  key={`progress-block-${index}`}
+                  style={{
+                    position: "relative",
+                    background: active
+                      ? interpolateColors(
+                          complete,
+                          [0, 1],
+                          [index < 5 ? COLORS.amber : COLORS.cyan, COLORS.mint],
+                        )
+                      : "rgba(93,132,151,.16)",
+                    border: active
+                      ? "1px solid rgba(225,255,251,.66)"
+                      : "1px solid rgba(102,157,170,.18)",
+                    boxShadow: newest
+                      ? `0 0 18px ${COLORS.cyan}, inset 0 0 7px rgba(255,255,255,.65)`
+                      : active
+                        ? "inset 0 0 7px rgba(255,255,255,.2)"
+                        : undefined,
+                  }}
+                >
+                  {newest ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: COLORS.cyanSoft,
+                        opacity: 0.35 + Math.sin(time * TAU * 3) * 0.2,
+                      }}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 36,
+              right: 36,
+              top: 263,
+              display: "grid",
+              gridTemplateColumns: "1.45fr 1fr 1fr",
+              gap: 12,
+            }}
+          >
+            {[
+              {
+                label: "RECORDS MOVED",
+                value: packets.toLocaleString("en-US"),
+                color: COLORS.cyanSoft,
+              },
+              { label: "THROUGHPUT", value: speed, color: COLORS.cyan },
+              {
+                label: "ERRORS",
+                value: "0",
+                color: COLORS.mint,
+              },
+            ].map((metric) => (
+              <div
+                key={metric.label}
+                style={{
+                  height: 82,
+                  padding: "13px 15px",
+                  border: "2px solid rgba(111,255,241,.18)",
+                  background: "rgba(4,19,49,.58)",
+                }}
+              >
+                <DotMatrixText
+                  size={11}
+                  letterSpacing={1.5}
+                  color="rgba(190,255,248,.48)"
+                >
+                  {metric.label}
+                </DotMatrixText>
+                <DotMatrixText
+                  size={22}
+                  letterSpacing={0.9}
+                  color={metric.color}
+                  style={{ marginTop: 9 }}
+                >
+                  {metric.value}
+                </DotMatrixText>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 36,
+              right: 36,
+              bottom: 33,
+              height: 86,
+              padding: "15px 18px",
+              background: "rgba(3,17,45,.78)",
+              border: "2px solid rgba(111,255,241,.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <DotMatrixText
+                size={12}
+                letterSpacing={1.6}
+                color="rgba(193,255,249,.58)"
+              >
+                CHECKSUM VERIFICATION
+              </DotMatrixText>
+              <DotMatrixText
+                size={13}
+                letterSpacing={1.2}
+                color={checksumPercent === 100 ? COLORS.mint : COLORS.cyan}
+              >
+                {checksumPercent.toString().padStart(3, "0")}% / CRC64
+              </DotMatrixText>
+            </div>
+            <div
+              style={{
+                height: 9,
+                marginTop: 13,
+                background: "rgba(95,139,155,.16)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${checksumPercent}%`,
+                  background:
+                    checksumPercent === 100
+                      ? COLORS.mint
+                      : `linear-gradient(90deg, ${COLORS.cobalt}, ${COLORS.cyan})`,
+                  boxShadow: `0 0 12px ${
+                    checksumPercent === 100 ? COLORS.mint : COLORS.cyan
+                  }`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            top: 56,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: heroOpacity,
+            transform: `translateY(${mix(
+              18,
+              0,
+              segment(frame, 774, 810, Easing.out(Easing.cubic)),
+            )}px)`,
+          }}
+        >
+          <div
+            style={{
+              width: 92,
+              height: 92,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: `4px solid ${COLORS.mint}`,
+              background: "rgba(76,245,179,.12)",
+              boxShadow:
+                "0 0 0 12px rgba(76,245,179,.055), 0 0 36px rgba(76,245,179,.34)",
+            }}
+          >
+            <CheckGlyph size={58} color={COLORS.mintSoft} stroke={3.3} />
+          </div>
+          <DotMatrixText
+            color={COLORS.mintSoft}
+            size={38}
+            letterSpacing={2.7}
+            align="center"
+            style={{
+              marginTop: 28,
+              textShadow: "0 0 22px rgba(98,246,181,.5)",
+            }}
+          >
+            MIGRATION COMPLETE
+          </DotMatrixText>
+          <DotMatrixText
+            color={COLORS.mint}
+            size={72}
+            letterSpacing={-2}
+            align="center"
+            style={{ marginTop: 13 }}
+          >
+            100%
+          </DotMatrixText>
+          <div
+            style={{
+              marginTop: 25,
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "12px 20px",
+              border: "2px solid rgba(98,246,181,.38)",
+              background: "rgba(14,78,68,.24)",
+            }}
+          >
+            <CheckGlyph size={20} color={COLORS.mint} />
+            <DotMatrixText
+              color={COLORS.mintSoft}
+              size={14}
+              letterSpacing={1.7}
+            >
+              2,487,560 RECORDS / CHECKSUM VERIFIED / 0 ERRORS
+            </DotMatrixText>
+          </div>
+        </div>
+      </BeveledPanel>
+    </>
+  );
+};
+
+const StageRail: React.FC<{
+  readonly progress: number;
+  readonly frame: number;
+  readonly complete: number;
+}> = ({ progress, frame, complete }) => {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 104,
+        right: 104,
+        top: 795,
+        height: 130,
+        zIndex: 8,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 68,
+          right: 68,
+          top: 34,
+          height: 5,
+          background: "rgba(89,163,171,.18)",
+        }}
+      >
+        <div
+          style={{
+            width: `${progress * 100}%`,
+            height: "100%",
+            background: interpolateColors(
+              complete,
+              [0, 1],
+              [COLORS.cyan, COLORS.mint],
+            ),
+            boxShadow: `0 0 15px ${interpolateColors(
+              complete,
+              [0, 1],
+              [COLORS.cyan, COLORS.mint],
+            )}`,
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 24,
+        }}
+      >
+        {STAGES.map((stage, index) => {
+          const reached = progress >= stage.threshold;
+          const stageStart = index === 0 ? 0 : STAGES[index - 1].threshold;
+          const active = progress >= stageStart && progress < stage.threshold;
+          const color = reached
+            ? COLORS.mint
+            : active
+              ? index === 0
+                ? COLORS.amber
+                : COLORS.cyan
+              : "rgba(126,177,180,.34)";
+          const pulse = 0.5 + 0.5 * Math.sin(frame * 0.09 + index);
+
+          return (
+            <div
+              key={stage.label}
+              style={{
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 68,
+                  height: 68,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "linear-gradient(145deg, #102c55, #071735)",
+                  border: `3px solid ${color}`,
+                  boxShadow:
+                    active || reached
+                      ? `0 0 ${active ? 14 + pulse * 12 : 14}px ${color}`
+                      : "0 0 0 3px rgba(4,14,36,.8)",
+                }}
+              >
+                {reached ? (
+                  <CheckGlyph size={34} color={COLORS.mintSoft} />
+                ) : active ? (
+                  <ArrowGlyph color={color} />
+                ) : (
+                  <DotMatrixText
+                    color="rgba(173,217,216,.38)"
+                    size={16}
+                    letterSpacing={0}
+                  >
+                    {(index + 1).toString().padStart(2, "0")}
+                  </DotMatrixText>
+                )}
+              </div>
+              <DotMatrixText
+                size={14}
+                letterSpacing={1.6}
+                color={reached ? COLORS.mintSoft : color}
+                align="center"
+                style={{
+                  marginTop: 14,
+                  textShadow:
+                    active || reached ? `0 0 12px ${color}` : undefined,
+                }}
+              >
+                {stage.label}
+              </DotMatrixText>
             </div>
           );
         })}
@@ -1683,111 +1721,249 @@ const AuditTrail: React.FC<{
   );
 };
 
-const SuccessPulse: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const reveal = phase(frame, 712, 758, Easing.out(Easing.cubic));
-  const ring = phase(frame, 724, 812, Easing.out(Easing.quad));
-  const pulseOpacity = reveal * (1 - ring);
+const Header: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly complete: number;
+}> = ({ frame, time, complete }) => {
+  const boot = segment(frame, 8, 50, Easing.out(Easing.cubic));
+  const accent = interpolateColors(
+    complete,
+    [0, 1],
+    [COLORS.cyan, COLORS.mint],
+  );
+  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.8);
+
   return (
     <>
       <div
         style={{
           position: "absolute",
-          left: 852,
-          top: 420,
-          width: 120,
-          height: 120,
-          borderRadius: "50%",
-          border: "2px solid rgba(92,241,189,0.52)",
-          opacity: pulseOpacity * 0.18,
-          transform: `scale(${0.45 + ring * 5.8})`,
-          boxShadow: "0 0 35px rgba(87,240,187,0.18)",
-          pointerEvents: "none",
+          left: 104,
+          right: 104,
+          top: 60,
+          height: 112,
+          opacity: boot,
+          transform: `translateY(${mix(-16, 0, boot)}px)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          zIndex: 10,
         }}
-      />
+      >
+        <div>
+          <DotMatrixText
+            color={COLORS.cyanSoft}
+            size={34}
+            letterSpacing={3.4}
+            style={{ textShadow: "0 0 20px rgba(73,244,227,.36)" }}
+          >
+            LEGACY DATA MIGRATION
+          </DotMatrixText>
+          <DotMatrixText
+            color="rgba(192,255,248,.51)"
+            size={13}
+            letterSpacing={2.1}
+            style={{ marginTop: 13 }}
+          >
+            MAINFRAME MODERNIZATION / ZERO-DOWNTIME PIPELINE
+          </DotMatrixText>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 15,
+            width: 236,
+            height: 66,
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            padding: "15px 18px",
+            boxSizing: "border-box",
+            border: `2px solid ${accent}`,
+            background: "rgba(4,20,50,.62)",
+            boxShadow: `0 0 ${12 + pulse * 10}px rgba(73,244,227,.18)`,
+          }}
+        >
+          <div
+            style={{
+              width: 12,
+              height: 12,
+              background: accent,
+              boxShadow: `0 0 13px ${accent}`,
+            }}
+          />
+          <div>
+            <DotMatrixText
+              color={accent}
+              size={15}
+              letterSpacing={1.7}
+              align="right"
+            >
+              <span
+                style={{
+                  position: "relative",
+                  display: "block",
+                  width: 158,
+                  height: 17,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    opacity: 1 - segment(complete, 0, 0.46),
+                  }}
+                >
+                  LIVE MIGRATION
+                </span>
+                <span
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    opacity: segment(complete, 0.54, 1),
+                  }}
+                >
+                  CUTOVER READY
+                </span>
+              </span>
+            </DotMatrixText>
+            <DotMatrixText
+              color="rgba(190,255,248,.43)"
+              size={10}
+              letterSpacing={1.4}
+              align="right"
+              style={{ marginTop: 5 }}
+            >
+              SESSION 08C4 / NODE 04
+            </DotMatrixText>
+          </div>
+        </div>
+      </div>
+
       <div
         style={{
           position: "absolute",
-          left: 697,
-          top: 718,
-          width: 365,
-          height: 40,
-          borderRadius: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          opacity: reveal,
-          transform: `translateY(${(1 - reveal) * 12}px)`,
-          color: "#67f0c1",
-          background: "rgba(72,236,182,0.09)",
-          border: "1px solid rgba(84,240,189,0.25)",
-          boxShadow: "0 0 28px rgba(66,231,180,0.08)",
-          fontSize: 15,
-          fontWeight: 770,
-          letterSpacing: 1.1,
-          pointerEvents: "none",
+          left: 104,
+          right: 104,
+          top: 182,
+          height: 2,
+          opacity: boot * 0.62,
+          background:
+            "linear-gradient(90deg, transparent, rgba(104,255,242,.7) 8%, rgba(104,255,242,.24) 50%, rgba(104,255,242,.7) 92%, transparent)",
         }}
-      >
-        <CheckMark color="#65efbf" size={20} />
-        AGENT IDENTITY VERIFIED
-      </div>
+      />
     </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const f = frame * (60 / fps);
-
-  const intro = phase(f, 4, 42, Easing.out(Easing.cubic));
-  const headerReveal = phase(f, 16, 58);
-  const agentReveal = phase(f, 64, 126, Easing.out(Easing.cubic));
-  const validationReveal = phase(f, 115, 166, Easing.out(Easing.cubic));
-  const accessReveal = phase(f, 382, 428, Easing.out(Easing.cubic));
-  const auditReveal = phase(f, 402, 454, Easing.out(Easing.cubic));
-  const fadeOut = 1 - phase(
-    f,
-    852,
-    TOTAL_FRAMES - 1,
+  const { fps, durationInFrames } = useVideoConfig();
+  const time = frame / fps;
+  const progress = getMigrationProgress(frame);
+  const complete = segment(frame, 762, 810, Easing.inOut(Easing.cubic));
+  const intro = segment(frame, 0, 38, Easing.out(Easing.cubic));
+  const cameraPush = segment(frame, 40, 650, Easing.inOut(Easing.cubic));
+  const cameraRelease = segment(
+    frame,
+    762,
+    Math.min(durationInFrames - 1, 850),
     Easing.inOut(Easing.cubic),
   );
-  const masterOpacity = clamp(intro * fadeOut);
+  const cameraScale = 1 + cameraPush * 0.018 - cameraRelease * 0.009;
+  const cameraY = -cameraPush * 5 + cameraRelease * 3;
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
         overflow: "hidden",
-        background: "#01060d",
-        color: "#ffffff",
-        fontFamily: "Inter, Arial, sans-serif",
+        backgroundColor: COLORS.deep,
+        color: COLORS.cyanSoft,
       }}
     >
-      <div
+      <Background time={time} />
+
+      <AbsoluteFill
         style={{
-          position: "absolute",
-          inset: 0,
-          opacity: masterOpacity,
+          opacity: intro,
+          transform: `translateY(${cameraY}px) scale(${cameraScale})`,
+          transformOrigin: "50% 50%",
         }}
       >
-        <Atmosphere frame={f} />
-        <Header frame={f} reveal={headerReveal} />
-        <AgentIdentityCard frame={f} reveal={agentReveal} />
-        <ValidationStack frame={f} reveal={validationReveal} />
-        <AccessControl frame={f} reveal={accessReveal} />
-        <AuditTrail frame={f} reveal={auditReveal} />
-        <SuccessPulse frame={f} />
-      </div>
+        <Header frame={frame} time={time} complete={complete} />
+        <LegacyServer progress={progress} time={time} complete={complete} />
+        <TransferBridge
+          frame={frame}
+          time={time}
+          progress={progress}
+          complete={complete}
+        />
+        <DestinationCloud progress={progress} time={time} complete={complete} />
+        <StageRail progress={progress} frame={frame} complete={complete} />
+
+        <DotMatrixText
+          size={11}
+          letterSpacing={1.8}
+          color="rgba(189,255,248,.34)"
+          style={{
+            position: "absolute",
+            left: 104,
+            bottom: 54,
+          }}
+        >
+          MIGRATION ENGINE v8.4.2 / TRANSACTION LOG ACTIVE
+        </DotMatrixText>
+        <DotMatrixText
+          size={11}
+          letterSpacing={1.8}
+          color="rgba(189,255,248,.34)"
+          align="right"
+          style={{
+            position: "absolute",
+            right: 104,
+            bottom: 54,
+          }}
+        >
+          <span
+            style={{
+              position: "relative",
+              display: "block",
+              width: 320,
+              height: 13,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                right: 0,
+                opacity: 1 - segment(complete, 0, 0.46),
+              }}
+            >
+              RECOVERY POINT / SYNCHRONIZING
+            </span>
+            <span
+              style={{
+                position: "absolute",
+                right: 0,
+                opacity: segment(complete, 0.54, 1),
+              }}
+            >
+              RECOVERY POINT VERIFIED / READY
+            </span>
+          </span>
+        </DotMatrixText>
+      </AbsoluteFill>
 
       <AbsoluteFill
         style={{
           pointerEvents: "none",
-          opacity: 0.11 * masterOpacity,
           background:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.026) 0px, rgba(255,255,255,0.026) 1px, transparent 1px, transparent 4px)",
-          mixBlendMode: "soft-light",
+            "radial-gradient(ellipse at center, transparent 61%, rgba(2,7,24,.28) 100%)",
+          boxShadow: "inset 0 0 110px rgba(2,6,22,.42)",
         }}
       />
     </AbsoluteFill>
