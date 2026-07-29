@@ -8,92 +8,14 @@ import {
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
-const PANEL_X = 180;
-const PANEL_Y = 140;
-const PANEL_WIDTH = 1560;
-const PANEL_HEIGHT = 800;
+const TOTAL_FRAMES = 900;
 const TAU = Math.PI * 2;
 
-type ObjectiveSpec = {
-  readonly id: "growth" | "customer" | "market" | "efficiency";
-  readonly eyebrow: string;
-  readonly title: string;
-  readonly target: string;
-  readonly accent: string;
-  readonly accentRgb: string;
-  readonly enterFrame: number;
-  readonly startFrame: number;
-  readonly endFrame: number;
-  readonly initialStatus: string;
-  readonly spark: readonly number[];
-};
-
-const OBJECTIVES: readonly ObjectiveSpec[] = [
-  {
-    id: "growth",
-    eyebrow: "GROWTH / O1",
-    title: "Expand recurring revenue",
-    target: "TARGET  +32%",
-    accent: "#49e6ff",
-    accentRgb: "73,230,255",
-    enterFrame: 55,
-    startFrame: 112,
-    endFrame: 220,
-    initialStatus: "MODELING",
-    spark: [22, 25, 24, 31, 29, 38, 42, 47, 53, 59, 66, 74],
-  },
-  {
-    id: "customer",
-    eyebrow: "CUSTOMER / O2",
-    title: "Launch autonomous support",
-    target: "TARGET  92% CSAT",
-    accent: "#8f6cff",
-    accentRgb: "143,108,255",
-    enterFrame: 73,
-    startFrame: 205,
-    endFrame: 330,
-    initialStatus: "IN REVIEW",
-    spark: [20, 28, 26, 35, 42, 40, 51, 55, 62, 70, 77, 84],
-  },
-  {
-    id: "market",
-    eyebrow: "MARKET / O3",
-    title: "Enter enterprise growth markets",
-    target: "TARGET  18 PIPELINE",
-    accent: "#ff6fd8",
-    accentRgb: "255,111,216",
-    enterFrame: 91,
-    startFrame: 310,
-    endFrame: 435,
-    initialStatus: "WATCH",
-    spark: [17, 19, 27, 25, 34, 37, 44, 50, 49, 62, 69, 79],
-  },
-  {
-    id: "efficiency",
-    eyebrow: "EFFICIENCY / O4",
-    title: "Reduce operational cycle time",
-    target: "TARGET  −24%",
-    accent: "#4c94ff",
-    accentRgb: "76,148,255",
-    enterFrame: 109,
-    startFrame: 415,
-    endFrame: 525,
-    initialStatus: "OPTIMIZING",
-    spark: [18, 22, 29, 27, 35, 43, 47, 55, 63, 68, 78, 88],
-  },
-] as const;
-
-const clamp = (value: number, min = 0, max = 1): number =>
-  Math.max(min, Math.min(max, value));
-
-const mix = (from: number, to: number, progress: number): number =>
-  from + (to - from) * progress;
-
-const progress = (
+const phase = (
   frame: number,
   start: number,
   end: number,
-  easing: (value: number) => number = Easing.out(Easing.cubic),
+  easing: (input: number) => number = Easing.out(Easing.cubic),
 ): number =>
   interpolate(frame, [start, end], [0, 1], {
     extrapolateLeft: "clamp",
@@ -102,1658 +24,927 @@ const progress = (
   });
 
 const seeded = (seed: number): number => {
-  const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  const value = Math.sin(seed * 84.731 + 11.927) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const polar = (
-  centerX: number,
-  centerY: number,
-  radius: number,
-  angle: number,
-): { readonly x: number; readonly y: number } => ({
-  x: centerX + Math.cos(angle) * radius,
-  y: centerY + Math.sin(angle) * radius,
-});
-
-const STARS = Array.from({ length: 72 }, (_, index) => ({
-  x: seeded(index + 1) * WIDTH,
-  y: seeded(index + 81) * HEIGHT,
-  radius: 0.8 + seeded(index + 181) * 2.2,
-  opacity: 0.12 + seeded(index + 281) * 0.55,
-  phase: seeded(index + 381) * TAU,
-  drift: 8 + seeded(index + 481) * 30,
+const MOTES = Array.from({ length: 72 }, (_, index) => ({
+  x: seeded(index + 10) * WIDTH,
+  y: seeded(index + 110) * HEIGHT,
+  size: 0.8 + seeded(index + 210) * 2.8,
+  opacity: 0.05 + seeded(index + 310) * 0.2,
+  speed: 0.35 + seeded(index + 410) * 1.25,
+  offset: seeded(index + 510) * TAU,
 }));
 
 const STREAMS = Array.from({ length: 8 }, (_, index) => ({
-  y: 120 + seeded(index + 601) * 840,
-  width: 90 + seeded(index + 621) * 190,
-  speed: 0.8 + seeded(index + 641) * 1.8,
-  phase: seeded(index + 661) * 2100,
-  opacity: 0.05 + seeded(index + 681) * 0.08,
+  y: 90 + seeded(index + 610) * 900,
+  width: 150 + seeded(index + 710) * 340,
+  speed: 0.42 + seeded(index + 810) * 0.8,
+  offset: seeded(index + 910) * 2400,
 }));
 
-const BURST_PARTICLES = Array.from({ length: 28 }, (_, index) => ({
-  angle: (index / 28) * TAU + seeded(index + 720) * 0.18,
-  reach: 72 + seeded(index + 760) * 84,
-  radius: 1.5 + seeded(index + 800) * 3.8,
-  delay: seeded(index + 840) * 0.18,
-}));
-
-const BackgroundAtmosphere: React.FC<{
-  readonly frame: number;
-  readonly opacity: number;
-}> = ({ frame, opacity }) => {
-  const breathe = 0.88 + Math.sin(frame * 0.012) * 0.12;
-
-  return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        opacity,
-        background:
-          "radial-gradient(circle at 50% 46%, #071c3c 0%, #030a1b 43%, #01040d 76%, #000207 100%)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: -260,
-          top: -300,
-          width: 920,
-          height: 920,
-          borderRadius: "50%",
-          opacity: 0.42 * breathe,
-          filter: "blur(90px)",
-          background:
-            "radial-gradient(circle, rgba(62,77,255,0.34), rgba(62,77,255,0.02) 68%, transparent 76%)",
-          transform: `translate(${Math.sin(frame * 0.006) * 24}px, ${
-            Math.cos(frame * 0.005) * 18
-          }px)`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          right: -260,
-          bottom: -330,
-          width: 980,
-          height: 980,
-          borderRadius: "50%",
-          opacity: 0.35 * breathe,
-          filter: "blur(110px)",
-          background:
-            "radial-gradient(circle, rgba(0,220,255,0.27), rgba(0,220,255,0.02) 65%, transparent 76%)",
-          transform: `translate(${Math.cos(frame * 0.0055) * 22}px, ${
-            Math.sin(frame * 0.004) * 20
-          }px)`,
-        }}
-      />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: "absolute", inset: 0, opacity: 0.58 }}
-      >
-        <defs>
-          <linearGradient id="horizon-line" x1="0" x2="1">
-            <stop offset="0" stopColor="#4d71ff" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#5cdfff" stopOpacity="0.22" />
-            <stop offset="1" stopColor="#4d71ff" stopOpacity="0" />
-          </linearGradient>
-          <radialGradient id="grid-fade">
-            <stop offset="0" stopColor="#ffffff" stopOpacity="0.32" />
-            <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-          </radialGradient>
-          <mask id="grid-mask">
-            <rect width={WIDTH} height={HEIGHT} fill="url(#grid-fade)" />
-          </mask>
-        </defs>
-        <g
-          mask="url(#grid-mask)"
-          opacity={0.24 + Math.sin(frame * 0.018) * 0.025}
-        >
-          {Array.from({ length: 20 }, (_, index) => {
-            const y = 180 + index * 42;
-            return (
-              <line
-                key={`h-${index}`}
-                x1="80"
-                x2={WIDTH - 80}
-                y1={y}
-                y2={y}
-                stroke="url(#horizon-line)"
-                strokeWidth="1"
-              />
-            );
-          })}
-          {Array.from({ length: 32 }, (_, index) => {
-            const x = 120 + index * 54;
-            return (
-              <line
-                key={`v-${index}`}
-                x1={x}
-                x2={x}
-                y1="110"
-                y2={HEIGHT - 90}
-                stroke="rgba(66,163,255,0.11)"
-                strokeWidth="1"
-              />
-            );
-          })}
-        </g>
-      </svg>
-
-      {STREAMS.map((stream, index) => {
-        const x =
-          ((frame * stream.speed + stream.phase) % (WIDTH + 480)) - 240;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: x,
-              top: stream.y,
-              width: stream.width,
-              height: 1,
-              opacity: stream.opacity,
-              background:
-                "linear-gradient(90deg, transparent, #7b78ff 45%, #5feaff, transparent)",
-              boxShadow: "0 0 10px rgba(78,220,255,0.45)",
-            }}
-          />
-        );
-      })}
-
-      {STARS.map((star, index) => {
-        const pulse =
-          0.48 + 0.52 * Math.sin(frame * 0.026 + star.phase) ** 2;
-        const dx = Math.sin(frame * 0.003 + star.phase) * star.drift;
-        const dy = Math.cos(frame * 0.0023 + star.phase) * star.drift * 0.5;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: star.x + dx,
-              top: star.y + dy,
-              width: star.radius * 2,
-              height: star.radius * 2,
-              borderRadius: "50%",
-              opacity: star.opacity * pulse,
-              background: index % 5 === 0 ? "#a8a2ff" : "#62e9ff",
-              boxShadow:
-                index % 7 === 0
-                  ? "0 0 14px rgba(89,225,255,0.72)"
-                  : "0 0 5px rgba(89,225,255,0.32)",
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
-  );
+type Stage = {
+  readonly id: "a" | "b" | "c" | "d";
+  readonly x: number;
+  readonly y: number;
+  readonly start: number;
+  readonly accent: string;
+  readonly secondary: string;
+  readonly soft: string;
+  readonly bayY: number;
+  readonly glyph: "orbit" | "diamond" | "network" | "petal";
 };
 
-const ObjectiveIcon: React.FC<{
-  readonly id: ObjectiveSpec["id"];
-  readonly color: string;
-}> = ({ id, color }) => (
-  <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden>
-    {id === "growth" ? (
-      <>
-        <path
-          d="M5 23V17M12 23V13M19 23V9"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeWidth="2.2"
+const STAGES: readonly Stage[] = [
+  {
+    id: "a",
+    x: 300,
+    y: 340,
+    start: 48,
+    accent: "#53d9ff",
+    secondary: "#436cff",
+    soft: "#c9f5ff",
+    bayY: 502,
+    glyph: "orbit",
+  },
+  {
+    id: "b",
+    x: 740,
+    y: 700,
+    start: 168,
+    accent: "#a78bff",
+    secondary: "#704dff",
+    soft: "#eee6ff",
+    bayY: 378,
+    glyph: "diamond",
+  },
+  {
+    id: "c",
+    x: 1180,
+    y: 340,
+    start: 288,
+    accent: "#ff9d6d",
+    secondary: "#ff557f",
+    soft: "#ffe5d4",
+    bayY: 502,
+    glyph: "network",
+  },
+  {
+    id: "d",
+    x: 1620,
+    y: 700,
+    start: 408,
+    accent: "#57e4b4",
+    secondary: "#20b9d7",
+    soft: "#dcfff2",
+    bayY: 378,
+    glyph: "petal",
+  },
+];
+
+const CONNECTIONS = [
+  {
+    id: "ab",
+    path: "M300 340 C470 340 570 700 740 700",
+    start: 142,
+    end: 242,
+    colorA: STAGES[0].accent,
+    colorB: STAGES[1].accent,
+  },
+  {
+    id: "bc",
+    path: "M740 700 C910 700 1010 340 1180 340",
+    start: 262,
+    end: 362,
+    colorA: STAGES[1].accent,
+    colorB: STAGES[2].accent,
+  },
+  {
+    id: "cd",
+    path: "M1180 340 C1350 340 1450 700 1620 700",
+    start: 382,
+    end: 482,
+    colorA: STAGES[2].accent,
+    colorB: STAGES[3].accent,
+  },
+] as const;
+
+const Background: React.FC<{ readonly frame: number }> = ({ frame }) => (
+  <>
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(ellipse at 50% 48%, #16213c 0%, #0a1023 38%, #040815 70%, #01030a 100%)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        opacity: 0.27,
+        backgroundImage:
+          "linear-gradient(rgba(177,205,255,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(177,205,255,0.055) 1px, transparent 1px)",
+        backgroundSize: "68px 68px",
+        backgroundPosition: `${(frame * 0.022) % 68}px ${(frame * 0.015) % 68}px`,
+        maskImage:
+          "radial-gradient(ellipse at 50% 50%, black 0%, rgba(0,0,0,0.82) 51%, transparent 91%)",
+      }}
+    />
+    {STAGES.map((stage, index) => (
+      <div
+        key={stage.id}
+        style={{
+          position: "absolute",
+          left: stage.x - 340,
+          top: stage.y - 340,
+          width: 680,
+          height: 680,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${stage.accent}1f 0%, ${stage.secondary}09 41%, transparent 72%)`,
+          filter: "blur(48px)",
+          opacity:
+            0.64 +
+            Math.sin(frame / (126 + index * 11) + index * 1.4) * 0.045,
+        }}
+      />
+    ))}
+    <div
+      style={{
+        position: "absolute",
+        left: 420,
+        top: -410,
+        width: 1080,
+        height: 730,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(ellipse, rgba(112,130,255,0.15), rgba(87,218,255,0.03) 48%, transparent 72%)",
+        filter: "blur(70px)",
+      }}
+    />
+    {STREAMS.map((stream, index) => {
+      const x =
+        ((frame * stream.speed * 1.25 + stream.offset) %
+          (WIDTH + stream.width + 420)) -
+        stream.width -
+        210;
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: x,
+            top: stream.y,
+            width: stream.width,
+            height: 1,
+            background:
+              "linear-gradient(90deg, transparent, rgba(195,218,255,0.82), transparent)",
+            opacity: 0.025 + index * 0.005,
+          }}
         />
-        <path
-          d="M5 12.5L11.7 7.4L16.2 10.1L24 3.8"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.2"
+      );
+    })}
+    {MOTES.map((mote, index) => {
+      const driftX =
+        Math.sin(frame / (75 + mote.speed * 23) + mote.offset) * 4.5;
+      const driftY =
+        Math.cos(frame / (92 + mote.speed * 17) + mote.offset) * 5.5;
+      const twinkle = 0.58 + Math.sin(frame / 42 + mote.offset) * 0.42;
+      const colors = ["#53d9ff", "#a78bff", "#ff8c72", "#57e4b4"];
+      const color = colors[index % colors.length];
+
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: mote.x + driftX,
+            top: mote.y + driftY,
+            width: mote.size,
+            height: mote.size,
+            borderRadius: "50%",
+            background: color,
+            opacity: mote.opacity * twinkle,
+            boxShadow: `0 0 10px ${color}`,
+          }}
         />
-        <path
-          d="M19.8 3.8H24V8"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.2"
-        />
-      </>
-    ) : null}
-    {id === "customer" ? (
-      <>
-        <circle
-          cx="11"
-          cy="11"
-          r="4"
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-        />
-        <circle cx="21" cy="12" r="3" fill="none" stroke={color} strokeWidth="2" />
-        <path
-          d="M4.5 24C5 18.7 7.4 16.3 11 16.3C14.7 16.3 17 18.7 17.6 24M17.2 18C21.6 16.8 24.5 19 25.2 23"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-      </>
-    ) : null}
-    {id === "market" ? (
-      <>
-        <circle cx="15" cy="15" r="10" fill="none" stroke={color} strokeWidth="2" />
-        <path
-          d="M5.5 15H24.5M15 5C18.4 8.3 19.5 11.7 19.5 15C19.5 18.3 18.4 21.7 15 25M15 5C11.6 8.3 10.5 11.7 10.5 15C10.5 18.3 11.6 21.7 15 25"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeWidth="1.8"
-        />
-      </>
-    ) : null}
-    {id === "efficiency" ? (
-      <>
-        <path
-          d="M17.8 3.8L7.5 17H14L12.2 26.2L22.5 12.8H16Z"
-          fill="none"
-          stroke={color}
-          strokeLinejoin="round"
-          strokeWidth="2.2"
-        />
-        <path
-          d="M4.5 8H9M21 22H25"
-          stroke={color}
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-      </>
-    ) : null}
-  </svg>
+      );
+    })}
+    <div
+      style={{
+        position: "absolute",
+        inset: 32,
+        borderRadius: 34,
+        border: "1px solid rgba(218,230,255,0.05)",
+        boxShadow: "inset 0 0 80px rgba(101,126,210,0.025)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(ellipse at center, transparent 43%, rgba(1,3,10,0.38) 100%)",
+      }}
+    />
+  </>
 );
 
-const Sparkline: React.FC<{
-  readonly values: readonly number[];
-  readonly reveal: number;
+const CornerGuides: React.FC<{
   readonly color: string;
-}> = ({ values, reveal, color }) => {
-  const points = values.map((value, index) => ({
-    x: 4 + (index / (values.length - 1)) * 132,
-    y: 35 - (value / 100) * 30,
-  }));
-  const line = points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
+  readonly opacity: number;
+}> = ({ color, opacity }) => (
+  <>
+    {[
+      { left: 0, top: 0, borderLeft: true, borderTop: true },
+      { right: 0, top: 0, borderRight: true, borderTop: true },
+      { left: 0, bottom: 0, borderLeft: true, borderBottom: true },
+      { right: 0, bottom: 0, borderRight: true, borderBottom: true },
+    ].map((corner, index) => (
+      <div
+        key={index}
+        style={{
+          position: "absolute",
+          width: 17,
+          height: 17,
+          left: corner.left,
+          right: corner.right,
+          top: corner.top,
+          bottom: corner.bottom,
+          borderLeft: corner.borderLeft ? `1px solid ${color}` : undefined,
+          borderRight: corner.borderRight ? `1px solid ${color}` : undefined,
+          borderTop: corner.borderTop ? `1px solid ${color}` : undefined,
+          borderBottom: corner.borderBottom ? `1px solid ${color}` : undefined,
+          opacity,
+        }}
+      />
+    ))}
+  </>
+);
+
+const ProcessConnectors: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const complete = phase(frame, 520, 650);
+  const path =
+    "M300 340 C470 340 570 700 740 700 C910 700 1010 340 1180 340 C1350 340 1450 700 1620 700";
 
   return (
-    <svg width="140" height="40" viewBox="0 0 140 40" aria-hidden>
-      <line
-        x1="3"
-        x2="137"
-        y1="35"
-        y2="35"
-        stroke="rgba(140,185,225,0.14)"
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: "absolute", inset: 0, zIndex: 5 }}
+      aria-hidden
+    >
+      <defs>
+        {CONNECTIONS.map((connection) => (
+          <linearGradient
+            key={connection.id}
+            id={`connection-${connection.id}`}
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="0"
+          >
+            <stop offset="0%" stopColor={connection.colorA} />
+            <stop offset="100%" stopColor={connection.colorB} />
+          </linearGradient>
+        ))}
+        <linearGradient id="complete-path" x1="300" y1="0" x2="1620" y2="0">
+          <stop offset="0%" stopColor="#53d9ff" />
+          <stop offset="33%" stopColor="#a78bff" />
+          <stop offset="67%" stopColor="#ff866f" />
+          <stop offset="100%" stopColor="#57e4b4" />
+        </linearGradient>
+        <filter id="connector-glow" x="-30%" y="-50%" width="160%" height="200%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <path
+        d={path}
+        fill="none"
+        stroke="rgba(190,211,255,0.075)"
+        strokeWidth="19"
+        strokeLinecap="round"
       />
       <path
-        d={line}
-        pathLength={1}
+        d={path}
         fill="none"
-        stroke={color}
-        strokeDasharray="1"
-        strokeDashoffset={1 - reveal}
+        stroke="rgba(214,229,255,0.16)"
+        strokeWidth="1.2"
+        strokeDasharray="3 14"
         strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        opacity={0.76}
-        style={{ filter: `drop-shadow(0 0 5px ${color})` }}
       />
+      {CONNECTIONS.map((connection) => {
+        const reveal = phase(
+          frame,
+          connection.start,
+          connection.end,
+          Easing.inOut(Easing.cubic),
+        );
+        return (
+          <path
+            key={connection.id}
+            d={connection.path}
+            fill="none"
+            stroke={`url(#connection-${connection.id})`}
+            strokeWidth="3.4"
+            strokeLinecap="round"
+            pathLength="1"
+            strokeDasharray="1"
+            strokeDashoffset={1 - reveal}
+            filter="url(#connector-glow)"
+          />
+        );
+      })}
+      <path
+        d={path}
+        fill="none"
+        stroke="url(#complete-path)"
+        strokeWidth={2 + complete * 2}
+        strokeLinecap="round"
+        pathLength="1"
+        strokeDasharray={`${0.08 + complete * 0.06} 0.1`}
+        strokeDashoffset={-(frame - 540) * 0.006}
+        opacity={complete * 0.65}
+        filter="url(#connector-glow)"
+      />
+      {Array.from({ length: 4 }, (_, index) => {
+        const travel =
+          ((frame - 570) * 0.00155 + index * 0.25 + 1) % 1;
+        const x = 300 + 1320 * travel;
+        const y = 520 - 180 * Math.cos(Math.PI * 3 * travel);
+        const active = complete * phase(frame, 580 + index * 10, 650 + index * 10);
+        const color =
+          travel < 0.25
+            ? "#72e2ff"
+            : travel < 0.5
+              ? "#b89cff"
+              : travel < 0.75
+                ? "#ffa47e"
+                : "#72edc2";
+        return (
+          <React.Fragment key={index}>
+            <circle cx={x} cy={y} r="15" fill={color} opacity={active * 0.08} />
+            <circle cx={x} cy={y} r="4.5" fill="#ffffff" opacity={active * 0.88} />
+          </React.Fragment>
+        );
+      })}
     </svg>
   );
 };
 
-const ObjectiveCard: React.FC<{
+const StageGlyph: React.FC<{
+  readonly stage: Stage;
+  readonly reveal: number;
   readonly frame: number;
-  readonly spec: ObjectiveSpec;
-  readonly index: number;
-}> = ({ frame, spec, index }) => {
-  const entrance = progress(
-    frame,
-    spec.enterFrame,
-    spec.enterFrame + 34,
-    Easing.out(Easing.cubic),
-  );
-  const fill = progress(
-    frame,
-    spec.startFrame,
-    spec.endFrame,
-    Easing.inOut(Easing.cubic),
-  );
-  const done = progress(
-    frame,
-    spec.endFrame - 2,
-    spec.endFrame + 25,
-    Easing.out(Easing.cubic),
-  );
-  const leaderOpacity = fill > 0.018 && fill < 0.995 ? 1 : 0;
-  const percent = Math.round(fill * 100);
-  const livePulse = 0.7 + Math.sin(frame * 0.08 + index * 1.4) * 0.18;
+}> = ({ stage, reveal, frame }) => {
+  const stroke = 1 - reveal;
+  const common = {
+    fill: "none",
+    stroke: stage.soft,
+    strokeWidth: 2.2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    pathLength: 1,
+    strokeDasharray: 1,
+    strokeDashoffset: stroke,
+    opacity: 0.9,
+  };
 
   return (
-    <div
-      style={{
-        position: "relative",
-        height: 118,
-        opacity: entrance,
-        overflow: "hidden",
-        borderRadius: 16,
-        border: `1px solid rgba(${spec.accentRgb},${0.13 + fill * 0.11})`,
-        transform:
-          entrance < 1
-            ? `translateY(${mix(20, 0, entrance)}px) scale(${mix(
-                0.985,
-                1,
-                entrance,
-              )})`
-            : "none",
-        transformOrigin: "50% 50%",
-        background: `linear-gradient(105deg, rgba(${spec.accentRgb},${
-          0.052 + fill * 0.035
-        }), rgba(7,18,41,0.76) 34%, rgba(5,15,36,0.60))`,
-        boxShadow:
-          done > 0
-            ? `inset 0 0 30px rgba(40,226,175,${done * 0.035})`
-            : "inset 0 1px rgba(255,255,255,0.025)",
-      }}
-    >
+    <svg width={104} height={104} viewBox="0 0 104 104" aria-hidden>
+      {stage.glyph === "orbit" ? (
+        <>
+          <circle cx="52" cy="52" r="21" {...common} />
+          <circle
+            cx="52"
+            cy="52"
+            r="34"
+            fill="none"
+            stroke={stage.accent}
+            strokeWidth="1.5"
+            strokeDasharray="3 8"
+            opacity={reveal * 0.52}
+            transform={`rotate(${frame * 0.16} 52 52)`}
+          />
+          <circle
+            cx={52 + Math.cos(frame * 0.018) * 34}
+            cy={52 + Math.sin(frame * 0.018) * 34}
+            r="4"
+            fill={stage.accent}
+            opacity={reveal}
+          />
+          <circle cx="52" cy="52" r="7" fill={stage.accent} opacity={reveal * 0.7} />
+        </>
+      ) : stage.glyph === "diamond" ? (
+        <>
+          <path d="M52 20L82 52L52 84L22 52Z" {...common} />
+          <path d="M52 32L70 52L52 72L34 52Z" {...common} />
+          <circle cx="52" cy="52" r="5" fill={stage.accent} opacity={reveal} />
+        </>
+      ) : stage.glyph === "network" ? (
+        <>
+          <path d="M29 33L52 22L76 36L75 68L49 82L27 66Z" {...common} />
+          <path d="M29 33L52 52L76 36M52 52L75 68M52 52L49 82M52 52L27 66" {...common} />
+          {[
+            [29, 33],
+            [52, 22],
+            [76, 36],
+            [75, 68],
+            [49, 82],
+            [27, 66],
+            [52, 52],
+          ].map(([cx, cy], index) => (
+            <circle
+              key={index}
+              cx={cx}
+              cy={cy}
+              r={index === 6 ? 5.5 : 3.6}
+              fill={index === 6 ? stage.accent : stage.soft}
+              opacity={reveal}
+            />
+          ))}
+        </>
+      ) : (
+        <>
+          {[0, 90, 180, 270].map((rotation) => (
+            <ellipse
+              key={rotation}
+              cx="52"
+              cy="35"
+              rx="12"
+              ry="22"
+              transform={`rotate(${rotation} 52 52)`}
+              {...common}
+            />
+          ))}
+          <circle cx="52" cy="52" r="8" fill={stage.accent} opacity={reveal * 0.74} />
+        </>
+      )}
+    </svg>
+  );
+};
+
+const EmptyContentBay: React.FC<{
+  readonly frame: number;
+  readonly stage: Stage;
+}> = ({ frame, stage }) => {
+  const reveal = phase(frame, stage.start + 72, stage.start + 142);
+  const detail = phase(frame, stage.start + 104, stage.start + 164);
+  const isBelow = stage.bayY > stage.y;
+  const bayX = stage.x - 170;
+  const leaderTop = isBelow ? stage.y + 122 : stage.bayY + 148;
+  const leaderHeight = isBelow
+    ? Math.max(0, stage.bayY - leaderTop)
+    : Math.max(0, stage.y - 122 - leaderTop);
+
+  return (
+    <>
       <div
         style={{
           position: "absolute",
-          left: 0,
-          top: 18,
-          bottom: 18,
-          width: 3,
-          borderRadius: 3,
-          opacity: 0.72 + fill * 0.28,
-          background: done > 0.72 ? "#35e8b2" : spec.accent,
-          boxShadow: `0 0 14px ${
-            done > 0.72 ? "rgba(53,232,178,0.75)" : `rgba(${spec.accentRgb},0.66)`
-          }`,
+          left: stage.x - 1,
+          top: leaderTop,
+          width: 2,
+          height: leaderHeight,
+          opacity: detail,
+          background: `linear-gradient(${isBelow ? "180deg" : "0deg"}, ${stage.accent}aa, transparent)`,
+          boxShadow: `0 0 12px ${stage.accent}66`,
+          zIndex: 11,
         }}
       />
-
       <div
         style={{
           position: "absolute",
-          left: 22,
-          top: 18,
-          width: 54,
-          height: 54,
-          borderRadius: 14,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: `1px solid rgba(${spec.accentRgb},0.22)`,
-          background: `linear-gradient(145deg, rgba(${spec.accentRgb},0.12), rgba(4,12,31,0.78))`,
-          boxShadow: `inset 0 1px rgba(255,255,255,0.045), 0 0 22px rgba(${spec.accentRgb},0.04)`,
-        }}
-      >
-        <ObjectiveIcon
-          id={spec.id}
-          color={done > 0.72 ? "#52f2be" : spec.accent}
-        />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 92,
-          top: 17,
-          width: 372,
-        }}
-      >
-        <div
-          style={{
-            color: spec.accent,
-            fontFamily: "Inter, Arial, sans-serif",
-            fontSize: 13,
-            fontWeight: 750,
-            letterSpacing: "0.11em",
-            lineHeight: 1,
-            opacity: 0.94,
-            textShadow: `0 0 10px rgba(${spec.accentRgb},0.30)`,
-          }}
-        >
-          {spec.eyebrow}
-        </div>
-        <div
-          style={{
-            marginTop: 5,
-            color: "#f0f8ff",
-            fontFamily: "Inter, Arial, sans-serif",
-            fontSize: 20,
-            fontWeight: 650,
-            letterSpacing: "-0.012em",
-            textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {spec.title}
-        </div>
-      </div>
-
-      <div style={{ position: "absolute", left: 464, top: 20 }}>
-        <Sparkline values={spec.spark} reveal={fill} color={spec.accent} />
-      </div>
-
-      <div
-          style={{
-            position: "absolute",
-            left: 606,
-            top: 24,
-            width: 158,
-            color: "rgba(218,235,249,0.82)",
-            fontFamily: "Inter, Arial, sans-serif",
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: "0.055em",
-            lineHeight: 1.2,
-            textAlign: "right",
-            textShadow: "0 1px 2px rgba(0,0,0,0.75)",
-            whiteSpace: "nowrap",
-          }}
-      >
-        {spec.target}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 20,
-          top: 15,
-          minWidth: 124,
-          height: 30,
-          padding: "0 13px",
-          borderRadius: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 7,
-          border: `1px solid ${
-            done > 0.55 ? "rgba(53,232,178,0.30)" : `rgba(${spec.accentRgb},0.20)`
-          }`,
-          color: done > 0.55 ? "#64f5c4" : "rgba(218,236,247,0.88)",
+          left: bayX,
+          top: stage.bayY,
+          width: 340,
+          height: 148,
+          borderRadius: 30,
+          opacity: reveal,
+          transform: `translateY(${(1 - reveal) * (isBelow ? 18 : -18)}px) scale(${0.96 + reveal * 0.04})`,
+          transformOrigin: isBelow ? "50% 0%" : "50% 100%",
           background:
-            done > 0.55
-              ? "rgba(30,160,119,0.105)"
-              : "rgba(11,29,57,0.70)",
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 12,
-          fontWeight: 750,
-          letterSpacing: "0.075em",
-          textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-        }}
-      >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: done > 0.55 ? "#43efb5" : spec.accent,
-            opacity: livePulse,
-            boxShadow: `0 0 8px ${
-              done > 0.55 ? "#43efb5" : spec.accent
-            }`,
-          }}
-        />
-        {done > 0.55 ? "ALIGNED" : spec.initialStatus}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 92,
-          right: 20,
-          bottom: 17,
-          height: 12,
-          borderRadius: 9,
-          overflow: "visible",
-          border: "1px solid rgba(115,171,219,0.10)",
-          background:
-            "repeating-linear-gradient(90deg, rgba(93,141,187,0.08) 0, rgba(93,141,187,0.08) 1px, transparent 1px, transparent 10%), rgba(1,7,20,0.66)",
-          boxShadow: "inset 0 2px 8px rgba(0,0,0,0.42)",
+            "linear-gradient(145deg, rgba(255,255,255,0.115), rgba(255,255,255,0.025) 43%, rgba(3,7,22,0.34) 100%)",
+          border: "1px solid rgba(228,238,255,0.16)",
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -18px 40px rgba(2,5,17,0.16), 0 22px 65px rgba(0,0,0,0.25), 0 0 34px ${stage.accent}0d`,
+          backdropFilter: "blur(24px) saturate(138%)",
+          overflow: "hidden",
+          zIndex: 14,
         }}
       >
         <div
           style={{
             position: "absolute",
-            inset: 2,
-            width: `${Math.max(0, fill * 100)}%`,
-            maxWidth: "calc(100% - 4px)",
-            borderRadius: 6,
-            background: `linear-gradient(90deg, rgba(${spec.accentRgb},0.42), ${spec.accent})`,
-            boxShadow: `0 0 12px rgba(${spec.accentRgb},0.45)`,
+            left: 18,
+            right: 18,
+            top: 18,
+            bottom: 18,
           }}
-        />
-        {leaderOpacity > 0 ? (
+        >
+          <CornerGuides color={stage.soft} opacity={detail * 0.28} />
           <div
             style={{
               position: "absolute",
-              left: `calc(${fill * 100}% - 4px)`,
-              top: -4,
-              width: 12,
-              height: 18,
-              borderRadius: "50%",
-              background: "#eaffff",
-              filter: "blur(1px)",
-              boxShadow: `0 0 7px #ffffff, 0 0 18px ${spec.accent}, 0 0 32px rgba(${spec.accentRgb},0.72)`,
+              left: "50%",
+              top: isBelow ? -18 : undefined,
+              bottom: isBelow ? undefined : -18,
+              width: 68 * detail,
+              height: 3,
+              borderRadius: 8,
+              transform: "translateX(-50%)",
+              background: `linear-gradient(90deg, transparent, ${stage.accent}, transparent)`,
+              boxShadow: `0 0 18px ${stage.accent}88`,
             }}
           />
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 22,
-          bottom: 34,
-          color: done > 0.75 ? "#67f6c7" : "#f2fbff",
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 17,
-          fontWeight: 750,
-          fontVariantNumeric: "tabular-nums",
-          letterSpacing: "0.04em",
-          textShadow:
-            done > 0.75
-              ? "0 0 12px rgba(71,239,183,0.5)"
-              : `0 0 12px rgba(${spec.accentRgb},0.35)`,
-        }}
-      >
-        {percent.toString().padStart(2, "0")}%
-      </div>
-    </div>
-  );
-};
-
-const StrategyScore: React.FC<{
-  readonly frame: number;
-  readonly scoreProgress: number;
-  readonly completedCount: number;
-}> = ({ frame, scoreProgress, completedCount }) => {
-  const ringProgress = clamp(scoreProgress);
-  const score =
-    completedCount === OBJECTIVES.length
-      ? 100
-      : Math.min(99, Math.floor(ringProgress * 100));
-  const entrance = progress(frame, 75, 122, Easing.out(Easing.cubic));
-  const complete = progress(frame, 540, 578, Easing.out(Easing.cubic));
-  const burstPhase = progress(
-    frame,
-    546,
-    630,
-    Easing.out(Easing.cubic),
-  );
-  // Keep the leader light on the exact end-cap of the progress stroke.
-  // Both elements now use the same normalized progress and no frame-driven
-  // rotation, so the light cannot run ahead while the score is holding.
-  const orbitAngle = -Math.PI / 2 + ringProgress * TAU;
-  const leader = polar(220, 182, 137, orbitAngle);
-  const ringRotation = frame * 0.16;
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 440,
-        height: 390,
-        opacity: entrance,
-        transform:
-          entrance < 1
-            ? `translateY(${mix(22, 0, entrance)}px) scale(${mix(
-                0.88,
-                1,
-                entrance,
-              )})`
-            : "none",
-        transformOrigin: "50% 48%",
-      }}
-    >
-      <svg width="440" height="390" viewBox="0 0 440 390">
-        <defs>
-          <linearGradient id="score-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#44d9ff" />
-            <stop offset="0.52" stopColor="#58f4c5" />
-            <stop offset="1" stopColor="#6a81ff" />
-          </linearGradient>
-          <radialGradient id="orb-core">
-            <stop offset="0" stopColor="#173b62" stopOpacity="0.70" />
-            <stop offset="0.55" stopColor="#071c38" stopOpacity="0.54" />
-            <stop offset="1" stopColor="#020817" stopOpacity="0.18" />
-          </radialGradient>
-          <filter id="score-glow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <circle
-          cx="220"
-          cy="182"
-          r={154 + burstPhase * 64}
-          fill="none"
-          stroke="#4ff4c3"
-          strokeWidth="2"
-          opacity={(1 - burstPhase) * complete * 0.34}
-        />
-        <circle
-          cx="220"
-          cy="182"
-          r={162 + burstPhase * 95}
-          fill="none"
-          stroke="#4ad8ff"
-          strokeWidth="1"
-          opacity={(1 - burstPhase) * complete * 0.22}
-        />
-
-        {burstPhase > 0.001 && burstPhase < 0.999
-          ? BURST_PARTICLES.map((particle, index) => {
-              const local = clamp(
-                (burstPhase - particle.delay) / (1 - particle.delay),
-              );
-              const point = polar(
-                220,
-                182,
-                148 + particle.reach * local,
-                particle.angle,
-              );
-              return (
-                <circle
-                  key={index}
-                  cx={point.x}
-                  cy={point.y}
-                  r={particle.radius * (1 - local * 0.45)}
-                  fill={index % 3 === 0 ? "#8b83ff" : "#62f3c5"}
-                  opacity={complete * (1 - local) * 0.84}
-                  filter="url(#score-glow)"
-                />
-              );
-            })
-          : null}
-
-        <circle
-          cx="220"
-          cy="182"
-          r="142"
-          fill="url(#orb-core)"
-          stroke="rgba(111,201,255,0.11)"
-          strokeWidth="1"
-        />
-        <circle
-          cx="220"
-          cy="182"
-          r="137"
-          fill="none"
-          stroke="rgba(89,151,205,0.13)"
-          strokeWidth="12"
-        />
-        <circle
-          cx="220"
-          cy="182"
-          r="137"
-          pathLength={100}
-          fill="none"
-          stroke="url(#score-gradient)"
-          strokeDasharray="100"
-          strokeDashoffset={100 - ringProgress * 100}
-          strokeLinecap="round"
-          strokeWidth="12"
-          transform="rotate(-90 220 182)"
-          filter="url(#score-glow)"
-        />
-
-        <g transform={`rotate(${ringRotation} 220 182)`}>
-          <circle
-            cx="220"
-            cy="182"
-            r="162"
-            fill="none"
-            stroke="rgba(99,197,255,0.20)"
-            strokeDasharray="2 15 42 20"
-            strokeLinecap="round"
-            strokeWidth="2"
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: 116,
+              height: 54,
+              transform: "translate(-50%, -50%)",
+              borderRadius: 18,
+              border: `1px solid ${stage.soft}12`,
+              background: `radial-gradient(circle, ${stage.accent}0d, transparent 72%)`,
+              opacity: detail * 0.7,
+            }}
           />
-        </g>
-        <g transform={`rotate(${-ringRotation * 0.62} 220 182)`}>
-          <circle
-            cx="220"
-            cy="182"
-            r="174"
-            fill="none"
-            stroke="rgba(129,105,255,0.14)"
-            strokeDasharray="32 28 4 14"
-            strokeLinecap="round"
-            strokeWidth="1"
-          />
-        </g>
-
-        {Array.from({ length: 48 }, (_, index) => {
-          const angle = (index / 48) * TAU - Math.PI / 2;
-          const inner = polar(220, 182, index % 4 === 0 ? 151 : 154, angle);
-          const outer = polar(220, 182, 158, angle);
-          const lit = index / 48 <= ringProgress;
-          return (
-            <line
-              key={index}
-              x1={inner.x}
-              y1={inner.y}
-              x2={outer.x}
-              y2={outer.y}
-              stroke={lit ? "#77eddf" : "rgba(92,146,193,0.18)"}
-              strokeWidth={index % 4 === 0 ? 2 : 1}
-              opacity={lit ? 0.72 : 0.65}
-            />
-          );
-        })}
-
-        <circle
-          cx={leader.x}
-          cy={leader.y}
-          r={ringProgress < 0.995 ? 5.5 : 4}
-          fill="#eaffff"
-          opacity={ringProgress > 0.012 ? 1 : 0}
-          filter="url(#score-glow)"
-        />
-
-        <circle
-          cx="220"
-          cy="182"
-          r="86"
-          fill="none"
-          stroke="rgba(105,225,255,0.08)"
-          strokeDasharray="1 8"
-          strokeWidth="1"
-        />
-        <line
-          x1="176"
-          x2="264"
-          y1="238"
-          y2="238"
-          stroke="rgba(94,208,255,0.16)"
-        />
-
-        <text
-          x="220"
-          y="172"
-          textAnchor="middle"
-          fill="#f3fbff"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="88"
-          fontWeight="400"
-          letterSpacing="-4"
+        </div>
+        <div
           style={{
-            fontVariantNumeric: "tabular-nums",
-            textShadow: "0 0 22px rgba(77,226,255,0.42)",
+            position: "absolute",
+            left: -70 + detail * 420,
+            top: -50,
+            width: 90,
+            height: 250,
+            transform: "rotate(18deg)",
+            background:
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.055), transparent)",
+            opacity: 0.5,
           }}
-        >
-          {score.toString().padStart(2, "0")}
-        </text>
-        <text
-          x="220"
-          y="204"
-          textAnchor="middle"
-          fill={complete > 0.7 ? "#6ff3c8" : "#79dff3"}
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="14"
-          fontWeight="750"
-          letterSpacing="2.2"
-        >
-          STRATEGY SCORE
-        </text>
-        <text
-          x="220"
-          y="226"
-          textAnchor="middle"
-          fill="rgba(207,229,243,0.76)"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="12"
-          fontWeight="700"
-          letterSpacing="1.6"
-        >
-          LIVE PORTFOLIO MODEL
-        </text>
-      </svg>
-
+        />
+      </div>
       <div
         style={{
           position: "absolute",
-          left: 72,
-          right: 72,
-          bottom: 2,
-          height: 50,
-          borderRadius: 13,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-around",
-          border: "1px solid rgba(82,185,227,0.12)",
-          background: "rgba(3,12,30,0.62)",
-          boxShadow: "inset 0 1px rgba(255,255,255,0.025)",
+          left: stage.x - 7,
+          top: isBelow ? stage.bayY - 7 : stage.bayY + 141,
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          opacity: detail,
+          background: stage.accent,
+          border: "2px solid rgba(255,255,255,0.74)",
+          boxShadow: `0 0 20px ${stage.accent}`,
+          zIndex: 16,
         }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              color: complete > 0.65 ? "#5bf1c0" : "#75e7ff",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 15,
-              fontWeight: 750,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {completedCount}/4
-          </div>
-          <div
-            style={{
-              marginTop: 2,
-              color: "rgba(211,231,244,0.82)",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 11,
-              fontWeight: 750,
-              letterSpacing: "0.08em",
-            }}
-          >
-            ALIGNED
-          </div>
-        </div>
-        <div style={{ width: 1, height: 20, background: "rgba(95,177,216,0.12)" }} />
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              color:
-                completedCount === OBJECTIVES.length ? "#5bf1c0" : "#ffc36c",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 15,
-              fontWeight: 750,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {completedCount === OBJECTIVES.length ? "LOW" : "WATCH"}
-          </div>
-          <div
-            style={{
-              marginTop: 2,
-              color: "rgba(211,231,244,0.82)",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 11,
-              fontWeight: 750,
-              letterSpacing: "0.08em",
-            }}
-          >
-            RISK
-          </div>
-        </div>
-        <div style={{ width: 1, height: 20, background: "rgba(95,177,216,0.12)" }} />
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              color: "#9d8aff",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 15,
-              fontWeight: 750,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {Math.round(61 + scoreProgress * 33)}%
-          </div>
-          <div
-            style={{
-              marginTop: 2,
-              color: "rgba(211,231,244,0.82)",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 11,
-              fontWeight: 750,
-              letterSpacing: "0.08em",
-            }}
-          >
-            VELOCITY
-          </div>
-        </div>
-      </div>
-    </div>
+      />
+    </>
   );
 };
 
-const ExecutionSignal: React.FC<{
+const CircularStage: React.FC<{
   readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const entrance = progress(frame, 118, 165, Easing.out(Easing.cubic));
-  const chartReveal = progress(
+  readonly stage: Stage;
+  readonly index: number;
+}> = ({ frame, stage, index }) => {
+  const shell = phase(
     frame,
-    150,
-    535,
+    stage.start,
+    stage.start + 64,
+    Easing.out(Easing.back(1.08)),
+  );
+  const arc = phase(
+    frame,
+    stage.start + 18,
+    stage.start + 112,
     Easing.inOut(Easing.cubic),
   );
-  const chartValues = [42, 48, 46, 55, 53, 62, 66, 63, 74, 79, 77, 86, 91];
-  const chartPoints = chartValues.map((value, index) => ({
-    x: 22 + (index / (chartValues.length - 1)) * 382,
-    y: 118 - (value / 100) * 78,
-  }));
-  const path = chartPoints
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
-  const area = `${path} L 404 126 L 22 126 Z`;
-  const currentIndex = clamp(chartReveal) * (chartPoints.length - 1);
-  const low = Math.floor(currentIndex);
-  const high = Math.min(chartPoints.length - 1, low + 1);
-  const local = currentIndex - low;
-  const leaderX = mix(chartPoints[low].x, chartPoints[high].x, local);
-  const leaderY = mix(chartPoints[low].y, chartPoints[high].y, local);
-  const sweepX = ((frame * 1.7) % 520) - 80;
+  const detail = phase(frame, stage.start + 52, stage.start + 126);
+  const arrow = phase(frame, stage.start + 94, stage.start + 132);
+  const complete = phase(frame, 540, 666);
+  const leaderAngle = (135 + 266.4 * arc) * (Math.PI / 180);
+  const endpointAngle = (135 + 266.4) * (Math.PI / 180);
+  const leaderX = 130 + Math.cos(leaderAngle) * 111;
+  const leaderY = 130 + Math.sin(leaderAngle) * 111;
+  const endX = 130 + Math.cos(endpointAngle) * 111;
+  const endY = 130 + Math.sin(endpointAngle) * 111;
+  const active = Math.sin((frame - 560) / 30 + index * 0.7) * 0.5 + 0.5;
+  const pulse = complete * active;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 430,
-        height: 178,
-        opacity: entrance,
-        transform:
-          entrance < 1
-            ? `translateY(${mix(18, 0, entrance)}px)`
-            : "none",
-        overflow: "hidden",
-        borderRadius: 16,
-        border: "1px solid rgba(85,181,224,0.14)",
-        background:
-          "linear-gradient(145deg, rgba(13,34,65,0.62), rgba(4,13,31,0.76))",
-        boxShadow: "inset 0 1px rgba(255,255,255,0.026)",
-      }}
-    >
+    <>
+      <EmptyContentBay frame={frame} stage={stage} />
       <div
         style={{
           position: "absolute",
-          left: 18,
-          top: 15,
-          color: "rgba(211,231,244,0.84)",
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 12,
-          fontWeight: 750,
-          letterSpacing: "0.09em",
-          textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-        }}
-      >
-        EXECUTION SIGNAL
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 18,
-          top: 12,
-          color: "#5ff0c2",
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 17,
-          fontWeight: 750,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        +{(reveal * 26.8).toFixed(1)}%
-      </div>
-      <svg
-        width="430"
-        height="144"
-        viewBox="0 0 430 144"
-        style={{ position: "absolute", left: 0, bottom: 2 }}
-      >
-        <defs>
-          <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#52e6ff" stopOpacity="0.25" />
-            <stop offset="1" stopColor="#665cff" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="chart-line" x1="0" x2="1">
-            <stop offset="0" stopColor="#8c72ff" />
-            <stop offset="1" stopColor="#55f1c2" />
-          </linearGradient>
-          <clipPath id="chart-reveal">
-            <rect x="0" y="0" width={430 * chartReveal} height="144" />
-          </clipPath>
-        </defs>
-        {[52, 78, 104, 130].map((y) => (
-          <line
-            key={y}
-            x1="20"
-            x2="410"
-            y1={y}
-            y2={y}
-            stroke="rgba(101,164,204,0.08)"
-          />
-        ))}
-        <g clipPath="url(#chart-reveal)">
-          <path d={area} fill="url(#chart-area)" />
-          <path
-            d={path}
-            fill="none"
-            stroke="url(#chart-line)"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2.5"
-            style={{ filter: "drop-shadow(0 0 6px rgba(86,227,255,0.48))" }}
-          />
-        </g>
-        <line
-          x1={leaderX}
-          x2={leaderX}
-          y1="40"
-          y2="128"
-          stroke="rgba(91,238,214,0.16)"
-          opacity={chartReveal < 0.995 ? 1 : 0}
-        />
-        <circle
-          cx={leaderX}
-          cy={leaderY}
-          r="4.5"
-          fill="#eaffff"
-          opacity={chartReveal > 0.01 ? 1 : 0}
-          style={{ filter: "drop-shadow(0 0 7px #5bead1)" }}
-        />
-      </svg>
-      <div
-        style={{
-          position: "absolute",
-          left: sweepX,
-          top: 0,
-          bottom: 0,
-          width: 90,
-          opacity: 0.13,
-          transform: "skewX(-20deg)",
-          background:
-            "linear-gradient(90deg, transparent, rgba(104,233,255,0.28), transparent)",
-        }}
-      />
-    </div>
-  );
-};
-
-const HeaderMark: React.FC = () => (
-  <div
-    style={{
-      width: 46,
-      height: 46,
-      position: "relative",
-      borderRadius: 13,
-      border: "1px solid rgba(82,218,255,0.25)",
-      background:
-        "linear-gradient(145deg, rgba(54,189,255,0.14), rgba(5,18,39,0.75))",
-      boxShadow: "0 0 24px rgba(43,190,255,0.08)",
-    }}
-  >
-    {[
-      { left: 10, top: 10, color: "#52e6ff" },
-      { left: 25, top: 10, color: "#7a77ff" },
-      { left: 10, top: 25, color: "#44edbd" },
-      { left: 25, top: 25, color: "#ff72da" },
-    ].map((tile, index) => (
-      <span
-        key={index}
-        style={{
-          position: "absolute",
-          left: tile.left,
-          top: tile.top,
-          width: 10,
-          height: 10,
-          borderRadius: index === 1 || index === 2 ? "50%" : 3,
-          background: tile.color,
-          boxShadow: `0 0 8px ${tile.color}`,
-          opacity: 0.88,
-        }}
-      />
-    ))}
-  </div>
-);
-
-const DashboardShell: React.FC<{
-  readonly frame: number;
-  readonly objectiveProgress: readonly number[];
-}> = ({ frame, objectiveProgress }) => {
-  const panelReveal = progress(frame, 8, 42, Easing.out(Easing.cubic));
-  const headerReveal = progress(frame, 28, 65, Easing.out(Easing.cubic));
-  const sectionReveal = progress(frame, 44, 82, Easing.out(Easing.cubic));
-  const scoreProgress =
-    objectiveProgress.reduce((total, value) => total + value, 0) /
-    objectiveProgress.length;
-  const completedCount = OBJECTIVES.filter((objective) => {
-    const done = progress(
-      frame,
-      objective.endFrame - 2,
-      objective.endFrame + 25,
-      Easing.out(Easing.cubic),
-    );
-    return done > 0.55;
-  }).length;
-  const completion = progress(frame, 540, 586, Easing.out(Easing.cubic));
-  const badge = progress(frame, 568, 607, Easing.out(Easing.back(1.18)));
-  const badgeGlow = 0.55 + Math.sin(frame * 0.045) * 0.12;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: PANEL_X,
-        top: PANEL_Y,
-        width: PANEL_WIDTH,
-        height: PANEL_HEIGHT,
-        opacity: panelReveal,
-        transform:
-          panelReveal < 1
-            ? `translateY(${mix(28, 0, panelReveal)}px)`
-            : "none",
-        transformOrigin: "50% 50%",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: -35,
-          borderRadius: 44,
-          opacity: 0.54 + scoreProgress * 0.14,
-          filter: "blur(38px)",
-          background:
-            "radial-gradient(ellipse at 55% 45%, rgba(35,180,255,0.14), rgba(72,63,255,0.08) 45%, transparent 72%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          overflow: "hidden",
-          borderRadius: 25,
-          border: "1px solid rgba(95,202,244,0.28)",
-          background:
-            "linear-gradient(145deg, rgba(12,33,64,0.84), rgba(3,12,29,0.90) 56%, rgba(5,19,40,0.84))",
-          boxShadow:
-            "0 36px 85px rgba(0,0,0,0.55), inset 0 1px rgba(220,248,255,0.06), inset 0 0 90px rgba(39,115,182,0.045), 0 0 55px rgba(32,160,220,0.055)",
+          left: stage.x - 150,
+          top: stage.y - 150,
+          width: 300,
+          height: 300,
+          opacity: shell,
+          transform: `scale(${0.72 + shell * 0.28})`,
+          zIndex: 20,
         }}
       >
         <div
           style={{
             position: "absolute",
-            inset: 0,
-            opacity: 0.3,
-            background:
-              "radial-gradient(circle at 82% 36%, rgba(48,220,210,0.12), transparent 24%), radial-gradient(circle at 20% 18%, rgba(89,93,255,0.10), transparent 32%)",
+            inset: 8,
+            borderRadius: "50%",
+            background: `radial-gradient(circle, ${stage.accent}${complete > 0.01 ? "24" : "18"} 0%, ${stage.secondary}0d 40%, transparent 70%)`,
+            filter: "blur(20px)",
+            transform: `scale(${1 + pulse * 0.07})`,
+            opacity: 0.72 + pulse * 0.22,
           }}
         />
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 95,
-            height: 1,
-            background:
-              "linear-gradient(90deg, transparent, rgba(83,200,241,0.20) 10%, rgba(83,200,241,0.11) 80%, transparent)",
-          }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            left: 34,
-            right: 34,
-            top: 23,
-            height: 58,
-            display: "flex",
-            alignItems: "center",
-            opacity: headerReveal,
-            transform:
-              headerReveal < 1
-                ? `translateY(${mix(-10, 0, headerReveal)}px)`
-                : "none",
-          }}
-        >
-          <HeaderMark />
-          <div style={{ marginLeft: 15 }}>
-            <div
-              style={{
-                color: "#ecf8ff",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: 20,
-                fontWeight: 750,
-                letterSpacing: "0.055em",
-                textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-              }}
-            >
-              STRATEGY COMMAND CENTER
-            </div>
-            <div
-              style={{
-                marginTop: 5,
-                color: "rgba(195,222,239,0.82)",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: 12,
-                fontWeight: 650,
-                letterSpacing: "0.11em",
-                textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-              }}
-            >
-              AI PERFORMANCE ORCHESTRATION
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                height: 34,
-                padding: "0 15px",
-                borderRadius: 17,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                border: "1px solid rgba(76,215,255,0.17)",
-                background: "rgba(7,25,48,0.68)",
-                color: "rgba(218,236,247,0.88)",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: 11,
-                fontWeight: 750,
-                letterSpacing: "0.075em",
-                textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "#58e9ff",
-                  boxShadow: "0 0 9px #58e9ff",
-                  opacity: 0.68 + Math.sin(frame * 0.11) * 0.18,
-                }}
-              />
-              LIVE MODEL
-            </div>
-            <div
-              style={{
-                height: 34,
-                padding: "0 15px",
-                borderRadius: 17,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                border: "1px solid rgba(70,239,187,0.17)",
-                background: "rgba(9,38,44,0.54)",
-                color: "#71efc7",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: 11,
-                fontWeight: 750,
-                letterSpacing: "0.075em",
-                textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden>
-                <path
-                  d="M3 7.2L5.8 10L11 4.2"
-                  fill="none"
-                  stroke="#6ff0c5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-              SYNCED
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 44,
-            top: 119,
-            width: 950,
-            opacity: sectionReveal,
-          }}
-        >
-          <div
-            style={{
-              height: 57,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: "#f2f9ff",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: 22,
-                  fontWeight: 700,
-                  letterSpacing: "-0.01em",
-                  textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-                }}
-              >
-                Executive objectives
-              </div>
-              <div
-                style={{
-                  marginTop: 5,
-                  color: "rgba(197,224,240,0.80)",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: 12,
-                  fontWeight: 650,
-                  letterSpacing: "0.085em",
-                  textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-                }}
-              >
-                REAL-TIME ALIGNMENT &amp; DELIVERY SIGNALS
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginLeft: "auto",
-                display: "flex",
-                alignItems: "center",
-                gap: 22,
-                paddingRight: 4,
-              }}
-            >
-              {[
-                { label: "ACTIVE", value: "04", color: "#5de8ff" },
-                {
-                  label: "ALIGNED",
-                  value: completedCount.toString().padStart(2, "0"),
-                  color: "#60f0c2",
-                },
-                {
-                  label: "VELOCITY",
-                  value: `${Math.round(61 + scoreProgress * 33)}%`,
-                  color: "#9b87ff",
-                },
-              ].map((metric) => (
-                <div key={metric.label} style={{ textAlign: "right" }}>
-                  <div
-                    style={{
-                      color: metric.color,
-                      fontFamily: "Inter, Arial, sans-serif",
-                      fontSize: 17,
-                      fontWeight: 750,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {metric.value}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      color: "rgba(211,231,244,0.82)",
-                      fontFamily: "Inter, Arial, sans-serif",
-                      fontSize: 11,
-                      fontWeight: 750,
-                      letterSpacing: "0.08em",
-                    }}
-                  >
-                    {metric.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", rowGap: 13 }}>
-            {OBJECTIVES.map((spec, index) => (
-              <ObjectiveCard
-                key={spec.id}
-                frame={frame}
-                spec={spec}
-                index={index}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 1027,
-            top: 118,
-            bottom: 40,
-            width: 1,
-            background:
-              "linear-gradient(180deg, transparent, rgba(75,186,229,0.18) 10%, rgba(75,186,229,0.10) 85%, transparent)",
-            opacity: sectionReveal,
-          }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            left: 1066,
-            top: 112,
-            width: 450,
-            opacity: sectionReveal,
-          }}
-        >
-          <div
-            style={{
-              color: "rgba(211,231,244,0.84)",
-              fontFamily: "Inter, Arial, sans-serif",
-              fontSize: 12,
-              fontWeight: 750,
-              letterSpacing: "0.09em",
-              textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-            }}
-          >
-            PORTFOLIO HEALTH
-          </div>
-          <StrategyScore
-            frame={frame}
-            scoreProgress={scoreProgress}
-            completedCount={completedCount}
-          />
-          <div style={{ marginTop: -8 }}>
-            <ExecutionSignal
-              frame={frame}
-              reveal={clamp(scoreProgress * 1.06)}
-            />
-          </div>
-        </div>
-
         <svg
-          width={PANEL_WIDTH}
-          height={PANEL_HEIGHT}
-          viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}
+          width={260}
+          height={260}
+          viewBox="0 0 260 260"
           style={{
             position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
+            left: 20,
+            top: 20,
+            overflow: "visible",
           }}
+          aria-hidden
         >
           <defs>
-            <linearGradient id="frame-accent" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#5bdfff" stopOpacity="0.78" />
-              <stop offset="0.5" stopColor="#6d6fff" stopOpacity="0.24" />
-              <stop offset="1" stopColor="#54f1bf" stopOpacity="0.60" />
+            <linearGradient
+              id={`arc-${stage.id}`}
+              x1="30"
+              y1="200"
+              x2="230"
+              y2="60"
+            >
+              <stop offset="0%" stopColor={stage.secondary} />
+              <stop offset="58%" stopColor={stage.accent} />
+              <stop offset="100%" stopColor="#ffffff" />
             </linearGradient>
+            <radialGradient id={`halo-${stage.id}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={stage.accent} stopOpacity="0.14" />
+              <stop offset="100%" stopColor={stage.accent} stopOpacity="0" />
+            </radialGradient>
+            <filter
+              id={`stage-glow-${stage.id}`}
+              x="-60%"
+              y="-60%"
+              width="220%"
+              height="220%"
+            >
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
-          <path
-            d="M 24 1 H 180 M 1 24 V 150"
-            fill="none"
-            stroke="url(#frame-accent)"
-            strokeLinecap="round"
-            strokeWidth="2"
-            opacity="0.72"
+          <circle
+            cx="130"
+            cy="130"
+            r="121"
+            fill={`url(#halo-${stage.id})`}
+            opacity={detail * 0.5 + pulse * 0.2}
           />
-          <path
-            d={`M ${PANEL_WIDTH - 180} ${PANEL_HEIGHT - 1} H ${
-              PANEL_WIDTH - 24
-            } M ${PANEL_WIDTH - 1} ${PANEL_HEIGHT - 150} V ${
-              PANEL_HEIGHT - 24
-            }`}
+          <circle
+            cx="130"
+            cy="130"
+            r="118"
             fill="none"
-            stroke="url(#frame-accent)"
+            stroke="rgba(224,236,255,0.12)"
+            strokeWidth="1.2"
+            strokeDasharray="3 11"
+            opacity={detail * 0.82}
+            transform={`rotate(${frame * (index % 2 === 0 ? 0.1 : -0.1)} 130 130)`}
+          />
+          <circle
+            cx="130"
+            cy="130"
+            r="111"
+            fill="none"
+            stroke={`url(#arc-${stage.id})`}
+            strokeWidth="5"
             strokeLinecap="round"
+            pathLength="1"
+            strokeDasharray={`${0.74 * arc} 1`}
+            transform="rotate(135 130 130)"
+            filter={`url(#stage-glow-${stage.id})`}
+          />
+          {arc > 0.01 ? (
+            <>
+              <circle
+                cx={leaderX}
+                cy={leaderY}
+                r="13"
+                fill={stage.accent}
+                opacity="0.12"
+              />
+              <circle cx={leaderX} cy={leaderY} r="4.5" fill="#ffffff" />
+            </>
+          ) : null}
+          <g
+            transform={`translate(${endX} ${endY}) rotate(${131.4})`}
+            opacity={arrow}
+          >
+            <path
+              d="M-9 -7L9 0L-9 7Z"
+              fill={stage.accent}
+              filter={`url(#stage-glow-${stage.id})`}
+            />
+          </g>
+          <circle
+            cx={130 + Math.cos((135 * Math.PI) / 180) * 111}
+            cy={130 + Math.sin((135 * Math.PI) / 180) * 111}
+            r="6.5"
+            fill={stage.secondary}
+            stroke="rgba(255,255,255,0.76)"
             strokeWidth="2"
-            opacity="0.64"
+            opacity={detail}
+            filter={`url(#stage-glow-${stage.id})`}
           />
         </svg>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: -17,
-          minWidth: 210,
-          height: 34,
-          padding: "0 18px",
-          borderRadius: 19,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          opacity: badge,
-          transform: `translateX(-50%) translateY(${mix(
-            -10,
-            0,
-            badge,
-          )}px) scale(${mix(0.76, 1, badge)})`,
-          border: "1px solid rgba(74,239,186,0.46)",
-          color: "#7af4cd",
-          background:
-            "linear-gradient(180deg, rgba(16,68,68,0.96), rgba(6,34,43,0.96))",
-          boxShadow: `0 0 28px rgba(56,237,180,${
-            badge * badgeGlow * 0.28
-          }), inset 0 1px rgba(215,255,243,0.09)`,
-          fontFamily: "Inter, Arial, sans-serif",
-          fontSize: 11,
-          fontWeight: 750,
-          letterSpacing: "0.085em",
-          textShadow: "0 1px 2px rgba(0,0,0,0.72)",
-        }}
-      >
-        <span
+        <div
           style={{
-            width: 16,
-            height: 16,
+            position: "absolute",
+            left: 68,
+            top: 68,
+            width: 164,
+            height: 164,
             borderRadius: "50%",
+            background: `radial-gradient(circle at 34% 28%, rgba(255,255,255,0.24), ${stage.accent}20 30%, ${stage.secondary}10 56%, rgba(2,6,20,0.58) 100%)`,
+            border: "1px solid rgba(232,241,255,0.2)",
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -24px 48px rgba(0,0,0,0.2), 0 22px 58px rgba(0,0,0,0.28), 0 0 ${30 + pulse * 24}px ${stage.accent}22`,
+            backdropFilter: "blur(22px) saturate(145%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            border: "1px solid rgba(107,246,203,0.48)",
-            background: "rgba(62,226,173,0.14)",
-            boxShadow: "0 0 10px rgba(62,226,173,0.28)",
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-            <path
-              d="M2 5.2L4.1 7.2L8.1 2.9"
-              fill="none"
-              stroke="#85f6d2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </span>
-        STRATEGY ALIGNED
+          <div
+            style={{
+              position: "absolute",
+              inset: 11,
+              borderRadius: "50%",
+              border: `1px solid ${stage.soft}16`,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 22,
+              borderRadius: "50%",
+              background: `conic-gradient(from ${frame * 0.2 + index * 35}deg, transparent, ${stage.accent}10, transparent 34%, ${stage.secondary}0c, transparent 72%)`,
+              opacity: detail,
+            }}
+          />
+          <StageGlyph stage={stage} reveal={detail} frame={frame} />
+          <div
+            style={{
+              position: "absolute",
+              left: 34,
+              top: 23,
+              width: 52,
+              height: 18,
+              borderRadius: "50%",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.2), transparent)",
+              transform: "rotate(-24deg)",
+              filter: "blur(5px)",
+              opacity: detail * 0.75,
+            }}
+          />
+        </div>
       </div>
+    </>
+  );
+};
 
-      <div
-        style={{
-          position: "absolute",
-          left: PANEL_WIDTH / 2 - 220,
-          top: -54,
-          width: 440,
-          height: 72,
-          borderRadius: "50%",
-          opacity: completion * 0.17,
-          filter: "blur(28px)",
-          background:
-            "radial-gradient(ellipse, rgba(77,245,190,0.72), transparent 70%)",
-        }}
+const CompletionField: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const reveal = phase(frame, 548, 660, Easing.out(Easing.cubic));
+  const settle = phase(frame, 650, 740);
+  const radius = 420;
+  const circumference = TAU * radius;
+
+  return (
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: "absolute", inset: 0, zIndex: 8 }}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="completion-ring" x1="470" y1="540" x2="1450" y2="540">
+          <stop offset="0%" stopColor="#53d9ff" stopOpacity="0" />
+          <stop offset="22%" stopColor="#53d9ff" />
+          <stop offset="46%" stopColor="#a78bff" />
+          <stop offset="69%" stopColor="#ff8d72" />
+          <stop offset="88%" stopColor="#57e4b4" />
+          <stop offset="100%" stopColor="#57e4b4" stopOpacity="0" />
+        </linearGradient>
+        <filter id="completion-glow" x="-30%" y="-60%" width="160%" height="220%">
+          <feGaussianBlur stdDeviation="7" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <ellipse
+        cx="960"
+        cy="520"
+        rx="790"
+        ry="420"
+        fill="none"
+        stroke="url(#completion-ring)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        pathLength="1"
+        strokeDasharray={`${0.86 * reveal} 1`}
+        transform="rotate(7 960 520)"
+        opacity={reveal * 0.42}
+        filter="url(#completion-glow)"
       />
-    </div>
+      <circle
+        cx="960"
+        cy="520"
+        r={radius}
+        fill="none"
+        stroke="rgba(215,228,255,0.08)"
+        strokeWidth="1"
+        strokeDasharray="5 18"
+        strokeDashoffset={frame * 0.18}
+        opacity={settle * 0.58}
+        transform="scale(2 1)"
+      />
+      {STAGES.map((stage, index) => {
+        const local = phase(frame, 590 + index * 16, 665 + index * 16);
+        return (
+          <React.Fragment key={stage.id}>
+            <circle
+              cx={stage.x}
+              cy={stage.y}
+              r={138 + settle * 8}
+              fill="none"
+              stroke={stage.accent}
+              strokeWidth="1.4"
+              opacity={local * 0.16}
+            />
+            <circle
+              cx={stage.x}
+              cy={stage.y}
+              r={154 + settle * 10}
+              fill="none"
+              stroke={stage.soft}
+              strokeWidth="1"
+              strokeDasharray="3 16"
+              opacity={local * 0.12}
+              transform={`rotate(${frame * (index % 2 === 0 ? 0.08 : -0.08)} ${stage.x} ${stage.y})`}
+            />
+          </React.Fragment>
+        );
+      })}
+    </svg>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const intro = progress(frame, 0, 28, Easing.out(Easing.cubic));
-  const outro = 1 - progress(frame, 842, 899, Easing.in(Easing.cubic));
-  const globalOpacity = intro * outro;
-  const objectiveProgress = OBJECTIVES.map((objective) =>
-    progress(
-      frame,
-      objective.startFrame,
-      objective.endFrame,
-      Easing.inOut(Easing.cubic),
-    ),
-  );
-  const finishingPulse =
-    progress(frame, 540, 585) * (1 - progress(frame, 625, 690));
+  const fadeIn = phase(frame, 0, 30, Easing.out(Easing.quad));
+  const fadeOut =
+    1 - phase(frame, 850, TOTAL_FRAMES - 1, Easing.in(Easing.quad));
+  const camera = phase(frame, 40, 820, Easing.inOut(Easing.quad));
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
+        backgroundColor: "#01030a",
         overflow: "hidden",
-        backgroundColor: "#000207",
-        WebkitFontSmoothing: "antialiased",
-        textRendering: "optimizeLegibility",
       }}
     >
-      <BackgroundAtmosphere frame={frame} opacity={globalOpacity} />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: globalOpacity,
-        }}
-      >
-        <DashboardShell
-          frame={frame}
-          objectiveProgress={objectiveProgress}
-        />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          opacity: globalOpacity,
-          background:
-            "radial-gradient(ellipse at center, transparent 46%, rgba(0,2,9,0.16) 72%, rgba(0,1,5,0.58) 100%)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          opacity: finishingPulse * 0.09,
-          background:
-            "radial-gradient(circle at 72% 43%, rgba(103,255,209,0.72), transparent 24%)",
-          mixBlendMode: "screen",
-        }}
-      />
+      <AbsoluteFill style={{ opacity: fadeIn * fadeOut }}>
+        <Background frame={frame} />
+        <AbsoluteFill
+          style={{
+            transform: `scale(${1 + camera * 0.008}) translateY(${Math.sin(frame / 180) * 1.2}px)`,
+            transformOrigin: "50% 50%",
+          }}
+        >
+          <ProcessConnectors frame={frame} />
+          <CompletionField frame={frame} />
+          {STAGES.map((stage, index) => (
+            <CircularStage
+              key={stage.id}
+              frame={frame}
+              stage={stage}
+              index={index}
+            />
+          ))}
+        </AbsoluteFill>
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
