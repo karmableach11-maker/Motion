@@ -12,77 +12,10 @@ const HEIGHT = 1080;
 const TOTAL_FRAMES = 900;
 const TAU = Math.PI * 2;
 
-type ActionSpec = {
-  readonly number: string;
-  readonly title: string;
-  readonly detail: string;
-  readonly metric: string;
-  readonly metricLabel: string;
-  readonly color: string;
-  readonly rgb: string;
-  readonly icon: "trend" | "shield" | "workflow" | "launch";
-  readonly start: number;
-  readonly end: number;
-};
-
-const ACTIONS: readonly ActionSpec[] = [
-  {
-    number: "01",
-    title: "Reallocate spend to high-intent demand",
-    detail: "Prioritize the two channels with the strongest conversion signal",
-    metric: "+21%",
-    metricLabel: "PIPELINE LIFT",
-    color: "#67e9ff",
-    rgb: "103,233,255",
-    icon: "trend",
-    start: 304,
-    end: 374,
-  },
-  {
-    number: "02",
-    title: "Activate at-risk accounts before renewal",
-    detail: "Launch proactive outreach with a personalized retention offer",
-    metric: "24",
-    metricLabel: "ACCOUNTS READY",
-    color: "#8e8bff",
-    rgb: "142,139,255",
-    icon: "shield",
-    start: 382,
-    end: 452,
-  },
-  {
-    number: "03",
-    title: "Automate repeat support workflows",
-    detail: "Resolve high-volume requests with an AI-assisted service flow",
-    metric: "−38%",
-    metricLabel: "RESOLUTION TIME",
-    color: "#55f1c2",
-    rgb: "85,241,194",
-    icon: "workflow",
-    start: 460,
-    end: 530,
-  },
-  {
-    number: "04",
-    title: "Scale the top-performing market this week",
-    detail: "Move the winning playbook into the highest-confidence segment",
-    metric: "94%",
-    metricLabel: "CONFIDENCE",
-    color: "#ffb967",
-    rgb: "255,185,103",
-    icon: "launch",
-    start: 538,
-    end: 608,
-  },
-] as const;
-
 const clamp = (value: number, min = 0, max = 1): number =>
   Math.max(min, Math.min(max, value));
 
-const mix = (from: number, to: number, amount: number): number =>
-  from + (to - from) * amount;
-
-const progress = (
+const phase = (
   frame: number,
   start: number,
   end: number,
@@ -95,1238 +28,1727 @@ const progress = (
   });
 
 const seeded = (seed: number): number => {
-  const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  const value = Math.sin(seed * 91.317 + 17.131) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const PARTICLES = Array.from({ length: 58 }, (_, index) => ({
-  x: seeded(index + 10) * WIDTH,
-  y: seeded(index + 90) * HEIGHT,
-  radius: 0.8 + seeded(index + 170) * 2.2,
-  opacity: 0.12 + seeded(index + 250) * 0.43,
-  phase: seeded(index + 330) * TAU,
-  drift: 8 + seeded(index + 410) * 24,
-}));
-
-const STREAMS = Array.from({ length: 12 }, (_, index) => ({
-  y: 70 + seeded(index + 510) * 940,
-  width: 90 + seeded(index + 540) * 210,
-  speed: 0.55 + seeded(index + 570) * 1.25,
-  phase: seeded(index + 600) * 2200,
-  opacity: 0.035 + seeded(index + 630) * 0.06,
-}));
-
-const ORBIT_NODES = Array.from({ length: 18 }, (_, index) => ({
-  angle: (index / 18) * TAU + seeded(index + 700) * 0.22,
-  radiusX: 570 + seeded(index + 740) * 350,
-  radiusY: 245 + seeded(index + 780) * 190,
-  size: 2 + seeded(index + 820) * 3.2,
-  phase: seeded(index + 860) * TAU,
-}));
-
-const Glint: React.FC<{
-  readonly size?: number;
-  readonly color?: string;
-}> = ({ size = 24, color = "#6deaff" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-    <path
-      d="M12 1.8C12.5 7.8 16.2 11.5 22.2 12C16.2 12.5 12.5 16.2 12 22.2C11.5 16.2 7.8 12.5 1.8 12C7.8 11.5 11.5 7.8 12 1.8Z"
-      fill={color}
-    />
-    <circle cx="12" cy="12" r="2.7" fill="#ffffff" opacity="0.88" />
-  </svg>
-);
-
-const CheckIcon: React.FC<{
-  readonly color: string;
-  readonly size?: number;
-}> = ({ color, size = 22 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-    <path
-      d="M5 12.6L9.4 17L19 7.4"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2.5"
-    />
-  </svg>
-);
-
-const ArrowIcon: React.FC<{ readonly color: string }> = ({ color }) => (
-  <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden>
-    <path
-      d="M7 14H20M15 9L20 14L15 19"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2.4"
-    />
-  </svg>
-);
-
-const ActionIcon: React.FC<{
-  readonly icon: ActionSpec["icon"];
-  readonly color: string;
-}> = ({ icon, color }) => (
-  <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden>
-    {icon === "trend" ? (
-      <>
-        <path
-          d="M5 25L12 18L17 21L28 9"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.4"
-        />
-        <path
-          d="M21.5 9H28V15.5"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.4"
-        />
-      </>
-    ) : null}
-    {icon === "shield" ? (
-      <>
-        <path
-          d="M17 4.5L27 8.4V15.4C27 22.2 22.9 27.1 17 29.5C11.1 27.1 7 22.2 7 15.4V8.4L17 4.5Z"
-          fill="none"
-          stroke={color}
-          strokeLinejoin="round"
-          strokeWidth="2.2"
-        />
-        <path
-          d="M12.2 17L15.6 20.4L22 13.8"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.2"
-        />
-      </>
-    ) : null}
-    {icon === "workflow" ? (
-      <>
-        <rect
-          x="4.8"
-          y="5.4"
-          width="8"
-          height="8"
-          rx="2"
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-        />
-        <rect
-          x="21.2"
-          y="20.6"
-          width="8"
-          height="8"
-          rx="2"
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-        />
-        <path
-          d="M12.8 9.4H20C24 9.4 25.2 11.7 25.2 15.5V20.6M21.5 16.8L25.2 20.6L29 16.8"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-        />
-      </>
-    ) : null}
-    {icon === "launch" ? (
-      <>
-        <path
-          d="M18.5 6.2C23 4.6 27.3 5 29.2 5.6C29.8 7.5 30.2 11.8 28.6 16.3L20.7 24.2L10.6 14.1L18.5 6.2Z"
-          fill="none"
-          stroke={color}
-          strokeLinejoin="round"
-          strokeWidth="2.1"
-        />
-        <circle
-          cx="23.2"
-          cy="10.7"
-          r="2.6"
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-        />
-        <path
-          d="M12.5 16L7.1 17.3L4.8 21.1L12.5 21.5M18.8 22L17.5 27.4L13.7 29.7L13.3 22"
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-        />
-      </>
-    ) : null}
-  </svg>
-);
-
-const Atmosphere: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const breathe = 0.88 + Math.sin(frame * 0.012) * 0.12;
-
-  return (
-    <AbsoluteFill
-      style={{
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 39%, #0b2944 0%, #061423 35%, #020812 68%, #01040a 100%)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 285 + Math.sin(frame * 0.004) * 28,
-          top: -360 + Math.cos(frame * 0.0048) * 18,
-          width: 1350,
-          height: 920,
-          borderRadius: "50%",
-          opacity: 0.44 * breathe,
-          background:
-            "radial-gradient(ellipse, rgba(30,211,255,0.24), rgba(40,111,190,0.08) 42%, transparent 72%)",
-          filter: "blur(74px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: -270,
-          bottom: -430,
-          width: 900,
-          height: 900,
-          borderRadius: "50%",
-          opacity: 0.36,
-          background:
-            "radial-gradient(circle, rgba(102,85,255,0.22), transparent 70%)",
-          filter: "blur(90px)",
-          transform: `translate(${Math.sin(frame * 0.0035) * 24}px, ${
-            Math.cos(frame * 0.003) * 20
-          }px)`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          right: -300,
-          bottom: -460,
-          width: 960,
-          height: 960,
-          borderRadius: "50%",
-          opacity: 0.26,
-          background:
-            "radial-gradient(circle, rgba(0,229,187,0.2), transparent 68%)",
-          filter: "blur(100px)",
-          transform: `translate(${Math.cos(frame * 0.0038) * 26}px, ${
-            Math.sin(frame * 0.0033) * 18
-          }px)`,
-        }}
-      />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: "absolute", inset: 0, opacity: 0.68 }}
-      >
-        <defs>
-          <radialGradient id="network-fade">
-            <stop offset="0" stopColor="#ffffff" stopOpacity="0.34" />
-            <stop offset="0.7" stopColor="#ffffff" stopOpacity="0.08" />
-            <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-          </radialGradient>
-          <mask id="network-mask">
-            <rect width={WIDTH} height={HEIGHT} fill="url(#network-fade)" />
-          </mask>
-          <linearGradient id="network-line" x1="0" x2="1">
-            <stop offset="0" stopColor="#5e76ff" stopOpacity="0" />
-            <stop offset="0.45" stopColor="#56e7ff" stopOpacity="0.32" />
-            <stop offset="1" stopColor="#43ffd0" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <g mask="url(#network-mask)">
-          {Array.from({ length: 19 }, (_, index) => (
-            <path
-              key={`curve-${index}`}
-              d={`M ${-180 + index * 116} ${HEIGHT + 120} Q ${
-                820 + Math.sin(index * 1.3) * 260
-              } ${330 + index * 8}, ${WIDTH + 160} ${70 + index * 38}`}
-              fill="none"
-              stroke="url(#network-line)"
-              strokeWidth="1"
-              opacity={0.1 + (index % 4) * 0.022}
-            />
-          ))}
-          {Array.from({ length: 15 }, (_, index) => (
-            <line
-              key={`h-${index}`}
-              x1="180"
-              x2={WIDTH - 180}
-              y1={190 + index * 55}
-              y2={190 + index * 55}
-              stroke="rgba(91,214,255,0.07)"
-              strokeWidth="1"
-            />
-          ))}
-        </g>
-      </svg>
-
-      {STREAMS.map((stream, index) => {
-        const x = ((frame * stream.speed + stream.phase) % 2420) - 260;
-        return (
-          <div
-            key={`stream-${index}`}
-            style={{
-              position: "absolute",
-              left: x,
-              top: stream.y,
-              width: stream.width,
-              height: 1,
-              opacity: stream.opacity,
-              background:
-                "linear-gradient(90deg, transparent, #6d86ff 30%, #6df2ff 70%, transparent)",
-              boxShadow: "0 0 9px rgba(90,230,255,0.35)",
-            }}
-          />
-        );
-      })}
-
-      {ORBIT_NODES.map((node, index) => {
-        const angle = node.angle + frame * (0.0007 + (index % 3) * 0.00016);
-        const x = WIDTH / 2 + Math.cos(angle) * node.radiusX;
-        const y = 455 + Math.sin(angle) * node.radiusY;
-        const pulse = 0.45 + Math.sin(frame * 0.025 + node.phase) * 0.2;
-        return (
-          <div
-            key={`orbit-${index}`}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width: node.size,
-              height: node.size,
-              borderRadius: "50%",
-              opacity: pulse,
-              background: index % 4 === 0 ? "#a98dff" : "#62ebff",
-              boxShadow: "0 0 12px rgba(90,232,255,0.65)",
-            }}
-          />
-        );
-      })}
-
-      {PARTICLES.map((particle, index) => {
-        const x =
-          particle.x + Math.sin(frame * 0.0038 + particle.phase) * particle.drift;
-        const y =
-          particle.y +
-          Math.cos(frame * 0.0031 + particle.phase) * particle.drift * 0.65;
-        const pulse =
-          0.48 + 0.52 * Math.sin(frame * 0.022 + particle.phase) ** 2;
-        return (
-          <div
-            key={`particle-${index}`}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width: particle.radius * 2,
-              height: particle.radius * 2,
-              borderRadius: "50%",
-              opacity: particle.opacity * pulse,
-              background: index % 6 === 0 ? "#b0a0ff" : "#76eeff",
-              boxShadow:
-                index % 8 === 0
-                  ? "0 0 14px rgba(104,237,255,0.68)"
-                  : "0 0 4px rgba(104,237,255,0.34)",
-            }}
-          />
-        );
-      })}
-
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 46%, rgba(0,3,10,0.38) 78%, rgba(0,2,8,0.78) 100%)",
-        }}
-      />
-    </AbsoluteFill>
-  );
+const PANEL: React.CSSProperties = {
+  border: "1px solid rgba(111,218,255,0.18)",
+  background:
+    "linear-gradient(145deg, rgba(10,29,45,0.94), rgba(4,15,27,0.9))",
+  boxShadow:
+    "0 28px 85px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.045)",
 };
 
-const SystemHeader: React.FC<{
+const STARS = Array.from({ length: 72 }, (_, index) => ({
+  x: seeded(index + 1) * WIDTH,
+  y: seeded(index + 101) * HEIGHT,
+  size: 0.8 + seeded(index + 201) * 2.4,
+  opacity: 0.1 + seeded(index + 301) * 0.34,
+  phase: seeded(index + 401) * TAU,
+}));
+
+const STREAMS = Array.from({ length: 11 }, (_, index) => ({
+  y: 95 + seeded(index + 501) * 885,
+  length: 100 + seeded(index + 601) * 250,
+  speed: 0.35 + seeded(index + 701) * 0.75,
+  offset: seeded(index + 801) * 2300,
+}));
+
+const CheckMark: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#5ff2c2", size = 24 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+    <path
+      d="M5 12.6L9.3 16.9L19.2 7.1"
+      fill="none"
+      stroke={color}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.6"
+    />
+  </svg>
+);
+
+const CrossMark: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#ff6d83", size = 24 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+    <path
+      d="M7 7L17 17M17 7L7 17"
+      fill="none"
+      stroke={color}
+      strokeLinecap="round"
+      strokeWidth="2.6"
+    />
+  </svg>
+);
+
+const ShieldIcon: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+  readonly checked?: boolean;
+}> = ({ color = "#6fe7ff", size = 34, checked = false }) => (
+  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
+    <path
+      d="M18 3.8L31 8.6V17.2C31 25.2 26 30.7 18 33.2C10 30.7 5 25.2 5 17.2V8.6L18 3.8Z"
+      fill={`${color}15`}
+      stroke={color}
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+    />
+    {checked ? (
+      <path
+        d="M11.4 18.3L15.8 22.7L24.9 13.5"
+        fill="none"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.3"
+      />
+    ) : (
+      <>
+        <circle cx="18" cy="16.2" r="3.2" fill="none" stroke={color} strokeWidth="1.8" />
+        <path d="M18 19.5V24" stroke={color} strokeLinecap="round" strokeWidth="2" />
+      </>
+    )}
+  </svg>
+);
+
+const FingerprintIcon: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#73e9ff", size = 38 }) => (
+  <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden>
+    <path
+      d="M7.4 18.4C7.4 11.7 12.9 6.2 19.7 6.2C26.4 6.2 31.8 11.5 31.9 18.1M11.2 21.4V18.5C11.2 13.7 15 9.9 19.7 9.9C24.4 9.9 28.1 13.6 28.1 18.3V22.9M15 24V18.7C15 16 17.1 13.8 19.8 13.8C22.5 13.8 24.5 15.9 24.5 18.6V25.4M19.8 18.2V23.5C19.8 29.1 17.2 33 14.7 35M28.1 26.3C27.5 30.5 25.5 33.5 23.6 35.3M10.8 25.7C10.4 29.1 9.2 31.5 7.8 33.3"
+      fill="none"
+      stroke={color}
+      strokeLinecap="round"
+      strokeWidth="1.9"
+    />
+  </svg>
+);
+
+const ChipIcon: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#9a91ff", size = 36 }) => (
+  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
+    <rect x="8" y="8" width="20" height="20" rx="4" fill={`${color}15`} stroke={color} strokeWidth="1.8" />
+    <rect x="13" y="13" width="10" height="10" rx="2" fill="none" stroke={color} strokeWidth="1.6" />
+    <path
+      d="M12 3.5V8M18 3.5V8M24 3.5V8M12 28V32.5M18 28V32.5M24 28V32.5M3.5 12H8M3.5 18H8M3.5 24H8M28 12H32.5M28 18H32.5M28 24H32.5"
+      stroke={color}
+      strokeLinecap="round"
+      strokeWidth="1.7"
+    />
+  </svg>
+);
+
+const LinkIcon: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#60efc1", size = 36 }) => (
+  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
+    <path
+      d="M15.2 21L12 24.2C9.7 26.5 6 26.5 3.7 24.2C1.4 21.9 1.4 18.2 3.7 15.9L9 10.6C11.3 8.3 15 8.3 17.3 10.6"
+      fill="none"
+      stroke={color}
+      strokeLinecap="round"
+      strokeWidth="2.2"
+      transform="translate(5 0)"
+    />
+    <path
+      d="M20.8 15L24 11.8C26.3 9.5 30 9.5 32.3 11.8C34.6 14.1 34.6 17.8 32.3 20.1L27 25.4C24.7 27.7 21 27.7 18.7 25.4"
+      fill="none"
+      stroke={color}
+      strokeLinecap="round"
+      strokeWidth="2.2"
+      transform="translate(-5 0)"
+    />
+    <path d="M13.8 22.2L22.2 13.8" stroke={color} strokeLinecap="round" strokeWidth="2.2" />
+  </svg>
+);
+
+const PolicyIcon: React.FC<{
+  readonly color?: string;
+  readonly size?: number;
+}> = ({ color = "#ffbc6d", size = 36 }) => (
+  <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden>
+    <path
+      d="M9 4.5H23L29 10.5V31.5H9V4.5Z"
+      fill={`${color}12`}
+      stroke={color}
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+    />
+    <path d="M23 4.5V10.5H29M13.5 16H24.5M13.5 21H24.5M13.5 26H21" stroke={color} strokeLinecap="round" strokeWidth="1.8" />
+  </svg>
+);
+
+const ResourceIcon: React.FC<{
+  readonly type: "support" | "notes" | "pii" | "refund";
+  readonly color: string;
+}> = ({ type, color }) => (
+  <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden>
+    {type === "support" ? (
+      <>
+        <path d="M6 7H24V20H13L8 24V20H6V7Z" fill={`${color}12`} stroke={color} strokeLinejoin="round" strokeWidth="1.7" />
+        <path d="M10 11H20M10 15H18" stroke={color} strokeLinecap="round" strokeWidth="1.6" />
+      </>
+    ) : null}
+    {type === "notes" ? (
+      <>
+        <path d="M8 4.5H21.5L25 8V25.5H8V4.5Z" fill={`${color}12`} stroke={color} strokeLinejoin="round" strokeWidth="1.7" />
+        <path d="M12 11H21M12 15H21M12 19H18" stroke={color} strokeLinecap="round" strokeWidth="1.6" />
+      </>
+    ) : null}
+    {type === "pii" ? (
+      <>
+        <circle cx="15" cy="10.5" r="4" fill="none" stroke={color} strokeWidth="1.7" />
+        <path d="M7.5 24C8.5 18.8 11.2 16.5 15 16.5C18.8 16.5 21.5 18.8 22.5 24" fill={`${color}12`} stroke={color} strokeLinecap="round" strokeWidth="1.7" />
+      </>
+    ) : null}
+    {type === "refund" ? (
+      <>
+        <path d="M8 10H22V22H8V10Z" fill={`${color}12`} stroke={color} strokeWidth="1.7" />
+        <path d="M5 7H19M5 7L8.5 3.8M5 7L8.5 10.2M25 25H11M25 25L21.5 21.8M25 25L21.5 28.2" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+      </>
+    ) : null}
+  </svg>
+);
+
+const Atmosphere: React.FC<{ readonly frame: number }> = ({ frame }) => (
+  <>
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(circle at 46% 42%, rgba(18,111,145,0.18), transparent 35%), radial-gradient(circle at 86% 22%, rgba(92,76,186,0.13), transparent 31%), linear-gradient(150deg, #020913 0%, #04111d 48%, #020810 100%)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        opacity: 0.17,
+        backgroundImage:
+          "linear-gradient(rgba(105,216,255,0.085) 1px, transparent 1px), linear-gradient(90deg, rgba(105,216,255,0.085) 1px, transparent 1px)",
+        backgroundSize: "64px 64px",
+        transform: "perspective(900px) rotateX(56deg) scale(1.6) translateY(145px)",
+        transformOrigin: "center bottom",
+      }}
+    />
+    {STARS.map((star, index) => {
+      const pulse = 0.64 + 0.36 * Math.sin(frame * 0.018 + star.phase);
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: star.x,
+            top: star.y,
+            width: star.size,
+            height: star.size,
+            borderRadius: "50%",
+            background: "#9eeeff",
+            opacity: star.opacity * pulse,
+            boxShadow: "0 0 8px rgba(102,228,255,0.65)",
+          }}
+        />
+      );
+    })}
+    {STREAMS.map((stream, index) => {
+      const x = ((frame * stream.speed + stream.offset) % 2350) - 300;
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: x,
+            top: stream.y,
+            width: stream.length,
+            height: 1,
+            opacity: 0.16,
+            background:
+              "linear-gradient(90deg, transparent, rgba(92,229,255,0.82), transparent)",
+            filter: "blur(0.3px)",
+          }}
+        />
+      );
+    })}
+    <div
+      style={{
+        position: "absolute",
+        left: -180,
+        top: 80,
+        width: 720,
+        height: 720,
+        borderRadius: "50%",
+        background: "rgba(27,163,205,0.08)",
+        filter: "blur(130px)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(ellipse at center, transparent 42%, rgba(0,3,8,0.68) 100%)",
+      }}
+    />
+  </>
+);
+
+const Header: React.FC<{
   readonly frame: number;
   readonly reveal: number;
 }> = ({ frame, reveal }) => {
-  const livePulse = 0.7 + Math.sin(frame * 0.09) * 0.16;
-
+  const active = phase(frame, 58, 94);
+  const lineWidth = phase(frame, 18, 72);
   return (
     <div
       style={{
         position: "absolute",
-        left: "50%",
-        top: 86,
-        width: 1400,
-        transform: `translateX(-50%) translateY(${mix(12, 0, reveal)}px)`,
-        opacity: reveal,
+        left: 92,
+        right: 92,
+        top: 46,
+        height: 78,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        fontFamily: "Inter, Arial, sans-serif",
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * -18}px)`,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <div
           style={{
-            width: 34,
-            height: 34,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 10,
-            border: "1px solid rgba(102,233,255,0.32)",
+            width: 52,
+            height: 52,
+            display: "grid",
+            placeItems: "center",
+            borderRadius: 14,
             background:
-              "linear-gradient(145deg, rgba(80,226,255,0.18), rgba(30,62,110,0.24))",
-            boxShadow: "0 0 24px rgba(65,220,255,0.12)",
+              "linear-gradient(145deg, rgba(93,229,255,0.2), rgba(81,105,255,0.1))",
+            border: "1px solid rgba(111,232,255,0.34)",
+            boxShadow: "0 0 28px rgba(77,214,255,0.16)",
           }}
         >
-          <Glint size={20} />
+          <ShieldIcon color="#72eaff" size={34} />
         </div>
         <div>
           <div
             style={{
-              color: "#f1fbff",
-              fontSize: 18,
-              fontWeight: 760,
-              letterSpacing: "0.16em",
-              lineHeight: 1,
+              fontSize: 31,
+              fontWeight: 700,
+              letterSpacing: 0.2,
+              color: "#edfaff",
+              lineHeight: 1.1,
             }}
           >
-            NEXUS INTELLIGENCE
+            AI Agent Identity &amp; Authorization Audit
           </div>
           <div
             style={{
-              marginTop: 7,
-              color: "rgba(188,220,235,0.64)",
+              marginTop: 8,
+              color: "rgba(157,210,229,0.78)",
               fontSize: 15,
               fontWeight: 600,
-              letterSpacing: "0.09em",
-              lineHeight: 1,
+              letterSpacing: 2.2,
+              textTransform: "uppercase",
             }}
           >
-            EXECUTIVE DECISION SYSTEM
+            Continuous zero-trust control plane
           </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div
           style={{
-            color: "rgba(204,230,241,0.72)",
-            fontSize: 15,
-            fontWeight: 650,
-            letterSpacing: "0.08em",
-          }}
-        >
-          DATA CONNECTED
-        </div>
-        <div
-          style={{
-            height: 22,
-            width: 1,
-            background: "rgba(116,214,237,0.18)",
-          }}
-        />
-        <div
-          style={{
-            height: 34,
-            padding: "0 15px",
-            borderRadius: 18,
+            height: 42,
             display: "flex",
             alignItems: "center",
-            gap: 9,
-            color: "#64f2c7",
+            gap: 11,
+            padding: "0 17px",
+            borderRadius: 12,
+            background: "rgba(80,240,188,0.075)",
+            border: "1px solid rgba(87,239,193,0.24)",
+            color: "#66eec2",
             fontSize: 15,
-            fontWeight: 760,
-            letterSpacing: "0.08em",
-            border: "1px solid rgba(87,241,199,0.25)",
-            background: "rgba(38,143,118,0.11)",
+            fontWeight: 750,
+            letterSpacing: 1.5,
           }}
         >
-          <span
+          <div
             style={{
-              width: 7,
-              height: 7,
+              width: 8,
+              height: 8,
               borderRadius: "50%",
-              opacity: livePulse,
-              background: "#58f0c0",
-              boxShadow: "0 0 11px rgba(88,240,192,0.86)",
+              background: "#65f0bf",
+              boxShadow: `0 0 ${8 + Math.sin(frame * 0.09) * 3}px #65f0bf`,
+              opacity: active,
             }}
           />
-          LIVE
+          AUDIT LIVE
         </div>
-      </div>
-    </div>
-  );
-};
-
-const PromptRail: React.FC<{
-  readonly frame: number;
-  readonly reveal: number;
-}> = ({ frame, reveal }) => {
-  const prompt = "Analyze this business data and build a 90-day growth plan";
-  const typing = progress(frame, 52, 190, Easing.linear);
-  const typedLength = Math.floor(typing * prompt.length);
-  const typed = prompt.slice(0, typedLength);
-  const submitted = progress(frame, 190, 218, Easing.out(Easing.quad));
-  const cursorVisible = typing < 1 && Math.floor(frame / 18) % 2 === 0;
-  const sendPulse =
-    1 +
-    progress(frame, 188, 202, Easing.out(Easing.quad)) *
-      (1 - progress(frame, 202, 220, Easing.in(Easing.quad))) *
-      0.13;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: 150,
-        width: 1400,
-        height: 106,
-        transform: `translateX(-50%) translateY(${mix(
-          26,
-          0,
-          reveal,
-        )}px) scale(${mix(0.99, 1, reveal)})`,
-        transformOrigin: "50% 50%",
-        opacity: reveal,
-        borderRadius: 26,
-        border: `1px solid rgba(91,225,255,${0.24 + reveal * 0.16})`,
-        background:
-          "linear-gradient(105deg, rgba(11,32,56,0.94), rgba(7,21,39,0.91) 60%, rgba(10,38,55,0.90))",
-        boxShadow:
-          "inset 0 1px rgba(255,255,255,0.055), inset 0 -1px rgba(58,202,235,0.055), 0 22px 60px rgba(0,0,0,0.28), 0 0 42px rgba(56,207,238,0.065)",
-        overflow: "hidden",
-        fontFamily: "Inter, Arial, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 5,
-          opacity: 0.82,
-          background:
-            "linear-gradient(180deg, rgba(91,234,255,0), #61eaff 36%, #75ffd9 72%, rgba(91,234,255,0))",
-          boxShadow: "0 0 22px rgba(80,229,255,0.5)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 30,
-          top: 24,
-          width: 58,
-          height: 58,
-          borderRadius: 18,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1px solid rgba(94,233,255,0.28)",
-          background:
-            "radial-gradient(circle at 35% 30%, rgba(105,238,255,0.26), rgba(40,78,110,0.18) 62%, rgba(10,25,42,0.68))",
-          boxShadow:
-            "inset 0 1px rgba(255,255,255,0.06), 0 0 26px rgba(72,222,255,0.11)",
-        }}
-      >
-        <Glint size={26} />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 112,
-          top: 0,
-          bottom: 0,
-          right: 120,
-          display: "flex",
-          alignItems: "center",
-          color: "#f2fbff",
-          fontSize: 32,
-          fontWeight: 620,
-          letterSpacing: "-0.012em",
-          whiteSpace: "nowrap",
-          textShadow: "0 2px 4px rgba(0,0,0,0.62)",
-        }}
-      >
-        {typed}
-        {cursorVisible ? (
-          <span
-            style={{
-              width: 3,
-              height: 37,
-              marginLeft: 5,
-              borderRadius: 2,
-              background: "#78efff",
-              boxShadow: "0 0 10px rgba(91,231,255,0.72)",
-            }}
-          />
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 20,
-          top: 19,
-          width: 68,
-          height: 68,
-          borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transform: `scale(${sendPulse})`,
-          color: "#03121d",
-          border: "1px solid rgba(179,255,255,0.72)",
-          background: submitted > 0.74 ? "#66f0c4" : "#66e9fb",
-          boxShadow: `0 0 ${24 + submitted * 16}px rgba(${
-            submitted > 0.74 ? "82,240,194" : "82,226,255"
-          },${0.36 + submitted * 0.25}), inset 0 1px rgba(255,255,255,0.65)`,
-        }}
-      >
-        {submitted > 0.74 ? (
-          <CheckIcon color="#06251c" size={29} />
-        ) : (
-          <ArrowIcon color="#04202b" />
-        )}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 40,
-          right: 40,
-          bottom: 0,
-          height: 1,
-          opacity: 0.8,
-          background:
-            "linear-gradient(90deg, transparent, rgba(88,232,255,0.42), transparent)",
-        }}
-      />
-    </div>
-  );
-};
-
-const ProcessingRail: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const reveal =
-    progress(frame, 194, 214, Easing.out(Easing.quad)) *
-    (1 - progress(frame, 240, 262, Easing.in(Easing.quad)));
-  const scan = ((frame - 194) * 8.4) % 1040;
-  const dots =
-    frame < 194 ? 0 : Math.floor((frame - 194) / 12) % 4;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: 272,
-        width: 1030,
-        height: 44,
-        transform: "translateX(-50%)",
-        opacity: reveal,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        color: "#a9ddeb",
-        fontFamily: "Inter, Arial, sans-serif",
-        fontSize: 16,
-        fontWeight: 700,
-        letterSpacing: "0.09em",
-      }}
-    >
-      <div
-        style={{
-          width: 9,
-          height: 9,
-          borderRadius: "50%",
-          background: "#62eaff",
-          boxShadow: "0 0 14px rgba(92,232,255,0.82)",
-        }}
-      />
-      SYNTHESIZING LIVE SIGNALS{".".repeat(dots)}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 1,
-          background: "rgba(86,217,245,0.12)",
-          overflow: "hidden",
-        }}
-      >
         <div
           style={{
-            position: "absolute",
-            left: scan - 160,
-            top: 0,
-            width: 160,
-            height: 1,
-            background:
-              "linear-gradient(90deg, transparent, #69ecff 78%, #ffffff)",
-            boxShadow: "0 0 7px rgba(104,235,255,0.72)",
+            color: "rgba(174,217,233,0.72)",
+            fontSize: 15,
+            fontWeight: 650,
+            letterSpacing: 1,
           }}
-        />
+        >
+          SESSION&nbsp; A9-2047
+        </div>
       </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          bottom: -1,
+          width: `${lineWidth * 100}%`,
+          height: 1,
+          background:
+            "linear-gradient(90deg, rgba(103,228,255,0.48), rgba(103,228,255,0.06), transparent)",
+        }}
+      />
     </div>
   );
 };
 
-const ActionRow: React.FC<{
+const AgentCore: React.FC<{
   readonly frame: number;
-  readonly spec: ActionSpec;
-  readonly index: number;
-}> = ({ frame, spec, index }) => {
-  const entrance = progress(
-    frame,
-    spec.start,
-    spec.start + 24,
-    Easing.out(Easing.cubic),
-  );
-  const typing = progress(frame, spec.start + 8, spec.end, Easing.linear);
-  const typedLength = Math.floor(spec.title.length * typing);
-  const title = spec.title.slice(0, typedLength);
-  const detailIn = progress(
-    frame,
-    spec.start + 26,
-    spec.end + 8,
-    Easing.out(Easing.cubic),
-  );
-  const metricIn = progress(
-    frame,
-    spec.end - 18,
-    spec.end + 16,
-    Easing.out(Easing.cubic),
-  );
-  const completion = progress(
-    frame,
-    spec.end - 6,
-    spec.end + 18,
-    Easing.out(Easing.cubic),
-  );
-  const cursorVisible =
-    typing < 1 && typing > 0 && Math.floor((frame - spec.start) / 12) % 2 === 0;
-  const lineReveal = progress(
-    frame,
-    spec.start + 2,
-    spec.start + 35,
-    Easing.out(Easing.cubic),
-  );
-
+  readonly verified: number;
+}> = ({ frame, verified }) => {
+  const spin = frame * 0.003;
+  const pulse = 0.65 + Math.sin(frame * 0.055) * 0.2;
   return (
     <div
       style={{
         position: "relative",
-        width: "100%",
-        height: 102,
-        opacity: entrance,
-        transform: `translateX(${mix(24, 0, entrance)}px)`,
-        borderRadius: 18,
-        border: `1px solid rgba(${spec.rgb},${0.12 + completion * 0.1})`,
-        background: `linear-gradient(100deg, rgba(${spec.rgb},0.075), rgba(8,23,41,0.7) 35%, rgba(8,23,41,0.46))`,
-        boxShadow:
-          "inset 0 1px rgba(255,255,255,0.022), 0 10px 24px rgba(0,0,0,0.11)",
-        overflow: "hidden",
-        fontFamily: "Inter, Arial, sans-serif",
+        width: 170,
+        height: 170,
+        display: "grid",
+        placeItems: "center",
       }}
     >
       <div
         style={{
           position: "absolute",
-          left: 0,
-          top: 14,
-          bottom: 14,
-          width: 3,
-          borderRadius: 3,
-          background: spec.color,
-          opacity: 0.7 + completion * 0.3,
-          boxShadow: `0 0 15px rgba(${spec.rgb},0.6)`,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 24,
-          top: 22,
-          width: 58,
-          height: 58,
-          borderRadius: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: `1px solid rgba(${spec.rgb},0.22)`,
-          background: `radial-gradient(circle at 35% 25%, rgba(${spec.rgb},0.16), rgba(9,25,45,0.72))`,
-          boxShadow: `inset 0 1px rgba(255,255,255,0.035), 0 0 18px rgba(${spec.rgb},0.05)`,
-        }}
-      >
-        <ActionIcon icon={spec.icon} color={spec.color} />
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 99,
-          top: 18,
-          width: 930,
-          color: "#eef9ff",
-          fontSize: 26,
-          fontWeight: 650,
-          letterSpacing: "-0.012em",
-          lineHeight: 1.15,
-          whiteSpace: "nowrap",
-          textShadow: "0 2px 3px rgba(0,0,0,0.62)",
-        }}
-      >
-        {title}
-        {cursorVisible ? (
-          <span
-            style={{
-              display: "inline-block",
-              width: 2,
-              height: 25,
-              marginLeft: 4,
-              verticalAlign: -3,
-              borderRadius: 2,
-              background: spec.color,
-              boxShadow: `0 0 8px rgba(${spec.rgb},0.75)`,
-            }}
-          />
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 100,
-          top: 56,
-          width: 940,
-          opacity: detailIn,
-          color: "rgba(187,217,231,0.82)",
-          fontSize: 17,
-          fontWeight: 520,
-          letterSpacing: "0.004em",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {spec.detail}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 22,
-          top: 18,
-          width: 212,
-          height: 66,
-          opacity: metricIn,
-          transform: `translateX(${mix(18, 0, metricIn)}px)`,
-          borderRadius: 15,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 13,
-          border: `1px solid rgba(${spec.rgb},0.22)`,
-          background: `rgba(${spec.rgb},0.065)`,
-        }}
-      >
-        <div
-          style={{
-            color: spec.color,
-            fontSize: 28,
-            fontWeight: 790,
-            letterSpacing: "-0.025em",
-            lineHeight: 1,
-            minWidth: 70,
-            textAlign: "right",
-            textShadow: `0 0 14px rgba(${spec.rgb},0.22)`,
-          }}
-        >
-          {spec.metric}
-        </div>
-        <div
-          style={{
-            width: 1,
-            height: 34,
-            background: `rgba(${spec.rgb},0.19)`,
-          }}
-        />
-        <div
-          style={{
-            width: 94,
-            color: "rgba(217,238,246,0.79)",
-            fontSize: 14,
-            fontWeight: 760,
-            letterSpacing: "0.08em",
-            lineHeight: 1.35,
-          }}
-        >
-          {spec.metricLabel}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 101,
-          bottom: 0,
-          width: `${lineReveal * 75}%`,
-          maxWidth: 900,
-          height: 1,
-          opacity: 0.48,
-          background: `linear-gradient(90deg, rgba(${spec.rgb},0.6), rgba(${spec.rgb},0))`,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          right: 246,
-          top: 39,
-          width: 28,
-          height: 28,
-          opacity: completion,
-          transform: `scale(${mix(0.65, 1, completion)})`,
+          inset: 7,
           borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: `1px solid rgba(${spec.rgb},0.3)`,
-          background: `rgba(${spec.rgb},0.09)`,
-          boxShadow: `0 0 16px rgba(${spec.rgb},0.09)`,
+          border: "1px solid rgba(102,226,255,0.22)",
+          transform: `rotate(${spin}rad)`,
         }}
       >
-        <CheckIcon color={spec.color} size={17} />
+        {[0, 1, 2].map((index) => {
+          const angle = (index / 3) * TAU;
+          return (
+            <div
+              key={index}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: index === 1 ? "#9d91ff" : "#6feaff",
+                boxShadow: "0 0 14px currentColor",
+                transform: `translate(-50%, -50%) rotate(${angle}rad) translateX(77px)`,
+              }}
+            />
+          );
+        })}
       </div>
-
+      <div
+        style={{
+          position: "absolute",
+          inset: 24,
+          borderRadius: "50%",
+          border: "1px dashed rgba(144,136,255,0.35)",
+          transform: `rotate(${-spin * 1.8}rad)`,
+        }}
+      />
+      <div
+        style={{
+          width: 105,
+          height: 105,
+          borderRadius: 29,
+          display: "grid",
+          placeItems: "center",
+          background:
+            "radial-gradient(circle at 32% 28%, rgba(116,234,255,0.3), rgba(34,77,105,0.62) 48%, rgba(8,23,38,0.95))",
+          border: "1px solid rgba(126,234,255,0.45)",
+          boxShadow: `0 0 ${34 + pulse * 14}px rgba(64,210,255,0.2), inset 0 0 25px rgba(103,224,255,0.08)`,
+        }}
+      >
+        <ChipIcon color={verified > 0.5 ? "#5ff0bf" : "#78eaff"} size={56} />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 2,
+          bottom: 12,
+          width: 36,
+          height: 36,
+          borderRadius: 12,
+          display: "grid",
+          placeItems: "center",
+          background: verified > 0.5 ? "#0b3e35" : "#0b2c40",
+          border: `1px solid ${verified > 0.5 ? "rgba(87,240,188,0.55)" : "rgba(104,225,255,0.38)"}`,
+          boxShadow:
+            verified > 0.5
+              ? "0 0 22px rgba(87,240,188,0.24)"
+              : "0 0 18px rgba(88,216,255,0.18)",
+          transform: `scale(${0.85 + verified * 0.15})`,
+        }}
+      >
+        {verified > 0.5 ? (
+          <CheckMark color="#67f1c2" size={23} />
+        ) : (
+          <FingerprintIcon color="#78eaff" size={23} />
+        )}
+      </div>
     </div>
   );
 };
 
-const ExecutiveBrief: React.FC<{
+const DataRow: React.FC<{
+  readonly label: string;
+  readonly value: string;
+  readonly accent?: string;
+}> = ({ label, value, accent = "#d9f6ff" }) => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: 38,
+      borderBottom: "1px solid rgba(112,214,245,0.095)",
+    }}
+  >
+    <span
+      style={{
+        fontSize: 15,
+        color: "rgba(153,204,222,0.74)",
+        fontWeight: 600,
+        letterSpacing: 0.3,
+      }}
+    >
+      {label}
+    </span>
+    <span
+      style={{
+        fontSize: 16,
+        color: accent,
+        fontWeight: 680,
+        letterSpacing: 0.2,
+      }}
+    >
+      {value}
+    </span>
+  </div>
+);
+
+const AgentIdentityCard: React.FC<{
   readonly frame: number;
   readonly reveal: number;
 }> = ({ frame, reveal }) => {
-  const complete = progress(frame, 612, 654, Easing.out(Easing.cubic));
-  const railFill = progress(frame, 300, 620, Easing.inOut(Easing.cubic));
-  const confidencePulse = 0.92 + Math.sin(frame * 0.035) * 0.035;
-
+  const verified = phase(frame, 376, 420);
+  const trust = phase(frame, 115, 402, Easing.inOut(Easing.cubic));
+  const trustValue = Math.round(trust * 98);
+  const signature = phase(frame, 300, 370);
   return (
     <div
       style={{
         position: "absolute",
-        left: "50%",
-        top: 286,
-        width: 1400,
-        height: 680,
-        transform: `translateX(-50%) translateY(${mix(
-          34,
-          0,
-          reveal,
-        )}px) scale(${mix(0.992, 1, reveal)})`,
-        transformOrigin: "50% 0%",
-        opacity: reveal,
-        borderRadius: 28,
-        border: "1px solid rgba(91,218,245,0.24)",
-        background:
-          "linear-gradient(145deg, rgba(8,25,44,0.94), rgba(5,17,32,0.92) 52%, rgba(7,28,39,0.87))",
-        boxShadow:
-          "inset 0 1px rgba(255,255,255,0.045), inset 0 -1px rgba(77,222,246,0.045), 0 30px 80px rgba(0,0,0,0.34), 0 0 60px rgba(62,214,240,0.045)",
+        left: 92,
+        top: 157,
+        width: 500,
+        height: 624,
+        borderRadius: 25,
         overflow: "hidden",
-        fontFamily: "Inter, Arial, sans-serif",
+        ...PANEL,
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * -74}px)`,
       }}
     >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(135deg, rgba(94,224,255,0.05), transparent 38%, rgba(121,105,255,0.04))",
+        }}
+      />
       <div
         style={{
           position: "absolute",
           left: 0,
           top: 0,
-          right: 0,
-          height: 120,
-          borderBottom: "1px solid rgba(91,215,240,0.13)",
+          width: `${phase(frame, 78, 155) * 100}%`,
+          height: 2,
           background:
-            "linear-gradient(90deg, rgba(76,222,255,0.055), transparent 44%, rgba(75,238,193,0.035))",
+            "linear-gradient(90deg, transparent, #6ee8ff, rgba(113,105,255,0.4))",
+          boxShadow: "0 0 16px rgba(96,225,255,0.45)",
         }}
-      >
+      />
+      <div style={{ position: "relative", padding: "26px 28px" }}>
         <div
           style={{
-            position: "absolute",
-            left: 34,
-            top: 25,
             display: "flex",
             alignItems: "center",
-            gap: 16,
+            justifyContent: "space-between",
           }}
         >
-          <div
+          <span
             style={{
-              width: 50,
-              height: 50,
-              borderRadius: 16,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "1px solid rgba(103,233,255,0.24)",
-              background:
-                "linear-gradient(145deg, rgba(93,228,255,0.15), rgba(19,51,77,0.42))",
+              color: "#82e8ff",
+              fontSize: 16,
+              fontWeight: 750,
+              letterSpacing: 1.9,
+              textTransform: "uppercase",
             }}
           >
-            <Glint size={24} />
-          </div>
-          <div>
+            Autonomous Agent Identity
+          </span>
+          <span
+            style={{
+              padding: "7px 11px",
+              borderRadius: 8,
+              color: verified > 0.5 ? "#65f0bf" : "#8cdef4",
+              background:
+                verified > 0.5
+                  ? "rgba(76,236,183,0.09)"
+                  : "rgba(85,199,233,0.08)",
+              border: `1px solid ${
+                verified > 0.5
+                  ? "rgba(85,239,188,0.25)"
+                  : "rgba(102,214,244,0.2)"
+              }`,
+              fontSize: 14,
+              fontWeight: 750,
+              letterSpacing: 1.1,
+            }}
+          >
+            {verified > 0.5 ? "VERIFIED" : "VERIFYING"}
+          </span>
+        </div>
+
+        <div
+          style={{
+            marginTop: 22,
+            display: "flex",
+            alignItems: "center",
+            gap: 23,
+          }}
+        >
+          <AgentCore frame={frame} verified={verified} />
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                color: "#f0faff",
-                fontSize: 27,
-                fontWeight: 740,
-                letterSpacing: "-0.012em",
-                lineHeight: 1,
+                color: "#f0fbff",
+                fontSize: 25,
+                fontWeight: 720,
+                lineHeight: 1.13,
+                letterSpacing: -0.35,
               }}
             >
-              Executive action plan
+              support-resolution-agent
             </div>
             <div
               style={{
                 marginTop: 9,
-                color: "rgba(174,212,229,0.72)",
+                color: "rgba(159,210,228,0.72)",
                 fontSize: 15,
-                fontWeight: 620,
-                letterSpacing: "0.045em",
-                lineHeight: 1,
+                fontWeight: 630,
+                letterSpacing: 0.5,
               }}
             >
-              FOUR PRIORITIES • 90-DAY HORIZON • LIVE BUSINESS SIGNALS
+              AGENT ID&nbsp; AGT-7F3A-91C2
+            </div>
+            <div
+              style={{
+                marginTop: 19,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 10,
+              }}
+            >
+              <span
+                style={{
+                  color: verified > 0.5 ? "#62efbd" : "#72e8ff",
+                  fontSize: 42,
+                  fontWeight: 760,
+                  lineHeight: 0.9,
+                  fontVariantNumeric: "tabular-nums",
+                  textShadow: "0 0 24px rgba(84,230,255,0.18)",
+                }}
+              >
+                {trustValue}
+              </span>
+              <span
+                style={{
+                  color: "rgba(153,204,222,0.68)",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: 1.4,
+                  paddingBottom: 3,
+                }}
+              >
+                TRUST SCORE
+              </span>
+            </div>
+            <div
+              style={{
+                marginTop: 12,
+                height: 5,
+                borderRadius: 4,
+                overflow: "hidden",
+                background: "rgba(103,221,244,0.1)",
+              }}
+            >
+              <div
+                style={{
+                  width: `${trust * 100}%`,
+                  height: "100%",
+                  borderRadius: 4,
+                  background:
+                    verified > 0.5
+                      ? "linear-gradient(90deg, #55dba8, #68f1c0)"
+                      : "linear-gradient(90deg, #647cff, #64e6ff)",
+                  boxShadow: "0 0 11px rgba(94,229,255,0.46)",
+                }}
+              />
             </div>
           </div>
         </div>
 
         <div
           style={{
-            position: "absolute",
-            right: 34,
-            top: 27,
-            width: 246,
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 13,
-            borderRadius: 19,
-            transform: `scale(${complete > 0.98 ? confidencePulse : 1})`,
-            border: `1px solid ${
-              complete > 0.55
-                ? "rgba(85,241,194,0.3)"
-                : "rgba(104,230,255,0.19)"
-            }`,
-            background:
-              complete > 0.55
-                ? "rgba(49,160,129,0.11)"
-                : "rgba(30,78,103,0.12)",
+            marginTop: 21,
+            padding: "10px 16px 4px",
+            borderRadius: 15,
+            background: "rgba(2,11,21,0.4)",
+            border: "1px solid rgba(103,212,244,0.095)",
           }}
         >
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: 0.8 + complete * 0.2,
-              background:
-                complete > 0.55
-                  ? "rgba(75,239,190,0.14)"
-                  : "rgba(86,221,255,0.12)",
-              border: `1px solid ${
-                complete > 0.55
-                  ? "rgba(75,239,190,0.3)"
-                  : "rgba(86,221,255,0.24)"
-              }`,
-            }}
-          >
-            {complete > 0.55 ? (
-              <CheckIcon color="#58f1c0" size={20} />
-            ) : (
-              <Glint size={17} />
-            )}
+          <DataRow label="Accountable owner" value="Customer Operations" />
+          <DataRow label="Approved workload" value="prod-eu-07" />
+          <DataRow label="Credential" value="DID:agent:7f3a" />
+          <DataRow label="Runtime build" value="v3.8.12 / signed" accent="#73e8ff" />
+        </div>
+
+        <div
+          style={{
+            marginTop: 18,
+            height: 70,
+            borderRadius: 15,
+            padding: "0 17px",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            background:
+              verified > 0.5
+                ? "linear-gradient(90deg, rgba(68,235,180,0.09), rgba(37,126,112,0.04))"
+                : "rgba(75,198,230,0.045)",
+            border: `1px solid ${
+              verified > 0.5
+                ? "rgba(84,240,188,0.25)"
+                : "rgba(93,215,243,0.14)"
+            }`,
+          }}
+        >
+          <FingerprintIcon
+            color={verified > 0.5 ? "#61efbf" : "#79e7ff"}
+            size={35}
+          />
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                color: verified > 0.5 ? "#bcffe8" : "#d9f7ff",
+                fontSize: 16,
+                fontWeight: 720,
+                letterSpacing: 0.4,
+              }}
+            >
+              Cryptographic signature
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                color: "rgba(151,205,222,0.7)",
+                fontSize: 14,
+                fontWeight: 620,
+                letterSpacing: 1,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {signature < 1
+                ? `VALIDATING ${Math.round(signature * 100)
+                    .toString()
+                    .padStart(2, "0")}%`
+                : "SIGNATURE VALID • KEY CURRENT"}
+            </div>
           </div>
+          {verified > 0.5 ? (
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 11,
+                display: "grid",
+                placeItems: "center",
+                background: "rgba(83,239,187,0.1)",
+                border: "1px solid rgba(83,239,187,0.27)",
+              }}
+            >
+              <CheckMark size={23} />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+type ValidationSpec = {
+  readonly title: string;
+  readonly detail: string;
+  readonly start: number;
+  readonly end: number;
+  readonly color: string;
+  readonly icon: "fingerprint" | "chip" | "link" | "policy";
+};
+
+const VALIDATIONS: readonly ValidationSpec[] = [
+  {
+    title: "Identity proof",
+    detail: "Credential chain is valid",
+    start: 170,
+    end: 230,
+    color: "#6fe7ff",
+    icon: "fingerprint",
+  },
+  {
+    title: "Workload attestation",
+    detail: "Runtime hash matches build",
+    start: 232,
+    end: 292,
+    color: "#9b92ff",
+    icon: "chip",
+  },
+  {
+    title: "Human ownership",
+    detail: "Accountable owner confirmed",
+    start: 294,
+    end: 354,
+    color: "#60efc1",
+    icon: "link",
+  },
+  {
+    title: "Policy binding",
+    detail: "Least-privilege rules attached",
+    start: 356,
+    end: 416,
+    color: "#ffbd6d",
+    icon: "policy",
+  },
+] as const;
+
+const ValidationIcon: React.FC<{
+  readonly type: ValidationSpec["icon"];
+  readonly color: string;
+}> = ({ type, color }) => {
+  if (type === "fingerprint") {
+    return <FingerprintIcon color={color} size={36} />;
+  }
+  if (type === "chip") {
+    return <ChipIcon color={color} size={36} />;
+  }
+  if (type === "link") {
+    return <LinkIcon color={color} size={36} />;
+  }
+  return <PolicyIcon color={color} size={36} />;
+};
+
+const ValidationStack: React.FC<{
+  readonly frame: number;
+  readonly reveal: number;
+}> = ({ frame, reveal }) => {
+  const overall = phase(frame, 170, 416, Easing.inOut(Easing.cubic));
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 620,
+        top: 157,
+        width: 520,
+        height: 624,
+        borderRadius: 25,
+        ...PANEL,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 38}px)`,
+      }}
+    >
+      <div style={{ padding: "27px 27px 25px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <div>
             <div
               style={{
-                color: complete > 0.55 ? "#66f3c5" : "#70e9ff",
-                fontSize: 16,
-                fontWeight: 790,
-                letterSpacing: "0.07em",
-                lineHeight: 1,
+                color: "#e8f9ff",
+                fontSize: 22,
+                fontWeight: 720,
+                letterSpacing: -0.1,
               }}
             >
-              {complete > 0.55 ? "DECISION READY" : "BUILDING PLAN"}
+              Verification chain
             </div>
             <div
               style={{
                 marginTop: 7,
-                color: "rgba(188,221,232,0.68)",
-                fontSize: 14,
-                fontWeight: 650,
-                letterSpacing: "0.06em",
-                lineHeight: 1,
+                color: "rgba(150,203,222,0.68)",
+                fontSize: 15,
+                fontWeight: 620,
               }}
             >
-              94% CONFIDENCE
+              Four independent trust controls
+            </div>
+          </div>
+          <div
+            style={{
+              width: 66,
+              height: 66,
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background: `conic-gradient(#65e8ff ${overall * 360}deg, rgba(102,220,246,0.09) 0deg)`,
+              boxShadow: "0 0 24px rgba(94,225,255,0.12)",
+            }}
+          >
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: "50%",
+                display: "grid",
+                placeItems: "center",
+                background: "#081724",
+                color: overall >= 1 ? "#61efbd" : "#d7f8ff",
+                fontSize: 17,
+                fontWeight: 760,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {Math.round(overall * 4)}/4
             </div>
           </div>
         </div>
-      </div>
 
-      <div
-        style={{
-          position: "absolute",
-          left: 34,
-          right: 34,
-          top: 137,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        {ACTIONS.map((spec, index) => (
-          <ActionRow
-            key={spec.number}
-            frame={frame}
-            spec={spec}
-            index={index}
+        <div
+          style={{
+            position: "relative",
+            marginTop: 22,
+            display: "flex",
+            flexDirection: "column",
+            gap: 13,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 29,
+              top: 55,
+              bottom: 55,
+              width: 2,
+              background: "rgba(91,213,241,0.09)",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: `${overall * 100}%`,
+                background:
+                  "linear-gradient(180deg, #6fe8ff, #9a90ff 42%, #62efc0 72%, #ffbd6d)",
+                boxShadow: "0 0 10px rgba(98,227,255,0.44)",
+              }}
+            />
+          </div>
+
+          {VALIDATIONS.map((item, index) => {
+            const itemIn = phase(frame, item.start - 25, item.start + 10);
+            const scan = phase(frame, item.start, item.end, Easing.inOut(Easing.cubic));
+            const done = phase(frame, item.end - 8, item.end + 18);
+            return (
+              <div
+                key={item.title}
+                style={{
+                  position: "relative",
+                  height: 98,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  padding: "0 15px",
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  opacity: itemIn,
+                  transform: `translateX(${(1 - itemIn) * 26}px)`,
+                  background:
+                    done > 0.5
+                      ? `linear-gradient(90deg, ${item.color}12, rgba(6,20,32,0.5))`
+                      : "rgba(5,18,30,0.54)",
+                  border: `1px solid ${
+                    done > 0.5 ? `${item.color}38` : "rgba(100,211,240,0.1)"
+                  }`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 58,
+                    height: 58,
+                    flex: "0 0 auto",
+                    borderRadius: 15,
+                    display: "grid",
+                    placeItems: "center",
+                    background: `${item.color}0f`,
+                    border: `1px solid ${item.color}2b`,
+                    boxShadow:
+                      scan > 0 && done < 0.5
+                        ? `0 0 22px ${item.color}22`
+                        : "none",
+                  }}
+                >
+                  <ValidationIcon type={item.icon} color={item.color} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      color: "#e7f9ff",
+                      fontSize: 18,
+                      fontWeight: 710,
+                    }}
+                  >
+                    {item.title}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 7,
+                      color: "rgba(154,205,223,0.72)",
+                      fontSize: 15,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {done > 0.5 ? item.detail : "Checking control evidence…"}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      height: 3,
+                      borderRadius: 3,
+                      overflow: "hidden",
+                      background: "rgba(120,216,238,0.08)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${scan * 100}%`,
+                        height: "100%",
+                        background: `linear-gradient(90deg, ${item.color}88, ${item.color})`,
+                        boxShadow: `0 0 8px ${item.color}77`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    flex: "0 0 auto",
+                    borderRadius: 12,
+                    display: "grid",
+                    placeItems: "center",
+                    color: done > 0.5 ? "#5ff0bf" : "#a8d8e7",
+                    background:
+                      done > 0.5
+                        ? "rgba(84,239,187,0.08)"
+                        : "rgba(102,218,244,0.04)",
+                    border: `1px solid ${
+                      done > 0.5
+                        ? "rgba(84,239,187,0.23)"
+                        : "rgba(102,218,244,0.1)"
+                    }`,
+                    fontSize: 14,
+                    fontWeight: 750,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {done > 0.5 ? (
+                    <CheckMark color="#62efbf" size={24} />
+                  ) : (
+                    `${Math.round(scan * 100)}`
+                  )}
+                </div>
+                {scan > 0 && done < 0.5 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${scan * 100 - 16}%`,
+                      top: 0,
+                      width: 65,
+                      height: "100%",
+                      background: `linear-gradient(90deg, transparent, ${item.color}16, transparent)`,
+                    }}
+                  />
+                ) : null}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -15,
+                    top: 42,
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: done > 0.5 ? item.color : "rgba(96,214,240,0.25)",
+                    boxShadow: done > 0.5 ? `0 0 12px ${item.color}` : "none",
+                    opacity: itemIn,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+type AccessSpec = {
+  readonly resource: string;
+  readonly permission: string;
+  readonly result: "ALLOW" | "DENY";
+  readonly type: "support" | "notes" | "pii" | "refund";
+  readonly start: number;
+  readonly end: number;
+};
+
+const ACCESS_REQUESTS: readonly AccessSpec[] = [
+  {
+    resource: "Support cases",
+    permission: "READ",
+    result: "ALLOW",
+    type: "support",
+    start: 430,
+    end: 485,
+  },
+  {
+    resource: "Case notes",
+    permission: "WRITE",
+    result: "ALLOW",
+    type: "notes",
+    start: 492,
+    end: 547,
+  },
+  {
+    resource: "Customer PII",
+    permission: "READ",
+    result: "DENY",
+    type: "pii",
+    start: 554,
+    end: 609,
+  },
+  {
+    resource: "Refund workflow",
+    permission: "EXECUTE",
+    result: "ALLOW",
+    type: "refund",
+    start: 616,
+    end: 671,
+  },
+] as const;
+
+const AccessControl: React.FC<{
+  readonly frame: number;
+  readonly reveal: number;
+}> = ({ frame, reveal }) => {
+  const token = phase(frame, 674, 724, Easing.out(Easing.back(1.15)));
+  const policyPulse = phase(frame, 402, 430);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 1168,
+        top: 157,
+        width: 660,
+        height: 624,
+        borderRadius: 25,
+        ...PANEL,
+        opacity: reveal,
+        transform: `translateX(${(1 - reveal) * 62}px)`,
+      }}
+    >
+      <div style={{ padding: "27px 27px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color: "#eafaff",
+                fontSize: 22,
+                fontWeight: 720,
+              }}
+            >
+              Authorization decision
+            </div>
+            <div
+              style={{
+                marginTop: 7,
+                color: "rgba(153,205,222,0.7)",
+                fontSize: 15,
+                fontWeight: 620,
+              }}
+            >
+              Requested scopes evaluated in real time
+            </div>
+          </div>
+          <div
+            style={{
+              width: 128,
+              height: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              borderRadius: 12,
+              color: token > 0.5 ? "#63f0c0" : "#7ce8ff",
+              background:
+                token > 0.5
+                  ? "rgba(76,238,186,0.08)"
+                  : "rgba(90,215,246,0.06)",
+              border: `1px solid ${
+                token > 0.5
+                  ? "rgba(82,240,188,0.24)"
+                  : "rgba(102,221,247,0.17)"
+              }`,
+              fontSize: 14,
+              fontWeight: 760,
+              letterSpacing: 1.1,
+            }}
+          >
+            <ShieldIcon
+              color={token > 0.5 ? "#60efbd" : "#74e8ff"}
+              size={24}
+              checked={token > 0.5}
+            />
+            {token > 0.5 ? "ENFORCED" : "POLICY"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "relative",
+            marginTop: 22,
+            height: 390,
+            borderRadius: 18,
+            padding: "15px",
+            background: "rgba(2,11,20,0.42)",
+            border: "1px solid rgba(103,211,240,0.09)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 36,
+              top: 35,
+              bottom: 35,
+              width: 2,
+              background: "rgba(100,215,242,0.08)",
+            }}
           />
-        ))}
-      </div>
+          {ACCESS_REQUESTS.map((request, index) => {
+            const rowIn = phase(frame, request.start - 22, request.start + 8);
+            const decision = phase(
+              frame,
+              request.start,
+              request.end,
+              Easing.inOut(Easing.cubic),
+            );
+            const done = phase(frame, request.end - 6, request.end + 18);
+            const allowed = request.result === "ALLOW";
+            const color = allowed ? "#5ff0bd" : "#ff7084";
+            return (
+              <div
+                key={request.resource}
+                style={{
+                  position: "relative",
+                  height: 82,
+                  marginBottom: index === ACCESS_REQUESTS.length - 1 ? 0 : 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "0 15px",
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  opacity: rowIn,
+                  transform: `translateX(${(1 - rowIn) * 30}px)`,
+                  background:
+                    done > 0.5
+                      ? `linear-gradient(90deg, ${color}11, rgba(4,18,30,0.7))`
+                      : "rgba(8,24,38,0.62)",
+                  border: `1px solid ${
+                    done > 0.5 ? `${color}35` : "rgba(105,216,244,0.1)"
+                  }`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    flex: "0 0 auto",
+                    borderRadius: 13,
+                    display: "grid",
+                    placeItems: "center",
+                    background: `${color}0d`,
+                    border: `1px solid ${done > 0.5 ? `${color}2b` : "rgba(106,218,244,0.1)"}`,
+                  }}
+                >
+                  <ResourceIcon
+                    type={request.type}
+                    color={done > 0.5 ? color : "#79dff5"}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      color: "#e5f8ff",
+                      fontSize: 18,
+                      fontWeight: 710,
+                    }}
+                  >
+                    {request.resource}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      color: "rgba(152,204,222,0.72)",
+                      fontSize: 14,
+                      fontWeight: 660,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    SCOPE
+                    <span style={{ color: "#9adff0", fontWeight: 750 }}>
+                      {request.permission}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 90,
+                    height: 38,
+                    flex: "0 0 auto",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 7,
+                    borderRadius: 10,
+                    color: done > 0.5 ? color : "#a9d9e6",
+                    background: done > 0.5 ? `${color}0f` : "rgba(104,213,240,0.04)",
+                    border: `1px solid ${done > 0.5 ? `${color}32` : "rgba(105,216,243,0.1)"}`,
+                    fontSize: 14,
+                    fontWeight: 780,
+                    letterSpacing: 1,
+                  }}
+                >
+                  {done > 0.5 ? (
+                    allowed ? (
+                      <CheckMark color={color} size={18} />
+                    ) : (
+                      <CrossMark color={color} size={18} />
+                    )
+                  ) : null}
+                  {done > 0.5 ? request.result : `${Math.round(decision * 100)}`}
+                </div>
+                {decision > 0 && done < 0.5 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      bottom: 0,
+                      width: `${decision * 100}%`,
+                      height: 2,
+                      background: "linear-gradient(90deg, #717bff, #6fe9ff)",
+                      boxShadow: "0 0 10px rgba(100,228,255,0.6)",
+                    }}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+          <div
+            style={{
+              position: "absolute",
+              left: 12,
+              top: 26 + phase(frame, 430, 671, Easing.inOut(Easing.cubic)) * 326,
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: "#71eaff",
+              boxShadow: "0 0 17px rgba(102,230,255,0.85)",
+              opacity: policyPulse,
+            }}
+          />
+        </div>
 
+        <div
+          style={{
+            marginTop: 18,
+            height: 86,
+            borderRadius: 17,
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            padding: "0 18px",
+            opacity: token,
+            transform: `translateY(${(1 - token) * 18}px)`,
+            background:
+              "linear-gradient(100deg, rgba(66,237,180,0.13), rgba(48,116,105,0.045))",
+            border: "1px solid rgba(85,240,188,0.28)",
+            boxShadow: "0 0 28px rgba(70,232,181,0.07)",
+          }}
+        >
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              flex: "0 0 auto",
+              borderRadius: 15,
+              display: "grid",
+              placeItems: "center",
+              background: "rgba(77,239,186,0.1)",
+              border: "1px solid rgba(83,241,188,0.28)",
+            }}
+          >
+            <ShieldIcon color="#61f0be" size={34} checked />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                color: "#c7ffea",
+                fontSize: 18,
+                fontWeight: 740,
+              }}
+            >
+              Least-privilege token issued
+            </div>
+            <div
+              style={{
+                marginTop: 7,
+                color: "rgba(158,222,201,0.78)",
+                fontSize: 14,
+                fontWeight: 650,
+                letterSpacing: 0.7,
+              }}
+            >
+              3 scopes granted • 1 sensitive scope blocked • Expires in 15 min
+            </div>
+          </div>
+          <div
+            style={{
+              color: "#65f0bf",
+              fontSize: 15,
+              fontWeight: 780,
+              letterSpacing: 1.3,
+            }}
+          >
+            TOKEN&nbsp; 7C4A
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LOGS = [
+  {
+    time: "12:42:07",
+    event: "Cryptographic credential accepted",
+    status: "VALID",
+    color: "#68e9ff",
+    start: 446,
+  },
+  {
+    time: "12:42:09",
+    event: "Approved runtime successfully attested",
+    status: "MATCH",
+    color: "#9d94ff",
+    start: 510,
+  },
+  {
+    time: "12:42:11",
+    event: "Customer PII scope blocked by policy",
+    status: "BLOCKED",
+    color: "#ff7488",
+    start: 575,
+  },
+  {
+    time: "12:42:13",
+    event: "Scoped authorization token issued",
+    status: "SEALED",
+    color: "#61efbd",
+    start: 690,
+  },
+] as const;
+
+const AuditTrail: React.FC<{
+  readonly frame: number;
+  readonly reveal: number;
+}> = ({ frame, reveal }) => {
+  const seal = phase(frame, 708, 756, Easing.out(Easing.back(1.2)));
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 92,
+        right: 92,
+        top: 807,
+        height: 202,
+        borderRadius: 24,
+        ...PANEL,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 34}px)`,
+      }}
+    >
       <div
         style={{
-          position: "absolute",
-          left: 34,
-          right: 34,
-          bottom: 18,
-          height: 34,
+          height: 56,
+          padding: "0 24px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          color: "rgba(166,203,219,0.66)",
-          fontSize: 15,
-          fontWeight: 650,
-          letterSpacing: "0.045em",
+          borderBottom: "1px solid rgba(105,214,242,0.11)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <span>SOURCES VERIFIED&nbsp; 12/12</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 9,
+              display: "grid",
+              placeItems: "center",
+              background: "rgba(98,225,255,0.07)",
+              border: "1px solid rgba(103,224,251,0.17)",
+            }}
+          >
+            <PolicyIcon color="#76e8ff" size={22} />
+          </div>
           <span
             style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "rgba(102,226,245,0.48)",
+              color: "#e5f8ff",
+              fontSize: 18,
+              fontWeight: 720,
             }}
-          />
-          <span>UPDATED JUST NOW</span>
+          >
+            Immutable audit trail
+          </span>
+          <span
+            style={{
+              color: "rgba(151,203,221,0.66)",
+              fontSize: 14,
+              fontWeight: 650,
+              letterSpacing: 1,
+            }}
+          >
+            EVENT STREAM / 4 RECORDS
+          </span>
         </div>
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            color: complete > 0.55 ? "#6decc4" : "rgba(176,218,233,0.7)",
+            gap: 9,
+            color: seal > 0.5 ? "#62efbd" : "rgba(157,207,223,0.7)",
+            fontSize: 14,
+            fontWeight: 750,
+            letterSpacing: 1.2,
           }}
         >
-          <div
-            style={{
-              width: 110,
-              height: 4,
-              overflow: "hidden",
-              borderRadius: 3,
-              background: "rgba(93,211,235,0.1)",
-            }}
-          >
-            <div
-              style={{
-                width: `${railFill * 100}%`,
-                height: "100%",
-                borderRadius: 3,
-                background:
-                  complete > 0.55
-                    ? "linear-gradient(90deg, #5de5ff, #56efbe)"
-                    : "linear-gradient(90deg, #7387ff, #5ee6ff)",
-                boxShadow: "0 0 8px rgba(83,232,220,0.42)",
-              }}
-            />
-          </div>
-          <span>{Math.round(railFill * 4)} OF 4 PRIORITIES</span>
+          {seal > 0.5 ? <CheckMark color="#62efbd" size={19} /> : null}
+          {seal > 0.5 ? "AUDIT SEALED" : "RECORDING"}
         </div>
       </div>
 
       <div
         style={{
+          height: 145,
+          padding: "17px 20px 18px",
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 14,
+        }}
+      >
+        {LOGS.map((log) => {
+          const itemIn = phase(frame, log.start, log.start + 32);
+          return (
+            <div
+              key={log.event}
+              style={{
+                position: "relative",
+                borderRadius: 15,
+                padding: "15px 16px",
+                overflow: "hidden",
+                opacity: itemIn,
+                transform: `translateY(${(1 - itemIn) * 15}px)`,
+                background: `linear-gradient(110deg, ${log.color}0b, rgba(4,17,28,0.58))`,
+                border: `1px solid ${log.color}23`,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span
+                  style={{
+                    color: "rgba(159,209,225,0.7)",
+                    fontSize: 14,
+                    fontWeight: 650,
+                    fontVariantNumeric: "tabular-nums",
+                    letterSpacing: 0.7,
+                  }}
+                >
+                  {log.time}
+                </span>
+                <span
+                  style={{
+                    padding: "4px 7px",
+                    borderRadius: 6,
+                    color: log.color,
+                    background: `${log.color}0e`,
+                    fontSize: 12,
+                    fontWeight: 780,
+                    letterSpacing: 1,
+                  }}
+                >
+                  {log.status}
+                </span>
+              </div>
+              <div
+                style={{
+                  marginTop: 12,
+                  maxWidth: 315,
+                  color: "#dff5fb",
+                  fontSize: 15,
+                  fontWeight: 650,
+                  lineHeight: 1.35,
+                }}
+              >
+                {log.event}
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  bottom: 0,
+                  width: `${itemIn * 100}%`,
+                  height: 2,
+                  background: `linear-gradient(90deg, ${log.color}, transparent)`,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const SuccessPulse: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const reveal = phase(frame, 712, 758, Easing.out(Easing.cubic));
+  const ring = phase(frame, 724, 812, Easing.out(Easing.quad));
+  const pulseOpacity = reveal * (1 - ring);
+  return (
+    <>
+      <div
+        style={{
           position: "absolute",
-          left: -80 + railFill * 1480,
-          top: 119,
-          width: 190,
-          height: 1,
-          opacity: railFill < 1 ? 0.48 : 0,
-          background:
-            "linear-gradient(90deg, transparent, rgba(112,239,255,0.78), transparent)",
-          boxShadow: "0 0 8px rgba(95,231,255,0.48)",
+          left: 852,
+          top: 420,
+          width: 120,
+          height: 120,
+          borderRadius: "50%",
+          border: "2px solid rgba(92,241,189,0.52)",
+          opacity: pulseOpacity * 0.18,
+          transform: `scale(${0.45 + ring * 5.8})`,
+          boxShadow: "0 0 35px rgba(87,240,187,0.18)",
+          pointerEvents: "none",
         }}
       />
-    </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 697,
+          top: 718,
+          width: 365,
+          height: 40,
+          borderRadius: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          opacity: reveal,
+          transform: `translateY(${(1 - reveal) * 12}px)`,
+          color: "#67f0c1",
+          background: "rgba(72,236,182,0.09)",
+          border: "1px solid rgba(84,240,189,0.25)",
+          boxShadow: "0 0 28px rgba(66,231,180,0.08)",
+          fontSize: 15,
+          fontWeight: 770,
+          letterSpacing: 1.1,
+          pointerEvents: "none",
+        }}
+      >
+        <CheckMark color="#65efbf" size={20} />
+        AGENT IDENTITY VERIFIED
+      </div>
+    </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const f = frame * (60 / fps);
 
-  const normalizedFrame = frame * (60 / fps);
-  const intro = progress(
-    normalizedFrame,
-    8,
-    44,
-    Easing.out(Easing.cubic),
-  );
-  const promptReveal = progress(
-    normalizedFrame,
-    24,
-    58,
-    Easing.out(Easing.cubic),
-  );
-  const responseReveal = progress(
-    normalizedFrame,
-    232,
-    286,
-    Easing.out(Easing.cubic),
-  );
-  const fadeOut = 1 - progress(
-    normalizedFrame,
-    850,
+  const intro = phase(f, 4, 42, Easing.out(Easing.cubic));
+  const headerReveal = phase(f, 16, 58);
+  const agentReveal = phase(f, 64, 126, Easing.out(Easing.cubic));
+  const validationReveal = phase(f, 115, 166, Easing.out(Easing.cubic));
+  const accessReveal = phase(f, 382, 428, Easing.out(Easing.cubic));
+  const auditReveal = phase(f, 402, 454, Easing.out(Easing.cubic));
+  const fadeOut = 1 - phase(
+    f,
+    852,
     TOTAL_FRAMES - 1,
     Easing.inOut(Easing.cubic),
   );
@@ -1338,7 +1760,7 @@ export const Motion: React.FC = () => {
         width: WIDTH,
         height: HEIGHT,
         overflow: "hidden",
-        backgroundColor: "#01040a",
+        background: "#01060d",
         color: "#ffffff",
         fontFamily: "Inter, Arial, sans-serif",
       }}
@@ -1350,22 +1772,21 @@ export const Motion: React.FC = () => {
           opacity: masterOpacity,
         }}
       >
-        <Atmosphere frame={normalizedFrame} />
-        <SystemHeader frame={normalizedFrame} reveal={intro} />
-        <PromptRail frame={normalizedFrame} reveal={promptReveal} />
-        <ProcessingRail frame={normalizedFrame} />
-        <ExecutiveBrief
-          frame={normalizedFrame}
-          reveal={responseReveal}
-        />
+        <Atmosphere frame={f} />
+        <Header frame={f} reveal={headerReveal} />
+        <AgentIdentityCard frame={f} reveal={agentReveal} />
+        <ValidationStack frame={f} reveal={validationReveal} />
+        <AccessControl frame={f} reveal={accessReveal} />
+        <AuditTrail frame={f} reveal={auditReveal} />
+        <SuccessPulse frame={f} />
       </div>
 
       <AbsoluteFill
         style={{
           pointerEvents: "none",
-          opacity: 0.13 * masterOpacity,
+          opacity: 0.11 * masterOpacity,
           background:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.028) 0px, rgba(255,255,255,0.028) 1px, transparent 1px, transparent 4px)",
+            "repeating-linear-gradient(0deg, rgba(255,255,255,0.026) 0px, rgba(255,255,255,0.026) 1px, transparent 1px, transparent 4px)",
           mixBlendMode: "soft-light",
         }}
       />
