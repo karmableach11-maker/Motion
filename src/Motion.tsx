@@ -1,1109 +1,1814 @@
 import React from "react";
-// Active Motion27: Aisha Noor to Diego Alvarez money transfer.
 import {
   AbsoluteFill,
   Easing,
   interpolate,
+  interpolateColors,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
-const LEFT_ANCHOR = {x: 520, y: 355};
-const HUB = {x: 960, y: 320};
-const RIGHT_ANCHOR = {x: 1400, y: 355};
+const TAU = Math.PI * 2;
 
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.min(max, Math.max(min, value));
+const COLORS = {
+  desktopDeep: "#041c38",
+  desktop: "#073c61",
+  desktopTeal: "#086d78",
+  cyan: "#4bf4e5",
+  cyanSoft: "#c1fff8",
+  blue: "#5369ff",
+  blueDeep: "#151d72",
+  violet: "#7b68ee",
+  amber: "#ffc95f",
+  coral: "#ff777e",
+  mint: "#67f4b5",
+  mintSoft: "#d0ffea",
+  panel: "#dce7df",
+  panelLight: "#f5f8ef",
+  panelMid: "#bdcbc3",
+  panelDark: "#6e8581",
+  ink: "#102128",
+  inkSoft: "#4b6265",
+  black: "#071119",
+};
 
-const reveal = (frame: number, start: number, end: number) =>
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const mix = (from: number, to: number, amount: number) =>
+  from + (to - from) * amount;
+const modulo = (value: number, length = 1) =>
+  ((value % length) + length) % length;
+
+const segment = (
+  frame: number,
+  start: number,
+  end: number,
+  easing: (value: number) => number = Easing.linear,
+) =>
   interpolate(frame, [start, end], [0, 1], {
-    easing: Easing.out(Easing.cubic),
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing,
   });
 
-const smooth = (frame: number, start: number, end: number) =>
-  interpolate(frame, [start, end], [0, 1], {
-    easing: Easing.inOut(Easing.cubic),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-const hash = (value: number) => {
-  const result = Math.sin(value * 127.1 + 411.9) * 43758.5453123;
-  return result - Math.floor(result);
+const hash01 = (seed: number) => {
+  const value = Math.sin(seed * 91.177 + 17.731) * 43758.5453;
+  return value - Math.floor(value);
 };
 
-const leftCurve = (progress: number) => {
-  const t = clamp(progress);
-  const u = 1 - t;
-  const control = {x: 715, y: 150};
-  return {
-    x:
-      u * u * LEFT_ANCHOR.x +
-      2 * u * t * control.x +
-      t * t * HUB.x,
-    y:
-      u * u * LEFT_ANCHOR.y +
-      2 * u * t * control.y +
-      t * t * HUB.y,
-  };
-};
-
-const rightCurve = (progress: number) => {
-  const t = clamp(progress);
-  const u = 1 - t;
-  const control = {x: 1205, y: 150};
-  return {
-    x:
-      u * u * HUB.x +
-      2 * u * t * control.x +
-      t * t * RIGHT_ANCHOR.x,
-    y:
-      u * u * HUB.y +
-      2 * u * t * control.y +
-      t * t * RIGHT_ANCHOR.y,
-  };
-};
-
-const routePoint = (progress: number) => {
-  if (progress <= 0.5) {
-    return leftCurve(progress * 2);
+const getInstallProgress = (frame: number) => {
+  if (frame < 54) return 0;
+  if (frame < 210) {
+    return mix(0, 0.18, segment(frame, 54, 210, Easing.inOut(Easing.cubic)));
   }
-  return rightCurve((progress - 0.5) * 2);
+  if (frame < 400) {
+    return mix(
+      0.18,
+      0.46,
+      segment(frame, 210, 400, Easing.inOut(Easing.cubic)),
+    );
+  }
+  if (frame < 640) {
+    return mix(
+      0.46,
+      0.78,
+      segment(frame, 400, 640, Easing.inOut(Easing.cubic)),
+    );
+  }
+  if (frame < 760) {
+    return mix(
+      0.78,
+      0.99,
+      segment(frame, 640, 760, Easing.inOut(Easing.cubic)),
+    );
+  }
+  return 1;
 };
 
-const specks = Array.from({length: 76}, (_, index) => ({
-  x: hash(index + 11) * WIDTH,
-  y: hash(index + 101) * HEIGHT,
-  radius: 0.6 + hash(index + 211) * 1.8,
-  opacity: 0.06 + hash(index + 321) * 0.2,
-  phase: hash(index + 431) * Math.PI * 2,
+const PHASES = [
+  { label: "READ MEDIA", start: 0, end: 210, threshold: 0.18 },
+  { label: "UNPACK", start: 210, end: 400, threshold: 0.46 },
+  { label: "MODULES", start: 400, end: 640, threshold: 0.78 },
+  { label: "VERIFY", start: 640, end: 760, threshold: 1 },
+  { label: "READY", start: 760, end: 900, threshold: 1 },
+] as const;
+
+const MODULES = [
+  { name: "APPLICATION CORE", size: "18.4 MB", threshold: 0.22 },
+  { name: "USER INTERFACE", size: "12.8 MB", threshold: 0.38 },
+  { name: "MEDIA CODECS", size: "08.6 MB", threshold: 0.54 },
+  { name: "SYSTEM DRIVERS", size: "14.2 MB", threshold: 0.69 },
+  { name: "HELP DATABASE", size: "04.1 MB", threshold: 0.79 },
+] as const;
+
+const PARTICLES = Array.from({ length: 62 }, (_, index) => ({
+  x: hash01(index * 7 + 3) * WIDTH,
+  y: hash01(index * 13 + 9) * HEIGHT,
+  size: 2 + Math.floor(hash01(index * 17 + 2) * 5),
+  phase: hash01(index * 19 + 5),
+  speed: 7 + hash01(index * 23 + 1) * 18,
+  opacity: 0.05 + hash01(index * 29 + 7) * 0.18,
 }));
 
-const successParticles = Array.from({length: 34}, (_, index) => ({
-  angle: (index / 34) * Math.PI * 2 + hash(index + 77) * 0.15,
-  distance: 72 + hash(index + 177) * 126,
-  size: 2 + hash(index + 277) * 4.5,
-  delay: Math.round(hash(index + 377) * 12),
-  color:
-    index % 3 === 0
-      ? "#C9FF72"
-      : index % 3 === 1
-        ? "#69E5FF"
-        : "#F3FFF8",
-}));
-
-const CircuitBackground: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
-  const breath =
-    0.9 + Math.sin((frame / durationInFrames) * Math.PI * 2) * 0.06;
-  const lateSweep =
-    reveal(frame, 600, 630) * (1 - reveal(frame, 678, 708));
-  const sweepX = interpolate(frame, [600, 708], [-520, 1760], {
-    easing: Easing.inOut(Easing.cubic),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  return (
-    <>
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(circle at 50% 31%, #243352 0%, #11192D 37%, #090D1B 68%, #040610 100%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: breath,
-          background:
-            "radial-gradient(ellipse at 18% 38%, rgba(255,111,73,0.20) 0%, rgba(154,54,62,0.07) 34%, transparent 65%), radial-gradient(ellipse at 82% 35%, rgba(57,203,244,0.18) 0%, rgba(28,111,159,0.06) 36%, transparent 66%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: 0.34,
-          backgroundImage:
-            "linear-gradient(120deg, rgba(137,162,205,0.05) 1px, transparent 1px), linear-gradient(30deg, rgba(137,162,205,0.035) 1px, transparent 1px)",
-          backgroundSize: "82px 82px",
-          maskImage:
-            "radial-gradient(ellipse at 50% 42%, black 0%, rgba(0,0,0,.82) 44%, transparent 86%)",
-        }}
-      />
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0}}
-      >
-        <g opacity="0.2">
-          <path
-            d="M-70 170C320 30 620 94 900 232S1470 432 1990 198"
-            fill="none"
-            stroke="#8DA4D2"
-            strokeOpacity="0.13"
-            strokeWidth="1"
-            strokeDasharray="3 16"
-            strokeDashoffset={-frame * 0.18}
-          />
-          <path
-            d="M-120 830C290 1002 650 918 960 790S1510 616 2030 850"
-            fill="none"
-            stroke="#8DA4D2"
-            strokeOpacity="0.1"
-            strokeWidth="1"
-          />
-          <ellipse
-            cx="960"
-            cy="420"
-            rx="742"
-            ry="358"
-            fill="none"
-            stroke="#8297BE"
-            strokeOpacity="0.08"
-            strokeWidth="1"
-          />
-        </g>
-        {specks.map((speck, index) => {
-          const pulse =
-            0.52 +
-            Math.sin(frame / 72 + speck.phase) * 0.32;
-          return (
-            <circle
-              key={index}
-              cx={speck.x}
-              cy={speck.y + Math.sin(frame / 105 + speck.phase) * 4}
-              r={speck.radius}
-              fill={index % 4 === 0 ? "#8DEBFF" : "#C9D7F1"}
-              fillOpacity={speck.opacity * pulse}
-            />
-          );
-        })}
-      </svg>
-      <div
-        style={{
-          position: "absolute",
-          left: sweepX,
-          top: -370,
-          width: 350,
-          height: 1700,
-          transform: "rotate(24deg)",
-          opacity: lateSweep,
-          filter: "blur(38px)",
-          mixBlendMode: "screen",
-          background:
-            "linear-gradient(90deg, transparent 0%, rgba(112,222,255,0.03) 20%, rgba(181,243,255,0.20) 50%, rgba(255,152,104,0.04) 80%, transparent 100%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          boxShadow: "inset 0 0 190px rgba(0,0,0,0.62)",
-          background:
-            "linear-gradient(180deg, rgba(1,3,10,0.04) 0%, transparent 40%, rgba(1,3,10,0.46) 100%)",
-        }}
-      />
-    </>
-  );
-};
-
-const IdentityCard: React.FC<{
-  readonly x: number;
-  readonly y: number;
-  readonly startFrame: number;
-  readonly accent: string;
-  readonly accentDark: string;
-  readonly initials: string;
-  readonly name: string;
-  readonly role: string;
-  readonly side: "left" | "right";
-  readonly success?: number;
+const PixelText: React.FC<{
+  readonly children: React.ReactNode;
+  readonly color?: string;
+  readonly size?: number;
+  readonly spacing?: number;
+  readonly align?: "left" | "center" | "right";
+  readonly style?: React.CSSProperties;
 }> = ({
-  x,
-  y,
-  startFrame,
-  accent,
-  accentDark,
-  initials,
-  name,
-  role,
-  side,
-  success = 0,
-}) => {
-  const frame = useCurrentFrame();
-  const enter = reveal(frame, startFrame, startFrame + 22);
-  const direction = side === "left" ? -1 : 1;
-  const offsetX = (1 - enter) * 42 * direction;
-  const scale = interpolate(enter, [0, 0.78, 1], [0.92, 1.018, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const float = Math.sin(frame / 82 + (side === "left" ? 0 : 1.7)) * 2.4;
-  const alignRight = side === "right";
-  const avatarX = alignRight ? 126 : -126;
-  const textX = alignRight ? 71 : -71;
+  children,
+  color = COLORS.ink,
+  size = 20,
+  spacing = 2,
+  align = "left",
+  style,
+}) => (
+  <div
+    style={{
+      color,
+      fontFamily: "'Courier New', monospace",
+      fontSize: size,
+      fontWeight: 800,
+      letterSpacing: spacing,
+      lineHeight: 1.1,
+      textAlign: align,
+      fontVariantNumeric: "tabular-nums",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);
 
-  return (
-    <g
-      transform={`translate(${x + offsetX} ${y + float}) scale(${scale})`}
-      opacity={enter}
-      filter="url(#identityShadow)"
-    >
-      <rect
-        x="-202"
-        y="-87"
-        width="404"
-        height="174"
-        rx="32"
-        fill="#11192C"
-        fillOpacity="0.95"
-        stroke={success > 0.1 ? "#AFFF78" : accent}
-        strokeOpacity={0.24 + success * 0.5}
-        strokeWidth={1.5 + success * 1.2}
-      />
-      <rect
-        x="-190"
-        y="-75"
-        width="380"
-        height="150"
-        rx="24"
-        fill={`url(#identity-${side})`}
-      />
-      <path
-        d={
-          alignRight
-            ? "M-190-75H-20C42-75 82-30 112 75H-190Z"
-            : "M190-75H20C-42-75-82-30-112 75H190Z"
-        }
-        fill="#FFFFFF"
-        fillOpacity="0.025"
-      />
-      <g transform={`translate(${avatarX} 0)`}>
-        <path
-          d="M0-56L48-28V28L0 56L-48 28V-28Z"
-          fill={accentDark}
-          stroke={accent}
-          strokeOpacity="0.78"
-          strokeWidth="2"
-        />
-        <path
-          d="M0-47L40-23V23L0 47L-40 23V-23Z"
-          fill={accent}
-          fillOpacity="0.19"
-        />
-        <text
-          y="9"
-          fill="#F9FCFF"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="29"
-          fontWeight="850"
-          letterSpacing="1"
-          textAnchor="middle"
-        >
-          {initials}
-        </text>
-        <circle
-          cx="37"
-          cy="39"
-          r="13"
-          fill="#0B1522"
-          stroke={success > 0.15 ? "#B8FF78" : accent}
-          strokeWidth="2"
-        />
-        {success > 0.15 ? (
-          <path
-            d="M31 39L35 43L43 34"
-            fill="none"
-            stroke="#DFFFF1"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ) : (
-          <circle cx="37" cy="39" r="4" fill={accent} />
-        )}
-      </g>
-      <text
-        x={textX}
-        y="-8"
-        fill="#F5F8FF"
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="28"
-        fontWeight="780"
-        letterSpacing="0.2"
-        textAnchor={alignRight ? "end" : "start"}
-      >
-        {name}
-      </text>
-      <text
-        x={textX}
-        y="24"
-        fill="#8FA2BF"
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="15"
-        fontWeight="650"
-        letterSpacing="1.6"
-        textAnchor={alignRight ? "end" : "start"}
-      >
-        {role.toUpperCase()}
-      </text>
-      <g transform={`translate(${textX} 51)`}>
-        <circle
-          cx={alignRight ? -10 : 10}
-          r="4"
-          fill={success > 0.2 ? "#B6FF78" : accent}
-        />
-        <text
-          x={alignRight ? -22 : 22}
-          y="5"
-          fill={success > 0.2 ? "#CFFFAC" : "#AAB8CE"}
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="13"
-          fontWeight="700"
-          letterSpacing="1.2"
-          textAnchor={alignRight ? "end" : "start"}
-        >
-          {success > 0.2 ? "RECEIVED" : "VERIFIED"}
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const RouteSystem: React.FC = () => {
-  const frame = useCurrentFrame();
-  const enter = reveal(frame, 34, 69);
-  const success = reveal(frame, 324, 356);
-  const dash = -frame * 1.55;
-  const pathLeft = `M${LEFT_ANCHOR.x} ${LEFT_ANCHOR.y}Q715 150 ${HUB.x} ${HUB.y}`;
-  const pathRight = `M${HUB.x} ${HUB.y}Q1205 150 ${RIGHT_ANCHOR.x} ${RIGHT_ANCHOR.y}`;
-
-  return (
-    <g opacity={enter}>
-      {[pathLeft, pathRight].map((path, index) => (
-        <g key={path}>
-          <path
-            d={path}
-            fill="none"
-            stroke={index === 0 ? "#FF744F" : "#4CD8FF"}
-            strokeOpacity="0.13"
-            strokeWidth="22"
-            filter="url(#routeBloom)"
-          />
-          <path
-            d={path}
-            fill="none"
-            stroke={index === 0 ? "url(#routeLeft)" : "url(#routeRight)"}
-            strokeWidth="3"
-            strokeLinecap="round"
-            pathLength="100"
-            strokeDasharray="100"
-            strokeDashoffset={100 * (1 - enter)}
-          />
-          <path
-            d={path}
-            fill="none"
-            stroke="#E7F8FF"
-            strokeOpacity={0.24 + success * 0.12}
-            strokeWidth="1"
-            strokeDasharray="3 20"
-            strokeDashoffset={dash + index * 9}
-            strokeLinecap="round"
-          />
-        </g>
-      ))}
-    </g>
-  );
-};
-
-const VerificationHub: React.FC = () => {
-  const frame = useCurrentFrame();
-  const enter = reveal(frame, 24, 52);
-  const success = reveal(frame, 324, 354);
-  const settle = 1 - reveal(frame, 390, 430) * 0.26;
-
-  return (
-    <g
-      transform={`translate(${HUB.x} ${HUB.y}) scale(${interpolate(
-        enter,
-        [0, 0.75, 1],
-        [0.7, 1.06, 1],
-        {extrapolateLeft: "clamp", extrapolateRight: "clamp"},
-      )})`}
-      opacity={enter * settle}
-      filter="url(#hubShadow)"
-    >
-      <circle
-        r="84"
-        fill="#0B1426"
-        fillOpacity="0.9"
-        stroke={success > 0.4 ? "#B6FF75" : "#8CA9D5"}
-        strokeOpacity={0.28 + success * 0.55}
-        strokeWidth="2"
-      />
-      <circle
-        r="70"
-        fill="url(#hubSurface)"
-        stroke="#E4F2FF"
-        strokeOpacity="0.12"
-      />
-      <path
-        d="M0-60L52-30V30L0 60L-52 30V-30Z"
-        fill="none"
-        stroke={success > 0.4 ? "#BEFF8A" : "#89B9FF"}
-        strokeOpacity="0.32"
-        strokeWidth="1.4"
-        strokeDasharray="5 10"
-        transform={`rotate(${frame * 0.12})`}
-      />
-      <path
-        d="M0-49L42-24V24L0 49L-42 24V-24Z"
-        fill="none"
-        stroke={success > 0.4 ? "#D4FFB4" : "#FF9A74"}
-        strokeOpacity="0.38"
-        transform={`rotate(${-frame * 0.16})`}
-      />
-      {success > 0.45 ? (
-        <path
-          d="M-24 0L-7 18L27-22"
-          fill="none"
-          stroke="#E2FFC8"
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={success}
-        />
-      ) : (
-        <>
-          <path
-            d="M-28-8H22M12-20L26-8L12 4"
-            fill="none"
-            stroke="#F6FAFF"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M28 13H-22M-12 1L-26 13L-12 25"
-            fill="none"
-            stroke="#8CE7FF"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </>
-      )}
-      <text
-        y="111"
-        fill={success > 0.4 ? "#CFFFAD" : "#91A6C4"}
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="13"
-        fontWeight="750"
-        letterSpacing="2.4"
-        textAnchor="middle"
-      >
-        {success > 0.4 ? "SETTLED" : "SECURE LINK"}
-      </text>
-    </g>
-  );
-};
-
-const TransferChip: React.FC<{readonly index: number}> = ({index}) => {
-  const frame = useCurrentFrame();
-  const start = 70;
-  const stop = 324;
-  const period = 100;
-  const local = frame - start + index * 25;
-  const wrapped = ((local % period) + period) % period;
-  const progress = wrapped / period;
-  const point = routePoint(progress);
-  const active =
-    reveal(frame, start + index * 3, start + 15 + index * 3) *
-    (1 - reveal(frame, stop - 16, stop));
-  const endpoint = clamp(Math.min(progress / 0.09, (1 - progress) / 0.09));
-  const beforeHub = progress < 0.5;
-  const spin = frame * 1.3 + index * 31;
-  const color = beforeHub ? "#FF9169" : "#67E2FF";
-
-  return (
-    <g
-      transform={`translate(${point.x} ${point.y + Math.sin(frame / 7 + index) * 2.2}) rotate(${45 + spin * 0.18})`}
-      opacity={active * endpoint}
-    >
-      <rect
-        x="-25"
-        y="-25"
-        width="50"
-        height="50"
-        rx="10"
-        fill={color}
-        fillOpacity="0.16"
-        filter="url(#chipBloom)"
-      />
-      <rect
-        x="-18"
-        y="-18"
-        width="36"
-        height="36"
-        rx="8"
-        fill={beforeHub ? "url(#chipWarm)" : "url(#chipCool)"}
-        stroke="#F7FDFF"
-        strokeOpacity="0.65"
-        strokeWidth="1.4"
-      />
-      <g transform={`rotate(${-45 - spin * 0.18})`}>
-        <text
-          y="7"
-          fill="#F8FDFF"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="20"
-          fontWeight="900"
-          textAnchor="middle"
-        >
-          €
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const SettlementPanel: React.FC = () => {
-  const frame = useCurrentFrame();
-  const enter = reveal(frame, 38, 68);
-  const success = reveal(frame, 324, 352);
-  const oldStatus = 1 - reveal(frame, 324, 334);
-  const newStatus = reveal(frame, 338, 352);
-  const delivered = newStatus > 0.5;
-  const float = Math.sin(frame / 96) * 2.5;
-  const y = 585 + (1 - enter) * 34 + float;
-  const progress = interpolate(frame, [74, 318], [0.1, 0.92], {
-    easing: Easing.inOut(Easing.quad),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  return (
-    <g
-      transform={`translate(960 ${y}) scale(${interpolate(
-        enter,
-        [0, 0.8, 1],
-        [0.94, 1.012, 1],
-        {extrapolateLeft: "clamp", extrapolateRight: "clamp"},
-      )})`}
-      opacity={enter}
-      filter="url(#panelShadow)"
-    >
-      <rect
-        x="-360"
-        y="-124"
-        width="720"
-        height="248"
-        rx="34"
-        fill="#0B1222"
-        fillOpacity="0.96"
-        stroke="url(#panelBorder)"
-        strokeWidth="2"
-      />
-      <rect
-        x="-345"
-        y="-109"
-        width="690"
-        height="218"
-        rx="25"
-        fill="url(#panelSurface)"
-      />
-      <path
-        d="M-345-109H124C213-109 279-64 345 20V-109Z"
-        fill="#FFFFFF"
-        fillOpacity="0.026"
-      />
-      <text
-        x="-304"
-        y="-70"
-        fill="#8497B5"
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="14"
-        fontWeight="750"
-        letterSpacing="2.4"
-      >
-        INTERNATIONAL TRANSFER
-      </text>
-      <g transform="translate(304 -72)">
-        <rect
-          x="-150"
-          y="-17"
-          width="150"
-          height="34"
-          rx="17"
-          fill={delivered ? "#263D24" : "#25213A"}
-          stroke={delivered ? "#A9FF74" : "#A796FF"}
-          strokeOpacity="0.38"
-        />
-        <circle
-          cx="-128"
-          r="4"
-          fill={delivered ? "#B7FF79" : "#B1A6FF"}
-        />
-        <text
-          x="-62"
-          y="5"
-          fill={delivered ? "#D8FFBC" : "#CFC9FF"}
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="12"
-          fontWeight="800"
-          letterSpacing="1.1"
-          textAnchor="middle"
-        >
-          {delivered ? "DELIVERED" : "IN TRANSIT"}
-        </text>
-      </g>
-      <line
-        x1="-304"
-        y1="-42"
-        x2="304"
-        y2="-42"
-        stroke="#91A6C8"
-        strokeOpacity="0.12"
-      />
-      <g transform="translate(-304 0)">
-        <text
-          y="0"
-          fill="#7F91AD"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="13"
-          fontWeight="700"
-          letterSpacing="1.7"
-        >
-          AMOUNT
-        </text>
-        <text
-          y="44"
-          fill={success > 0.4 ? "#D7FFC0" : "#F7FAFF"}
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="39"
-          fontWeight="820"
-          letterSpacing="-0.6"
-        >
-          €1,840.75
-        </text>
-      </g>
-      <g transform="translate(66 0)">
-        <text
-          y="0"
-          fill="#7F91AD"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="13"
-          fontWeight="700"
-          letterSpacing="1.7"
-        >
-          TRANSFER FEE
-        </text>
-        <text
-          y="42"
-          fill="#D7E0EF"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="28"
-          fontWeight="750"
-        >
-          €0.00
-        </text>
-      </g>
-      <g transform="translate(304 0)">
-        <text
-          y="0"
-          fill="#7F91AD"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="13"
-          fontWeight="700"
-          letterSpacing="1.7"
-          textAnchor="end"
-        >
-          REFERENCE
-        </text>
-        <text
-          y="42"
-          fill="#D7E0EF"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="25"
-          fontWeight="750"
-          letterSpacing="1.2"
-          textAnchor="end"
-        >
-          AN-4829
-        </text>
-      </g>
-      <rect
-        x="-304"
-        y="73"
-        width="608"
-        height="5"
-        rx="2.5"
-        fill="#647491"
-        fillOpacity="0.22"
-      />
-      <rect
-        x="-304"
-        y="73"
-        width={608 * (success > 0.1 ? 1 : progress)}
-        height="5"
-        rx="2.5"
-        fill={success > 0.1 ? "url(#barSuccess)" : "url(#barProgress)"}
-      />
-      <g opacity={oldStatus} transform={`translate(-304 ${99 - (1 - oldStatus) * 5})`}>
-        <circle r="7" fill="none" stroke="#FF9C78" strokeWidth="1.8" />
-        <path
-          d="M0-7A7 7 0 0 1 7 0"
-          fill="none"
-          stroke="#FFE2D6"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <text
-          x="18"
-          y="5"
-          fill="#9EADC3"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="14"
-          fontWeight="680"
-          letterSpacing="1.2"
-        >
-          VERIFYING DELIVERY
-        </text>
-      </g>
-      <g opacity={newStatus} transform={`translate(-304 ${99 + (1 - newStatus) * 6})`}>
-        <circle r="8" fill="#B4FF79" fillOpacity="0.16" />
-        <path
-          d="M-4 0L-1 4L5-4"
-          fill="none"
-          stroke="#CFFFAB"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <text
-          x="18"
-          y="5"
-          fill="#C5FFA0"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="14"
-          fontWeight="780"
-          letterSpacing="1.2"
-        >
-          DELIVERY CONFIRMED
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const SuccessMoment: React.FC = () => {
-  const frame = useCurrentFrame();
-  const burst = reveal(frame, 326, 352);
-  const fade = 1 - reveal(frame, 382, 420);
-  const label =
-    reveal(frame, 336, 358) * (1 - reveal(frame, 390, 424));
-
-  return (
-    <g>
-      {successParticles.map((particle, index) => {
-        const local = reveal(
-          frame,
-          326 + particle.delay,
-          353 + particle.delay,
-        );
-        const x =
-          RIGHT_ANCHOR.x +
-          Math.cos(particle.angle) * particle.distance * local;
-        const y =
-          RIGHT_ANCHOR.y +
-          Math.sin(particle.angle) * particle.distance * local;
-        return (
-          <g
-            key={index}
-            transform={`translate(${x} ${y}) rotate(${index * 17})`}
-            opacity={burst * fade * (1 - local * 0.45)}
-          >
-            {index % 3 === 0 ? (
-              <path
-                d={`M${-particle.size * 1.5} 0H${particle.size * 1.5}M0 ${-particle.size * 1.5}V${particle.size * 1.5}`}
-                stroke={particle.color}
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            ) : (
-              <rect
-                x={-particle.size / 2}
-                y={-particle.size / 2}
-                width={particle.size}
-                height={particle.size}
-                rx={particle.size * 0.22}
-                fill={particle.color}
-                filter="url(#particleBloom)"
-              />
-            )}
-          </g>
-        );
-      })}
-      <g
-        transform={`translate(${RIGHT_ANCHOR.x} ${RIGHT_ANCHOR.y - 130 - (1 - label) * 18})`}
-        opacity={label}
-      >
-        <rect
-          x="-104"
-          y="-27"
-          width="208"
-          height="54"
-          rx="27"
-          fill="#152A2B"
-          fillOpacity="0.94"
-          stroke="#B3FF78"
-          strokeOpacity="0.52"
-        />
-        <circle cx="-75" r="5" fill="#B9FF7E" />
-        <text
-          x="8"
-          y="8"
-          fill="#D9FFC0"
-          fontFamily="Inter, Arial, sans-serif"
-          fontSize="21"
-          fontWeight="820"
-          letterSpacing="0.2"
-          textAnchor="middle"
-        >
-          +€1,840.75
-        </text>
-      </g>
-    </g>
-  );
-};
-
-const ClosingCopy: React.FC = () => {
-  const frame = useCurrentFrame();
-  const title = reveal(frame, 398, 434);
-  const line = reveal(frame, 424, 454);
-  const sub = reveal(frame, 446, 480);
-
-  return (
-    <g>
-      <text
-        x="960"
-        y={890 + (1 - title) * 24}
-        fill="#F4F8FF"
-        fillOpacity={title}
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="47"
-        fontWeight="820"
-        letterSpacing="7.5"
-        textAnchor="middle"
-      >
-        PAYMENT RECEIVED
-      </text>
-      <g opacity={line}>
-        <line
-          x1={960 - 148 * line}
-          y1="915"
-          x2={960 + 148 * line}
-          y2="915"
-          stroke="url(#closingLine)"
-          strokeWidth="2"
-        />
-        <path
-          d="M0-5L5 0L0 5L-5 0Z"
-          fill="#FF8C67"
-          transform={`translate(${960 - 152 * line} 915)`}
-        />
-        <path
-          d="M0-5L5 0L0 5L-5 0Z"
-          fill="#68E5FF"
-          transform={`translate(${960 + 152 * line} 915)`}
-        />
-      </g>
-      <text
-        x="960"
-        y={958 + (1 - sub) * 13}
-        fill="#91A3BE"
-        fillOpacity={sub}
-        fontFamily="Inter, Arial, sans-serif"
-        fontSize="17"
-        fontWeight="650"
-        letterSpacing="2"
-        textAnchor="middle"
-      >
-        END-TO-END DELIVERY VERIFIED
-      </text>
-    </g>
-  );
-};
-
-export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-  const intro = reveal(frame, 0, 18);
-  const success =
-    reveal(frame, 324, 354) * (1 - reveal(frame, 398, 438) * 0.28);
+const AmbientDesktop: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+}> = ({ frame, time }) => {
+  const gridX = modulo(time * 12, 72);
+  const gridY = modulo(time * 5.5, 72);
+  const sweepY = modulo(time * 135, HEIGHT + 280) - 140;
+  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.23);
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
         overflow: "hidden",
-        backgroundColor: "#050711",
-        fontFamily: "Inter, Arial, sans-serif",
+        background:
+          "radial-gradient(circle at 51% 46%, #0d8190 0%, #075a76 38%, #053856 70%, #031a35 100%)",
       }}
     >
-      <CircuitBackground />
+      <AbsoluteFill
+        style={{
+          opacity: 0.25,
+          backgroundImage:
+            "linear-gradient(rgba(139,255,247,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(139,255,247,.18) 1px, transparent 1px)",
+          backgroundSize: "72px 72px",
+          backgroundPosition: `${gridX}px ${gridY}px`,
+          maskImage:
+            "radial-gradient(circle at 50% 50%, #000 0%, rgba(0,0,0,.78) 50%, transparent 88%)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: 1250,
+          height: 1250,
+          transform: `translate(-50%, -50%) rotate(${time * 1.4}deg)`,
+          borderRadius: "50%",
+          border: "1px solid rgba(187,255,249,.12)",
+          boxShadow:
+            "0 0 0 96px rgba(93,255,242,.025), 0 0 0 190px rgba(93,255,242,.018)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: 1520,
+          height: 500,
+          transform: `translate(-50%, -50%) rotate(${-9 + Math.sin(time * 0.22) * 1.3}deg)`,
+          background:
+            "linear-gradient(90deg, transparent, rgba(87,255,240,.09), transparent)",
+          filter: "blur(42px)",
+        }}
+      />
+
+      {PARTICLES.map((particle, index) => {
+        const y =
+          modulo(
+            particle.y + time * particle.speed + particle.phase * HEIGHT * 0.55,
+            HEIGHT + 90,
+          ) - 45;
+        const flicker =
+          0.3 +
+          0.7 *
+            Math.sin(
+              (time * (0.17 + (index % 5) * 0.027) + particle.phase) * TAU,
+            ) **
+              2;
+        return (
+          <div
+            key={`ambient-particle-${index}`}
+            style={{
+              position: "absolute",
+              left: particle.x,
+              top: y,
+              width: particle.size,
+              height: particle.size,
+              opacity: particle.opacity * flicker,
+              background:
+                index % 8 === 0 ? COLORS.cyanSoft : "rgba(87,255,240,.92)",
+              boxShadow:
+                index % 8 === 0 ? "0 0 14px rgba(104,255,241,.88)" : undefined,
+            }}
+          />
+        );
+      })}
+
+      <div
+        style={{
+          position: "absolute",
+          left: -220,
+          top: sweepY,
+          width: 2380,
+          height: 150,
+          transform: "rotate(-4deg)",
+          opacity: 0.15,
+          background:
+            "linear-gradient(180deg, transparent, rgba(174,255,248,.68), transparent)",
+          filter: "blur(24px)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 72,
+          top: 64,
+          width: 126,
+          height: 126,
+          opacity: 0.24 + pulse * 0.12,
+          borderLeft: `3px solid ${COLORS.cyan}`,
+          borderTop: `3px solid ${COLORS.cyan}`,
+          boxShadow: "-8px -8px 28px rgba(75,244,229,.08)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          right: 72,
+          bottom: 64,
+          width: 126,
+          height: 126,
+          opacity: 0.2 + (1 - pulse) * 0.12,
+          borderRight: `3px solid ${COLORS.cyan}`,
+          borderBottom: `3px solid ${COLORS.cyan}`,
+          boxShadow: "8px 8px 28px rgba(75,244,229,.08)",
+        }}
+      />
+
+      <PixelText
+        color="rgba(207,255,251,.55)"
+        size={14}
+        spacing={2.8}
+        style={{ position: "absolute", left: 82, bottom: 70 }}
+      >
+        SETUP ENVIRONMENT // CHANNEL 08
+      </PixelText>
+      <PixelText
+        color="rgba(207,255,251,.5)"
+        size={14}
+        spacing={2.2}
+        align="right"
+        style={{ position: "absolute", right: 82, top: 67, lineHeight: 1.65 }}
+      >
+        SIGNAL {String(Math.round(92 + pulse * 7)).padStart(2, "0")}%
+        <br />
+        FRAME {String(frame).padStart(4, "0")}
+      </PixelText>
+
+      <AbsoluteFill
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 45%, rgba(1,24,40,.22) 74%, rgba(1,13,29,.66) 100%)",
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const BevelPanel: React.FC<{
+  readonly children: React.ReactNode;
+  readonly style?: React.CSSProperties;
+  readonly dark?: boolean;
+}> = ({ children, style, dark = false }) => (
+  <div
+    style={{
+      position: "relative",
+      overflow: "hidden",
+      boxSizing: "border-box",
+      background: dark
+        ? "linear-gradient(145deg, #14203f, #07142d)"
+        : `linear-gradient(145deg, ${COLORS.panelLight}, ${COLORS.panel} 48%, ${COLORS.panelMid})`,
+      border: dark
+        ? "2px solid rgba(111,137,255,.55)"
+        : `3px solid ${COLORS.panelDark}`,
+      boxShadow: dark
+        ? "inset 2px 2px rgba(198,212,255,.14), inset -3px -3px rgba(0,7,28,.62)"
+        : "inset 3px 3px rgba(255,255,255,.9), inset -3px -3px rgba(60,82,78,.28)",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const CheckGlyph: React.FC<{
+  readonly size?: number;
+  readonly color?: string;
+  readonly stroke?: number;
+}> = ({ size = 20, color = COLORS.mint, stroke = 3 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24">
+    <path
+      d="M5 12.5L9.2 16.6L19 7"
+      fill="none"
+      stroke={color}
+      strokeWidth={stroke}
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+    />
+  </svg>
+);
+
+const WindowButton: React.FC<{
+  readonly children: React.ReactNode;
+  readonly danger?: boolean;
+}> = ({ children, danger = false }) => (
+  <div
+    style={{
+      width: 30,
+      height: 28,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: COLORS.panelLight,
+      background: danger
+        ? "linear-gradient(180deg, #ff8c91, #bd3549)"
+        : "rgba(231,241,237,.12)",
+      border: "1px solid rgba(245,255,252,.42)",
+      boxShadow: "inset 1px 1px rgba(255,255,255,.25)",
+      fontFamily: "Arial, sans-serif",
+      fontSize: 16,
+      fontWeight: 900,
+      lineHeight: 1,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const RetroButton: React.FC<{
+  readonly children: React.ReactNode;
+  readonly primary?: boolean;
+  readonly disabled?: boolean;
+}> = ({ children, primary = false, disabled = false }) => (
+  <div
+    style={{
+      minWidth: 132,
+      height: 46,
+      padding: "0 19px",
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: disabled
+        ? "rgba(55,75,76,.4)"
+        : primary
+          ? COLORS.panelLight
+          : COLORS.ink,
+      background: disabled
+        ? "linear-gradient(180deg, rgba(224,231,224,.62), rgba(188,201,192,.62))"
+        : primary
+          ? `linear-gradient(180deg, ${COLORS.blue}, ${COLORS.blueDeep})`
+          : `linear-gradient(180deg, ${COLORS.panelLight}, ${COLORS.panelMid})`,
+      border: `2px solid ${
+        disabled
+          ? "rgba(108,128,123,.3)"
+          : primary
+            ? "#10165e"
+            : COLORS.panelDark
+      }`,
+      boxShadow: disabled
+        ? "inset 2px 2px rgba(255,255,255,.25)"
+        : primary
+          ? "inset 2px 2px rgba(255,255,255,.28), inset -3px -3px rgba(3,7,51,.46), 4px 4px 0 rgba(26,40,58,.18)"
+          : "inset 3px 3px rgba(255,255,255,.92), inset -3px -3px rgba(69,88,84,.28), 4px 4px 0 rgba(42,67,65,.16)",
+      fontFamily: "'Courier New', monospace",
+      fontSize: 14,
+      fontWeight: 900,
+      letterSpacing: 1.5,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const PackageGlyph: React.FC<{
+  readonly time: number;
+  readonly progress: number;
+  readonly complete: boolean;
+}> = ({ time, progress, complete }) => {
+  const accent = complete ? COLORS.mint : COLORS.cyan;
+  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 1.1);
+  const orbit = time * 34;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: 204,
+        height: 194,
+        margin: "0 auto",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 21,
+          top: 18,
+          width: 162,
+          height: 162,
+          transform: `rotate(${orbit * 0.12}deg)`,
+          borderRadius: "50%",
+          border: `2px dashed ${accent}`,
+          opacity: 0.24 + pulse * 0.18,
+          boxShadow: `0 0 24px ${complete ? "rgba(103,244,181,.2)" : "rgba(75,244,229,.2)"}`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 44,
+          top: 40,
+          width: 116,
+          height: 116,
+          transform: `rotate(${-orbit * 0.18}deg)`,
+          border: "1px solid rgba(153,172,255,.38)",
+        }}
+      />
+
       <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0, opacity: intro}}
+        width="136"
+        height="136"
+        viewBox="0 0 136 136"
+        style={{
+          position: "absolute",
+          left: 34,
+          top: 31,
+          filter: `drop-shadow(0 0 16px ${complete ? "rgba(103,244,181,.44)" : "rgba(83,105,255,.48)"})`,
+        }}
       >
         <defs>
-          <linearGradient id="identity-left" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#392235" stopOpacity="0.82" />
-            <stop offset="55%" stopColor="#1C1C31" stopOpacity="0.92" />
-            <stop offset="100%" stopColor="#111827" stopOpacity="0.96" />
-          </linearGradient>
-          <linearGradient id="identity-right" x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#153447" stopOpacity="0.86" />
-            <stop offset="56%" stopColor="#172336" stopOpacity="0.93" />
-            <stop offset="100%" stopColor="#101827" stopOpacity="0.97" />
+          <linearGradient
+            id="installer-package-top"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="1"
+          >
+            <stop
+              offset="0"
+              stopColor={complete ? COLORS.mintSoft : "#bac3ff"}
+            />
+            <stop offset="1" stopColor={accent} />
           </linearGradient>
           <linearGradient
-            id="routeLeft"
-            x1={LEFT_ANCHOR.x}
-            y1={LEFT_ANCHOR.y}
-            x2={HUB.x}
-            y2={HUB.y}
-            gradientUnits="userSpaceOnUse"
+            id="installer-package-side"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="1"
           >
-            <stop offset="0%" stopColor="#FF6D4A" />
-            <stop offset="100%" stopColor="#FFBE85" />
-          </linearGradient>
-          <linearGradient
-            id="routeRight"
-            x1={HUB.x}
-            y1={HUB.y}
-            x2={RIGHT_ANCHOR.x}
-            y2={RIGHT_ANCHOR.y}
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#9BEFFF" />
-            <stop offset="100%" stopColor="#3ECDF4" />
-          </linearGradient>
-          <radialGradient id="hubSurface" cx="38%" cy="30%" r="74%">
-            <stop offset="0%" stopColor="#304C6B" />
-            <stop offset="45%" stopColor="#17283E" />
-            <stop offset="100%" stopColor="#0B1423" />
-          </radialGradient>
-          <linearGradient id="panelBorder" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#FF9E7B" stopOpacity="0.5" />
-            <stop offset="42%" stopColor="#9BAED2" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#68E4FF" stopOpacity="0.48" />
-          </linearGradient>
-          <linearGradient id="panelSurface" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1B273C" stopOpacity="0.72" />
-            <stop offset="100%" stopColor="#101827" stopOpacity="0.9" />
-          </linearGradient>
-          <linearGradient id="barProgress" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#FF7452" />
-            <stop offset="48%" stopColor="#FFC08A" />
-            <stop offset="52%" stopColor="#9CEFFF" />
-            <stop offset="100%" stopColor="#43D5F7" />
-          </linearGradient>
-          <linearGradient id="barSuccess" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#8EDF6A" />
-            <stop offset="100%" stopColor="#D2FF8D" />
-          </linearGradient>
-          <linearGradient id="closingLine" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#FF815F" stopOpacity="0" />
-            <stop offset="24%" stopColor="#FF815F" />
-            <stop offset="76%" stopColor="#5DDEFF" />
-            <stop offset="100%" stopColor="#5DDEFF" stopOpacity="0" />
-          </linearGradient>
-          <radialGradient id="chipWarm" cx="33%" cy="26%" r="74%">
-            <stop offset="0%" stopColor="#FFD5BE" />
-            <stop offset="43%" stopColor="#FF956E" />
-            <stop offset="100%" stopColor="#B33B31" />
-          </radialGradient>
-          <radialGradient id="chipCool" cx="33%" cy="26%" r="74%">
-            <stop offset="0%" stopColor="#E4FBFF" />
-            <stop offset="43%" stopColor="#63DCF7" />
-            <stop offset="100%" stopColor="#167FA7" />
-          </radialGradient>
-          <filter id="identityShadow" x="-50%" y="-70%" width="200%" height="240%">
-            <feDropShadow
-              dx="0"
-              dy="20"
-              stdDeviation="22"
-              floodColor="#01050C"
-              floodOpacity="0.68"
+            <stop offset="0" stopColor={complete ? "#299a72" : COLORS.blue} />
+            <stop
+              offset="1"
+              stopColor={complete ? "#125942" : COLORS.blueDeep}
             />
-          </filter>
-          <filter id="routeBloom" x="-40%" y="-220%" width="180%" height="540%">
-            <feGaussianBlur stdDeviation="17" />
-          </filter>
-          <filter id="hubShadow" x="-100%" y="-100%" width="300%" height="300%">
-            <feDropShadow
-              dx="0"
-              dy="14"
-              stdDeviation="18"
-              floodColor="#02050D"
-              floodOpacity="0.74"
-            />
-          </filter>
-          <filter id="chipBloom" x="-220%" y="-220%" width="540%" height="540%">
-            <feGaussianBlur stdDeviation="12" />
-          </filter>
-          <filter id="panelShadow" x="-60%" y="-80%" width="220%" height="260%">
-            <feDropShadow
-              dx="0"
-              dy="28"
-              stdDeviation="28"
-              floodColor="#01040B"
-              floodOpacity="0.74"
-            />
-          </filter>
-          <filter id="particleBloom" x="-300%" y="-300%" width="700%" height="700%">
-            <feGaussianBlur stdDeviation="2.5" />
-          </filter>
+          </linearGradient>
         </defs>
-
-        <RouteSystem />
-        <IdentityCard
-          x={350}
-          y={355}
-          startFrame={8}
-          accent="#FF805E"
-          accentDark="#5A2630"
-          initials="AN"
-          name="Aisha Noor"
-          role="Personal account"
-          side="left"
+        <path
+          d="M68 10L121 38L68 66L15 38Z"
+          fill="url(#installer-package-top)"
+          stroke={COLORS.cyanSoft}
+          strokeWidth="3"
         />
-        <IdentityCard
-          x={1570}
-          y={355}
-          startFrame={17}
-          accent="#52D9F8"
-          accentDark="#17445B"
-          initials="DA"
-          name="Diego Alvarez"
-          role="Verified recipient"
-          side="right"
-          success={success}
+        <path
+          d="M15 38L68 66V125L15 96Z"
+          fill={complete ? "#167052" : "#2434a4"}
+          stroke={accent}
+          strokeWidth="3"
         />
-        <VerificationHub />
-        {[0, 1, 2, 3].map((index) => (
-          <TransferChip key={index} index={index} />
-        ))}
-        <SettlementPanel />
-        <SuccessMoment />
-        <ClosingCopy />
+        <path
+          d="M121 38L68 66V125L121 96Z"
+          fill="url(#installer-package-side)"
+          stroke={accent}
+          strokeWidth="3"
+        />
+        <path
+          d="M42 24L94 52M68 66V125"
+          fill="none"
+          stroke="rgba(237,255,252,.7)"
+          strokeWidth="3"
+        />
+        <rect
+          x="31"
+          y="62"
+          width="23"
+          height="27"
+          fill="rgba(4,14,52,.62)"
+          stroke={COLORS.cyanSoft}
+          strokeWidth="2"
+        />
+        <path d="M36 74H49M36 80H47" stroke={COLORS.cyanSoft} strokeWidth="2" />
       </svg>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 48,
+          bottom: 0,
+          width: 108,
+          height: 7,
+          overflow: "hidden",
+          background: "rgba(7,19,42,.58)",
+          border: "1px solid rgba(193,255,248,.32)",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${progress * 100}%`,
+            background: accent,
+            boxShadow: `0 0 10px ${accent}`,
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const PhaseRail: React.FC<{
+  readonly frame: number;
+  readonly progress: number;
+}> = ({ frame, progress }) => {
+  const activePhase =
+    frame >= 760
+      ? 4
+      : frame >= 640
+        ? 3
+        : frame >= 400
+          ? 2
+          : frame >= 210
+            ? 1
+            : 0;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 26,
+        right: 26,
+        top: 82,
+        height: 58,
+        display: "grid",
+        gridTemplateColumns: "repeat(5, 1fr)",
+        gap: 9,
+      }}
+    >
+      {PHASES.map((phase, index) => {
+        const done = index < activePhase || (index === 4 && progress >= 1);
+        const active = index === activePhase;
+        const color = done
+          ? COLORS.mint
+          : active
+            ? COLORS.cyan
+            : COLORS.inkSoft;
+        const previousThreshold =
+          index === 0 ? 0 : (PHASES[index - 1]?.threshold ?? 0);
+        const phaseProgress =
+          index === 4
+            ? progress >= 1
+              ? 1
+              : 0
+            : clamp01(
+                (progress - previousThreshold) /
+                  Math.max(0.01, phase.threshold - previousThreshold),
+              );
+        return (
+          <div
+            key={phase.label}
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              overflow: "hidden",
+              background: active
+                ? "linear-gradient(180deg, rgba(49,66,205,.18), rgba(28,39,125,.1))"
+                : "rgba(78,98,96,.07)",
+              border: `2px solid ${done ? "rgba(63,181,133,.48)" : active ? "rgba(83,105,255,.56)" : "rgba(91,111,108,.28)"}`,
+              boxShadow: active
+                ? "inset 2px 2px rgba(255,255,255,.32), 0 0 14px rgba(83,105,255,.12)"
+                : "inset 2px 2px rgba(255,255,255,.22)",
+            }}
+          >
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color,
+                background: done
+                  ? "rgba(40,151,107,.15)"
+                  : active
+                    ? "rgba(50,64,193,.16)"
+                    : "rgba(74,94,91,.08)",
+                border: `2px solid ${color}`,
+                fontFamily: "'Courier New', monospace",
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              {done ? (
+                <CheckGlyph size={15} color={COLORS.mint} stroke={3.4} />
+              ) : (
+                index + 1
+              )}
+            </div>
+            <PixelText color={color} size={13} spacing={1.4}>
+              {phase.label}
+            </PixelText>
+            {active ? (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  bottom: 0,
+                  width: `${Math.max(8, phaseProgress * 100)}%`,
+                  height: 3,
+                  background: COLORS.cyan,
+                  boxShadow: "0 0 10px rgba(75,244,229,.75)",
+                }}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const SourcePanel: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly progress: number;
+  readonly complete: boolean;
+}> = ({ frame, time, progress, complete }) => {
+  const status =
+    frame < 210
+      ? "MEDIA ONLINE"
+      : frame < 400
+        ? "UNPACKING"
+        : frame < 640
+          ? "STREAMING"
+          : frame < 760
+            ? "READ COMPLETE"
+            : "PACKAGE READY";
+  const blink = 0.55 + 0.45 * Math.sin(time * TAU * 1.7) ** 2;
+
+  return (
+    <BevelPanel
+      dark
+      style={{
+        position: "absolute",
+        left: 26,
+        top: 159,
+        width: 330,
+        height: 503,
+        padding: "23px 23px 20px",
+      }}
+    >
+      <PixelText color={COLORS.cyanSoft} size={14} spacing={2.2}>
+        SOURCE PACKAGE
+      </PixelText>
+      <div
+        style={{
+          position: "absolute",
+          right: 22,
+          top: 22,
+          width: 8,
+          height: 8,
+          background: complete ? COLORS.mint : COLORS.cyan,
+          opacity: blink,
+          boxShadow: complete
+            ? "0 0 12px rgba(103,244,181,.9)"
+            : "0 0 12px rgba(75,244,229,.9)",
+        }}
+      />
+
+      <PackageGlyph time={time} progress={progress} complete={complete} />
+
+      <PixelText
+        color={complete ? COLORS.mintSoft : COLORS.panelLight}
+        size={20}
+        spacing={1.2}
+        align="center"
+        style={{ marginTop: 6 }}
+      >
+        NEXUS SUITE
+      </PixelText>
+      <PixelText
+        color="rgba(193,255,248,.56)"
+        size={12}
+        spacing={1.6}
+        align="center"
+        style={{ marginTop: 7 }}
+      >
+        BUILD 4.8.2 // X64
+      </PixelText>
+
+      <div
+        style={{
+          marginTop: 20,
+          height: 1,
+          background:
+            "linear-gradient(90deg, transparent, rgba(124,154,255,.5), transparent)",
+        }}
+      />
+
+      {[
+        ["SOURCE", "SETUP.CAR"],
+        ["SIZE", "058.1 MB"],
+        ["MEDIA", "READ ONLY"],
+        ["SIGNATURE", frame >= 640 ? "VALID" : "CHECK"],
+      ].map(([label, value], index) => (
+        <div
+          key={label}
+          style={{
+            marginTop: index === 0 ? 16 : 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <PixelText color="rgba(193,255,248,.48)" size={11} spacing={1.4}>
+            {label}
+          </PixelText>
+          <PixelText
+            color={
+              label === "SIGNATURE" && frame >= 640
+                ? COLORS.mint
+                : COLORS.cyanSoft
+            }
+            size={11}
+            spacing={1}
+          >
+            {value}
+          </PixelText>
+        </div>
+      ))}
+
+      <div
+        style={{
+          position: "absolute",
+          left: 22,
+          right: 22,
+          bottom: 20,
+          height: 35,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 11,
+          background: complete ? "rgba(34,129,93,.18)" : "rgba(58,74,185,.17)",
+          border: `1px solid ${complete ? "rgba(103,244,181,.48)" : "rgba(83,105,255,.5)"}`,
+        }}
+      >
+        <div
+          style={{
+            width: 7,
+            height: 7,
+            background: complete ? COLORS.mint : COLORS.cyan,
+            boxShadow: `0 0 10px ${complete ? COLORS.mint : COLORS.cyan}`,
+          }}
+        />
+        <PixelText
+          color={complete ? COLORS.mint : COLORS.cyanSoft}
+          size={11}
+          spacing={1.5}
+        >
+          {status}
+        </PixelText>
+      </div>
+    </BevelPanel>
+  );
+};
+
+const DataBus: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly progress: number;
+}> = ({ frame, time, progress }) => {
+  const active = frame >= 100 && frame < 760;
+  const packetCount = frame < 210 ? 3 : frame < 640 ? 6 : 4;
+  const color = frame >= 640 ? COLORS.amber : COLORS.cyan;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 374,
+        top: 285,
+        width: 112,
+        height: 246,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 51,
+          top: 0,
+          bottom: 0,
+          width: 10,
+          background:
+            "linear-gradient(90deg, rgba(7,19,43,.92), rgba(74,94,167,.38), rgba(7,19,43,.92))",
+          border: "1px solid rgba(128,153,255,.36)",
+          boxShadow: "0 0 18px rgba(83,105,255,.14)",
+        }}
+      />
+      {Array.from({ length: 9 }, (_, index) => (
+        <div
+          key={`bus-notch-${index}`}
+          style={{
+            position: "absolute",
+            left: index % 2 === 0 ? 37 : 57,
+            top: 10 + index * 28,
+            width: 18,
+            height: 3,
+            background: "rgba(154,176,255,.34)",
+          }}
+        />
+      ))}
+
+      {active
+        ? Array.from({ length: packetCount }, (_, index) => {
+            const cycle = modulo(time * 0.72 + index / packetCount, 1);
+            const y = mix(224, 8, cycle);
+            const scale = 0.72 + cycle * 0.28;
+            return (
+              <div
+                key={`data-packet-${index}`}
+                style={{
+                  position: "absolute",
+                  left: 42,
+                  top: y,
+                  width: 29,
+                  height: 16,
+                  transform: `scale(${scale})`,
+                  opacity:
+                    segment(cycle, 0, 0.1) * (1 - segment(cycle, 0.9, 1)),
+                  background: index % 3 === 0 ? COLORS.blue : color,
+                  border: "1px solid rgba(235,255,252,.72)",
+                  boxShadow: `0 0 14px ${index % 3 === 0 ? "rgba(83,105,255,.72)" : frame >= 640 ? "rgba(255,201,95,.68)" : "rgba(75,244,229,.7)"}`,
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 4,
+                    right: 4,
+                    top: 4,
+                    height: 2,
+                    background: "rgba(255,255,255,.68)",
+                  }}
+                />
+              </div>
+            );
+          })
+        : null}
+
+      <PixelText
+        color="rgba(52,67,90,.62)"
+        size={10}
+        spacing={1.3}
+        align="center"
+        style={{
+          position: "absolute",
+          left: -10,
+          right: -10,
+          bottom: -34,
+        }}
+      >
+        BUS {String(Math.round(progress * 58.1)).padStart(2, "0")} MB
+      </PixelText>
+    </div>
+  );
+};
+
+const SectorMap: React.FC<{
+  readonly time: number;
+  readonly progress: number;
+  readonly complete: boolean;
+}> = ({ time, progress, complete }) => {
+  const cells = 80;
+  const filled = Math.floor(progress * cells);
+  const scan = Math.floor(modulo(time * 10, 10));
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 24,
+        top: 66,
+        width: 286,
+        height: 222,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: 286,
+          height: 196,
+          padding: 11,
+          boxSizing: "border-box",
+          background: "#08152f",
+          border: "3px solid #536863",
+          boxShadow:
+            "inset 4px 4px rgba(0,0,0,.5), inset -3px -3px rgba(255,255,255,.16)",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            gridTemplateColumns: "repeat(10, 1fr)",
+            gridTemplateRows: "repeat(8, 1fr)",
+            gap: 5,
+          }}
+        >
+          {Array.from({ length: cells }, (_, index) => {
+            const active = index < filled;
+            const newest = active && index >= Math.max(0, filled - 4);
+            const column = index % 10;
+            const scanHit = column === scan && !complete;
+            return (
+              <div
+                key={`sector-cell-${index}`}
+                style={{
+                  position: "relative",
+                  overflow: "hidden",
+                  opacity: active ? 1 : scanHit ? 0.48 : 0.22,
+                  background: active
+                    ? complete
+                      ? "linear-gradient(180deg, #baffe0, #39c78f)"
+                      : newest
+                        ? "linear-gradient(180deg, #d3ffff, #4bf4e5)"
+                        : index % 7 === 0
+                          ? "linear-gradient(180deg, #9ca9ff, #5369ff)"
+                          : "linear-gradient(180deg, #67fff0, #1ea89d)"
+                    : "#38504f",
+                  border: active
+                    ? "1px solid rgba(239,255,252,.55)"
+                    : "1px solid rgba(102,128,124,.25)",
+                  boxShadow: newest
+                    ? "0 0 10px rgba(75,244,229,.72)"
+                    : undefined,
+                }}
+              >
+                {scanHit ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background:
+                        "linear-gradient(180deg, rgba(255,255,255,.7), transparent)",
+                    }}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
+        <PixelText color={COLORS.inkSoft} size={10} spacing={1.2}>
+          DRIVE C://APP
+        </PixelText>
+        <PixelText
+          color={complete ? "#147c59" : COLORS.blueDeep}
+          size={10}
+          spacing={1.2}
+        >
+          {String(filled).padStart(2, "0")}/{cells} SECTORS
+        </PixelText>
+      </div>
+    </div>
+  );
+};
+
+const ModuleList: React.FC<{
+  readonly frame: number;
+  readonly progress: number;
+}> = ({ frame, progress }) => (
+  <div
+    style={{
+      position: "absolute",
+      left: 334,
+      top: 66,
+      width: 384,
+      height: 222,
+      padding: "12px 14px",
+      boxSizing: "border-box",
+      background: "rgba(107,128,124,.08)",
+      border: "2px solid rgba(95,115,111,.32)",
+      boxShadow: "inset 2px 2px rgba(255,255,255,.38)",
+    }}
+  >
+    <PixelText color={COLORS.inkSoft} size={11} spacing={1.5}>
+      COMPONENT MANIFEST
+    </PixelText>
+    <div style={{ marginTop: 10 }}>
+      {MODULES.map((module, index) => {
+        const done = progress >= module.threshold;
+        const active =
+          !done &&
+          progress >= (index === 0 ? 0 : (MODULES[index - 1]?.threshold ?? 0));
+        return (
+          <div
+            key={module.name}
+            style={{
+              height: 35,
+              display: "grid",
+              gridTemplateColumns: "23px 1fr auto",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 8px",
+              boxSizing: "border-box",
+              background: active
+                ? "rgba(83,105,255,.11)"
+                : index % 2 === 0
+                  ? "rgba(76,96,93,.06)"
+                  : "transparent",
+              borderLeft: active
+                ? `3px solid ${COLORS.blue}`
+                : "3px solid transparent",
+            }}
+          >
+            <div
+              style={{
+                width: 15,
+                height: 15,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: done
+                  ? "#167e5c"
+                  : active
+                    ? COLORS.blueDeep
+                    : COLORS.inkSoft,
+                border: `1px solid ${
+                  done
+                    ? "rgba(26,142,101,.46)"
+                    : active
+                      ? "rgba(83,105,255,.52)"
+                      : "rgba(82,103,100,.28)"
+                }`,
+                fontFamily: "'Courier New', monospace",
+                fontSize: 9,
+                fontWeight: 900,
+              }}
+            >
+              {done ? (
+                <CheckGlyph size={12} color="#177e5d" stroke={3.5} />
+              ) : active ? (
+                String((Math.floor(frame / 9) + index) % 10)
+              ) : (
+                "·"
+              )}
+            </div>
+            <PixelText
+              color={
+                done ? "#1b7258" : active ? COLORS.blueDeep : COLORS.inkSoft
+              }
+              size={10}
+              spacing={0.8}
+            >
+              {module.name}
+            </PixelText>
+            <PixelText color="rgba(55,76,77,.5)" size={9} spacing={0.6}>
+              {module.size}
+            </PixelText>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const SegmentedProgress: React.FC<{
+  readonly progress: number;
+  readonly time: number;
+  readonly complete: boolean;
+}> = ({ progress, time, complete }) => {
+  const count = 24;
+  const activeCount = complete
+    ? count
+    : Math.min(count - 1, Math.floor(progress * count));
+  const shine = modulo(time * 0.45, 1);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 24,
+        right: 24,
+        bottom: 73,
+        height: 67,
+        padding: 9,
+        boxSizing: "border-box",
+        background: "#9aa9a1",
+        border: `3px solid ${COLORS.panelDark}`,
+        boxShadow:
+          "inset 4px 4px rgba(51,72,68,.38), inset -4px -4px rgba(255,255,255,.76)",
+      }}
+    >
+      <div
+        style={{
+          height: "100%",
+          display: "grid",
+          gridTemplateColumns: `repeat(${count}, 1fr)`,
+          gap: 5,
+        }}
+      >
+        {Array.from({ length: count }, (_, index) => {
+          const active = index < activeCount;
+          const newest = active && index === activeCount - 1 && !complete;
+          return (
+            <div
+              key={`install-progress-${index}`}
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                opacity: active
+                  ? newest
+                    ? 0.76 + Math.sin(time * TAU * 3.5) * 0.18
+                    : 1
+                  : 0.25,
+                background: active
+                  ? complete
+                    ? "linear-gradient(180deg, #c8ffe4, #64f1b4 48%, #23986f)"
+                    : "linear-gradient(180deg, #a9b3ff, #5369ff 45%, #222b9c)"
+                  : "linear-gradient(180deg, #758985, #5c706c)",
+                border: active
+                  ? "1px solid rgba(240,255,252,.66)"
+                  : "1px solid rgba(31,52,49,.36)",
+                boxShadow: active
+                  ? complete
+                    ? "0 0 11px rgba(103,244,181,.48)"
+                    : "0 0 10px rgba(83,105,255,.42)"
+                  : "inset 2px 2px rgba(255,255,255,.08)",
+              }}
+            >
+              {active ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -14,
+                    top: -18,
+                    width: 14,
+                    height: 84,
+                    transform: `translateX(${shine * 66}px) rotate(18deg)`,
+                    background:
+                      "linear-gradient(90deg, transparent, rgba(255,255,255,.46), transparent)",
+                  }}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const statusForFrame = (frame: number) => {
+  if (frame < 210) return "READING INSTALLATION MEDIA";
+  if (frame < 400) return "UNPACKING COMPRESSED FILES";
+  if (frame < 640) return "INSTALLING APPLICATION MODULES";
+  if (frame < 760) return "VERIFYING FILE INTEGRITY";
+  return "APPLICATION READY";
+};
+
+const swapOpacity = (frame: number) => {
+  const boundaries = [210, 400, 640, 760];
+  return boundaries.reduce((opacity, boundary) => {
+    const distance = Math.abs(frame - boundary);
+    const local = interpolate(distance, [0, 9], [0, 1], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
+    return Math.min(opacity, local);
+  }, 1);
+};
+
+const WorkPanel: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly progress: number;
+  readonly complete: boolean;
+}> = ({ frame, time, progress, complete }) => {
+  const percentage = complete ? 100 : Math.min(99, Math.floor(progress * 100));
+  const phaseColor =
+    frame >= 760 ? "#157b59" : frame >= 640 ? "#9b6400" : COLORS.blueDeep;
+  const statusOpacity = swapOpacity(frame);
+
+  return (
+    <BevelPanel
+      style={{
+        position: "absolute",
+        left: 486,
+        top: 159,
+        width: 742,
+        height: 503,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 24,
+          right: 24,
+          top: 20,
+          height: 34,
+          display: "flex",
+          alignItems: "baseline",
+        }}
+      >
+        <PixelText color={COLORS.ink} size={20} spacing={1.2}>
+          {complete ? "INSTALLATION COMPLETE" : "INSTALLING NEXUS SUITE"}
+        </PixelText>
+        <PixelText
+          color={phaseColor}
+          size={27}
+          spacing={0.5}
+          align="right"
+          style={{ marginLeft: "auto" }}
+        >
+          {String(percentage).padStart(3, "0")}%
+        </PixelText>
+      </div>
+
+      <SectorMap time={time} progress={progress} complete={complete} />
+      <ModuleList frame={frame} progress={progress} />
+      <SegmentedProgress progress={progress} time={time} complete={complete} />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 26,
+          right: 26,
+          bottom: 27,
+          display: "flex",
+          alignItems: "center",
+          opacity: statusOpacity,
+        }}
+      >
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            marginRight: 10,
+            background:
+              frame >= 760
+                ? COLORS.mint
+                : frame >= 640
+                  ? COLORS.amber
+                  : COLORS.blue,
+            boxShadow: `0 0 11px ${
+              frame >= 760
+                ? "rgba(103,244,181,.8)"
+                : frame >= 640
+                  ? "rgba(255,201,95,.75)"
+                  : "rgba(83,105,255,.7)"
+            }`,
+          }}
+        />
+        <PixelText color={phaseColor} size={11} spacing={1.3}>
+          {statusForFrame(frame)}
+        </PixelText>
+        <PixelText
+          color="rgba(54,75,76,.52)"
+          size={10}
+          spacing={1}
+          style={{ marginLeft: "auto" }}
+        >
+          {complete
+            ? "CRC 8F2A // 0 ERRORS"
+            : `WRITTEN ${String(Math.floor(progress * 58.1)).padStart(2, "0")}.MB`}
+        </PixelText>
+      </div>
+    </BevelPanel>
+  );
+};
+
+const SuccessHero: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+}> = ({ frame, time }) => {
+  const enter = segment(frame, 793, 815, Easing.out(Easing.cubic));
+  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.75);
+  const ringRotation = time * 16;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 26,
+        top: 159,
+        width: 1202,
+        height: 503,
+        opacity: enter,
+        transform: `scale(${mix(0.985, 1, enter)})`,
+        transformOrigin: "50% 50%",
+      }}
+    >
+      <BevelPanel
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(145deg, #f5f8ef 0%, #dce9df 52%, #b9d6c6 100%)",
+          borderColor: "#568878",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 116,
+            top: 48,
+            width: 238,
+            height: 238,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              transform: `rotate(${ringRotation}deg)`,
+              border: "3px dashed rgba(38,143,103,.42)",
+              boxShadow: `0 0 ${24 + pulse * 18}px rgba(103,244,181,.22)`,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 24,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(208,255,234,.95), rgba(103,244,181,.48) 58%, rgba(24,124,89,.22))",
+              border: "4px solid #28a878",
+              boxShadow:
+                "inset 0 0 28px rgba(255,255,255,.78), 0 0 30px rgba(60,210,153,.28)",
+            }}
+          />
+          <svg
+            width="132"
+            height="132"
+            viewBox="0 0 132 132"
+            style={{ position: "absolute", left: 53, top: 51 }}
+          >
+            <path
+              d="M25 67L51 92L108 36"
+              fill="none"
+              stroke="#116f50"
+              strokeWidth="13"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
+              pathLength={1}
+              strokeDasharray={1}
+              strokeDashoffset={1 - enter}
+            />
+          </svg>
+          {Array.from({ length: 8 }, (_, index) => {
+            const angle = (index / 8) * TAU + time * 0.4;
+            const radius = 107;
+            return (
+              <div
+                key={`success-orbit-${index}`}
+                style={{
+                  position: "absolute",
+                  left: 115 + Math.cos(angle) * radius,
+                  top: 115 + Math.sin(angle) * radius,
+                  width: index % 2 === 0 ? 8 : 5,
+                  height: index % 2 === 0 ? 8 : 5,
+                  background: COLORS.mint,
+                  boxShadow: "0 0 10px rgba(103,244,181,.9)",
+                }}
+              />
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 430,
+            right: 62,
+            top: 76,
+          }}
+        >
+          <PixelText color="#126b4e" size={13} spacing={2.3}>
+            SETUP STATUS // READY
+          </PixelText>
+          <PixelText
+            color={COLORS.ink}
+            size={31}
+            spacing={0.8}
+            style={{ marginTop: 13, lineHeight: 1.05 }}
+          >
+            INSTALLATION
+            <br />
+            COMPLETE
+          </PixelText>
+          <PixelText
+            color={COLORS.inkSoft}
+            size={12}
+            spacing={1.25}
+            style={{ marginTop: 18, lineHeight: 1.6 }}
+          >
+            NEXUS SUITE 4.8.2 IS READY
+            <br />
+            ALL COMPONENTS VERIFIED
+          </PixelText>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 430,
+            right: 62,
+            bottom: 94,
+            height: 78,
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 12,
+          }}
+        >
+          {[
+            ["FILES", "058.1 MB"],
+            ["SIGNATURE", "VALID"],
+            ["ERRORS", "000"],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(39,139,101,.08)",
+                border: "2px solid rgba(36,132,96,.3)",
+                boxShadow: "inset 2px 2px rgba(255,255,255,.5)",
+              }}
+            >
+              <PixelText color="rgba(22,92,69,.58)" size={10} spacing={1.4}>
+                {label}
+              </PixelText>
+              <PixelText
+                color={label === "ERRORS" ? "#157252" : COLORS.ink}
+                size={16}
+                spacing={1}
+                style={{ marginTop: 6 }}
+              >
+                {value}
+              </PixelText>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 430,
+            right: 62,
+            bottom: 34,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <PixelText color="#177354" size={11} spacing={1.45}>
+            APPLICATION READY // CRC 8F2A
+          </PixelText>
+          <div style={{ marginLeft: "auto" }}>
+            <RetroButton primary>LAUNCH</RetroButton>
+          </div>
+        </div>
+      </BevelPanel>
+    </div>
+  );
+};
+
+const InstallerWindow: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly progress: number;
+}> = ({ frame, time, progress }) => {
+  const enter = segment(frame, 0, 46, Easing.out(Easing.cubic));
+  const complete = frame >= 760;
+  const workOut = 1 - segment(frame, 780, 790, Easing.in(Easing.cubic));
+  const glowTransition = segment(frame, 740, 790, Easing.inOut(Easing.cubic));
+  const accent = interpolateColors(
+    glowTransition,
+    [0, 1],
+    [COLORS.cyan, COLORS.mint],
+  );
+  const breath = 0.5 + 0.5 * Math.sin(time * TAU * 0.28);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        width: 1280,
+        height: 750,
+        opacity: enter,
+        transform: `translate(-50%, calc(-50% + ${mix(12, 0, enter)}px)) scale(${mix(0.985, 1, enter)})`,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 30,
+          top: 32,
+          right: -30,
+          bottom: -32,
+          opacity: 0.24,
+          background: "#06132c",
+          filter: "blur(3px)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: -10,
+          opacity: 0.3 + breath * 0.18,
+          border: `2px solid ${accent}`,
+          boxShadow: `0 0 ${36 + breath * 18}px ${complete ? "rgba(103,244,181,.24)" : "rgba(75,244,229,.23)"}`,
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          background: `linear-gradient(145deg, ${COLORS.panelLight} 0%, ${COLORS.panel} 50%, ${COLORS.panelMid} 100%)`,
+          border: `4px solid ${COLORS.panelMid}`,
+          boxShadow:
+            "inset 4px 4px rgba(255,255,255,.94), inset -4px -4px rgba(61,83,79,.42), 0 32px 80px rgba(1,18,36,.46)",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 7,
+            right: 7,
+            top: 7,
+            height: 65,
+            display: "flex",
+            alignItems: "center",
+            padding: "0 15px 0 20px",
+            boxSizing: "border-box",
+            background: complete
+              ? "linear-gradient(90deg, #0a4d40, #137755 48%, #24966c)"
+              : "linear-gradient(90deg, #0b1047, #192374 48%, #4054df)",
+            borderBottom: "3px solid rgba(4,12,53,.55)",
+            boxShadow:
+              "inset 2px 2px rgba(169,188,255,.34), inset 0 -3px rgba(2,7,38,.38)",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 7px)",
+              gap: 3,
+              marginRight: 16,
+            }}
+          >
+            {Array.from({ length: 9 }, (_, index) => (
+              <div
+                key={`title-led-${index}`}
+                style={{
+                  width: 7,
+                  height: 7,
+                  background:
+                    index === Math.floor(time * 8) % 9
+                      ? complete
+                        ? COLORS.mintSoft
+                        : COLORS.cyanSoft
+                      : index % 2
+                        ? complete
+                          ? COLORS.mint
+                          : COLORS.cyan
+                        : "rgba(202,255,250,.32)",
+                  boxShadow:
+                    index === Math.floor(time * 8) % 9
+                      ? "0 0 11px rgba(207,255,241,.9)"
+                      : undefined,
+                }}
+              />
+            ))}
+          </div>
+
+          <PixelText color={COLORS.panelLight} size={20} spacing={2.2}>
+            NEXUS SOFTWARE SETUP
+          </PixelText>
+          <PixelText
+            color="rgba(212,255,250,.58)"
+            size={11}
+            spacing={1.5}
+            style={{ marginLeft: 18 }}
+          >
+            BUILD 4.8.2 // X64
+          </PixelText>
+
+          <div style={{ marginLeft: "auto", display: "flex", gap: 7 }}>
+            <WindowButton>_</WindowButton>
+            <WindowButton>□</WindowButton>
+            <WindowButton danger>×</WindowButton>
+          </div>
+        </div>
+
+        <PhaseRail frame={frame} progress={progress} />
+
+        <div style={{ opacity: workOut }}>
+          <SourcePanel
+            frame={frame}
+            time={time}
+            progress={progress}
+            complete={complete}
+          />
+          <DataBus frame={frame} time={time} progress={progress} />
+          <WorkPanel
+            frame={frame}
+            time={time}
+            progress={progress}
+            complete={complete}
+          />
+        </div>
+
+        <SuccessHero frame={frame} time={time} />
+
+        <div
+          style={{
+            position: "absolute",
+            left: 26,
+            right: 26,
+            bottom: 22,
+            height: 46,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <PixelText color="rgba(47,68,69,.55)" size={10} spacing={1.25}>
+            TARGET C://PROGRAMS/NEXUS
+          </PixelText>
+          <PixelText
+            color={complete ? "#167656" : COLORS.blueDeep}
+            size={10}
+            spacing={1.2}
+            style={{ marginLeft: 22 }}
+          >
+            {complete ? "INSTALLATION VERIFIED" : "SAFE WRITE ENABLED"}
+          </PixelText>
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              gap: 12,
+              opacity: 1 - segment(frame, 780, 790),
+            }}
+          >
+            <RetroButton disabled>BACK</RetroButton>
+            <RetroButton>DETAILS</RetroButton>
+            <RetroButton primary>CANCEL</RetroButton>
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 7,
+            right: 7,
+            bottom: 6,
+            height: 4,
+            opacity: 0.4,
+            background: complete
+              ? "repeating-linear-gradient(90deg, #21946a 0 18px, transparent 18px 28px)"
+              : "repeating-linear-gradient(90deg, #3346c4 0 18px, transparent 18px 28px)",
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const ScreenFinish: React.FC<{ readonly time: number }> = ({ time }) => (
+  <>
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        opacity: 0.15,
+        transform: `translateY(${modulo(time * 19, 6)}px)`,
+        backgroundImage:
+          "repeating-linear-gradient(180deg, rgba(4,22,35,.52) 0px, rgba(4,22,35,.52) 1px, transparent 1px, transparent 5px)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        opacity: 0.07,
+        backgroundImage:
+          "repeating-linear-gradient(90deg, rgba(255,80,80,.18) 0 1px, rgba(70,255,221,.08) 1px 2px, rgba(71,94,255,.16) 2px 3px)",
+        backgroundSize: "3px 100%",
+        mixBlendMode: "screen",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        boxShadow: "inset 0 0 160px rgba(0,10,26,.55)",
+      }}
+    />
+  </>
+);
+
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  const time = frame / fps;
+  const progress = getInstallProgress(frame);
+  const unit = Math.min(width / WIDTH, height / HEIGHT);
+  const offsetX = (width - WIDTH * unit) / 2;
+  const offsetY = (height - HEIGHT * unit) / 2;
+
+  return (
+    <AbsoluteFill
+      style={{
+        overflow: "hidden",
+        background: COLORS.desktopDeep,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: offsetX,
+          top: offsetY,
+          width: WIDTH,
+          height: HEIGHT,
+          overflow: "hidden",
+          transform: `scale(${unit})`,
+          transformOrigin: "top left",
+        }}
+      >
+        <AmbientDesktop frame={frame} time={time} />
+        <InstallerWindow frame={frame} time={time} progress={progress} />
+        <ScreenFinish time={time} />
+      </div>
     </AbsoluteFill>
   );
 };
