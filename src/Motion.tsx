@@ -1,809 +1,919 @@
-// VERIFIED SOURCE: TEXT-FREE GLASSMORPHISM INFOGRAPHIC — MOTION33
-// Five glass pillars and a continuous growth line, 15 seconds at 60 fps.
 import React from "react";
 import {
   AbsoluteFill,
   Easing,
   interpolate,
   useCurrentFrame,
+  useVideoConfig,
 } from "remotion";
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
-const BASE_Y = 846;
-const BAR_WIDTH = 122;
-const BAR_DEPTH = 30;
+const TAU = Math.PI * 2;
 
-type Milestone = {
-  readonly id: string;
-  readonly x: number;
-  readonly height: number;
-  readonly startFrame: number;
-  readonly color: string;
-  readonly light: string;
-  readonly dark: string;
-  readonly accent: string;
+const COLORS = {
+  night: "#030816",
+  navy: "#071426",
+  slate: "#10223B",
+  white: "#F3FBFF",
+  cyan: "#36E1D0",
+  blue: "#5C8DFF",
+  violet: "#B979FF",
+  coral: "#FF718D",
 };
 
-const MILESTONES: readonly Milestone[] = [
-  {
-    id: "foundation",
-    x: 376,
-    height: 164,
-    startFrame: 66,
-    color: "#43D9FF",
-    light: "#D7FAFF",
-    dark: "#127DA8",
-    accent: "#73F2D0",
-  },
-  {
-    id: "traction",
-    x: 626,
-    height: 246,
-    startFrame: 122,
-    color: "#56A7FF",
-    light: "#D9ECFF",
-    dark: "#2754B8",
-    accent: "#A899FF",
-  },
-  {
-    id: "momentum",
-    x: 876,
-    height: 328,
-    startFrame: 178,
-    color: "#8978FF",
-    light: "#E9E3FF",
-    dark: "#4C34BC",
-    accent: "#FF8FC8",
-  },
-  {
-    id: "expansion",
-    x: 1126,
-    height: 414,
-    startFrame: 234,
-    color: "#F06CBC",
-    light: "#FFE0F2",
-    dark: "#A42D75",
-    accent: "#FFB66F",
-  },
-  {
-    id: "scale",
-    x: 1376,
-    height: 526,
-    startFrame: 290,
-    color: "#FF9D66",
-    light: "#FFF0D9",
-    dark: "#B44D3E",
-    accent: "#FFE171",
-  },
-] as const;
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const modulo = (value: number, length = 1) =>
+  ((value % length) + length) % length;
 
-const PARTICLES = Array.from({length: 54}, (_, index) => {
-  const fract = (value: number): number => value - Math.floor(value);
-  const a = fract(Math.sin(index * 61.37 + 3.8) * 43758.5453);
-  const b = fract(Math.sin(index * 29.71 + 17.2) * 24634.6345);
-  const c = fract(Math.sin(index * 83.13 + 9.4) * 17485.2194);
-
-  return {
-    x: 90 + a * 1740,
-    y: 70 + b * 880,
-    radius: 0.8 + c * 2,
-    opacity: 0.08 + fract(a + b) * 0.2,
-    drift: 0.5 + c * 1.3,
-    phase: a * Math.PI * 2,
-  };
-});
-
-const clamp = (value: number, min = 0, max = 1): number =>
-  Math.max(min, Math.min(max, value));
-
-const mix = (from: number, to: number, amount: number): number =>
-  from + (to - from) * amount;
-
-const progress = (
+const segment = (
   frame: number,
   start: number,
   end: number,
-  easing: (value: number) => number = Easing.out(Easing.cubic),
-): number =>
+  easing: (value: number) => number = Easing.linear,
+) =>
   interpolate(frame, [start, end], [0, 1], {
-    easing,
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing,
   });
 
-const finalPoint = (milestone: Milestone): {x: number; y: number} => ({
-  x: milestone.x + BAR_WIDTH / 2 + BAR_DEPTH / 2,
-  y: BASE_Y - milestone.height + 8,
-});
+const hexAlpha = (hex: string, opacity: number) => {
+  const value = hex.replace("#", "");
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+};
 
-const GROWTH_POINTS = MILESTONES.map(finalPoint);
-const GROWTH_POINTS_STRING = GROWTH_POINTS.map(
-  (point) => `${point.x},${point.y}`,
-).join(" ");
+const hash01 = (seed: number) => {
+  const value = Math.sin(seed * 74.173 + 11.921) * 43758.5453;
+  return value - Math.floor(value);
+};
 
-const pointOnGrowthLine = (amount: number): {x: number; y: number} => {
-  const clamped = clamp(amount);
-  const scaled = clamped * (GROWTH_POINTS.length - 1);
-  const index = Math.min(
-    GROWTH_POINTS.length - 2,
-    Math.max(0, Math.floor(scaled)),
-  );
-  const local = scaled - index;
-  const from = GROWTH_POINTS[index];
-  const to = GROWTH_POINTS[index + 1];
+type Point = {
+  readonly x: number;
+  readonly y: number;
+};
 
+type NodeSpec = {
+  readonly x: number;
+  readonly y: number;
+  readonly color: string;
+  readonly start: number;
+};
+
+type BridgeSpec = {
+  readonly start: number;
+  readonly end: number;
+  readonly from: Point;
+  readonly controlA: Point;
+  readonly controlB: Point;
+  readonly to: Point;
+  readonly fromColor: string;
+  readonly toColor: string;
+};
+
+const NODES: readonly NodeSpec[] = [
+  { x: 285, y: 545, color: COLORS.cyan, start: 60 },
+  { x: 735, y: 545, color: COLORS.blue, start: 190 },
+  { x: 1185, y: 545, color: COLORS.violet, start: 320 },
+  { x: 1635, y: 545, color: COLORS.coral, start: 450 },
+] as const;
+
+const BRIDGES: readonly BridgeSpec[] = [
+  {
+    start: 162,
+    end: 215,
+    from: { x: 413, y: 535 },
+    controlA: { x: 492, y: 286 },
+    controlB: { x: 653, y: 286 },
+    to: { x: 607, y: 535 },
+    fromColor: COLORS.cyan,
+    toColor: COLORS.blue,
+  },
+  {
+    start: 292,
+    end: 345,
+    from: { x: 863, y: 555 },
+    controlA: { x: 942, y: 804 },
+    controlB: { x: 1103, y: 804 },
+    to: { x: 1057, y: 555 },
+    fromColor: COLORS.blue,
+    toColor: COLORS.violet,
+  },
+  {
+    start: 422,
+    end: 475,
+    from: { x: 1313, y: 535 },
+    controlA: { x: 1392, y: 286 },
+    controlB: { x: 1553, y: 286 },
+    to: { x: 1507, y: 535 },
+    fromColor: COLORS.violet,
+    toColor: COLORS.coral,
+  },
+] as const;
+
+const PARTICLES = Array.from({ length: 62 }, (_, index) => ({
+  x: hash01(index * 7 + 1) * WIDTH,
+  y: hash01(index * 11 + 4) * HEIGHT,
+  radius: 0.9 + hash01(index * 13 + 9) * 2.3,
+  opacity: 0.07 + hash01(index * 17 + 3) * 0.2,
+  speed: 6 + hash01(index * 19 + 6) * 18,
+  phase: hash01(index * 23 + 2),
+}));
+
+const bridgePath = (bridge: BridgeSpec) =>
+  `M ${bridge.from.x} ${bridge.from.y} C ${bridge.controlA.x} ${bridge.controlA.y}, ${bridge.controlB.x} ${bridge.controlB.y}, ${bridge.to.x} ${bridge.to.y}`;
+
+const cubicPoint = (bridge: BridgeSpec, progress: number): Point => {
+  const t = clamp01(progress);
+  const inverse = 1 - t;
   return {
-    x: mix(from.x, to.x, local),
-    y: mix(from.y, to.y, local),
+    x:
+      inverse * inverse * inverse * bridge.from.x +
+      3 * inverse * inverse * t * bridge.controlA.x +
+      3 * inverse * t * t * bridge.controlB.x +
+      t * t * t * bridge.to.x,
+    y:
+      inverse * inverse * inverse * bridge.from.y +
+      3 * inverse * inverse * t * bridge.controlA.y +
+      3 * inverse * t * t * bridge.controlB.y +
+      t * t * t * bridge.to.y,
   };
 };
 
-const Background: React.FC<{readonly frame: number}> = ({frame}) => {
-  const reveal = progress(frame, 0, 42, Easing.out(Easing.quad));
-  const drift = progress(frame, 0, 899, Easing.inOut(Easing.cubic));
+const Background: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+}> = ({ frame, time }) => {
+  const intro = segment(frame, 0, 48, Easing.out(Easing.cubic));
+  const gridX = modulo(time * 5.5, 86);
+  const gridY = modulo(time * 2.8, 86);
+  const sweepX = modulo(time * 105, WIDTH + 720) - 360;
 
   return (
-    <>
+    <AbsoluteFill
+      style={{
+        overflow: "hidden",
+        background:
+          "linear-gradient(138deg, #020713 0%, #071426 44%, #0B1028 72%, #120A26 100%)",
+      }}
+    >
       <AbsoluteFill
         style={{
+          opacity: intro,
           background:
-            "radial-gradient(circle at 50% 42%, #102A47 0%, #07172C 42%, #030915 78%, #02050D 100%)",
+            "radial-gradient(circle at 14% 51%, rgba(54,225,208,.19) 0%, rgba(54,225,208,.05) 28%, transparent 48%), radial-gradient(circle at 41% 42%, rgba(92,141,255,.18) 0%, transparent 43%), radial-gradient(circle at 66% 59%, rgba(185,121,255,.15) 0%, transparent 42%), radial-gradient(circle at 90% 43%, rgba(255,113,141,.17) 0%, transparent 42%)",
         }}
       />
 
       <AbsoluteFill
         style={{
-          transform: `translate(${mix(-32, 22, drift)}px, ${mix(
-            18,
-            -14,
-            drift,
-          )}px) scale(1.04)`,
-          opacity: reveal,
-          background:
-            "radial-gradient(ellipse 48% 58% at 15% 42%, rgba(50,213,255,0.20) 0%, rgba(50,213,255,0.055) 43%, transparent 72%)",
+          opacity: 0.13 * intro,
+          backgroundImage:
+            "linear-gradient(rgba(154,201,255,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(154,201,255,.14) 1px, transparent 1px)",
+          backgroundSize: "86px 86px",
+          backgroundPosition: `${gridX}px ${gridY}px`,
+          maskImage:
+            "radial-gradient(ellipse at 50% 53%, #000 0%, rgba(0,0,0,.72) 44%, transparent 82%)",
         }}
       />
 
-      <AbsoluteFill
+      <div
         style={{
-          transform: `translate(${mix(30, -22, drift)}px, ${mix(
-            -12,
-            16,
-            drift,
-          )}px) scale(1.04)`,
-          opacity: reveal,
-          background:
-            "radial-gradient(ellipse 50% 64% at 88% 55%, rgba(215,83,185,0.20) 0%, rgba(137,74,255,0.07) 40%, transparent 73%)",
+          position: "absolute",
+          width: 1040,
+          height: 1040,
+          left: -500,
+          top: -430,
+          borderRadius: "50%",
+          border: "1px solid rgba(92,141,255,.11)",
+          boxShadow:
+            "0 0 0 115px rgba(92,141,255,.021), 0 0 0 252px rgba(54,225,208,.014)",
+          transform: `rotate(${time * 1.2}deg)`,
+          opacity: intro,
         }}
-      />
-
-      <AbsoluteFill
-        style={{
-          opacity: reveal * 0.75,
-          background:
-            "linear-gradient(118deg, transparent 26%, rgba(255,255,255,0.028) 47%, transparent 66%)",
-        }}
-      />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0}}
       >
-        <defs>
-          <pattern
-            id="ambient-grid"
-            width="64"
-            height="64"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 64 0 L 0 0 0 64"
-              fill="none"
-              stroke="#A7E9FF"
-              strokeOpacity="0.065"
-              strokeWidth="1"
-            />
-          </pattern>
-          <radialGradient id="floor-aura">
-            <stop offset="0" stopColor="#52CFFF" stopOpacity="0.2" />
-            <stop offset="0.42" stopColor="#876DFF" stopOpacity="0.075" />
-            <stop offset="1" stopColor="#07152A" stopOpacity="0" />
-          </radialGradient>
-          <filter id="ambient-blur" x="-40%" y="-100%" width="180%" height="300%">
-            <feGaussianBlur stdDeviation="30" />
-          </filter>
-        </defs>
-
-        <rect
-          width={WIDTH}
-          height={HEIGHT}
-          fill="url(#ambient-grid)"
-          opacity={0.36 * reveal}
-          transform={`translate(${mix(0, -10, drift)} ${mix(
-            0,
-            -5,
-            drift,
-          )})`}
+        <div
+          style={{
+            position: "absolute",
+            left: "83%",
+            top: "27%",
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: COLORS.cyan,
+            boxShadow: `0 0 24px ${COLORS.cyan}`,
+          }}
         />
+      </div>
 
-        <ellipse
-          cx="1000"
-          cy="876"
-          rx="810"
-          ry="190"
-          fill="url(#floor-aura)"
-          opacity={0.86 * reveal}
-          filter="url(#ambient-blur)"
+      <div
+        style={{
+          position: "absolute",
+          width: 900,
+          height: 900,
+          right: -410,
+          bottom: -500,
+          borderRadius: "50%",
+          border: "1px solid rgba(255,113,141,.1)",
+          boxShadow: "0 0 0 130px rgba(185,121,255,.014)",
+          transform: `rotate(${-time * 1.35}deg)`,
+          opacity: intro,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: "10%",
+            top: "18%",
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: COLORS.coral,
+            boxShadow: `0 0 22px ${COLORS.coral}`,
+          }}
         />
+      </div>
 
-        {PARTICLES.map((particle, index) => {
-          const floatX =
-            Math.sin(frame * 0.012 * particle.drift + particle.phase) * 7;
-          const floatY =
-            Math.cos(frame * 0.009 * particle.drift + particle.phase) * 9;
-          const twinkle =
-            0.68 +
-            0.32 *
-              Math.sin(frame * 0.022 + particle.phase + index * 0.13);
+      <div
+        style={{
+          position: "absolute",
+          left: sweepX,
+          top: -200,
+          width: 210,
+          height: 1500,
+          transform: "rotate(18deg)",
+          background:
+            "linear-gradient(90deg, transparent, rgba(202,234,255,.08), transparent)",
+          filter: "blur(25px)",
+          opacity: 0.42 * intro,
+        }}
+      />
 
-          return (
-            <circle
-              key={`particle-${index}`}
-              cx={particle.x + floatX}
-              cy={particle.y + floatY}
-              r={particle.radius}
-              fill={index % 5 === 0 ? "#FFD8F2" : "#D8F7FF"}
-              opacity={particle.opacity * twinkle * reveal}
-            />
-          );
-        })}
-      </svg>
+      {PARTICLES.map((particle, index) => {
+        const y =
+          modulo(
+            particle.y - time * particle.speed + particle.phase * HEIGHT * 0.3,
+            HEIGHT + 90,
+          ) - 45;
+        const flicker =
+          0.48 +
+          Math.sin(time * (0.65 + particle.phase) + particle.phase * TAU) *
+            0.38;
+        const color =
+          index % 4 === 0
+            ? COLORS.cyan
+            : index % 4 === 1
+              ? COLORS.blue
+              : index % 4 === 2
+                ? COLORS.violet
+                : COLORS.white;
+        return (
+          <div
+            key={index}
+            style={{
+              position: "absolute",
+              left: particle.x,
+              top: y,
+              width: particle.radius * 2,
+              height: particle.radius * 2,
+              borderRadius: "50%",
+              background: color,
+              opacity: particle.opacity * flicker * intro,
+              boxShadow: `0 0 ${5 + particle.radius * 3}px ${hexAlpha(color, 0.7)}`,
+            }}
+          />
+        );
+      })}
+
+      <div
+        style={{
+          position: "absolute",
+          left: "8%",
+          right: "8%",
+          top: 742,
+          height: 180,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(ellipse, rgba(56,110,190,.12), rgba(7,19,38,.02) 48%, transparent 72%)",
+          filter: "blur(28px)",
+          opacity: intro,
+          transform: `scaleX(${1 + Math.sin(time * 0.28) * 0.015})`,
+        }}
+      />
 
       <AbsoluteFill
         style={{
-          boxShadow: "inset 0 0 210px rgba(0,0,0,0.62)",
-          pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at center, transparent 38%, rgba(1,3,12,.22) 72%, rgba(1,3,12,.72) 100%)",
         }}
       />
-    </>
+    </AbsoluteFill>
   );
 };
 
-const MilestonePillar: React.FC<{
+const ConnectorLayer: React.FC<{
   readonly frame: number;
-  readonly milestone: Milestone;
-  readonly stageIndex: number;
-}> = ({frame, milestone, stageIndex}) => {
-  const rise = progress(
-    frame,
-    milestone.startFrame,
-    milestone.startFrame + 82,
-    Easing.out(Easing.back(1.05)),
-  );
-  const cleanRise = clamp(rise, 0, 1.06);
-  const bodyHeight = Math.max(1, milestone.height * cleanRise);
-  const topY = BASE_Y - bodyHeight;
-  const finalTopY = BASE_Y - milestone.height;
-  const visibility = progress(
-    frame,
-    milestone.startFrame - 8,
-    milestone.startFrame + 10,
-  );
-  const impact = progress(
-    frame,
-    milestone.startFrame + 70,
-    milestone.startFrame + 105,
-    Easing.out(Easing.quad),
-  );
-  const impactOpacity =
-    frame < milestone.startFrame + 70 ||
-    frame > milestone.startFrame + 105
-      ? 0
-      : 1 - impact;
-  const shineStart = 512 + stageIndex * 34;
-  const shineCycle =
-    frame < shineStart ? -0.2 : ((frame - shineStart) % 270) / 270;
-  const shineX = mix(
-    milestone.x - 90,
-    milestone.x + BAR_WIDTH + 90,
-    shineCycle,
-  );
-  const activeGlow = progress(
-    frame,
-    milestone.startFrame + 62,
-    milestone.startFrame + 100,
-  );
-  const topFaceDrop = Math.min(15, bodyHeight);
-  const frontTopY = topY + topFaceDrop;
-  const frontHeight = Math.max(1, BASE_Y - frontTopY);
-  const bottomRadius = Math.min(15, frontHeight / 2);
-  const frontFacePath = [
-    `M ${milestone.x} ${frontTopY}`,
-    `L ${milestone.x + BAR_WIDTH} ${frontTopY}`,
-    `L ${milestone.x + BAR_WIDTH} ${BASE_Y - bottomRadius}`,
-    `Q ${milestone.x + BAR_WIDTH} ${BASE_Y} ${
-      milestone.x + BAR_WIDTH - bottomRadius
-    } ${BASE_Y}`,
-    `L ${milestone.x + bottomRadius} ${BASE_Y}`,
-    `Q ${milestone.x} ${BASE_Y} ${milestone.x} ${
-      BASE_Y - bottomRadius
-    }`,
-    "Z",
-  ].join(" ");
+  readonly time: number;
+}> = ({ frame, time }) => {
+  const lead = segment(frame, 35, 72, Easing.inOut(Easing.cubic));
+  const tail = segment(frame, 555, 605, Easing.inOut(Easing.cubic));
+  const leadEnd = NODES[0].x - 132;
+  const tailStart = NODES[NODES.length - 1].x + 132;
 
   return (
-    <g>
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: "absolute", inset: 0, overflow: "visible" }}
+    >
       <defs>
-        <linearGradient
-          id={`pillar-front-${milestone.id}`}
-          x1="0"
-          y1="0"
-          x2="1"
-          y2="1"
-        >
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.32" />
-          <stop
-            offset="0.22"
-            stopColor={milestone.light}
-            stopOpacity="0.2"
-          />
-          <stop
-            offset="0.65"
-            stopColor={milestone.color}
-            stopOpacity="0.22"
-          />
-          <stop
-            offset="1"
-            stopColor={milestone.dark}
-            stopOpacity="0.38"
-          />
-        </linearGradient>
-        <linearGradient
-          id={`pillar-side-${milestone.id}`}
-          x1="0"
-          y1="0"
-          x2="1"
-          y2="1"
-        >
-          <stop
-            offset="0"
-            stopColor={milestone.color}
-            stopOpacity="0.34"
-          />
-          <stop
-            offset="1"
-            stopColor={milestone.dark}
-            stopOpacity="0.56"
-          />
-        </linearGradient>
-        <linearGradient
-          id={`pillar-top-${milestone.id}`}
-          x1="0"
-          y1="0"
-          x2="1"
-          y2="1"
-        >
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.82" />
-          <stop
-            offset="0.38"
-            stopColor={milestone.light}
-            stopOpacity="0.58"
-          />
-          <stop
-            offset="1"
-            stopColor={milestone.color}
-            stopOpacity="0.28"
-          />
-        </linearGradient>
-        <linearGradient
-          id={`pillar-edge-${milestone.id}`}
-          gradientUnits="userSpaceOnUse"
-          x1={milestone.x}
-          y1={finalTopY}
-          x2={milestone.x + BAR_WIDTH}
-          y2={BASE_Y}
-        >
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.82" />
-          <stop
-            offset="0.34"
-            stopColor={milestone.light}
-            stopOpacity="0.42"
-          />
-          <stop
-            offset="1"
-            stopColor={milestone.color}
-            stopOpacity="0.2"
-          />
-        </linearGradient>
-        <clipPath id={`pillar-clip-${milestone.id}`}>
-          <path d={frontFacePath} />
-        </clipPath>
         <filter
-          id={`pillar-shadow-${milestone.id}`}
-          x="-70%"
-          y="-30%"
-          width="250%"
-          height="180%"
-        >
-          <feDropShadow
-            dx="0"
-            dy="21"
-            stdDeviation="24"
-            floodColor="#01040D"
-            floodOpacity="0.62"
-          />
-          <feDropShadow
-            dx="0"
-            dy="8"
-            stdDeviation="18"
-            floodColor={milestone.color}
-            floodOpacity="0.18"
-          />
-        </filter>
-        <filter
-          id={`pillar-glow-${milestone.id}`}
+          id="path-soft-glow"
           x="-100%"
           y="-100%"
           width="300%"
           height="300%"
         >
-          <feGaussianBlur stdDeviation="12" />
+          <feGaussianBlur stdDeviation="7" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
         </filter>
-      </defs>
 
-      <ellipse
-        cx={milestone.x + BAR_WIDTH / 2 + BAR_DEPTH / 2}
-        cy={BASE_Y + 26}
-        rx={mix(34, 92, cleanRise)}
-        ry={mix(7, 20, cleanRise)}
-        fill={milestone.color}
-        opacity={0.09 + activeGlow * 0.11}
-        filter={`url(#pillar-glow-${milestone.id})`}
-      />
+        {BRIDGES.map((bridge, index) => (
+          <linearGradient
+            key={index}
+            id={`bridge-gradient-${index}`}
+            x1={bridge.from.x}
+            y1={bridge.from.y}
+            x2={bridge.to.x}
+            y2={bridge.to.y}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop stopColor={bridge.fromColor} />
+            <stop offset="0.5" stopColor={COLORS.white} stopOpacity="0.88" />
+            <stop offset="1" stopColor={bridge.toColor} />
+          </linearGradient>
+        ))}
 
-      <ellipse
-        cx={milestone.x + BAR_WIDTH / 2 + BAR_DEPTH / 2}
-        cy={BASE_Y + 13}
-        rx={mix(18, 82, impact)}
-        ry={mix(4, 18, impact)}
-        fill="none"
-        stroke={milestone.light}
-        strokeWidth={mix(4, 1, impact)}
-        opacity={impactOpacity * 0.7}
-      />
-
-      <g
-        opacity={visibility}
-        filter={`url(#pillar-shadow-${milestone.id})`}
-      >
-        <path
-          d={frontFacePath}
-          fill={`url(#pillar-front-${milestone.id})`}
-          stroke={`url(#pillar-edge-${milestone.id})`}
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-
-        <polygon
-          points={`${milestone.x + BAR_WIDTH},${frontTopY} ${
-            milestone.x + BAR_WIDTH + BAR_DEPTH
-          },${topY} ${milestone.x + BAR_WIDTH + BAR_DEPTH},${
-            BASE_Y - 15
-          } ${milestone.x + BAR_WIDTH},${BASE_Y}`}
-          fill={`url(#pillar-side-${milestone.id})`}
-          stroke={milestone.color}
-          strokeOpacity="0.42"
-          strokeWidth="1.5"
-        />
-
-        <polygon
-          points={`${milestone.x},${frontTopY} ${
-            milestone.x + BAR_DEPTH
-          },${topY} ${milestone.x + BAR_WIDTH + BAR_DEPTH},${topY} ${
-            milestone.x + BAR_WIDTH
-          },${frontTopY}`}
-          fill={`url(#pillar-top-${milestone.id})`}
-          stroke="#FFFFFF"
-          strokeOpacity="0.58"
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-
-        <path
-          d={`M ${milestone.x + 15} ${topY + 30} L ${
-            milestone.x + 15
-          } ${BASE_Y - 21}`}
-          fill="none"
-          stroke="#FFFFFF"
-          strokeOpacity="0.2"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-
-        {Array.from({length: 4}, (_, tick) => {
-          const tickY = BASE_Y - 48 - tick * 44;
-          if (tickY < topY + 48) {
-            return null;
-          }
-
-          return (
-            <line
-              key={`${milestone.id}-tick-${tick}`}
-              x1={milestone.x + 31}
-              y1={tickY}
-              x2={milestone.x + BAR_WIDTH - 20}
-              y2={tickY}
-              stroke={milestone.light}
-              strokeOpacity="0.14"
-              strokeWidth="1"
-            />
-          );
-        })}
-
-        {shineCycle >= 0 && (
-          <g clipPath={`url(#pillar-clip-${milestone.id})`}>
-            <line
-              x1={shineX - 42}
-              y1={BASE_Y + 20}
-              x2={shineX + 42}
-              y2={topY - 20}
-              stroke="#FFFFFF"
-              strokeOpacity="0.18"
-              strokeWidth="28"
-            />
-            <line
-              x1={shineX - 42}
-              y1={BASE_Y + 20}
-              x2={shineX + 42}
-              y2={topY - 20}
-              stroke={milestone.light}
-              strokeOpacity="0.22"
-              strokeWidth="5"
-            />
-          </g>
-        )}
-
-      </g>
-    </g>
-  );
-};
-
-const GrowthLine: React.FC<{readonly frame: number}> = ({frame}) => {
-  const lineAmount = progress(
-    frame,
-    374,
-    532,
-    Easing.inOut(Easing.cubic),
-  );
-  const lineOpacity = progress(frame, 350, 390);
-  const drawTracer = pointOnGrowthLine(lineAmount);
-  const repeatingAmount =
-    frame < 604 ? 0 : ((frame - 604) % 182) / 182;
-  const repeatingTracer = pointOnGrowthLine(repeatingAmount);
-  const repeatingOpacity = progress(frame, 604, 626);
-  const endpointIn = progress(frame, 522, 566, Easing.out(Easing.back(1.2)));
-  const pulseCycle = frame < 548 ? 0 : ((frame - 548) % 96) / 96;
-  const pulseRadius = mix(16, 54, pulseCycle);
-  const pulseOpacity = (1 - pulseCycle) * 0.42 * endpointIn;
-  const last = GROWTH_POINTS[GROWTH_POINTS.length - 1];
-
-  return (
-    <g>
-      <defs>
         <linearGradient
-          id="growth-line"
+          id="lead-gradient"
+          x1="0"
+          y1="0"
+          x2={leadEnd}
+          y2="0"
           gradientUnits="userSpaceOnUse"
-          x1={GROWTH_POINTS[0].x}
-          y1={GROWTH_POINTS[0].y}
-          x2={last.x}
-          y2={last.y}
         >
-          <stop offset="0" stopColor="#62F3DC" />
-          <stop offset="0.28" stopColor="#5EB5FF" />
-          <stop offset="0.53" stopColor="#9A7CFF" />
-          <stop offset="0.76" stopColor="#F37BC7" />
-          <stop offset="1" stopColor="#FFD178" />
+          <stop stopColor={COLORS.cyan} stopOpacity="0" />
+          <stop offset="0.7" stopColor={COLORS.cyan} stopOpacity="0.72" />
+          <stop offset="1" stopColor={COLORS.white} />
         </linearGradient>
-        <radialGradient id="line-tracer">
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="1" />
-          <stop offset="0.28" stopColor="#DFFBFF" stopOpacity="0.94" />
-          <stop offset="1" stopColor="#80DFFF" stopOpacity="0" />
-        </radialGradient>
-        <filter
-          id="growth-glow"
-          x="-30%"
-          y="-100%"
-          width="160%"
-          height="300%"
+
+        <linearGradient
+          id="tail-gradient"
+          x1={tailStart}
+          y1="0"
+          x2={WIDTH}
+          y2="0"
+          gradientUnits="userSpaceOnUse"
         >
-          <feGaussianBlur stdDeviation="8" />
-        </filter>
-        <filter
-          id="endpoint-glow"
-          x="-200%"
-          y="-200%"
-          width="500%"
-          height="500%"
-        >
-          <feGaussianBlur stdDeviation="11" />
-        </filter>
+          <stop stopColor={COLORS.white} />
+          <stop offset="0.36" stopColor={COLORS.coral} stopOpacity="0.74" />
+          <stop offset="1" stopColor={COLORS.coral} stopOpacity="0" />
+        </linearGradient>
       </defs>
 
-      <polyline
-        points={GROWTH_POINTS_STRING}
-        pathLength="100"
+      <path
+        d={`M 0 545 L ${leadEnd} 545`}
+        pathLength={1}
         fill="none"
-        stroke="url(#growth-line)"
-        strokeWidth="16"
+        stroke="rgba(54,225,208,.11)"
+        strokeWidth="12"
         strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeDasharray="100"
-        strokeDashoffset={100 * (1 - lineAmount)}
-        opacity={lineOpacity * 0.2}
-        filter="url(#growth-glow)"
+        strokeDasharray="1"
+        strokeDashoffset={1 - lead}
+        filter="url(#path-soft-glow)"
       />
-      <polyline
-        points={GROWTH_POINTS_STRING}
-        pathLength="100"
+      <path
+        d={`M 0 545 L ${leadEnd} 545`}
+        pathLength={1}
         fill="none"
-        stroke="url(#growth-line)"
-        strokeWidth="4.5"
+        stroke="url(#lead-gradient)"
+        strokeWidth="3.2"
         strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeDasharray="100"
-        strokeDashoffset={100 * (1 - lineAmount)}
-        opacity={lineOpacity}
+        strokeDasharray="1"
+        strokeDashoffset={1 - lead}
       />
 
-      {GROWTH_POINTS.map((point, index) => {
-        const nodeIn = progress(frame, 386 + index * 37, 414 + index * 37);
-        const breathe =
-          0.78 + Math.sin(frame * 0.045 + index * 0.9) * 0.22;
+      {BRIDGES.map((bridge, index) => {
+        const reveal = segment(
+          frame,
+          bridge.start,
+          bridge.end,
+          Easing.inOut(Easing.cubic),
+        );
+        const settled = segment(
+          frame,
+          bridge.end - 8,
+          bridge.end + 28,
+          Easing.out(Easing.cubic),
+        );
+        const packetProgress = modulo(time * 0.115 + index * 0.287, 1);
+        const packet = cubicPoint(bridge, packetProgress);
+        const path = bridgePath(bridge);
+        const packetPulse =
+          0.55 + Math.sin(time * TAU * 1.1 + index * 1.7) * 0.45;
 
         return (
-          <g key={`growth-node-${index}`} opacity={nodeIn}>
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r="17"
-              fill={MILESTONES[index].color}
-              opacity={0.13 * breathe}
-              filter="url(#growth-glow)"
+          <g key={index}>
+            <path
+              d={path}
+              fill="none"
+              stroke="rgba(150,190,255,.065)"
+              strokeWidth="14"
+              strokeLinecap="round"
+              pathLength={1}
+              strokeDasharray="1"
+              strokeDashoffset={1 - reveal}
+              filter="url(#path-soft-glow)"
+            />
+            <path
+              d={path}
+              fill="none"
+              stroke={`url(#bridge-gradient-${index})`}
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              pathLength={1}
+              strokeDasharray="1"
+              strokeDashoffset={1 - reveal}
+            />
+            <path
+              d={path}
+              fill="none"
+              stroke={bridge.toColor}
+              strokeWidth="1.2"
+              strokeLinecap="round"
+              pathLength={1}
+              strokeDasharray="0.012 0.046"
+              strokeDashoffset={-time * 0.14 - index * 0.19}
+              opacity={0.34 * settled}
             />
             <circle
-              cx={point.x}
-              cy={point.y}
-              r="8.5"
-              fill="#07172A"
-              stroke={MILESTONES[index].light}
-              strokeWidth="3"
+              cx={packet.x}
+              cy={packet.y}
+              r={3.4 + packetPulse * 1.6}
+              fill={COLORS.white}
+              opacity={settled * (0.62 + packetPulse * 0.38)}
+              filter="url(#path-soft-glow)"
             />
             <circle
-              cx={point.x}
-              cy={point.y}
-              r="2.8"
-              fill="#FFFFFF"
+              cx={packet.x}
+              cy={packet.y}
+              r="2.1"
+              fill={bridge.toColor}
+              opacity={settled}
             />
           </g>
         );
       })}
 
-      {frame <= 556 && (
-        <g opacity={lineOpacity * (1 - progress(frame, 536, 556))}>
-          <circle
-            cx={drawTracer.x}
-            cy={drawTracer.y}
-            r="25"
-            fill="url(#line-tracer)"
-            opacity="0.72"
-            filter="url(#growth-glow)"
-          />
-          <circle
-            cx={drawTracer.x}
-            cy={drawTracer.y}
-            r="5.5"
-            fill="#FFFFFF"
-          />
-        </g>
-      )}
-
-      {frame >= 604 && (
-        <g opacity={repeatingOpacity}>
-          <circle
-            cx={repeatingTracer.x}
-            cy={repeatingTracer.y}
-            r="23"
-            fill="url(#line-tracer)"
-            opacity="0.52"
-            filter="url(#growth-glow)"
-          />
-          <circle
-            cx={repeatingTracer.x}
-            cy={repeatingTracer.y}
-            r="4.5"
-            fill="#FFFFFF"
-          />
-        </g>
-      )}
-
-      <circle
-        cx={last.x}
-        cy={last.y}
-        r={pulseRadius}
+      <path
+        d={`M ${tailStart} 545 L ${WIDTH} 545`}
+        pathLength={1}
         fill="none"
-        stroke="#FFD99A"
-        strokeWidth={mix(3, 1, pulseCycle)}
-        opacity={pulseOpacity}
+        stroke="rgba(255,113,141,.11)"
+        strokeWidth="12"
+        strokeLinecap="round"
+        strokeDasharray="1"
+        strokeDashoffset={1 - tail}
+        filter="url(#path-soft-glow)"
       />
-      <circle
-        cx={last.x}
-        cy={last.y}
-        r={22 * endpointIn}
-        fill="#FFD787"
-        opacity={0.24 * endpointIn}
-        filter="url(#endpoint-glow)"
-      />
-      <circle
-        cx={last.x}
-        cy={last.y}
-        r={10 * endpointIn}
-        fill="#FFF8EA"
-        stroke="#FFD787"
-        strokeWidth="3"
-        opacity={endpointIn}
+      <path
+        d={`M ${tailStart} 545 L ${WIDTH} 545`}
+        pathLength={1}
+        fill="none"
+        stroke="url(#tail-gradient)"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeDasharray="1"
+        strokeDashoffset={1 - tail}
       />
 
-    </g>
+      {tail > 0.99 ? (
+        <circle
+          cx={tailStart + modulo(time * 110, WIDTH - tailStart)}
+          cy="545"
+          r="3.6"
+          fill={COLORS.white}
+          opacity={0.66 + Math.sin(time * TAU * 1.25) * 0.24}
+          filter="url(#path-soft-glow)"
+        />
+      ) : null}
+    </svg>
   );
 };
 
+const GlassOrb: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+  readonly node: NodeSpec;
+  readonly index: number;
+}> = ({ frame, time, node, index }) => {
+  const outline = segment(
+    frame,
+    node.start,
+    node.start + 66,
+    Easing.inOut(Easing.cubic),
+  );
+  const fill = segment(
+    frame,
+    node.start + 38,
+    node.start + 110,
+    Easing.out(Easing.poly(4)),
+  );
+  const active = segment(
+    frame,
+    node.start + 84,
+    node.start + 120,
+    Easing.out(Easing.cubic),
+  );
+  const bodyOpacity = segment(
+    frame,
+    node.start + 38,
+    node.start + 58,
+    Easing.out(Easing.cubic),
+  );
+  const bodyScale = 0.035 + fill * 0.965;
+  const bob = active * Math.sin(time * 0.72 + index * 1.38) * 2.1;
+  const shimmer = modulo(time * 122 + index * 176, 520) - 260;
+  const pulse = 0.5 + Math.sin(time * TAU * 0.24 + index * 1.23) * 0.5;
+  const orbitAngle = time * (10.5 + index * 0.7) + index * 74;
+  const dashOffset = -time * (0.052 + index * 0.004);
+  const id = `blank-orb-${index}`;
+
+  return (
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: "absolute", inset: 0, overflow: "visible" }}
+    >
+      <defs>
+        <linearGradient
+          id={`${id}-rim`}
+          x1={node.x - 135}
+          y1={node.y - 135}
+          x2={node.x + 135}
+          y2={node.y + 135}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor={COLORS.white} stopOpacity="0.96" />
+          <stop offset="0.22" stopColor={node.color} stopOpacity="0.92" />
+          <stop offset="0.58" stopColor={node.color} stopOpacity="0.34" />
+          <stop offset="0.82" stopColor={COLORS.white} stopOpacity="0.72" />
+          <stop offset="1" stopColor={node.color} stopOpacity="0.96" />
+        </linearGradient>
+
+        <radialGradient
+          id={`${id}-surface`}
+          cx="0"
+          cy="0"
+          r="1"
+          gradientUnits="userSpaceOnUse"
+          gradientTransform={`translate(${node.x - 44} ${node.y - 58}) rotate(47) scale(223)`}
+        >
+          <stop stopColor={COLORS.white} stopOpacity="0.35" />
+          <stop offset="0.2" stopColor={node.color} stopOpacity="0.32" />
+          <stop offset="0.62" stopColor={node.color} stopOpacity="0.15" />
+          <stop offset="1" stopColor={COLORS.night} stopOpacity="0.62" />
+        </radialGradient>
+
+        <linearGradient
+          id={`${id}-core`}
+          x1={node.x - 90}
+          y1={node.y - 90}
+          x2={node.x + 90}
+          y2={node.y + 90}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor={hexAlpha(node.color, 0.34)} />
+          <stop offset="0.42" stopColor="rgba(19,36,65,.36)" />
+          <stop offset="1" stopColor="rgba(2,8,22,.7)" />
+        </linearGradient>
+
+        <linearGradient
+          id={`${id}-sheen`}
+          x1={node.x - 190}
+          y1={node.y}
+          x2={node.x + 190}
+          y2={node.y}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor={COLORS.white} stopOpacity="0" />
+          <stop offset="0.5" stopColor={COLORS.white} stopOpacity="0.5" />
+          <stop offset="1" stopColor={COLORS.white} stopOpacity="0" />
+        </linearGradient>
+
+        <clipPath id={`${id}-clip`}>
+          <circle cx={node.x} cy={node.y} r="113" />
+        </clipPath>
+
+        <filter
+          id={`${id}-glow`}
+          x="-120%"
+          y="-120%"
+          width="340%"
+          height="340%"
+        >
+          <feGaussianBlur stdDeviation={7 + pulse * 2.5} result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <filter
+          id={`${id}-shadow`}
+          x="-100%"
+          y="-100%"
+          width="300%"
+          height="300%"
+        >
+          <feDropShadow
+            dx="0"
+            dy="26"
+            stdDeviation="24"
+            floodColor="#00040F"
+            floodOpacity="0.7"
+          />
+        </filter>
+      </defs>
+
+      <g transform={`translate(0 ${bob})`}>
+        <ellipse
+          cx={node.x}
+          cy={node.y + 176}
+          rx={112 + pulse * 8}
+          ry={24 + pulse * 3}
+          fill={hexAlpha(node.color, 0.1 + pulse * 0.025)}
+          filter={`url(#${id}-glow)`}
+          opacity={active}
+        />
+
+        <circle
+          cx={node.x}
+          cy={node.y}
+          r={143 + pulse * 2}
+          fill="none"
+          stroke={hexAlpha(node.color, 0.11)}
+          strokeWidth="1"
+          strokeDasharray="0.055 0.035"
+          pathLength={1}
+          strokeDashoffset={dashOffset}
+          opacity={active}
+        />
+
+        <circle
+          cx={node.x}
+          cy={node.y}
+          r="129"
+          fill="none"
+          stroke={hexAlpha(node.color, 0.16)}
+          strokeWidth="18"
+          pathLength={1}
+          strokeDasharray="1"
+          strokeDashoffset={1 - outline}
+          transform={`rotate(180 ${node.x} ${node.y})`}
+          filter={`url(#${id}-glow)`}
+          opacity="0.55"
+        />
+
+        <circle
+          cx={node.x}
+          cy={node.y}
+          r="129"
+          fill="none"
+          stroke={`url(#${id}-rim)`}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray="1"
+          strokeDashoffset={1 - outline}
+          transform={`rotate(180 ${node.x} ${node.y})`}
+        />
+
+        <g
+          opacity={bodyOpacity}
+          transform={`translate(${node.x} ${node.y}) scale(${bodyScale}) translate(${-node.x} ${-node.y})`}
+        >
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r="117"
+            fill={`url(#${id}-surface)`}
+            stroke="rgba(238,249,255,.5)"
+            strokeWidth="2.2"
+            filter={`url(#${id}-shadow)`}
+          />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r="111"
+            fill="none"
+            stroke={hexAlpha(node.color, 0.22)}
+            strokeWidth="1.2"
+          />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r="94"
+            fill={`url(#${id}-core)`}
+            stroke="rgba(235,248,255,.22)"
+            strokeWidth="1.5"
+          />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r="72"
+            fill="rgba(3,10,26,.15)"
+            stroke={hexAlpha(node.color, 0.27)}
+            strokeWidth="1.2"
+          />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r="78"
+            fill="none"
+            stroke="rgba(233,248,255,.14)"
+            strokeWidth="1"
+            strokeDasharray="0.04 0.026"
+            strokeDashoffset={time * 0.055}
+            pathLength={1}
+          />
+
+          <g clipPath={`url(#${id}-clip)`}>
+            <rect
+              x={node.x - 36 + shimmer}
+              y={node.y - 190}
+              width="58"
+              height="380"
+              rx="29"
+              fill={`url(#${id}-sheen)`}
+              opacity={0.28 + pulse * 0.12}
+              transform={`rotate(18 ${node.x} ${node.y})`}
+            />
+            <ellipse
+              cx={node.x - 42}
+              cy={node.y - 60}
+              rx="55"
+              ry="23"
+              fill="rgba(255,255,255,.17)"
+              transform={`rotate(-24 ${node.x - 42} ${node.y - 60})`}
+            />
+            <path
+              d={`M ${node.x - 100} ${node.y + 54} C ${node.x - 36} ${node.y + 96}, ${node.x + 54} ${node.y + 96}, ${node.x + 104} ${node.y + 24}`}
+              fill="none"
+              stroke={hexAlpha(node.color, 0.22)}
+              strokeWidth="22"
+              opacity="0.45"
+              filter={`url(#${id}-glow)`}
+            />
+          </g>
+
+          <path
+            d={`M ${node.x - 82} ${node.y - 78} A 113 113 0 0 1 ${node.x + 43} ${node.y - 102}`}
+            fill="none"
+            stroke="rgba(255,255,255,.72)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M ${node.x + 82} ${node.y + 78} A 113 113 0 0 1 ${node.x - 42} ${node.y + 104}`}
+            fill="none"
+            stroke={hexAlpha(node.color, 0.48)}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        </g>
+
+        <g
+          transform={`rotate(${orbitAngle} ${node.x} ${node.y})`}
+          opacity={active}
+        >
+          <circle
+            cx={node.x}
+            cy={node.y - 143}
+            r={4.2 + pulse * 1.4}
+            fill={COLORS.white}
+            filter={`url(#${id}-glow)`}
+          />
+          <circle cx={node.x} cy={node.y - 143} r="2.2" fill={node.color} />
+          <circle
+            cx={node.x}
+            cy={node.y + 143}
+            r="2.8"
+            fill={node.color}
+            opacity="0.74"
+          />
+        </g>
+      </g>
+    </svg>
+  );
+};
+
+const NodeAtmosphere: React.FC<{
+  readonly frame: number;
+  readonly time: number;
+}> = ({ frame, time }) => (
+  <>
+    {NODES.map((node, index) => {
+      const reveal = segment(
+        frame,
+        node.start + 40,
+        node.start + 115,
+        Easing.out(Easing.cubic),
+      );
+      const pulse = 0.5 + Math.sin(time * TAU * 0.17 + index * 1.15) * 0.5;
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: node.x - 225,
+            top: node.y - 225,
+            width: 450,
+            height: 450,
+            borderRadius: "50%",
+            background: `radial-gradient(circle, ${hexAlpha(
+              node.color,
+              0.16 + pulse * 0.035,
+            )} 0%, ${hexAlpha(node.color, 0.055)} 31%, transparent 70%)`,
+            filter: "blur(24px)",
+            opacity: reveal,
+            transform: `scale(${0.65 + reveal * 0.35 + pulse * 0.015})`,
+          }}
+        />
+      );
+    })}
+  </>
+);
+
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const globalReveal = progress(frame, 0, 34, Easing.out(Easing.quad));
-  const camera = progress(frame, 0, 899, Easing.inOut(Easing.cubic));
-  const cameraScale = mix(0.985, 1.018, camera);
-  const cameraX = mix(8, -9, camera);
-  const cameraY = mix(10, -7, camera);
+  const { fps } = useVideoConfig();
+  const time = frame / fps;
+  const intro = segment(frame, 0, 48, Easing.out(Easing.cubic));
+  const finalEnergy = segment(frame, 585, 660, Easing.inOut(Easing.cubic));
+  const breathe = Math.sin(time * TAU * 0.095) * 0.0022 * finalEnergy;
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "#02050D",
+        width: WIDTH,
+        height: HEIGHT,
         overflow: "hidden",
+        background: COLORS.night,
       }}
     >
-      <Background frame={frame} />
+      <Background frame={frame} time={time} />
 
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      <div
         style={{
           position: "absolute",
           inset: 0,
-          opacity: globalReveal,
+          opacity: intro,
+          transform: `scale(${1 + breathe})`,
+          transformOrigin: "50% 52%",
         }}
       >
-        <g
-          transform={`translate(${960 * (1 - cameraScale) + cameraX} ${
-            540 * (1 - cameraScale) + cameraY
-          }) scale(${cameraScale})`}
-        >
-          {MILESTONES.map((milestone, index) => (
-            <MilestonePillar
-              key={milestone.id}
-              frame={frame}
-              milestone={milestone}
-              stageIndex={index}
-            />
-          ))}
+        <NodeAtmosphere frame={frame} time={time} />
+        <ConnectorLayer frame={frame} time={time} />
+        {NODES.map((node, index) => (
+          <GlassOrb
+            key={index}
+            frame={frame}
+            time={time}
+            node={node}
+            index={index}
+          />
+        ))}
+      </div>
 
-          <GrowthLine frame={frame} />
-        </g>
-      </svg>
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          opacity: 0.11,
+          backgroundImage:
+            "repeating-linear-gradient(180deg, transparent 0, transparent 5px, rgba(193,232,255,.055) 6px, transparent 7px)",
+          backgroundPositionY: `${modulo(time * 12, 7)}px`,
+          mixBlendMode: "screen",
+        }}
+      />
     </AbsoluteFill>
   );
 };
