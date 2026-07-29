@@ -3,2155 +3,1089 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
-  interpolateColors,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
 
-// Standalone composition: Retro System Backup & Recovery.
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const TOTAL_FRAMES = 900;
 const TAU = Math.PI * 2;
 
-const COLORS = {
-  deep: "#03182f",
-  navy: "#071d3b",
-  screen: "#061a2b",
-  screenSoft: "#0a2b3d",
-  cyan: "#54f2e5",
-  cyanSoft: "#d4fffa",
-  blue: "#5267f2",
-  violet: "#9278ff",
-  amber: "#ffc861",
-  coral: "#ff596d",
-  red: "#d91f45",
-  mint: "#62f2af",
-  mintSoft: "#d8ffea",
-  shell: "#dfe5d6",
-  shellLight: "#fbfcef",
-  shellMid: "#b9c7b8",
-  shellDark: "#627773",
-  ink: "#10282d",
-  inkSoft: "#58706d",
-  black: "#020810",
-};
+const clamp = (value: number, min = 0, max = 1): number =>
+  Math.max(min, Math.min(max, value));
 
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-const mix = (from: number, to: number, amount: number) =>
-  from + (to - from) * amount;
-const modulo = (value: number, length = 1) =>
-  ((value % length) + length) % length;
-
-const segment = (
+const phase = (
   frame: number,
   start: number,
   end: number,
-  easing: (value: number) => number = Easing.linear,
-) =>
+  easing: (input: number) => number = Easing.out(Easing.cubic),
+): number =>
   interpolate(frame, [start, end], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing,
   });
 
-const hash01 = (seed: number) => {
-  const value = Math.sin(seed * 91.177 + 13.831) * 43758.5453;
+const seeded = (seed: number): number => {
+  const value = Math.sin(seed * 91.713 + 17.319) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const getBackupProgress = (frame: number) => {
-  if (frame < 48) return 0;
-  if (frame < 105) {
-    return mix(0, 0.17, segment(frame, 48, 105, Easing.inOut(Easing.cubic)));
-  }
-  if (frame < 188) {
-    return mix(
-      0.17,
-      0.66,
-      segment(frame, 105, 188, Easing.inOut(Easing.cubic)),
-    );
-  }
-  if (frame < 252) {
-    return mix(
-      0.66,
-      1,
-      segment(frame, 188, 252, Easing.inOut(Easing.cubic)),
-    );
-  }
-  return 1;
-};
-
-const getRestoreProgress = (frame: number) => {
-  if (frame < 520) return 0;
-  if (frame < 590) {
-    return mix(0, 0.2, segment(frame, 520, 590, Easing.inOut(Easing.cubic)));
-  }
-  if (frame < 682) {
-    return mix(
-      0.2,
-      0.72,
-      segment(frame, 590, 682, Easing.inOut(Easing.cubic)),
-    );
-  }
-  if (frame < 748) {
-    return mix(
-      0.72,
-      0.99,
-      segment(frame, 682, 748, Easing.inOut(Easing.cubic)),
-    );
-  }
-  return frame >= 804 ? 1 : 0.99;
-};
-
-const FILES = [
-  { path: "SYSTEM/BOOT.SYS", size: "096 KB" },
-  { path: "SYSTEM/KERNEL.BIN", size: "2.4 MB" },
-  { path: "DATA/CLIENTS.DB", size: "8.7 MB" },
-  { path: "DATA/REPORTS.ARC", size: "6.2 MB" },
-  { path: "CONFIG/NETWORK.CFG", size: "024 KB" },
-  { path: "USERS/PROFILE.DAT", size: "1.3 MB" },
-] as const;
-
-const CORRUPT_INDICES = new Set([
-  2, 4, 7, 11, 13, 16, 18, 20, 23, 26, 29, 31, 34, 36, 39, 42, 44, 47,
-]);
-
-const PARTICLES = Array.from({ length: 64 }, (_, index) => ({
-  x: hash01(index * 7 + 3) * WIDTH,
-  y: hash01(index * 13 + 9) * HEIGHT,
-  size: 2 + Math.floor(hash01(index * 17 + 2) * 4),
-  phase: hash01(index * 19 + 5),
-  speed: 8 + hash01(index * 23 + 1) * 18,
-  opacity: 0.05 + hash01(index * 29 + 7) * 0.17,
+const STARS = Array.from({ length: 64 }, (_, index) => ({
+  x: seeded(index + 10) * WIDTH,
+  y: seeded(index + 110) * HEIGHT,
+  size: 1 + seeded(index + 210) * 2.4,
+  opacity: 0.08 + seeded(index + 310) * 0.25,
+  offset: seeded(index + 410) * TAU,
 }));
 
-const PixelText: React.FC<{
-  readonly children: React.ReactNode;
-  readonly color?: string;
-  readonly size?: number;
-  readonly spacing?: number;
-  readonly align?: "left" | "center" | "right";
-  readonly style?: React.CSSProperties;
-}> = ({
-  children,
-  color = COLORS.cyanSoft,
-  size = 20,
-  spacing = 2,
-  align = "left",
-  style,
-}) => (
-  <div
-    style={{
-      color,
-      fontFamily: "'Courier New', monospace",
-      fontSize: size,
-      fontWeight: 800,
-      letterSpacing: spacing,
-      lineHeight: 1.1,
-      textAlign: align,
-      fontVariantNumeric: "tabular-nums",
-      ...style,
-    }}
-  >
-    {children}
-  </div>
-);
+const DATA_LINES = Array.from({ length: 7 }, (_, index) => ({
+  y: 110 + seeded(index + 510) * 850,
+  width: 120 + seeded(index + 610) * 270,
+  speed: 0.8 + seeded(index + 710) * 0.8,
+  offset: seeded(index + 810) * 2200,
+  opacity: 0.06 + seeded(index + 910) * 0.09,
+}));
 
-const CheckGlyph: React.FC<{
-  readonly size?: number;
-  readonly color?: string;
-  readonly stroke?: number;
-}> = ({ size = 24, color = COLORS.mint, stroke = 3 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24">
-    <path
-      d="M4.5 12.5L9.2 17L19.5 6.8"
-      fill="none"
-      stroke={color}
-      strokeWidth={stroke}
-      strokeLinecap="square"
-      strokeLinejoin="miter"
-    />
-  </svg>
-);
+type IconName = "signal" | "alignment" | "growth";
 
-const AmbientBackground: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-}> = ({ frame, time }) => {
-  const gridX = modulo(time * 9.5, 72);
-  const gridY = modulo(time * 4.8, 72);
-  const sweepY = modulo(time * 118, HEIGHT + 320) - 160;
-  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.23);
-  const incidentGlow =
-    segment(frame, 300, 326, Easing.out(Easing.cubic)) *
-    (1 - segment(frame, 430, 470, Easing.inOut(Easing.cubic)));
+type Stage = {
+  readonly index: number;
+  readonly start: number;
+  readonly x: number;
+  readonly y: number;
+  readonly accent: string;
+  readonly secondary: string;
+  readonly icon: IconName;
+  readonly reverse?: boolean;
+};
 
-  return (
+const STAGES: readonly Stage[] = [
+  {
+    index: 1,
+    start: 60,
+    x: 1030,
+    y: 690,
+    accent: "#ff8a6b",
+    secondary: "#ffca78",
+    icon: "signal",
+  },
+  {
+    index: 2,
+    start: 220,
+    x: 485,
+    y: 430,
+    accent: "#9b82ff",
+    secondary: "#d4a3ff",
+    icon: "alignment",
+    reverse: true,
+  },
+  {
+    index: 3,
+    start: 380,
+    x: 1030,
+    y: 170,
+    accent: "#55e6a5",
+    secondary: "#8ff7d4",
+    icon: "growth",
+  },
+];
+
+const Background: React.FC<{ readonly frame: number }> = ({ frame }) => (
+  <>
     <AbsoluteFill
       style={{
-        overflow: "hidden",
-        background: interpolateColors(
-          incidentGlow,
-          [0, 1],
-          ["#03182f", "#281126"],
-        ),
+        background:
+          "radial-gradient(circle at 70% 42%, #17223f 0%, #0b1022 34%, #060916 68%, #03050c 100%)",
       }}
-    >
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(circle at 50% 44%, rgba(12,135,146,.9) 0%, rgba(5,69,92,.82) 42%, rgba(3,24,47,.22) 74%, rgba(2,12,28,.1) 100%)",
-          opacity: 1 - incidentGlow * 0.42,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          opacity: 0.24,
-          backgroundImage:
-            "linear-gradient(rgba(133,255,244,.17) 1px, transparent 1px), linear-gradient(90deg, rgba(133,255,244,.17) 1px, transparent 1px)",
-          backgroundSize: "72px 72px",
-          backgroundPosition: `${gridX}px ${gridY}px`,
-          maskImage:
-            "radial-gradient(circle at 50% 50%, #000 0%, rgba(0,0,0,.8) 56%, transparent 90%)",
-        }}
-      />
+    />
+    <AbsoluteFill
+      style={{
+        opacity: 0.3,
+        backgroundImage:
+          "linear-gradient(rgba(156,174,255,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(156,174,255,0.055) 1px, transparent 1px)",
+        backgroundSize: "76px 76px",
+        backgroundPosition: `${(frame * 0.035) % 76}px ${(frame * 0.022) % 76}px`,
+        maskImage:
+          "radial-gradient(ellipse at 66% 50%, black 0%, rgba(0,0,0,0.8) 44%, transparent 88%)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        right: 120,
+        top: 40,
+        width: 930,
+        height: 930,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, rgba(130,105,255,0.16), rgba(130,105,255,0.045) 48%, transparent 73%)",
+        filter: "blur(42px)",
+        opacity: 0.84 + Math.sin(frame / 120) * 0.05,
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: -170,
+        bottom: -300,
+        width: 900,
+        height: 900,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, rgba(255,116,93,0.11), rgba(255,116,93,0.025) 50%, transparent 74%)",
+        filter: "blur(54px)",
+        opacity: 0.8 + Math.cos(frame / 134) * 0.04,
+      }}
+    />
+    {DATA_LINES.map((line, index) => {
+      const x =
+        ((frame * line.speed * 1.7 + line.offset) %
+          (WIDTH + line.width + 360)) -
+        line.width -
+        180;
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: x,
+            top: line.y,
+            width: line.width,
+            height: 1,
+            opacity: line.opacity,
+            background:
+              "linear-gradient(90deg, transparent, rgba(158,194,255,0.95), transparent)",
+          }}
+        />
+      );
+    })}
+    {STARS.map((star, index) => {
+      const twinkle = 0.62 + Math.sin(frame / 48 + star.offset) * 0.38;
+      return (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: star.x,
+            top: star.y + Math.sin(frame / 85 + star.offset) * 4,
+            width: star.size,
+            height: star.size,
+            borderRadius: "50%",
+            background:
+              index % 5 === 0
+                ? "#ffac91"
+                : index % 3 === 0
+                  ? "#9c87ff"
+                  : "#7bf0c2",
+            opacity: star.opacity * twinkle,
+            boxShadow: "0 0 10px currentColor",
+          }}
+        />
+      );
+    })}
+    <div
+      style={{
+        position: "absolute",
+        inset: 34,
+        border: "1px solid rgba(214,225,255,0.045)",
+        borderRadius: 32,
+      }}
+    />
+  </>
+);
 
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 1520,
-          height: 1520,
-          transform: `translate(-50%, -50%) rotate(${time * 1.15}deg)`,
-          borderRadius: "50%",
-          border: `1px solid ${
-            incidentGlow > 0.1
-              ? "rgba(255,89,109,.15)"
-              : "rgba(190,255,249,.12)"
-          }`,
-          boxShadow:
-            "0 0 0 104px rgba(89,255,241,.022), 0 0 0 220px rgba(89,255,241,.014)",
-        }}
-      />
+const StrategyIcon: React.FC<{
+  readonly name: IconName;
+  readonly color: string;
+  readonly progress: number;
+}> = ({ name, color, progress }) => {
+  const common = {
+    fill: "none",
+    stroke: color,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 2.7,
+    pathLength: 1,
+    strokeDasharray: 1,
+    strokeDashoffset: 1 - progress,
+  };
 
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "46%",
-          width: 1650,
-          height: 480,
-          transform: `translate(-50%, -50%) rotate(${-8 + Math.sin(time * 0.22) * 1.1}deg)`,
-          opacity: 0.1 + pulse * 0.05,
-          background:
-            "linear-gradient(90deg, transparent, rgba(87,255,241,.58), transparent)",
-          filter: "blur(48px)",
-        }}
-      />
+  if (name === "signal") {
+    return (
+      <svg width={62} height={62} viewBox="0 0 64 64" aria-hidden>
+        <circle cx="32" cy="32" r="23" {...common} strokeWidth={2.2} />
+        <circle cx="32" cy="32" r="13" {...common} strokeWidth={2.2} />
+        <path d="M32 9V4M55 32H60M32 55V60M9 32H4" {...common} />
+        <path d="M32 32L48 18" {...common} strokeWidth={3.2} />
+        <circle cx="32" cy="32" r="4.5" fill={color} opacity={progress} />
+      </svg>
+    );
+  }
 
-      {PARTICLES.map((particle, index) => {
-        const y =
-          modulo(
-            particle.y + time * particle.speed + particle.phase * HEIGHT * 0.5,
-            HEIGHT + 100,
-          ) - 50;
-        const flicker =
-          0.3 +
-          0.7 *
-            Math.sin(
-              (time * (0.17 + (index % 5) * 0.025) + particle.phase) * TAU,
-            ) **
-              2;
-        const isIncidentParticle = incidentGlow > 0.2 && index % 4 === 0;
-        return (
-          <div
-            key={`ambient-particle-${index}`}
-            style={{
-              position: "absolute",
-              left: particle.x,
-              top: y,
-              width: particle.size,
-              height: particle.size,
-              opacity: particle.opacity * flicker,
-              background: isIncidentParticle
-                ? COLORS.coral
-                : index % 8 === 0
-                  ? COLORS.cyanSoft
-                  : "rgba(87,255,240,.92)",
-              boxShadow:
-                index % 8 === 0
-                  ? `0 0 14px ${
-                      isIncidentParticle
-                        ? "rgba(255,89,109,.88)"
-                        : "rgba(104,255,241,.88)"
-                    }`
-                  : undefined,
-            }}
-          />
-        );
-      })}
+  if (name === "alignment") {
+    return (
+      <svg width={64} height={64} viewBox="0 0 64 64" aria-hidden>
+        <circle cx="15" cy="32" r="7" {...common} />
+        <circle cx="49" cy="17" r="7" {...common} />
+        <circle cx="49" cy="47" r="7" {...common} />
+        <path d="M22 30L42 19M22 34L42 45M49 24V40" {...common} />
+        <circle cx="15" cy="32" r="2.5" fill={color} opacity={progress} />
+        <circle cx="49" cy="17" r="2.5" fill={color} opacity={progress} />
+        <circle cx="49" cy="47" r="2.5" fill={color} opacity={progress} />
+      </svg>
+    );
+  }
 
-      <div
-        style={{
-          position: "absolute",
-          left: -240,
-          top: sweepY,
-          width: 2400,
-          height: 150,
-          transform: "rotate(-4deg)",
-          opacity: 0.13,
-          background:
-            "linear-gradient(180deg, transparent, rgba(174,255,248,.68), transparent)",
-          filter: "blur(25px)",
-        }}
-      />
-
-      <PixelText
-        color="rgba(207,255,251,.5)"
-        size={14}
-        spacing={2.8}
-        style={{ position: "absolute", left: 74, bottom: 63 }}
-      >
-        RETROSAFE RECOVERY SERVICE // NODE 07
-      </PixelText>
-      <PixelText
-        color="rgba(207,255,251,.48)"
-        size={14}
-        spacing={2.2}
-        align="right"
-        style={{ position: "absolute", right: 74, top: 62, lineHeight: 1.65 }}
-      >
-        LINK {String(Math.round(93 + pulse * 6)).padStart(2, "0")}%
-        <br />
-        FRAME {String(frame).padStart(4, "0")}
-      </PixelText>
-
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 48%, rgba(1,24,40,.18) 74%, rgba(1,13,29,.62) 100%)",
-        }}
-      />
-    </AbsoluteFill>
+  return (
+    <svg width={64} height={64} viewBox="0 0 64 64" aria-hidden>
+      <path d="M10 49L25 34L35 42L54 20" {...common} strokeWidth={3.3} />
+      <path d="M40 20H54V34" {...common} strokeWidth={3.3} />
+      <path d="M10 57H56" {...common} strokeWidth={2.2} />
+      <circle cx="25" cy="34" r="3.4" fill={color} opacity={progress} />
+      <circle cx="35" cy="42" r="3.4" fill={color} opacity={progress} />
+    </svg>
   );
 };
 
-const ScreenPanel: React.FC<{
-  readonly children: React.ReactNode;
-  readonly style?: React.CSSProperties;
-  readonly accent?: string;
-}> = ({ children, style, accent = COLORS.cyan }) => (
-  <div
-    style={{
-      position: "relative",
-      overflow: "hidden",
-      boxSizing: "border-box",
-      background:
-        "linear-gradient(145deg, rgba(11,38,57,.97), rgba(4,18,34,.98))",
-      border: `2px solid ${accent}66`,
-      boxShadow: `inset 2px 2px ${accent}12, inset -3px -3px rgba(0,2,12,.5), 0 0 15px ${accent}12`,
-      ...style,
-    }}
-  >
-    {children}
-  </div>
-);
-
-const DiskIcon: React.FC<{
-  readonly color: string;
-  readonly pulse: number;
-  readonly failed?: boolean;
-}> = ({ color, pulse, failed = false }) => (
-  <svg
-    width="88"
-    height="88"
-    viewBox="0 0 88 88"
-    style={{
-      filter: `drop-shadow(0 0 ${10 + pulse * 8}px ${color}99)`,
-    }}
-  >
-    <ellipse
-      cx="44"
-      cy="18"
-      rx="31"
-      ry="12"
-      fill={failed ? "#5b1426" : "#122f43"}
-      stroke={color}
-      strokeWidth="3"
-    />
-    <path
-      d="M13 18V65C13 72 27 78 44 78C61 78 75 72 75 65V18"
-      fill={failed ? "#3b1120" : "#0a2237"}
-      stroke={color}
-      strokeWidth="3"
-    />
-    <path
-      d="M13 42C13 49 27 55 44 55C61 55 75 49 75 42M13 62C13 69 27 75 44 75C61 75 75 69 75 62"
-      fill="none"
-      stroke={color}
-      strokeWidth="2"
-      opacity="0.7"
-    />
-    {failed ? (
-      <path
-        d="M35 31L53 50M53 31L35 50"
-        fill="none"
-        stroke={COLORS.coral}
-        strokeWidth="5"
-      />
-    ) : (
-      <circle cx="44" cy="18" r="5" fill={color} opacity={0.72 + pulse * 0.28} />
-    )}
-  </svg>
-);
-
-const TapeCartridge: React.FC<{
+const OrbitalIcon: React.FC<{
   readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const restoring = frame >= 500;
-  const failed = frame >= 300 && frame < 470;
-  const done = frame >= 804;
-  const color = done || restoring ? COLORS.mint : COLORS.amber;
-  const speed =
-    frame < 252 || (frame >= 520 && frame < 748)
-      ? 170
-      : frame >= 300 && frame < 430
-        ? 15
-        : 32;
-  const rotation = time * speed * (restoring ? -1 : 1);
-  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 1.4);
-  const progress = restoring ? restoreProgress : backupProgress;
+  readonly stage: Stage;
+}> = ({ frame, stage }) => {
+  const ringProgress = phase(frame, stage.start + 42, stage.start + 96);
+  const iconProgress = phase(frame, stage.start + 66, stage.start + 122);
+  const radius = 62;
+  const circumference = TAU * radius;
+  const angle = -Math.PI / 2 + ringProgress * TAU;
+  const dotX = 76 + Math.cos(angle) * radius;
+  const dotY = 76 + Math.sin(angle) * radius;
 
   return (
     <div
       style={{
         position: "relative",
-        width: 288,
-        height: 206,
-        margin: "7px auto 0",
-        transform: `translateY(${Math.sin(time * 1.3) * 1.5}px)`,
-        filter: `drop-shadow(0 0 ${failed ? 10 : 18}px ${
-          failed ? "rgba(255,89,109,.24)" : `${color}35`
-        })`,
+        width: 152,
+        height: 152,
+        flex: "0 0 auto",
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: `radial-gradient(circle at 38% 32%, rgba(255,255,255,0.2), ${stage.accent}17 44%, rgba(5,8,20,0.62) 72%)`,
+        border: "1px solid rgba(255,255,255,0.2)",
+        boxShadow: `inset 0 0 32px ${stage.accent}13, 0 0 30px ${stage.accent}18`,
       }}
     >
-      <svg width="288" height="206" viewBox="0 0 288 206">
+      <svg
+        width={152}
+        height={152}
+        viewBox="0 0 152 152"
+        style={{ position: "absolute", inset: 0 }}
+        aria-hidden
+      >
         <defs>
-          <linearGradient id="backup-tape-shell" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#e9eee1" />
-            <stop offset="0.55" stopColor="#b8c5b6" />
-            <stop offset="1" stopColor="#6b7d77" />
-          </linearGradient>
-          <linearGradient id="backup-tape-label" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#182d4b" />
-            <stop offset="1" stopColor="#09172e" />
+          <linearGradient
+            id={`orbital-${stage.index}`}
+            x1="12"
+            y1="76"
+            x2="140"
+            y2="76"
+          >
+            <stop offset="0%" stopColor={stage.accent} />
+            <stop offset="100%" stopColor={stage.secondary} />
           </linearGradient>
         </defs>
-        <path
-          d="M18 12H270V166L244 194H45L18 166Z"
-          fill="url(#backup-tape-shell)"
-          stroke={COLORS.shellLight}
-          strokeWidth="4"
+        <circle
+          cx="76"
+          cy="76"
+          r="68"
+          fill="none"
+          stroke="rgba(255,255,255,0.13)"
+          strokeWidth="1.4"
+          strokeDasharray="4 8"
+          transform={`rotate(${frame * 0.14} 76 76)`}
         />
-        <rect
-          x="38"
-          y="31"
-          width="212"
-          height="111"
-          fill="url(#backup-tape-label)"
-          stroke={failed ? COLORS.coral : color}
-          strokeWidth="3"
-        />
-        <path
-          d="M70 52H218V121H70Z"
-          fill="#071424"
-          stroke="rgba(207,255,250,.42)"
-          strokeWidth="2"
-        />
-        {[95, 193].map((cx, index) => (
-          <g
-            key={`tape-reel-${cx}`}
-            transform={`rotate(${rotation * (index === 0 ? 1 : -1)} ${cx} 86)`}
-          >
-            <circle
-              cx={cx}
-              cy="86"
-              r="27"
-              fill="#cad6c9"
-              stroke={color}
-              strokeWidth="3"
-            />
-            <circle cx={cx} cy="86" r="10" fill="#0a1a2c" />
-            {[0, 90, 180, 270].map((angle) => (
-              <rect
-                key={`reel-spoke-${cx}-${angle}`}
-                x={cx - 3}
-                y="62"
-                width="6"
-                height="17"
-                fill="#324b50"
-                transform={`rotate(${angle} ${cx} 86)`}
-              />
-            ))}
-          </g>
-        ))}
-        <path
-          d="M121 86H167"
-          stroke={color}
+        <circle
+          cx="76"
+          cy="76"
+          r={radius}
+          fill="none"
+          stroke="rgba(255,255,255,0.07)"
           strokeWidth="5"
-          strokeDasharray="7 6"
-          opacity={0.65 + pulse * 0.35}
         />
-        <path
-          d="M79 157H209L226 184H62Z"
-          fill="#dce4d7"
-          stroke="#60736e"
-          strokeWidth="3"
+        <circle
+          cx="76"
+          cy="76"
+          r={radius}
+          fill="none"
+          stroke={`url(#orbital-${stage.index})`}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={circumference * (1 - ringProgress)}
+          transform="rotate(-90 76 76)"
         />
-        <rect x="121" y="164" width="46" height="15" fill="#0e2538" />
-        <rect
-          x="126"
-          y="168"
-          width={36 * clamp01(progress)}
-          height="7"
-          fill={failed ? COLORS.coral : color}
-        />
+        {ringProgress > 0.02 ? (
+          <>
+            <circle
+              cx={dotX}
+              cy={dotY}
+              r="10"
+              fill={stage.secondary}
+              opacity="0.16"
+            />
+            <circle cx={dotX} cy={dotY} r="4.2" fill="#ffffff" />
+          </>
+        ) : null}
       </svg>
+      <StrategyIcon
+        name={stage.icon}
+        color={stage.secondary}
+        progress={iconProgress}
+      />
+    </div>
+  );
+};
 
+const CornerGuides: React.FC<{
+  readonly color: string;
+  readonly opacity: number;
+}> = ({ color, opacity }) => (
+  <>
+    {[
+      { left: 0, top: 0, borderLeft: true, borderTop: true },
+      { right: 0, top: 0, borderRight: true, borderTop: true },
+      { left: 0, bottom: 0, borderLeft: true, borderBottom: true },
+      { right: 0, bottom: 0, borderRight: true, borderBottom: true },
+    ].map((corner, index) => (
+      <div
+        key={index}
+        style={{
+          position: "absolute",
+          width: 19,
+          height: 19,
+          left: corner.left,
+          right: corner.right,
+          top: corner.top,
+          bottom: corner.bottom,
+          borderLeft: corner.borderLeft ? `1px solid ${color}` : undefined,
+          borderRight: corner.borderRight ? `1px solid ${color}` : undefined,
+          borderTop: corner.borderTop ? `1px solid ${color}` : undefined,
+          borderBottom: corner.borderBottom ? `1px solid ${color}` : undefined,
+          opacity,
+        }}
+      />
+    ))}
+  </>
+);
+
+const EmptyContentBay: React.FC<{
+  readonly frame: number;
+  readonly stage: Stage;
+}> = ({ frame, stage }) => {
+  const content = phase(frame, stage.start + 44, stage.start + 108);
+  const detail = phase(frame, stage.start + 104, stage.start + 150);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        flex: 1,
+        height: 158,
+        opacity: content,
+        transform: `translateY(${(1 - content) * 18}px)`,
+      }}
+    >
       <div
         style={{
           position: "absolute",
-          left: 82,
-          top: 5,
-          width: 124,
-          height: 31,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: failed ? "#6d1730" : "#132847",
-          border: `2px solid ${failed ? COLORS.coral : color}`,
+          inset: 0,
+          borderRadius: 24,
+          background:
+            "linear-gradient(145deg, rgba(4,7,19,0.2), rgba(255,255,255,0.018))",
+          border: "1px solid rgba(255,255,255,0.065)",
+          boxShadow: "inset 0 1px 18px rgba(0,0,0,0.13)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 24,
+          right: 24,
+          top: 23,
+          bottom: 23,
         }}
       >
-        <PixelText
-          size={12}
-          spacing={1.35}
-          align="center"
-          color={failed ? "#ffe3e7" : color}
+        <CornerGuides color={stage.secondary} opacity={0.32 * detail} />
+        <div
+          style={{
+            position: "absolute",
+            left: stage.reverse ? "auto" : 0,
+            right: stage.reverse ? 0 : "auto",
+            top: 0,
+            width: 56 * detail,
+            height: 3,
+            borderRadius: 4,
+            background: `linear-gradient(90deg, ${stage.accent}, ${stage.secondary})`,
+            boxShadow: `0 0 13px ${stage.accent}50`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 34,
+            height: 1,
+            background:
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)",
+            opacity: detail,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: stage.reverse ? 0 : "auto",
+            right: stage.reverse ? "auto" : 0,
+            bottom: 0,
+            width: 88,
+            height: 20,
+            borderRadius: 10,
+            background: `${stage.accent}0c`,
+            border: `1px solid ${stage.secondary}28`,
+            opacity: detail,
+          }}
         >
-          POINT 09:05
-        </PixelText>
+          <div
+            style={{
+              position: "absolute",
+              left: stage.reverse ? 11 : "auto",
+              right: stage.reverse ? "auto" : 11,
+              top: 6,
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: stage.secondary,
+              boxShadow: `0 0 10px ${stage.secondary}`,
+            }}
+          />
+        </div>
       </div>
     </div>
   );
 };
 
-const SectorMap: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, restoreProgress }) => {
-  const incidentProgress = segment(
-    frame,
-    314,
-    402,
-    Easing.in(Easing.cubic),
-  );
-  const restoreCount =
-    frame >= 748 ? 48 : Math.min(47, Math.floor(restoreProgress * 48));
-  const isRestore = frame >= 520;
-  const verifying = frame >= 748;
-  const scanY = modulo(time * (verifying ? 145 : 92), 237);
+const StageSigil: React.FC<{
+  readonly stage: Stage;
+  readonly progress: number;
+}> = ({ stage, progress }) => {
+  const shape =
+    stage.index === 1
+      ? "M18 32L32 18L46 32L32 46Z"
+      : stage.index === 2
+        ? "M18 22H46V42H18Z"
+        : "M32 16L48 44H16Z";
 
   return (
-    <ScreenPanel
-      accent={
-        frame >= 804
-          ? COLORS.mint
-          : frame >= 300 && frame < 470
-            ? COLORS.coral
-            : COLORS.cyan
-      }
+    <div
       style={{
         position: "absolute",
-        left: 28,
-        top: 98,
-        width: 390,
-        height: 332,
-        padding: "15px 16px",
+        left: stage.reverse ? "auto" : -24,
+        right: stage.reverse ? -24 : "auto",
+        top: stage.reverse ? 174 : 20,
+        width: 64,
+        height: 64,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: `linear-gradient(145deg, ${stage.secondary}, ${stage.accent})`,
+        border: "2px solid rgba(255,255,255,0.7)",
+        boxShadow: `0 0 0 8px ${stage.accent}13, 0 10px 26px ${stage.accent}40`,
+        opacity: progress,
+        transform: `scale(${progress})`,
+        zIndex: 4,
+      }}
+    >
+      <svg width={36} height={36} viewBox="0 0 64 64" aria-hidden>
+        <path
+          d={shape}
+          fill="none"
+          stroke="#07101a"
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+        <circle cx="32" cy="32" r="4" fill="#07101a" />
+      </svg>
+    </div>
+  );
+};
+
+const GlassStageNode: React.FC<{
+  readonly frame: number;
+  readonly stage: Stage;
+}> = ({ frame, stage }) => {
+  const reveal = phase(frame, stage.start, stage.start + 74);
+  const sigil = phase(
+    frame,
+    stage.start + 90,
+    stage.start + 132,
+    Easing.out(Easing.back(1.35)),
+  );
+  const enterX = stage.reverse ? -74 : 74;
+  const radius = stage.reverse
+    ? "34px 112px 34px 112px"
+    : "112px 34px 112px 34px";
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: stage.x,
+        top: stage.y,
+        width: 710,
+        height: 240,
+        opacity: reveal,
+        transform: `translate3d(${(1 - reveal) * enterX}px, ${(1 - reveal) * 24}px, 0) scale(${0.86 + reveal * 0.14})`,
+        transformOrigin: stage.reverse ? "100% 50%" : "0% 50%",
+        zIndex: 10 + stage.index,
       }}
     >
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <DiskIcon
-            color={
-              frame >= 804
-                ? COLORS.mint
-                : frame >= 300 && frame < 470
-                  ? COLORS.coral
-                  : COLORS.cyan
-            }
-            pulse={0.5 + 0.5 * Math.sin(time * 6)}
-            failed={frame >= 345 && frame < 520}
-          />
-          <div>
-            <PixelText size={13} spacing={1.5} color={COLORS.cyanSoft}>
-              PRIMARY DISK
-            </PixelText>
-            <PixelText
-              size={10}
-              spacing={1.1}
-              color="rgba(196,220,227,.58)"
-              style={{ marginTop: 7 }}
-            >
-              FS:C // 48 SECTORS
-            </PixelText>
-          </div>
-        </div>
-        <PixelText
-          size={11}
-          spacing={1.2}
-          align="right"
-          color={
-            frame >= 804
-              ? COLORS.mint
-              : frame >= 345 && frame < 520
-                ? COLORS.coral
-                : COLORS.cyan
-          }
-        >
-          {frame >= 804
-            ? "HEALTHY"
-            : frame >= 345 && frame < 520
-              ? "DAMAGED"
-              : isRestore
-                ? "REBUILD"
-                : "ONLINE"}
-        </PixelText>
-      </div>
-
-      <div
-        style={{
           position: "absolute",
-          left: 18,
-          right: 18,
-          bottom: 17,
-          height: 205,
-          padding: 12,
-          boxSizing: "border-box",
+          inset: 0,
+          borderRadius: radius,
+          background: `linear-gradient(135deg, rgba(255,255,255,0.17) 0%, ${stage.accent}24 32%, rgba(20,25,50,0.55) 72%, ${stage.accent}15 100%)`,
+          border: "1px solid rgba(255,255,255,0.22)",
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 ${stage.accent}2b, 0 28px 70px rgba(0,0,0,0.34), 0 0 44px ${stage.accent}12`,
+          backdropFilter: "blur(26px) saturate(135%)",
           overflow: "hidden",
-          background: "rgba(2,11,23,.74)",
-          border: "1px solid rgba(125,170,185,.28)",
         }}
       >
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(8, 1fr)",
-            gap: 5,
+            position: "absolute",
+            left: stage.reverse ? 86 : 34,
+            right: stage.reverse ? 34 : 86,
+            top: 0,
+            height: 1,
+            background:
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.72), transparent)",
+            opacity: 0.58,
           }}
-        >
-          {Array.from({ length: 48 }, (_, index) => {
-            const isCorrupt = CORRUPT_INDICES.has(index);
-            const corruptOrder = [...CORRUPT_INDICES].indexOf(index);
-            const corruptionVisible =
-              isCorrupt && incidentProgress * CORRUPT_INDICES.size > corruptOrder;
-            const restored = isRestore && index < restoreCount;
-            const finish = frame >= 804;
-            const activeRestore =
-              isRestore && !finish && index === Math.min(47, restoreCount);
-            const color = finish || restored
-              ? COLORS.mint
-              : corruptionVisible || (isRestore && isCorrupt)
-                ? COLORS.coral
-                : COLORS.blue;
-            const opacity =
-              activeRestore || corruptionVisible
-                ? 1
-                : 0.62 + 0.24 * Math.sin(time * 4.4 + index * 0.31) ** 2;
-            return (
-              <div
-                key={`disk-sector-${index}`}
-                style={{
-                  height: 25,
-                  position: "relative",
-                  overflow: "hidden",
-                  opacity,
-                  background:
-                    corruptionVisible && !restored
-                      ? `linear-gradient(135deg, ${COLORS.red}, #64152b)`
-                      : `linear-gradient(135deg, ${color}, ${color}88)`,
-                  border: `1px solid ${
-                    activeRestore
-                      ? COLORS.mintSoft
-                      : corruptionVisible && !restored
-                        ? "#ffd3da"
-                        : `${color}aa`
-                  }`,
-                  boxShadow: activeRestore
-                    ? "0 0 12px rgba(98,242,175,.88)"
-                    : corruptionVisible && !restored
-                      ? "0 0 8px rgba(255,89,109,.5)"
-                      : `0 0 5px ${color}30`,
-                }}
-              >
-                {corruptionVisible && !restored ? (
-                  <>
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 4,
-                        right: 4,
-                        top: 6,
-                        height: 2,
-                        transform: "rotate(18deg)",
-                        background: "rgba(255,235,238,.8)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 4,
-                        right: 4,
-                        top: 14,
-                        height: 2,
-                        transform: "rotate(-18deg)",
-                        background: "rgba(255,235,238,.65)",
-                      }}
-                    />
-                  </>
-                ) : index % 3 === 0 ? (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 4,
-                      right: 4,
-                      top: 6,
-                      height: 2,
-                      background: "rgba(239,255,252,.5)",
-                    }}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-
-        {verifying && frame < 804 ? (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: scanY - 9,
-              height: 18,
-              background:
-                "linear-gradient(180deg, transparent, rgba(98,242,175,.68), transparent)",
-              boxShadow: "0 0 16px rgba(98,242,175,.55)",
-            }}
-          />
-        ) : null}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 270,
+            height: 270,
+            borderRadius: "50%",
+            left: stage.reverse ? "auto" : -78,
+            right: stage.reverse ? -78 : "auto",
+            top: -18,
+            background: `radial-gradient(circle, ${stage.accent}2e, transparent 68%)`,
+            filter: "blur(8px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 12,
+            borderRadius: radius,
+            border: "1px solid rgba(255,255,255,0.055)",
+          }}
+        />
       </div>
-    </ScreenPanel>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          flexDirection: stage.reverse ? "row-reverse" : "row",
+          alignItems: "center",
+          gap: 30,
+          padding: "35px 44px",
+        }}
+      >
+        <OrbitalIcon frame={frame} stage={stage} />
+        <EmptyContentBay frame={frame} stage={stage} />
+      </div>
+      <StageSigil stage={stage} progress={clamp(sigil)} />
+    </div>
   );
 };
 
-const FilePipeline: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const backupActive = frame >= 48 && frame < 252;
-  const restoreActive = frame >= 520 && frame < 748;
-  const incident = frame >= 300 && frame < 440;
-  const activeProgress = restoreActive ? restoreProgress : backupProgress;
-  const fileCursor = Math.min(
-    FILES.length,
-    Math.floor(activeProgress * FILES.length),
+const cubicPoint = (
+  t: number,
+  p0: readonly [number, number],
+  p1: readonly [number, number],
+  p2: readonly [number, number],
+  p3: readonly [number, number],
+): readonly [number, number] => {
+  const oneMinus = 1 - t;
+  return [
+    oneMinus ** 3 * p0[0] +
+      3 * oneMinus ** 2 * t * p1[0] +
+      3 * oneMinus * t ** 2 * p2[0] +
+      t ** 3 * p3[0],
+    oneMinus ** 3 * p0[1] +
+      3 * oneMinus ** 2 * t * p1[1] +
+      3 * oneMinus * t ** 2 * p2[1] +
+      t ** 3 * p3[1],
+  ];
+};
+
+const StrategyConnectors: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const first = phase(frame, 250, 350);
+  const second = phase(frame, 410, 510);
+  const completion = phase(frame, 520, 640);
+  const flow = ((frame - 520) % 150) / 150;
+  const safeFlow = frame < 520 ? 0 : flow < 0 ? flow + 1 : flow;
+  const firstPulse = cubicPoint(
+    clamp(safeFlow * 2),
+    [1139, 790],
+    [1210, 710],
+    [1110, 620],
+    [1195, 570],
   );
-  const direction = restoreActive ? -1 : 1;
-  const busColor = incident
-    ? COLORS.coral
-    : restoreActive
-      ? COLORS.mint
-      : COLORS.cyan;
+  const secondPulse = cubicPoint(
+    clamp(safeFlow * 2 - 1),
+    [1195, 570],
+    [1105, 505],
+    [1210, 390],
+    [1139, 286],
+  );
+  const pulse = safeFlow < 0.5 ? firstPulse : secondPulse;
 
   return (
-    <ScreenPanel
-      accent={busColor}
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: "absolute", inset: 0, zIndex: 5 }}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="connectorA" x1="1139" y1="790" x2="1195" y2="570">
+          <stop offset="0%" stopColor="#ff9d78" />
+          <stop offset="100%" stopColor="#a98cff" />
+        </linearGradient>
+        <linearGradient id="connectorB" x1="1195" y1="570" x2="1139" y2="286">
+          <stop offset="0%" stopColor="#a98cff" />
+          <stop offset="100%" stopColor="#70edb9" />
+        </linearGradient>
+        <filter id="connectorGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <path
+        d="M1139 790 C1210 710 1110 620 1195 570"
+        fill="none"
+        stroke="rgba(255,255,255,0.08)"
+        strokeWidth="3"
+      />
+      <path
+        d="M1139 790 C1210 710 1110 620 1195 570"
+        fill="none"
+        stroke="url(#connectorA)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        pathLength="1"
+        strokeDasharray="1"
+        strokeDashoffset={1 - first}
+        filter="url(#connectorGlow)"
+      />
+      <path
+        d="M1195 570 C1105 505 1210 390 1139 286"
+        fill="none"
+        stroke="rgba(255,255,255,0.08)"
+        strokeWidth="3"
+      />
+      <path
+        d="M1195 570 C1105 505 1210 390 1139 286"
+        fill="none"
+        stroke="url(#connectorB)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        pathLength="1"
+        strokeDasharray="1"
+        strokeDashoffset={1 - second}
+        filter="url(#connectorGlow)"
+      />
+      {frame >= 520 && completion > 0 ? (
+        <>
+          <circle
+            cx={pulse[0]}
+            cy={pulse[1]}
+            r="13"
+            fill="#ffffff"
+            opacity={0.1 * completion}
+          />
+          <circle
+            cx={pulse[0]}
+            cy={pulse[1]}
+            r="4.2"
+            fill="#ffffff"
+            opacity={completion}
+          />
+        </>
+      ) : null}
+    </svg>
+  );
+};
+
+const CopySpace: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const reveal = phase(frame, 18, 78);
+  const guides = phase(frame, 64, 144);
+
+  return (
+    <div
       style={{
         position: "absolute",
-        left: 438,
-        top: 98,
-        width: 425,
-        height: 332,
-        padding: "15px 16px",
+        left: 138,
+        top: 110,
+        width: 708,
+        height: 300,
+        opacity: reveal,
+        transform: `translateY(${(1 - reveal) * 20}px)`,
+        zIndex: 20,
       }}
     >
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          position: "absolute",
+          inset: 0,
+          borderRadius: 34,
+          background:
+            "linear-gradient(145deg, rgba(255,255,255,0.065), rgba(255,255,255,0.012) 62%, rgba(85,230,165,0.025))",
+          border: "1px solid rgba(255,255,255,0.09)",
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.13), 0 28px 80px rgba(0,0,0,0.18)",
+          backdropFilter: "blur(18px) saturate(125%)",
         }}
-      >
-        <PixelText size={13} spacing={1.5}>
-          FILE TRANSFER BUS
-        </PixelText>
-        <PixelText size={11} spacing={1.2} color={busColor}>
-          {incident
-            ? "LINK LOST"
-            : restoreActive
-              ? "BKP → SYS"
-              : frame >= 252
-                ? "SYNCED"
-                : "SYS → BKP"}
-        </PixelText>
-      </div>
-
+      />
       <div
         style={{
-          position: "relative",
-          height: 74,
-          marginTop: 14,
-          overflow: "hidden",
-          border: `1px solid ${busColor}44`,
-          background: "rgba(2,11,24,.66)",
+          position: "absolute",
+          left: 34,
+          right: 34,
+          top: 34,
+          bottom: 34,
         }}
       >
-        {[0, 1, 2].map((lineIndex) => (
+        <CornerGuides color="#b9c7ef" opacity={0.25 * guides} />
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: 84 * guides,
+            height: 4,
+            borderRadius: 4,
+            background:
+              "linear-gradient(90deg, #ff8a6b, #9b82ff 52%, #55e6a5)",
+            boxShadow: "0 0 18px rgba(155,130,255,0.35)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 52,
+            height: 1,
+            background:
+              "linear-gradient(90deg, rgba(255,138,107,0.52), rgba(155,130,255,0.32), rgba(85,230,165,0.08))",
+            transform: `scaleX(${guides})`,
+            transformOrigin: "left center",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            bottom: 14,
+            display: "flex",
+            gap: 13,
+            opacity: guides,
+          }}
+        >
+          {STAGES.map((stage) => (
+            <div
+              key={stage.index}
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: stage.index === 2 ? 2 : "50%",
+                background: stage.secondary,
+                boxShadow: `0 0 13px ${stage.accent}`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EmptySummary: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const reveal = phase(frame, 555, 640);
+  const confirmation = phase(
+    frame,
+    620,
+    690,
+    Easing.out(Easing.back(1.15)),
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 138,
+        top: 690,
+        width: 700,
+        zIndex: 20,
+        opacity: reveal,
+      }}
+    >
+      <div style={{ display: "flex", gap: 14, marginBottom: 24 }}>
+        {STAGES.map((stage, index) => {
+          const itemReveal = phase(frame, 555 + index * 28, 620 + index * 28);
+          return (
+            <div
+              key={stage.index}
+              style={{
+                position: "relative",
+                width: index === 2 ? 178 : 144,
+                height: 96,
+                borderRadius: 20,
+                background:
+                  "linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025))",
+                border: "1px solid rgba(255,255,255,0.12)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
+                opacity: itemReveal,
+                transform: `translateY(${(1 - itemReveal) * 14}px)`,
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: 17,
+                  top: 17,
+                  width: 19,
+                  height: 19,
+                  borderRadius: stage.index === 2 ? 4 : "50%",
+                  border: `2px solid ${stage.secondary}`,
+                  boxShadow: `0 0 14px ${stage.accent}52`,
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: 17,
+                  right: 17,
+                  bottom: 17,
+                  height: 22,
+                  borderRadius: 9,
+                  background: `${stage.accent}0a`,
+                  border: `1px solid ${stage.secondary}24`,
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  right: 17,
+                  top: 17,
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: stage.secondary,
+                  boxShadow: `0 0 12px ${stage.secondary}`,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          height: 84,
+          borderRadius: 25,
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          padding: "0 22px",
+          background:
+            "linear-gradient(145deg, rgba(112,237,185,0.09), rgba(255,255,255,0.02))",
+          border: "1px solid rgba(119,246,198,0.18)",
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.1), 0 0 30px rgba(86,230,171,0.07)",
+          opacity: clamp(confirmation),
+          transform: `translateY(${(1 - clamp(confirmation)) * 16}px)`,
+        }}
+      >
+        <div
+          style={{
+            width: 54,
+            height: 54,
+            flex: "0 0 auto",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background:
+              "linear-gradient(145deg, rgba(111,240,188,0.28), rgba(86,225,166,0.1))",
+            border: "1px solid rgba(119,246,198,0.54)",
+            boxShadow: "0 0 30px rgba(86,230,171,0.2)",
+          }}
+        >
+          <svg width={28} height={28} viewBox="0 0 32 32" aria-hidden>
+            <path
+              d="M7 16.5L13.2 22.5L25 10.5"
+              fill="none"
+              stroke="#82f2c8"
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+        <div
+          style={{
+            position: "relative",
+            height: 42,
+            flex: 1,
+          }}
+        >
+          <CornerGuides color="#82f2c8" opacity={0.2} />
           <div
-            key={`bus-line-${lineIndex}`}
             style={{
               position: "absolute",
               left: 18,
               right: 18,
-              top: 17 + lineIndex * 19,
-              height: 3,
-              opacity: incident ? 0.32 : 0.7,
-              background: `linear-gradient(90deg, ${busColor}22, ${busColor}, ${busColor}22)`,
-              boxShadow: `0 0 8px ${busColor}66`,
+              top: 20,
+              height: 1,
+              background:
+                "linear-gradient(90deg, rgba(130,242,200,0.12), rgba(130,242,200,0.02))",
             }}
           />
-        ))}
-
-        {(backupActive || restoreActive)
-          ? [0, 1, 2, 3].map((index) => {
-              const travel = modulo(time * 170 + index * 96, 365);
-              const x = direction === 1 ? travel : 365 - travel;
-              return (
-                <div
-                  key={`file-packet-${index}`}
-                  style={{
-                    position: "absolute",
-                    left: 12 + x,
-                    top: 10 + (index % 3) * 19,
-                    width: 18,
-                    height: 15,
-                    background: index % 2 === 0 ? busColor : COLORS.amber,
-                    border: "1px solid rgba(240,255,252,.86)",
-                    boxShadow: `0 0 11px ${
-                      index % 2 === 0 ? busColor : COLORS.amber
-                    }`,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 9,
-                      height: 2,
-                      margin: "3px 0 0 3px",
-                      background: "rgba(255,255,255,.7)",
-                    }}
-                  />
-                </div>
-              );
-            })
-          : null}
-
-        {incident
-          ? Array.from({ length: 9 }, (_, index) => (
-              <div
-                key={`bus-spark-${index}`}
-                style={{
-                  position: "absolute",
-                  left:
-                    32 +
-                    modulo(
-                      index * 43 + time * (index % 2 === 0 ? 62 : -48),
-                      350,
-                    ),
-                  top: 8 + hash01(index * 9) * 55,
-                  width: 5 + (index % 3) * 3,
-                  height: 2,
-                  opacity: 0.35 + 0.65 * Math.sin(time * 8 + index) ** 2,
-                  transform: `rotate(${index * 37}deg)`,
-                  background: index % 2 === 0 ? COLORS.coral : COLORS.amber,
-                  boxShadow: "0 0 10px rgba(255,89,109,.75)",
-                }}
-              />
-            ))
-          : null}
+        </div>
       </div>
+    </div>
+  );
+};
 
+const MinimalFooter: React.FC<{ readonly frame: number }> = ({ frame }) => {
+  const visible = phase(frame, 96, 160);
+  const complete = phase(frame, 600, 660);
+
+  return (
+    <>
       <div
         style={{
-          marginTop: 13,
-          height: 196,
-          overflow: "hidden",
-          borderTop: "1px solid rgba(122,164,181,.24)",
+          position: "absolute",
+          left: 138,
+          bottom: 74,
+          width: 460,
+          height: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          opacity: visible,
+          zIndex: 30,
         }}
       >
-        {FILES.slice(0, 5).map((file, index) => {
-          const complete = index < fileCursor;
-          const active =
-            (backupActive || restoreActive) && index === fileCursor;
-          const state = incident
-            ? index < 3
-              ? "ERR"
-              : "HALT"
-            : complete
-              ? "OK"
-              : active
-                ? restoreActive
-                  ? "RST"
-                  : "COPY"
-                : "WAIT";
-          const color = incident
-            ? index < 3
-              ? COLORS.coral
-              : "rgba(255,200,97,.55)"
-            : complete
-              ? restoreActive
-                ? COLORS.mint
-                : COLORS.cyan
-              : active
-                ? COLORS.amber
-                : "rgba(165,188,197,.38)";
+        {STAGES.map((stage, index) => {
+          const active = phase(frame, stage.start, stage.start + 90);
           return (
-            <div
-              key={file.path}
-              style={{
-                height: 38,
-                display: "grid",
-                gridTemplateColumns: "22px 1fr 57px 42px",
-                gap: 7,
-                alignItems: "center",
-                padding: "0 7px",
-                boxSizing: "border-box",
-                borderBottom: "1px solid rgba(111,137,255,.12)",
-                background: active ? `${color}10` : "transparent",
-              }}
-            >
+            <React.Fragment key={stage.index}>
               <div
                 style={{
-                  position: "relative",
-                  width: 13,
-                  height: 16,
-                  border: `1px solid ${color}`,
+                  width: 8,
+                  height: 8,
+                  borderRadius: index === 1 ? 2 : "50%",
+                  background: stage.secondary,
+                  boxShadow: `0 0 ${10 + active * 9}px ${stage.accent}`,
+                  opacity: 0.38 + active * 0.62,
                 }}
-              >
+              />
+              {index < STAGES.length - 1 ? (
                 <div
                   style={{
-                    position: "absolute",
-                    left: 3,
-                    right: 3,
-                    top: 5,
-                    height: 2,
-                    background: color,
+                    width: 100,
+                    height: 1,
+                    background: `linear-gradient(90deg, ${stage.accent}5c, rgba(255,255,255,0.05))`,
+                    transform: `scaleX(${active})`,
+                    transformOrigin: "left center",
                   }}
                 />
-              </div>
-              <PixelText
-                size={10}
-                spacing={0.45}
-                color={
-                  complete
-                    ? "rgba(214,255,249,.82)"
-                    : "rgba(182,204,213,.55)"
-                }
-                style={{
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                }}
-              >
-                {file.path}
-              </PixelText>
-              <PixelText
-                size={9}
-                spacing={0.45}
-                align="right"
-                color="rgba(171,193,201,.55)"
-              >
-                {file.size}
-              </PixelText>
-              <PixelText size={9} spacing={0.6} align="right" color={color}>
-                {state}
-              </PixelText>
-            </div>
+              ) : null}
+            </React.Fragment>
           );
         })}
       </div>
-    </ScreenPanel>
-  );
-};
-
-const BackupPanel: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const selected = frame >= 470;
-  const failed = frame >= 300 && frame < 445;
-  const done = frame >= 804;
-  const color = done || selected ? COLORS.mint : COLORS.amber;
-
-  return (
-    <ScreenPanel
-      accent={failed ? COLORS.coral : color}
-      style={{
-        position: "absolute",
-        right: 28,
-        top: 98,
-        width: 421,
-        height: 332,
-        padding: "15px 16px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <PixelText size={13} spacing={1.5}>
-          BACKUP MEDIA
-        </PixelText>
-        <PixelText
-          size={11}
-          spacing={1.2}
-          color={failed ? COLORS.coral : color}
-        >
-          {failed
-            ? "OFFLINE"
-            : done
-              ? "VERIFIED"
-              : selected
-                ? "READ MODE"
-                : backupProgress >= 1
-                  ? "LOCKED"
-                  : "WRITE MODE"}
-        </PixelText>
-      </div>
-
-      <TapeCartridge
-        frame={frame}
-        time={time}
-        backupProgress={backupProgress}
-        restoreProgress={restoreProgress}
-      />
-
       <div
         style={{
           position: "absolute",
-          left: 18,
-          right: 18,
-          bottom: 13,
-          height: 54,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 8,
-        }}
-      >
-        {[
-          ["CAPACITY", "48.0 MB"],
-          ["SNAPSHOT", "09:05"],
-          ["CRC", backupProgress >= 1 ? "A8F2 OK" : "WRITING"],
-        ].map(([label, value], index) => (
-          <div
-            key={label}
-            style={{
-              padding: "8px 7px",
-              boxSizing: "border-box",
-              border: `1px solid ${index === 1 && selected ? `${COLORS.mint}88` : "rgba(122,164,181,.23)"}`,
-              background:
-                index === 1 && selected
-                  ? "rgba(98,242,175,.08)"
-                  : "rgba(4,18,32,.4)",
-            }}
-          >
-            <PixelText size={8} spacing={0.85} color="rgba(179,202,211,.55)">
-              {label}
-            </PixelText>
-            <PixelText
-              size={10}
-              spacing={0.65}
-              color={index === 1 && selected ? COLORS.mint : COLORS.cyanSoft}
-              style={{ marginTop: 5 }}
-            >
-              {value}
-            </PixelText>
-          </div>
-        ))}
-      </div>
-    </ScreenPanel>
-  );
-};
-
-const RestoreTimeline: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-}> = ({ frame, time }) => {
-  const selecting = frame >= 430 && frame < 520;
-  const selected = frame >= 500;
-  const points = [
-    { time: "07:12", label: "AUTO", x: 0.08 },
-    { time: "07:45", label: "FILES", x: 0.36 },
-    { time: "08:20", label: "SYSTEM", x: 0.64 },
-    { time: "09:05", label: "CLEAN", x: 0.92 },
-  ] as const;
-  const scanX = selecting
-    ? 0.05 + segment(frame, 438, 494, Easing.inOut(Easing.cubic)) * 0.87
-    : 0.92;
-
-  return (
-    <ScreenPanel
-      accent={selected ? COLORS.mint : COLORS.violet}
-      style={{
-        position: "absolute",
-        left: 28,
-        right: 28,
-        top: 448,
-        height: 112,
-        padding: "13px 18px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <PixelText size={11} spacing={1.35} color="rgba(211,228,237,.7)">
-          RECOVERY POINT TIMELINE
-        </PixelText>
-        <PixelText
-          size={10}
-          spacing={1.2}
-          color={selected ? COLORS.mint : COLORS.violet}
-        >
-          {selecting ? "SCANNING POINTS" : selected ? "09:05 SELECTED" : "4 READY"}
-        </PixelText>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 55,
-          right: 55,
-          top: 58,
-          height: 4,
-          background:
-            "linear-gradient(90deg, rgba(146,120,255,.25), rgba(146,120,255,.85), rgba(84,242,229,.5))",
-          boxShadow: "0 0 10px rgba(146,120,255,.35)",
-        }}
-      >
-        {points.map((point, index) => {
-          const isSelected = selected && index === points.length - 1;
-          const visited = selecting && scanX >= point.x;
-          const color = isSelected
-            ? COLORS.mint
-            : visited
-              ? COLORS.amber
-              : COLORS.violet;
-          return (
-            <div
-              key={point.time}
-              style={{
-                position: "absolute",
-                left: `${point.x * 100}%`,
-                top: "50%",
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <div
-                style={{
-                  width: isSelected ? 18 : 13,
-                  height: isSelected ? 18 : 13,
-                  transform: `rotate(45deg) scale(${
-                    isSelected ? 1 + Math.sin(time * 6) * 0.08 : 1
-                  })`,
-                  background: color,
-                  border: "2px solid rgba(236,255,252,.78)",
-                  boxShadow: `0 0 ${isSelected ? 16 : 9}px ${color}`,
-                }}
-              />
-              <PixelText
-                size={9}
-                spacing={0.7}
-                align="center"
-                color={color}
-                style={{
-                  position: "absolute",
-                  top: 17,
-                  left: -30,
-                  width: 60,
-                  lineHeight: 1.45,
-                }}
-              >
-                {point.time}
-                <br />
-                {point.label}
-              </PixelText>
-            </div>
-          );
-        })}
-
-        {selecting ? (
-          <div
-            style={{
-              position: "absolute",
-              left: `${scanX * 100}%`,
-              top: -14,
-              width: 4,
-              height: 32,
-              transform: "translateX(-2px)",
-              background: COLORS.amber,
-              boxShadow: "0 0 14px rgba(255,200,97,.9)",
-            }}
-          />
-        ) : null}
-      </div>
-    </ScreenPanel>
-  );
-};
-
-const PhaseRail: React.FC<{ readonly frame: number }> = ({ frame }) => {
-  const phases = [
-    { label: "BACKUP", start: 0 },
-    { label: "SNAPSHOT", start: 252 },
-    { label: "INCIDENT", start: 300 },
-    { label: "RESTORE", start: 430 },
-    { label: "VERIFY", start: 748 },
-  ] as const;
-  const activeIndex =
-    frame >= 748
-      ? 4
-      : frame >= 430
-        ? 3
-        : frame >= 300
-          ? 2
-          : frame >= 252
-            ? 1
-            : 0;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: 28,
-        right: 28,
-        top: 58,
-        height: 28,
-        display: "grid",
-        gridTemplateColumns: "repeat(5, 1fr)",
-        gap: 7,
-      }}
-    >
-      {phases.map((phase, index) => {
-        const active = index === activeIndex;
-        const complete = index < activeIndex;
-        const incident = index === 2;
-        const color = complete
-          ? COLORS.mint
-          : active
-            ? incident
-              ? COLORS.coral
-              : index === 1
-                ? COLORS.amber
-                : COLORS.cyan
-            : "rgba(154,181,189,.32)";
-        return (
-          <div
-            key={phase.label}
-            style={{
-              height: 28,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: `1px solid ${color}`,
-              background: active ? `${color}15` : "rgba(6,23,39,.35)",
-              boxShadow: active ? `0 0 10px ${color}35` : undefined,
-            }}
-          >
-            <PixelText size={9} spacing={1.2} align="center" color={color}>
-              {complete ? "■" : String(index + 1).padStart(2, "0")} {phase.label}
-            </PixelText>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const FooterProgress: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const incident = frame >= 300 && frame < 430;
-  const restore = frame >= 430;
-  const progress = restore ? restoreProgress : backupProgress;
-  const visiblePercent =
-    progress >= 1 ? 100 : Math.min(99, Math.floor(progress * 100));
-  const status =
-    frame < 48
-      ? "MOUNTING BACKUP MEDIA"
-      : frame < 252
-        ? "COPYING FILES TO BACKUP"
-        : frame < 300
-          ? "RESTORE POINT CREATED"
-          : frame < 430
-            ? "SYSTEM CORRUPTION DETECTED"
-            : frame < 520
-              ? "SELECTING CLEAN RESTORE POINT"
-              : frame < 748
-                ? "RESTORING SYSTEM SECTORS"
-                : frame < 804
-                  ? "VERIFYING FILESYSTEM"
-                  : "SYSTEM RESTORED";
-  const color = incident
-    ? COLORS.coral
-    : frame >= 430
-      ? COLORS.mint
-      : frame >= 252
-        ? COLORS.amber
-        : COLORS.cyan;
-  const filled =
-    progress >= 1 ? 24 : Math.min(23, Math.floor(progress * 24));
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: 28,
-        right: 28,
-        bottom: 12,
-        height: 55,
-        padding: "8px 13px",
-        boxSizing: "border-box",
-        border: `1px solid ${color}55`,
-        background: "rgba(3,16,29,.82)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              background: color,
-              boxShadow: `0 0 9px ${color}`,
-            }}
-          />
-          <PixelText size={10} spacing={1.25} color={color}>
-            {status}
-          </PixelText>
-        </div>
-        <PixelText size={18} spacing={0.8} align="right" color={COLORS.cyanSoft}>
-          {incident ? "ERR" : `${String(visiblePercent).padStart(3, "0")}%`}
-        </PixelText>
-      </div>
-      <div
-        style={{
-          marginTop: 5,
-          height: 9,
-          display: "grid",
-          gridTemplateColumns: "repeat(24, 1fr)",
-          gap: 4,
-        }}
-      >
-        {Array.from({ length: 24 }, (_, index) => {
-          const active = incident ? index % 3 !== 1 : index < filled;
-          const latest = active && !incident && index === filled - 1;
-          return (
-            <div
-              key={`footer-segment-${index}`}
-              style={{
-                background: active ? color : "rgba(92,119,125,.18)",
-                border: `1px solid ${
-                  active ? "rgba(226,255,251,.52)" : "rgba(92,119,125,.2)"
-                }`,
-                opacity:
-                  incident && index % 2 === 0
-                    ? 0.45 + 0.55 * Math.sin(time * 12 + index) ** 2
-                    : 1,
-                boxShadow: latest ? `0 0 9px ${color}` : undefined,
-              }}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const IncidentOverlay: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-}> = ({ frame, time }) => {
-  const opacity =
-    segment(frame, 302, 320, Easing.out(Easing.cubic)) *
-    (1 - segment(frame, 412, 432, Easing.in(Easing.cubic)));
-  const reveal = Math.floor(segment(frame, 322, 350) * 28);
-  const glitch = Math.sin(frame * 2.7) * (frame < 390 ? 2.5 : 0.8);
-
-  return (
-    <AbsoluteFill
-      style={{
-        opacity,
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 45%, rgba(108,12,37,.66), rgba(42,3,18,.86))",
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          opacity: 0.27,
-          transform: `translateY(${modulo(time * 31, 7)}px)`,
-          backgroundImage:
-            "repeating-linear-gradient(180deg, rgba(255,179,190,.3) 0px, rgba(255,179,190,.3) 1px, transparent 1px, transparent 7px)",
-        }}
-      />
-      {Array.from({ length: 11 }, (_, index) => (
-        <div
-          key={`incident-glitch-${index}`}
-          style={{
-            position: "absolute",
-            left: -20 + hash01(index * 12) * 900,
-            top: 35 + index * 49 + Math.sin(time * 8 + index) * 13,
-            width: 190 + hash01(index * 22) * 570,
-            height: 3 + (index % 3) * 3,
-            opacity: 0.2 + Math.sin(time * 13 + index * 0.6) ** 2 * 0.5,
-            background:
-              index % 3 === 0 ? COLORS.amber : "rgba(255,89,109,.9)",
-            transform: `translateX(${glitch * (index % 2 === 0 ? 1 : -1)}px)`,
-            boxShadow: "0 0 11px rgba(255,89,109,.62)",
-          }}
-        />
-      ))}
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: 251,
-          width: 690,
-          minHeight: 196,
-          transform: `translate(-50%, -50%) translateX(${glitch}px)`,
-          padding: "23px 28px",
-          boxSizing: "border-box",
-          background: "linear-gradient(145deg, #68142d, #2d0819)",
-          border: "4px solid #ff91a0",
-          boxShadow:
-            "inset 3px 3px rgba(255,205,213,.19), inset -4px -4px rgba(25,0,9,.55), 0 0 42px rgba(255,89,109,.58)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 19,
-          }}
-        >
-          <div
-            style={{
-              width: 62,
-              height: 62,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "3px solid #ffe1e6",
-              background: COLORS.red,
-              boxShadow: "0 0 22px rgba(255,89,109,.8)",
-            }}
-          >
-            <PixelText size={42} spacing={0} align="center" color="#fff0f3">
-              !
-            </PixelText>
-          </div>
-          <div>
-            <PixelText size={25} spacing={2.1} color="#fff0f3">
-              {"SYSTEM CORRUPTION DETECTED".slice(0, reveal)}
-            </PixelText>
-            <PixelText
-              size={12}
-              spacing={1.55}
-              color="rgba(255,213,219,.78)"
-              style={{ marginTop: 13 }}
-            >
-              READ ERROR // PRIMARY DISK // CODE 0x7E
-            </PixelText>
-          </div>
-        </div>
-        <div
-          style={{
-            height: 2,
-            margin: "20px 0 15px",
-            background:
-              "linear-gradient(90deg, transparent, rgba(255,225,230,.65), transparent)",
-          }}
-        />
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <PixelText size={12} spacing={1.2} color={COLORS.amber}>
-            18 SECTORS UNREADABLE
-          </PixelText>
-          <PixelText size={12} spacing={1.2} color="#ffe4e8">
-            RECOVERY REQUIRED
-          </PixelText>
-        </div>
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-const WorkScreen: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const workOpacity =
-    frame < 770 ? 1 : 1 - segment(frame, 770, 786, Easing.in(Easing.cubic));
-  const incidentTint =
-    segment(frame, 300, 320) * (1 - segment(frame, 428, 464));
-
-  return (
-    <AbsoluteFill
-      style={{
-        opacity: workOpacity,
-        overflow: "hidden",
-        background: interpolateColors(
-          incidentTint,
-          [0, 1],
-          [COLORS.screen, "#2f091b"],
-        ),
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          right: 0,
-          height: 46,
-          display: "flex",
-          alignItems: "center",
-          padding: "0 15px",
-          boxSizing: "border-box",
-          background: interpolateColors(
-            incidentTint,
-            [0, 1],
-            ["#17266e", "#8c1735"],
-          ),
-          borderBottom: `3px solid ${
-            incidentTint > 0.3 ? "#ff91a0" : "#4e66dc"
-          }`,
-          boxShadow: "inset 0 2px rgba(255,255,255,.14)",
-        }}
-      >
-        <div
-          style={{
-            width: 23,
-            height: 23,
-            marginRight: 11,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: incidentTint > 0.3 ? COLORS.coral : COLORS.cyan,
-            border: "2px solid rgba(240,255,253,.8)",
-            boxShadow: `0 0 10px ${
-              incidentTint > 0.3
-                ? "rgba(255,89,109,.7)"
-                : "rgba(84,242,229,.65)"
-            }`,
-          }}
-        >
-          <PixelText size={13} spacing={0} align="center" color="#132459">
-            ↺
-          </PixelText>
-        </div>
-        <PixelText size={14} spacing={1.7} color={COLORS.shellLight}>
-          RETROSAFE BACKUP &amp; RECOVERY CONSOLE
-        </PixelText>
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-          }}
-        >
-          {["_", "□", "×"].map((glyph, index) => (
-            <div
-              key={glyph}
-              style={{
-                width: 27,
-                height: 24,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: COLORS.shellLight,
-                background:
-                  index === 2 ? "rgba(217,31,69,.8)" : "rgba(231,241,237,.1)",
-                border: "1px solid rgba(245,255,252,.38)",
-                fontFamily: "Arial, sans-serif",
-                fontSize: 14,
-                fontWeight: 900,
-              }}
-            >
-              {glyph}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <PhaseRail frame={frame} />
-      <SectorMap frame={frame} time={time} restoreProgress={restoreProgress} />
-      <FilePipeline
-        frame={frame}
-        time={time}
-        backupProgress={backupProgress}
-        restoreProgress={restoreProgress}
-      />
-      <BackupPanel
-        frame={frame}
-        time={time}
-        backupProgress={backupProgress}
-        restoreProgress={restoreProgress}
-      />
-      <RestoreTimeline frame={frame} time={time} />
-      <FooterProgress
-        frame={frame}
-        time={time}
-        backupProgress={backupProgress}
-        restoreProgress={restoreProgress}
-      />
-      <IncidentOverlay frame={frame} time={time} />
-
-      <AbsoluteFill
-        style={{
-          pointerEvents: "none",
-          opacity: 0.09,
-          backgroundImage:
-            "repeating-linear-gradient(180deg, rgba(196,255,247,.16) 0px, rgba(196,255,247,.16) 1px, transparent 1px, transparent 5px)",
-          transform: `translateY(${modulo(time * 15, 5)}px)`,
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const SuccessScreen: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-}> = ({ frame, time }) => {
-  const opacity = segment(frame, 792, 810, Easing.out(Easing.cubic));
-  const icon = segment(frame, 796, 824, Easing.out(Easing.back(1.35)));
-  const headline = segment(frame, 804, 832, Easing.out(Easing.cubic));
-  const stats = segment(frame, 816, 844, Easing.out(Easing.cubic));
-  const ring = time * 18;
-  const pulse = 0.5 + 0.5 * Math.sin(time * TAU * 0.85);
-
-  return (
-    <AbsoluteFill
-      style={{
-        opacity,
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 42%, rgba(24,116,88,.94), rgba(4,31,38,.98) 66%, #03121e 100%)",
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          opacity: 0.17,
-          backgroundImage:
-            "linear-gradient(rgba(138,255,210,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(138,255,210,.18) 1px, transparent 1px)",
-          backgroundSize: "44px 44px",
-          backgroundPosition: `${modulo(time * 8, 44)}px ${modulo(time * 4, 44)}px`,
-          maskImage:
-            "radial-gradient(circle at 50% 48%, #000 0%, rgba(0,0,0,.7) 55%, transparent 90%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: 206,
-          width: 194,
-          height: 194,
-          transform: `translate(-50%, -50%) scale(${0.72 + icon * 0.28})`,
-          opacity: icon,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            border: "2px dashed rgba(98,242,175,.76)",
-            borderRadius: "50%",
-            transform: `rotate(${ring}deg)`,
-            boxShadow: "0 0 30px rgba(98,242,175,.28)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 20,
-            border: "1px solid rgba(216,255,234,.38)",
-            borderRadius: "50%",
-            transform: `rotate(${-ring * 0.66}deg)`,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: 48,
-            top: 48,
-            width: 98,
-            height: 98,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transform: "rotate(45deg)",
-            background:
-              "linear-gradient(145deg, rgba(216,255,234,.98), rgba(98,242,175,.88))",
-            border: "4px solid #edfff5",
-            boxShadow: `0 0 ${25 + pulse * 20}px rgba(98,242,175,.7)`,
-          }}
-        >
-          <div style={{ transform: "rotate(-45deg)" }}>
-            <CheckGlyph size={64} color="#126346" stroke={4} />
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 322,
-          opacity: headline,
-          transform: `translateY(${18 * (1 - headline)}px)`,
-        }}
-      >
-        <PixelText
-          size={50}
-          spacing={5.4}
-          align="center"
-          color={COLORS.mintSoft}
-          style={{
-            textShadow:
-              "0 0 13px rgba(98,242,175,.82), 0 0 34px rgba(98,242,175,.38)",
-          }}
-        >
-          SYSTEM RESTORED
-        </PixelText>
-        <PixelText
-          size={14}
-          spacing={2.8}
-          align="center"
-          color="rgba(216,255,234,.74)"
-          style={{ marginTop: 16 }}
-        >
-          RESTORE POINT 09:05 // FILESYSTEM ONLINE
-        </PixelText>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 188,
-          right: 188,
-          top: 438,
-          height: 84,
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 16,
-          opacity: stats,
-          transform: `translateY(${14 * (1 - stats)}px)`,
-        }}
-      >
-        {[
-          ["SECTORS", "48 / 48", "RECOVERED"],
-          ["CHECKSUM", "A8F2", "VERIFIED"],
-          ["SYSTEM", "100%", "HEALTHY"],
-        ].map(([label, value, status]) => (
-          <div
-            key={label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 18,
-              border: "1px solid rgba(98,242,175,.46)",
-              background:
-                "linear-gradient(145deg, rgba(98,242,175,.12), rgba(5,39,42,.7))",
-              boxShadow: "inset 1px 1px rgba(222,255,237,.13)",
-            }}
-          >
-            <CheckGlyph size={26} color={COLORS.mint} stroke={3} />
-            <div>
-              <PixelText size={9} spacing={1.2} color="rgba(195,236,216,.58)">
-                {label}
-              </PixelText>
-              <PixelText
-                size={17}
-                spacing={1.2}
-                color={COLORS.mintSoft}
-                style={{ marginTop: 4 }}
-              >
-                {value}
-              </PixelText>
-              <PixelText
-                size={8}
-                spacing={1.1}
-                color={COLORS.mint}
-                style={{ marginTop: 3 }}
-              >
-                {status}
-              </PixelText>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: 551,
-          width: 250,
-          height: 46,
-          transform: `translateX(-50%) scale(${0.9 + stats * 0.1})`,
-          opacity: stats,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 11,
-          border: "2px solid rgba(225,255,239,.72)",
-          background:
-            "linear-gradient(180deg, rgba(98,242,175,.38), rgba(17,111,78,.52))",
-          boxShadow: "0 0 20px rgba(98,242,175,.25)",
-        }}
-      >
-        <div
-          style={{
-            width: 9,
-            height: 9,
-            background: COLORS.mintSoft,
-            boxShadow: "0 0 9px rgba(216,255,234,.9)",
-          }}
-        />
-        <PixelText size={12} spacing={1.6} color={COLORS.mintSoft}>
-          SAFE TO RESTART
-        </PixelText>
-      </div>
-
-      <AbsoluteFill
-        style={{
-          opacity: 0.1,
-          backgroundImage:
-            "repeating-linear-gradient(180deg, rgba(201,255,226,.18) 0px, rgba(201,255,226,.18) 1px, transparent 1px, transparent 5px)",
-          transform: `translateY(${modulo(time * 13, 5)}px)`,
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const ComputerShell: React.FC<{
-  readonly frame: number;
-  readonly time: number;
-  readonly backupProgress: number;
-  readonly restoreProgress: number;
-}> = ({ frame, time, backupProgress, restoreProgress }) => {
-  const entrance = segment(frame, 0, 44, Easing.out(Easing.back(1.15)));
-  const incidentPush =
-    segment(frame, 300, 345, Easing.inOut(Easing.cubic)) *
-    (1 - segment(frame, 430, 590, Easing.inOut(Easing.cubic)));
-  const endingPull = segment(frame, 792, 899, Easing.inOut(Easing.cubic));
-  const incidentShake =
-    frame >= 318 && frame < 410
-      ? Math.sin(frame * 2.4) * (1 - segment(frame, 382, 410)) * 2.2
-      : 0;
-  const scale =
-    (0.92 + entrance * 0.08) * (1 + incidentPush * 0.055 - endingPull * 0.018);
-  const screenFlicker =
-    frame >= 300 && frame < 420
-      ? 0.92 + 0.08 * Math.sin(frame * 1.9) ** 2
-      : 1;
-  const powerColor = frame >= 804 ? COLORS.mint : COLORS.cyan;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        width: 1500,
-        height: 900,
-        opacity: segment(frame, 0, 28),
-        transform: `translate(-50%, -50%) translateX(${incidentShake}px) translateY(${
-          22 * (1 - entrance) + endingPull * 5
-        }px) scale(${scale})`,
-        transformOrigin: "50% 49%",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 22,
-          top: 16,
-          width: 1456,
-          height: 756,
-          borderRadius: 30,
-          background:
-            "linear-gradient(145deg, #fcfdef 0%, #dfe6d6 45%, #aebdb0 100%)",
-          border: "5px solid #647873",
-          boxShadow:
-            "inset 6px 6px rgba(255,255,255,.88), inset -8px -8px rgba(65,84,79,.3), 0 45px 70px rgba(0,10,25,.48)",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: 54,
-            top: 47,
-            width: 1340,
-            height: 640,
-            overflow: "hidden",
-            borderRadius: "28px 28px 34px 34px / 22px 22px 42px 42px",
-            background: COLORS.black,
-            border: "12px solid #334944",
-            boxShadow:
-              "inset 0 0 38px rgba(0,0,0,.9), inset 0 0 0 4px rgba(221,235,222,.34), 0 0 0 3px #788b84",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              opacity: screenFlicker,
-              overflow: "hidden",
-            }}
-          >
-            <WorkScreen
-              frame={frame}
-              time={time}
-              backupProgress={backupProgress}
-              restoreProgress={restoreProgress}
-            />
-            <SuccessScreen frame={frame} time={time} />
-          </div>
-
-          <AbsoluteFill
-            style={{
-              pointerEvents: "none",
-              background:
-                "radial-gradient(ellipse at center, transparent 55%, rgba(0,4,9,.34) 88%, rgba(0,2,7,.7) 100%)",
-              boxShadow: "inset 0 0 36px rgba(0,0,0,.68)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: 92,
-              top: 22,
-              width: 720,
-              height: 85,
-              borderRadius: "50%",
-              transform: "rotate(-4deg)",
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,.13), transparent)",
-              filter: "blur(9px)",
-              pointerEvents: "none",
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            right: 40,
-            bottom: 17,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              background: powerColor,
-              boxShadow: `0 0 ${10 + Math.sin(time * 4) * 3}px ${powerColor}`,
-            }}
-          />
-          <PixelText size={10} spacing={1.5} color={COLORS.inkSoft}>
-            POWER
-          </PixelText>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 62,
-            bottom: 19,
-            display: "flex",
-            gap: 7,
-          }}
-        >
-          {Array.from({ length: 16 }, (_, index) => (
-            <div
-              key={`vent-${index}`}
-              style={{
-                width: 3,
-                height: 14,
-                background: "rgba(66,85,80,.46)",
-                boxShadow: "1px 0 rgba(255,255,255,.45)",
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 142,
-          top: 742,
-          width: 1216,
-          height: 132,
-          transform: "perspective(650px) rotateX(55deg)",
-          transformOrigin: "50% 0%",
-          borderRadius: "12px 12px 34px 34px",
-          background:
-            "linear-gradient(180deg, #eef2e4, #b5c2b5 66%, #71837e)",
-          border: "4px solid #627772",
-          boxShadow:
-            "inset 4px 4px rgba(255,255,255,.75), inset -5px -6px rgba(57,76,71,.28), 0 25px 35px rgba(0,11,24,.4)",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: 55,
-            right: 55,
-            top: 25,
-            height: 70,
-            display: "grid",
-            gridTemplateColumns: "repeat(18, 1fr)",
-            gridTemplateRows: "repeat(3, 1fr)",
-            gap: 7,
-          }}
-        >
-          {Array.from({ length: 54 }, (_, index) => (
-            <div
-              key={`keyboard-key-${index}`}
-              style={{
-                borderRadius: 2,
-                background:
-                  index === 47
-                    ? "linear-gradient(180deg, #80e7d7, #3a9e96)"
-                    : "linear-gradient(180deg, #f7f9ec, #aebbae)",
-                border: "1px solid rgba(77,96,91,.66)",
-                boxShadow:
-                  "inset 1px 1px rgba(255,255,255,.8), 0 2px rgba(58,77,72,.24)",
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 380,
-          top: 862,
-          width: 740,
+          right: 138,
+          bottom: 70,
+          width: 96,
           height: 18,
-          borderRadius: "50%",
-          background: "rgba(0,8,20,.44)",
-          filter: "blur(17px)",
+          borderRadius: 9,
+          background:
+            "linear-gradient(90deg, rgba(255,138,107,0.08), rgba(155,130,255,0.1), rgba(85,230,165,0.12))",
+          border: "1px solid rgba(255,255,255,0.08)",
+          opacity: visible,
+          zIndex: 30,
         }}
-      />
-    </div>
+      >
+        <div
+          style={{
+            position: "absolute",
+            right: 5,
+            top: 4,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: complete > 0.8 ? "#70edb9" : "#ff9b77",
+            boxShadow:
+              complete > 0.8
+                ? "0 0 14px rgba(112,237,185,0.8)"
+                : "0 0 14px rgba(255,155,119,0.8)",
+          }}
+        />
+      </div>
+    </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const time = frame / fps;
-  const backupProgress = getBackupProgress(frame);
-  const restoreProgress = getRestoreProgress(frame);
+  const fadeIn = phase(frame, 0, 30, Easing.out(Easing.quad));
+  const fadeOut = 1 - phase(frame, 850, TOTAL_FRAMES - 1, Easing.in(Easing.quad));
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
+        backgroundColor: "#02040a",
         overflow: "hidden",
-        background: COLORS.deep,
       }}
     >
-      <AmbientBackground frame={frame} time={time} />
-      <ComputerShell
-        frame={frame}
-        time={time}
-        backupProgress={backupProgress}
-        restoreProgress={restoreProgress}
-      />
-      <AbsoluteFill
-        style={{
-          pointerEvents: "none",
-          opacity: 0.05,
-          backgroundImage:
-            "repeating-linear-gradient(180deg, rgba(208,255,247,.2) 0px, rgba(208,255,247,.2) 1px, transparent 1px, transparent 4px)",
-          transform: `translateY(${modulo(time * 12, 4)}px)`,
-          mixBlendMode: "screen",
-        }}
-      />
+      <AbsoluteFill style={{ opacity: fadeIn * fadeOut }}>
+        <Background frame={frame} />
+        <StrategyConnectors frame={frame} />
+        <CopySpace frame={frame} />
+        {STAGES.map((stage) => (
+          <GlassStageNode key={stage.index} frame={frame} stage={stage} />
+        ))}
+        <EmptySummary frame={frame} />
+        <MinimalFooter frame={frame} />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
