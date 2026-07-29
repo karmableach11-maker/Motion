@@ -22,7 +22,6 @@ type IconName = "users-round" | "search" | "goal";
 
 type CardData = {
   step: string;
-  label: string;
   icon: IconName;
   y: number;
   start: number;
@@ -30,13 +29,11 @@ type CardData = {
   color: string;
   colorDeep: string;
   colorSoft: string;
-  labelColor: string;
 };
 
 const cards: CardData[] = [
   {
     step: "STEP 01",
-    label: "PEOPLE",
     icon: "users-round",
     y: 130,
     start: 174,
@@ -44,11 +41,9 @@ const cards: CardData[] = [
     color: "#FF7000",
     colorDeep: "#E94A00",
     colorSoft: "#FF9B2F",
-    labelColor: "#FFFFFF",
   },
   {
     step: "STEP 02",
-    label: "RESEARCH",
     icon: "search",
     y: 445,
     start: 340,
@@ -56,11 +51,9 @@ const cards: CardData[] = [
     color: "#C9CBCE",
     colorDeep: "#AEB1B6",
     colorSoft: "#E1E3E5",
-    labelColor: "#FFFFFF",
   },
   {
     step: "STEP 03",
-    label: "GOAL",
     icon: "goal",
     y: 760,
     start: 506,
@@ -68,7 +61,6 @@ const cards: CardData[] = [
     color: "#315776",
     colorDeep: "#173E5F",
     colorSoft: "#4D7390",
-    labelColor: "#FFFFFF",
   },
 ];
 
@@ -262,7 +254,6 @@ const InfoCard: React.FC<{
   const opacity = easeOut(local, 0, 26);
   const iconDraw = ease(local, 26, 104);
   const badgeIn = easeOut(local, 30, 72);
-  const labelIn = easeOut(local, 62, 108);
   const pulseStart = data.start + 102;
   const pulseEnvelope =
     easeOut(frame, pulseStart, pulseStart + 18) *
@@ -360,33 +351,6 @@ const InfoCard: React.FC<{
       >
         {data.step}
       </text>
-
-      <g
-        transform={`translate(${(1 - labelIn) * 24} 0)`}
-        opacity={labelIn}
-      >
-        <text
-          x={582}
-          y={103}
-          fill={data.labelColor}
-          fontFamily="'Arial Narrow', 'Roboto Condensed', Arial, sans-serif"
-          fontSize={31}
-          fontWeight={800}
-          textAnchor="middle"
-          letterSpacing={0.2}
-        >
-          {data.label}
-        </text>
-        <rect
-          x={542}
-          y={121}
-          width={80 * accentOpacity}
-          height={4}
-          rx={2}
-          fill="#FFFFFF"
-          opacity={0.56}
-        />
-      </g>
 
       <g opacity={0.55 * accentOpacity}>
         <circle cx={744} cy={96} r={4} fill="#FFFFFF" />
