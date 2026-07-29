@@ -8,800 +8,653 @@ import {
   useVideoConfig,
 } from "remotion";
 
-type IconProps = {
-  progress: number;
-};
+type IconName = "foundation" | "traction" | "scale" | "leadership";
 
-type CardData = {
+type Milestone = {
   number: string;
-  eyebrow: string;
   label: string;
   color: string;
-  colorDark: string;
-  colorLight: string;
-  icon: React.FC<IconProps>;
+  accent: string;
+  icon: IconName;
+  start: number;
+  x: number;
+  y: number;
+  bars: readonly number[];
 };
 
-const clamp: Parameters<typeof interpolate>[3] = {
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
-};
-
-const iconPhases = (progress: number) => ({
-  line: interpolate(progress, [0, 0.58], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  }),
-  fill: interpolate(progress, [0.48, 1], [0, 1], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  }),
-});
-
-const EnergyIcon: React.FC<IconProps> = ({progress}) => {
-  const {line, fill} = iconPhases(progress);
-  const rayScale = interpolate(progress, [0.1, 0.76], [0.72, 1], clamp);
-
-  return (
-    <svg width="166" height="166" viewBox="0 0 166 166">
-      <g
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={1 - fill * 0.72}
-      >
-        <circle
-          cx="83"
-          cy="83"
-          r="52"
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - line}
-        />
-        <path
-          d="M92 35 L58 89 H80 L73 131 L109 72 H86 Z"
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - line}
-        />
-      </g>
-      <circle
-        cx="83"
-        cy="83"
-        r={52 * rayScale}
-        fill="none"
-        stroke="rgba(255,255,255,0.3)"
-        strokeWidth="12"
-        opacity={fill}
-      />
-      <path
-        d="M92 35 L58 89 H80 L73 131 L109 72 H86 Z"
-        fill="#FFFFFF"
-        opacity={fill}
-        transform={`translate(${83 * (1 - 0.88 - fill * 0.12)} ${83 * (1 - 0.88 - fill * 0.12)}) scale(${0.88 + fill * 0.12})`}
-        style={{transformOrigin: "83px 83px"}}
-      />
-    </svg>
-  );
-};
-
-// Geometry adapted from Lucide Icons (ISC License):
-// https://lucide.dev/icons/recycle
-// https://lucide.dev/icons/gauge
-// https://lucide.dev/icons/chart-no-axes-combined
-const RecycleIcon: React.FC<IconProps> = ({progress}) => {
-  const {line, fill} = iconPhases(progress);
-  const rotation = interpolate(progress, [0, 1], [-12, 0], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const paths = [
-    "M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5",
-    "M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12",
-    "m14 16-3 3 3 3",
-    "M8.293 13.596 7.196 9.5 3.1 10.598",
-    "m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843",
-    "m13.378 9.633 4.096 1.098 1.097-4.096",
-  ];
-
-  return (
-    <svg width="166" height="166" viewBox="0 0 24 24">
-      <circle
-        cx="12"
-        cy="12"
-        r="10.35"
-        fill="rgba(255,255,255,0.08)"
-        stroke="rgba(255,255,255,0.2)"
-        strokeWidth="0.45"
-        opacity={fill}
-      />
-      <g
-        fill="none"
-        stroke="#FFFFFF"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        transform={`rotate(${rotation} 12 12)`}
-        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
-      >
-        {paths.map((path, index) => {
-          const pathProgress = interpolate(
-            line,
-            [index * 0.055, 0.58 + index * 0.055],
-            [0, 1],
-            clamp,
-          );
-          return (
-          <path
-            key={path}
-            d={path}
-            pathLength={1}
-            strokeDasharray={1}
-            strokeDashoffset={1 - pathProgress}
-            strokeWidth={1.02 + fill * 0.42}
-            opacity={0.8 + fill * 0.2}
-          />
-          );
-        })}
-      </g>
-      <circle
-        cx="12"
-        cy="12"
-        r="1.05"
-        fill="rgba(255,255,255,0.2)"
-        stroke="#FFFFFF"
-        strokeWidth="0.32"
-        opacity={fill}
-      />
-    </svg>
-  );
-};
-
-const EfficiencyIcon: React.FC<IconProps> = ({progress}) => {
-  const {line, fill} = iconPhases(progress);
-  const needleRotation = interpolate(progress, [0.22, 1], [-58, 28], {
-    ...clamp,
-    easing: Easing.out(Easing.back(1.1)),
-  });
-  const ticks = [-62, -31, 0, 31, 62];
-
-  return (
-    <svg width="166" height="166" viewBox="0 0 24 24">
-      <circle
-        cx="12"
-        cy="12"
-        r="10.35"
-        fill="rgba(255,255,255,0.08)"
-        stroke="rgba(255,255,255,0.2)"
-        strokeWidth="0.45"
-        opacity={fill}
-      />
-      <path
-        d="M3.34 19a10 10 0 1 1 17.32 0"
-        fill="none"
-        stroke="rgba(255,255,255,0.24)"
-        strokeWidth="1.38"
-        strokeLinecap="round"
-        opacity={fill}
-      />
-      <path
-        d="M3.34 19a10 10 0 1 1 17.32 0"
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={1.04 + fill * 0.4}
-        strokeLinecap="round"
-        pathLength={1}
-        strokeDasharray={1}
-        strokeDashoffset={1 - line}
-        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
-      />
-      <g transform="translate(12 14)">
-        {ticks.map((angle, index) => {
-          const tickProgress = interpolate(
-            line,
-            [0.1 + index * 0.06, 0.54 + index * 0.055],
-            [0, 1],
-            clamp,
-          );
-          return (
-            <line
-              key={angle}
-              x1="0"
-              y1="-7.75"
-              x2="0"
-              y2="-6.45"
-              stroke="#FFFFFF"
-              strokeWidth="0.68"
-              strokeLinecap="round"
-              opacity={tickProgress}
-              transform={`rotate(${angle})`}
-            />
-          );
-        })}
-      </g>
-      <g transform={`rotate(${needleRotation} 12 14)`}>
-        <line
-          x1="12"
-          y1="14"
-          x2="12"
-          y2="7.35"
-          stroke="#FFFFFF"
-          strokeWidth={0.84 + fill * 0.22}
-          strokeLinecap="round"
-          pathLength={1}
-          strokeDasharray={1}
-          strokeDashoffset={1 - line}
-          style={{filter: "drop-shadow(0 1px 1px rgba(0,48,40,0.22))"}}
-        />
-        <circle cx="12" cy="14" r="1.48" fill="#FFFFFF" opacity={fill} />
-      </g>
-      <circle
-        cx="12"
-        cy="14"
-        r="1.18"
-        fill="#FFFFFF"
-        opacity={fill}
-      />
-      <circle
-        cx="12"
-        cy="14"
-        r="0.48"
-        fill="rgba(8,121,111,0.78)"
-        opacity={fill}
-      />
-    </svg>
-  );
-};
-
-const GrowthIcon: React.FC<IconProps> = ({progress}) => {
-  const {line, fill} = iconPhases(progress);
-  const bars = [
-    {d: "M4 18.463V21", delay: 0.12},
-    {d: "M8 14.656V21", delay: 0.2},
-    {d: "M12 16V21", delay: 0.28},
-    {d: "M16 14.639V21", delay: 0.36},
-    {d: "M20 10.656V21", delay: 0.44},
-  ];
-  const trend = interpolate(progress, [0.08, 0.72], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const points = [
-    {cx: 2, cy: 15},
-    {cx: 9, cy: 8.354},
-    {cx: 13, cy: 11.646},
-    {cx: 22, cy: 3},
-  ];
-
-  return (
-    <svg width="166" height="166" viewBox="0 0 24 24">
-      <circle
-        cx="12"
-        cy="12"
-        r="10.35"
-        fill="rgba(255,255,255,0.08)"
-        stroke="rgba(255,255,255,0.2)"
-        strokeWidth="0.45"
-        opacity={fill}
-      />
-      {bars.map((bar) => {
-        const barProgress = interpolate(
-          progress,
-          [bar.delay, Math.min(1, bar.delay + 0.42)],
-          [0, 1],
-          {
-            ...clamp,
-            easing: Easing.out(Easing.cubic),
-          },
-        );
-        return (
-          <path
-            key={bar.d}
-            d={bar.d}
-            fill="none"
-            stroke="#FFFFFF"
-            strokeWidth={1.02 + fill * 0.42}
-            strokeLinecap="round"
-            pathLength={1}
-            strokeDasharray={1}
-            strokeDashoffset={1 - barProgress}
-            opacity={0.82 + fill * 0.18}
-          />
-        );
-      })}
-      <path
-        d="m2 15 6.647-6.646a.5.5 0 0 1 .707 0l3.292 3.292a.5.5 0 0 0 .708 0L22 3"
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={1.05 + fill * 0.38}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pathLength={1}
-        strokeDasharray={1}
-        strokeDashoffset={1 - trend}
-        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
-      />
-      <path
-        d="M18.5 3H22v3.5"
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={1.05 + fill * 0.38}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pathLength={1}
-        strokeDasharray={1}
-        strokeDashoffset={1 - trend}
-      />
-      {points.map((point, index) => {
-        const pointProgress = interpolate(
-          fill,
-          [index * 0.11, 0.55 + index * 0.09],
-          [0, 1],
-          clamp,
-        );
-        return (
-          <circle
-            key={`${point.cx}-${point.cy}`}
-            cx={point.cx}
-            cy={point.cy}
-            r={0.55 + pointProgress * 0.18}
-            fill="#FFFFFF"
-            opacity={pointProgress}
-          />
-        );
-      })}
-    </svg>
-  );
-};
-
-const cards: CardData[] = [
+const MILESTONES: readonly Milestone[] = [
   {
     number: "01",
-    eyebrow: "CLEAN",
-    label: "ENERGY",
-    color: "#0B8F77",
-    colorDark: "#076454",
-    colorLight: "#42C3A4",
-    icon: EnergyIcon,
+    label: "FOUNDATION",
+    color: "#2B59C3",
+    accent: "#7798F3",
+    icon: "foundation",
+    start: 54,
+    x: 150,
+    y: 666,
+    bars: [0.34, 0.54, 0.76],
   },
   {
     number: "02",
-    eyebrow: "CIRCULAR",
-    label: "RECYCLE",
-    color: "#079E8F",
-    colorDark: "#057166",
-    colorLight: "#52CCB8",
-    icon: RecycleIcon,
+    label: "TRACTION",
+    color: "#007F8B",
+    accent: "#44CBD3",
+    icon: "traction",
+    start: 214,
+    x: 550,
+    y: 531,
+    bars: [0.44, 0.68, 0.88],
   },
   {
     number: "03",
-    eyebrow: "SMART",
-    label: "EFFICIENCY",
-    color: "#08A99A",
-    colorDark: "#08796F",
-    colorLight: "#61D2C1",
-    icon: EfficiencyIcon,
+    label: "SCALE",
+    color: "#8A5BC4",
+    accent: "#B997E4",
+    icon: "scale",
+    start: 359,
+    x: 950,
+    y: 396,
+    bars: [0.58, 0.78, 1],
   },
   {
     number: "04",
-    eyebrow: "POSITIVE",
-    label: "GROWTH",
-    color: "#19A979",
-    colorDark: "#0D7554",
-    colorLight: "#66D1A6",
-    icon: GrowthIcon,
+    label: "LEADERSHIP",
+    color: "#DD653C",
+    accent: "#F6A077",
+    icon: "leadership",
+    start: 489,
+    x: 1350,
+    y: 261,
+    bars: [0.68, 0.88, 1],
   },
 ];
 
-const CARD_WIDTH = 326;
-const CARD_HEIGHT = 526;
-const GAP = 38;
-const GROUP_WIDTH = CARD_WIDTH * cards.length + GAP * (cards.length - 1);
-const START_X = (1920 - GROUP_WIDTH) / 2;
-const CARD_TOP = 263;
+const CARD_WIDTH = 300;
+const CARD_HEIGHT = 208;
+const CARD_RADIUS = 24;
+const CONNECTOR_LENGTH = 170;
+const LABEL_X = 136;
+const LABEL_RIGHT_PADDING = 24;
+const LABEL_MAX_WIDTH = CARD_WIDTH - LABEL_X - LABEL_RIGHT_PADDING;
 
-const SustainableCard: React.FC<{
-  data: CardData;
+const clamp = (value: number) => Math.max(0, Math.min(1, value));
+
+const smooth = (value: number) =>
+  Easing.inOut(Easing.cubic)(clamp(value));
+
+const easeOut = (value: number) =>
+  Easing.out(Easing.cubic)(clamp(value));
+
+const range = (frame: number, start: number, end: number) =>
+  smooth((frame - start) / (end - start));
+
+// Lucide Static v1.27.0 — ISC license.
+// Source icons: Landmark, ChartNoAxesCombined, ChartSpline, and Crown.
+const LUCIDE_ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
+  foundation: [
+    "M10 18v-7",
+    "M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z",
+    "M14 18v-7",
+    "M18 18v-7",
+    "M3 22h18",
+    "M6 18v-7",
+  ],
+  traction: [
+    "M12 16v5",
+    "M16 14.639V21",
+    "M20 10.656V21",
+    "m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15",
+    "M4 18.463V21",
+    "M8 14.656V21",
+  ],
+  scale: [
+    "M3 3v16a2 2 0 0 0 2 2h16",
+    "M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7",
+  ],
+  leadership: [
+    "M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z",
+    "M5 21h14",
+  ],
+};
+
+const Icon: React.FC<{
+  type: IconName;
+  color: string;
+  draw: number;
+}> = ({type, color, draw}) => {
+  const paths = LUCIDE_ICON_PATHS[type];
+  const iconScale = type === "leadership" ? 3.05 : 3.18;
+
+  return (
+    <g
+      opacity={interpolate(draw, [0, 0.12, 1], [0, 1, 1])}
+      transform={`translate(0 ${(1 - easeOut(draw)) * 9}) scale(${
+        0.92 + easeOut(draw) * 0.08
+      })`}
+    >
+      <g
+        transform={`translate(${-12 * iconScale} ${-12 * iconScale}) scale(${iconScale})`}
+        filter="url(#icon-glow)"
+      >
+        {paths.map((path, pathIndex) => {
+          const delay = pathIndex * 0.055;
+          const localDraw = clamp((draw - delay) / (1 - delay));
+          const dash = type === "leadership" ? 104 : 72;
+
+          return (
+            <path
+              key={`${type}-${pathIndex}`}
+              d={path}
+              fill="none"
+              stroke={color}
+              strokeWidth="1.55"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={dash}
+              strokeDashoffset={dash * (1 - localDraw)}
+              opacity={interpolate(localDraw, [0, 0.1, 1], [0, 1, 1])}
+            />
+          );
+        })}
+      </g>
+    </g>
+  );
+};
+
+const MilestoneCard: React.FC<{
+  milestone: Milestone;
   index: number;
   frame: number;
   fps: number;
-}> = ({data, index, frame, fps}) => {
-  const start = 36 + index * 96;
-  const localFrame = Math.max(0, frame - start);
+}> = ({milestone, index, frame, fps}) => {
   const entrance = spring({
-    frame: localFrame,
     fps,
-    durationInFrames: 86,
+    frame: frame - milestone.start,
+    durationInFrames: 78,
     config: {
-      damping: 15,
-      mass: 0.82,
-      stiffness: 92,
+      damping: 18,
+      stiffness: 118,
+      mass: 0.92,
     },
   });
-  const opacityIn = interpolate(frame, [start, start + 18], [0, 1], clamp);
-  const exit = interpolate(frame, [824 + index * 4, 898], [1, 0], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const iconProgress = interpolate(
-    frame,
-    [start + 43, start + 128],
-    [0, 1],
-    {
-      ...clamp,
-      easing: Easing.inOut(Easing.cubic),
-    },
-  );
-  const copyProgress = interpolate(
-    frame,
-    [start + 88, start + 132],
-    [0, 1],
-    {
-      ...clamp,
-      easing: Easing.out(Easing.cubic),
-    },
-  );
-  const cornerProgress = interpolate(
-    frame,
-    [start + 18, start + 64],
-    [0, 1],
-    {
-      ...clamp,
-      easing: Easing.out(Easing.cubic),
-    },
-  );
-  const shimmerX = interpolate(frame, [602, 676], [-170, CARD_WIDTH + 170], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const shimmerOpacity = interpolate(
-    frame,
-    [590, 610, 660, 686],
-    [0, 0.5, 0.5, 0],
-    clamp,
-  );
-  const climaxGlow = interpolate(
-    frame,
-    [584, 620, 675, 708],
-    [0, 1, 1, 0],
-    clamp,
-  );
-  const floatY =
-    Math.sin((frame + index * 18) / 34) *
-    2.2 *
-    interpolate(frame, [start + 110, start + 170], [0, 1], clamp);
-  const Icon = data.icon;
+  const outline = range(frame, milestone.start + 4, milestone.start + 54);
+  const iconDraw = range(frame, milestone.start + 24, milestone.start + 94);
+  const labelIn = range(frame, milestone.start + 58, milestone.start + 91);
+  const barsIn = range(frame, milestone.start + 76, milestone.start + 120);
+  const pulse = range(frame, milestone.start + 94, milestone.start + 154);
+  const pulseOpacity =
+    frame >= milestone.start + 94 ? (1 - easeOut(pulse)) * 0.3 : 0;
+  const finalPulseStart = 655 + index * 46;
+  const finalPulse = range(frame, finalPulseStart, finalPulseStart + 66);
+  const finalPulseOpacity =
+    frame >= finalPulseStart ? (1 - easeOut(finalPulse)) * 0.2 : 0;
+  const activePulse =
+    frame < 640 ? pulse : finalPulse;
+  const activePulseOpacity =
+    frame < 640 ? pulseOpacity : finalPulseOpacity;
+
+  const translateX = (1 - entrance) * -34;
+  const translateY = (1 - entrance) * 54;
+  const scale = 0.93 + entrance * 0.07;
+  const outlineLength = 980;
+  const isLongLabel = milestone.label.length > 9;
+  const labelFontSize = isLongLabel ? 18 : 21;
+  const labelLetterSpacing = isLongLabel ? 0.85 : 1.45;
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: START_X + index * (CARD_WIDTH + GAP),
-        top: CARD_TOP,
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        opacity: opacityIn * exit,
-        transform: `translateY(${(1 - entrance) * 178 + floatY}px) rotate(${(1 - entrance) * (index % 2 === 0 ? -2.1 : 2.1)}deg) scale(${0.9 + entrance * 0.1})`,
-        transformOrigin: "50% 92%",
-        filter: `drop-shadow(0 28px 25px rgba(13,75,64,${0.16 + climaxGlow * 0.08})) drop-shadow(0 8px 10px rgba(20,58,51,0.09))`,
-      }}
+    <g
+      opacity={clamp(entrance)}
+      transform={`translate(${milestone.x + CARD_WIDTH / 2 + translateX} ${
+        milestone.y + CARD_HEIGHT / 2 + translateY
+      }) scale(${scale}) translate(${-CARD_WIDTH / 2} ${-CARD_HEIGHT / 2})`}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          borderRadius: 28,
-          overflow: "hidden",
-          background: `linear-gradient(148deg, ${data.colorLight} 0%, ${data.color} 42%, ${data.colorDark} 118%)`,
-          border: "1px solid rgba(255,255,255,0.4)",
-          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.42), inset 0 -70px 90px rgba(0,42,34,0.16), 0 0 ${climaxGlow * 32}px rgba(51,210,175,0.24)`,
-        }}
+      <defs>
+        <clipPath id={`label-clip-${index}`}>
+          <rect
+            x={LABEL_X - 2}
+            y="66"
+            width={LABEL_MAX_WIDTH + 2}
+            height="38"
+          />
+        </clipPath>
+      </defs>
+      <rect
+        x="14"
+        y="18"
+        width={CARD_WIDTH - 8}
+        height={CARD_HEIGHT - 1}
+        rx={CARD_RADIUS}
+        fill="#20343F"
+        opacity={0.1 * outline}
+        filter="url(#card-shadow)"
+      />
+      <rect
+        width={CARD_WIDTH}
+        height={CARD_HEIGHT}
+        rx={CARD_RADIUS}
+        fill="url(#card-fill)"
+        stroke="#E5EBEF"
+        strokeWidth="2"
+      />
+      <rect
+        x="0"
+        y="0"
+        width={CARD_WIDTH}
+        height="7"
+        rx="3.5"
+        fill={milestone.color}
+        opacity={outline}
+      />
+      <rect
+        x="1"
+        y="1"
+        width={CARD_WIDTH - 2}
+        height={CARD_HEIGHT - 2}
+        rx={CARD_RADIUS - 1}
+        fill="none"
+        stroke={milestone.color}
+        strokeWidth="2.4"
+        strokeDasharray={outlineLength}
+        strokeDashoffset={outlineLength * (1 - outline)}
+        opacity={0.78}
+      />
+
+      <text
+        x="263"
+        y="44"
+        textAnchor="end"
+        fill={milestone.color}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize="25"
+        fontWeight="800"
+        letterSpacing="-0.7"
+        opacity={range(frame, milestone.start + 16, milestone.start + 47)}
       >
-        <div
-          style={{
-            position: "absolute",
-            width: 360,
-            height: 360,
-            borderRadius: "50%",
-            top: -205,
-            right: -150,
-            background:
-              "radial-gradient(circle, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.07) 42%, rgba(255,255,255,0) 72%)",
-          }}
+        {milestone.number}
+      </text>
+
+      <g transform="translate(72 88)">
+        <circle
+          r="47"
+          fill={`url(#icon-bg-${index})`}
+          opacity={iconDraw}
+          filter="url(#icon-medallion-shadow)"
         />
-        <div
-          style={{
-            position: "absolute",
-            width: 250,
-            height: 250,
-            borderRadius: "50%",
-            left: -145,
-            bottom: -125,
-            border: "1px solid rgba(255,255,255,0.13)",
-          }}
+        <circle
+          r="46.5"
+          fill="none"
+          stroke={milestone.color}
+          strokeWidth="2"
+          opacity={0.3 * iconDraw}
         />
-
-        {[0, 1, 2].map((ring) => (
-          <div
-            key={ring}
-            style={{
-              position: "absolute",
-              left: 78 - ring * 13,
-              top: 134 - ring * 13,
-              width: 170 + ring * 26,
-              height: 170 + ring * 26,
-              borderRadius: "50%",
-              border: "1px solid rgba(255,255,255,0.1)",
-              opacity: cornerProgress,
-              transform: `scale(${0.84 + cornerProgress * 0.16})`,
-            }}
-          />
-        ))}
-
-        <div
-          style={{
-            position: "absolute",
-            top: 28,
-            left: 29,
-            right: 27,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              color: "rgba(255,255,255,0.98)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: 31,
-              fontWeight: 700,
-              letterSpacing: -1,
-            }}
-          >
-            {data.number}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              color: "rgba(255,255,255,0.76)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: 2.4,
-            }}
-          >
-            <span>{data.eyebrow}</span>
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#FFFFFF",
-                boxShadow: "0 0 12px rgba(255,255,255,0.75)",
-              }}
-            />
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 143,
-            height: 178,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            transform: `scale(${0.88 + iconProgress * 0.12})`,
-          }}
-        >
-          <Icon progress={iconProgress} />
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 29,
-            right: 29,
-            bottom: 31,
-            transform: `translateY(${(1 - copyProgress) * 24}px)`,
-            opacity: copyProgress,
-          }}
-        >
-          <div
-            style={{
-              width: 32,
-              height: 3,
-              borderRadius: 2,
-              marginBottom: 16,
-              background: "rgba(255,255,255,0.56)",
-            }}
-          />
-          <div
-            style={{
-              color: "#FFFFFF",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: data.label === "EFFICIENCY" ? 27 : 32,
-              lineHeight: 1,
-              fontWeight: 700,
-              letterSpacing: data.label === "EFFICIENCY" ? 0.4 : 1.2,
-            }}
-          >
-            {data.label}
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: shimmerX,
-            top: -70,
-            width: 94,
-            height: CARD_HEIGHT + 140,
-            transform: "skewX(-16deg)",
-            opacity: shimmerOpacity,
-            background:
-              "linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.84), rgba(255,255,255,0))",
-            mixBlendMode: "screen",
-          }}
+        <path
+          d="M -28 -29 A 40 40 0 0 1 25 -31"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="3"
+          strokeLinecap="round"
+          opacity={0.8 * iconDraw}
         />
-      </div>
+        <circle
+          r={48 + easeOut(activePulse) * 29}
+          fill="none"
+          stroke={milestone.accent}
+          strokeWidth={3 - easeOut(activePulse) * 1.7}
+          opacity={activePulseOpacity}
+        />
+        <Icon type={milestone.icon} color={milestone.color} draw={iconDraw} />
+      </g>
 
-      <div
-        style={{
-          position: "absolute",
-          right: 18,
-          top: 18,
-          width: 40,
-          height: 40,
-          opacity: cornerProgress,
-          transform: `scale(${cornerProgress}) rotate(${45 * (1 - cornerProgress)}deg)`,
-        }}
+      <text
+        x={LABEL_X}
+        y="94"
+        fill="#17232A"
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={labelFontSize}
+        fontWeight="800"
+        letterSpacing={labelLetterSpacing}
+        opacity={labelIn}
+        transform={`translate(${(1 - labelIn) * 12} 0)`}
+        clipPath={`url(#label-clip-${index})`}
       >
-        <svg width="40" height="40" viewBox="0 0 40 40">
-          <path
-            d="M4 20 H36 M20 4 V36"
-            stroke="rgba(255,255,255,0.22)"
-            strokeWidth="1"
-          />
-          <circle
-            cx="20"
-            cy="20"
-            r="7"
-            fill="none"
-            stroke="rgba(255,255,255,0.38)"
-            strokeWidth="1"
-          />
-        </svg>
-      </div>
-    </div>
+        {milestone.label}
+      </text>
+
+      <g transform="translate(137 118)" opacity={barsIn}>
+        {[0, 1, 2].map((barIndex) => {
+          const local = range(
+            frame,
+            milestone.start + 77 + barIndex * 8,
+            milestone.start + 113 + barIndex * 8,
+          );
+          const width = 112 * milestone.bars[barIndex] * local;
+          return (
+            <g key={barIndex} transform={`translate(0 ${barIndex * 18})`}>
+              <rect
+                width="112"
+                height="7"
+                rx="3.5"
+                fill="#E8EDF0"
+              />
+              <rect
+                width={width}
+                height="7"
+                rx="3.5"
+                fill={milestone.color}
+                opacity={0.78 + barIndex * 0.08}
+              />
+            </g>
+          );
+        })}
+      </g>
+
+      <circle
+        cx={CARD_WIDTH}
+        cy="94"
+        r="9"
+        fill="#FFFFFF"
+        stroke={milestone.color}
+        strokeWidth="3"
+        opacity={outline}
+      />
+      <circle
+        cx="0"
+        cy="94"
+        r="9"
+        fill="#FFFFFF"
+        stroke={milestone.color}
+        strokeWidth="3"
+        opacity={outline}
+      />
+    </g>
+  );
+};
+
+const Connector: React.FC<{
+  index: number;
+  frame: number;
+}> = ({index, frame}) => {
+  const source = MILESTONES[index];
+  const target = MILESTONES[index + 1];
+  const startFrame = [145, 295, 435][index];
+  const railIn = range(frame, startFrame - 34, startFrame + 8);
+  const reveal = range(frame, startFrame, startFrame + 80);
+  const x1 = source.x + CARD_WIDTH;
+  const y1 = source.y + 94;
+  const x2 = target.x;
+  const y2 = target.y + 94;
+  const control = 42;
+  const path = `M ${x1} ${y1} C ${x1 + control} ${y1} ${
+    x2 - control
+  } ${y2} ${x2} ${y2}`;
+  const gradientId = `progress-gradient-${index}`;
+
+  const particleStart = startFrame + 26;
+  const particleProgress = range(frame, particleStart, particleStart + 94);
+  const particleOpacity =
+    range(frame, particleStart, particleStart + 12) *
+    (1 - range(frame, particleStart + 72, particleStart + 94));
+  const particleX = interpolate(
+    particleProgress,
+    [0, 1],
+    [x1 + 8, x2 - 8],
+  );
+  const particleY = interpolate(
+    particleProgress,
+    [0, 1],
+    [y1, y2],
+  );
+
+  return (
+    <g>
+      <path
+        d={path}
+        fill="none"
+        stroke="#DCE5E9"
+        strokeWidth="5"
+        strokeLinecap="round"
+        opacity={0.92 * railIn}
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke={`url(#${gradientId})`}
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeDasharray={CONNECTOR_LENGTH}
+        strokeDashoffset={CONNECTOR_LENGTH * (1 - reveal)}
+        opacity={range(frame, startFrame, startFrame + 3)}
+        filter="url(#line-glow)"
+      />
+      <circle
+        cx={particleX}
+        cy={particleY}
+        r="17"
+        fill={target.accent}
+        opacity={0.14 * particleOpacity}
+        filter="url(#particle-blur)"
+      />
+      <circle
+        cx={particleX}
+        cy={particleY}
+        r="5.5"
+        fill="#FFFFFF"
+        stroke={target.color}
+        strokeWidth="2"
+        opacity={particleOpacity}
+      />
+    </g>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const cameraX = interpolate(
-    frame,
-    [0, 120, 350, 545, 690, 900],
-    [34, 34, 10, -34, 0, 0],
-    {
-      ...clamp,
-      easing: Easing.inOut(Easing.cubic),
-    },
-  );
-  const cameraScale = interpolate(
-    frame,
-    [0, 230, 520, 700],
-    [1, 1.008, 1.018, 1],
-    clamp,
-  );
-  const backgroundDrift = -cameraX * 0.34;
-  const sceneExit = interpolate(frame, [824, 899], [1, 0], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const floorOpacity =
-    interpolate(frame, [20, 380], [0, 0.52], clamp) * sceneExit;
-  const climaxLine = interpolate(frame, [574, 652], [0, 1], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const climaxLineOut = interpolate(frame, [680, 730], [1, 0], clamp);
+
+  const backgroundIn = range(frame, 0, 52);
+  const gridIn = range(frame, 10, 90);
+  const cameraProgress = range(frame, 0, 620);
+  const cameraX = interpolate(cameraProgress, [0, 1], [24, -18]);
+  const cameraY = interpolate(cameraProgress, [0, 1], [18, -12]);
+  const cameraScale = interpolate(cameraProgress, [0, 1], [0.994, 1.012]);
+
+  const shimmer = range(frame, 640, 790);
+  const shimmerOpacity =
+    range(frame, 640, 670) * (1 - range(frame, 760, 800));
+  const shimmerX = interpolate(shimmer, [0, 1], [400, 1578]);
+  const shimmerY = interpolate(shimmer, [0, 1], [772, 370]);
 
   return (
     <AbsoluteFill
       style={{
+        backgroundColor: "#F2F6F7",
         overflow: "hidden",
-        backgroundColor: "#EEF3F0",
-        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          transform: `translateX(${backgroundDrift}px)`,
-          background:
-            "radial-gradient(circle at 17% 19%, rgba(103,205,173,0.2) 0%, rgba(103,205,173,0) 28%), radial-gradient(circle at 82% 78%, rgba(29,156,131,0.13) 0%, rgba(29,156,131,0) 31%), linear-gradient(135deg, #F4F7F5 0%, #E8F0EC 100%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.21,
-          transform: `translateX(${backgroundDrift * 1.4}px)`,
-          backgroundImage:
-            "radial-gradient(circle, rgba(17,102,83,0.28) 1.15px, transparent 1.15px)",
-          backgroundSize: "42px 42px",
-          maskImage:
-            "radial-gradient(ellipse at center, black 0%, rgba(0,0,0,0.5) 45%, transparent 77%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 190,
-          right: 190,
-          top: 744,
-          height: 138,
-          borderRadius: "50%",
-          opacity: floorOpacity,
-          background:
-            "radial-gradient(ellipse at center, rgba(20,85,69,0.28) 0%, rgba(20,85,69,0.08) 43%, rgba(20,85,69,0) 73%)",
-          filter: "blur(20px)",
-          transform: `translateX(${cameraX * 0.35}px)`,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 268,
-          right: 268,
-          top: 809,
-          height: 2,
-          opacity: climaxLine * climaxLineOut * 0.58,
-          overflow: "hidden",
-          background: "rgba(11,143,119,0.14)",
-        }}
+      <svg
+        width="1920"
+        height="1080"
+        viewBox="0 0 1920 1080"
+        style={{position: "absolute", inset: 0}}
       >
-        <div
-          style={{
-            width: `${climaxLine * 100}%`,
-            height: "100%",
-            margin: "0 auto",
-            background:
-              "linear-gradient(90deg, rgba(58,196,163,0), rgba(58,196,163,0.9), rgba(58,196,163,0))",
-          }}
+        <defs>
+          <linearGradient id="background-wash" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="#EFF5F6" />
+            <stop offset="0.5" stopColor="#FAFCFC" />
+            <stop offset="1" stopColor="#F3F0F9" />
+          </linearGradient>
+          <linearGradient id="card-fill" x1="0" y1="0" x2="0.9" y2="1">
+            <stop offset="0" stopColor="#FFFFFF" />
+            <stop offset="1" stopColor="#FBFDFD" />
+          </linearGradient>
+          {MILESTONES.slice(0, -1).map((milestone, index) => (
+            <linearGradient
+              key={milestone.number}
+              id={`progress-gradient-${index}`}
+              x1="0"
+              y1="1"
+              x2="1"
+              y2="0"
+            >
+              <stop offset="0" stopColor={milestone.color} />
+              <stop offset="1" stopColor={MILESTONES[index + 1].color} />
+            </linearGradient>
+          ))}
+          {MILESTONES.map((milestone, index) => (
+            <radialGradient
+              key={`icon-bg-${milestone.number}`}
+              id={`icon-bg-${index}`}
+              cx="31%"
+              cy="24%"
+              r="82%"
+            >
+              <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.98" />
+              <stop
+                offset="0.58"
+                stopColor={milestone.accent}
+                stopOpacity="0.13"
+              />
+              <stop
+                offset="1"
+                stopColor={milestone.color}
+                stopOpacity="0.2"
+              />
+            </radialGradient>
+          ))}
+          <filter
+            id="card-shadow"
+            x="-25%"
+            y="-30%"
+            width="170%"
+            height="190%"
+          >
+            <feGaussianBlur stdDeviation="14" />
+          </filter>
+          <filter
+            id="line-glow"
+            x="-30%"
+            y="-70%"
+            width="160%"
+            height="240%"
+          >
+            <feGaussianBlur stdDeviation="1.6" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter
+            id="icon-glow"
+            x="-24%"
+            y="-24%"
+            width="148%"
+            height="148%"
+          >
+            <feGaussianBlur stdDeviation="0.35" result="icon-blur" />
+            <feMerge>
+              <feMergeNode in="icon-blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter
+            id="icon-medallion-shadow"
+            x="-40%"
+            y="-40%"
+            width="180%"
+            height="190%"
+          >
+            <feDropShadow
+              dx="0"
+              dy="5"
+              stdDeviation="5"
+              floodColor="#344A55"
+              floodOpacity="0.15"
+            />
+          </filter>
+          <filter
+            id="particle-blur"
+            x="-120%"
+            y="-120%"
+            width="340%"
+            height="340%"
+          >
+            <feGaussianBlur stdDeviation="8" />
+          </filter>
+          <pattern
+            id="dot-grid"
+            width="38"
+            height="38"
+            patternUnits="userSpaceOnUse"
+          >
+            <circle cx="2" cy="2" r="1.5" fill="#8AA1AA" opacity="0.19" />
+          </pattern>
+        </defs>
+
+        <rect width="1920" height="1080" fill="url(#background-wash)" />
+        <rect
+          width="1920"
+          height="1080"
+          fill="url(#dot-grid)"
+          opacity={0.52 * gridIn}
         />
-      </div>
+        <path
+          d="M -80 985 C 380 893 625 762 930 646 C 1260 521 1550 356 1990 128"
+          fill="none"
+          stroke="#B8C7CC"
+          strokeWidth="2"
+          strokeDasharray="5 18"
+          opacity={0.18 * backgroundIn}
+        />
+        <path
+          d="M -90 1030 C 390 925 665 800 970 678 C 1310 542 1600 374 2020 170"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="34"
+          opacity={0.42 * backgroundIn}
+          filter="url(#particle-blur)"
+        />
 
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          transform: `translateX(${cameraX}px) scale(${cameraScale})`,
-          transformOrigin: "50% 54%",
-        }}
-      >
-        {cards.map((card, index) => (
-          <SustainableCard
-            key={card.number}
-            data={card}
-            index={index}
-            frame={frame}
-            fps={fps}
-          />
-        ))}
-      </div>
+        <g
+          transform={`translate(960 540) translate(${cameraX} ${cameraY}) scale(${cameraScale}) translate(-960 -540)`}
+        >
+          {MILESTONES.slice(0, -1).map((milestone, index) => (
+            <Connector
+              key={`connector-${milestone.number}`}
+              index={index}
+              frame={frame}
+            />
+          ))}
+
+          {MILESTONES.map((milestone, index) => (
+            <MilestoneCard
+              key={milestone.number}
+              milestone={milestone}
+              index={index}
+              frame={frame}
+              fps={fps}
+            />
+          ))}
+
+          <g opacity={shimmerOpacity}>
+            <circle
+              cx={shimmerX}
+              cy={shimmerY}
+              r="32"
+              fill="#FFFFFF"
+              opacity="0.18"
+              filter="url(#particle-blur)"
+            />
+            <circle
+              cx={shimmerX}
+              cy={shimmerY}
+              r="7"
+              fill="#FFFFFF"
+              stroke="#6B77B7"
+              strokeWidth="2"
+            />
+          </g>
+        </g>
+      </svg>
     </AbsoluteFill>
   );
 };
