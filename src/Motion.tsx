@@ -4,605 +4,147 @@ import {
   Easing,
   interpolate,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
-
-/**
- * Product Innovation Engine
- * 1920x1080 • 60 FPS • 900 frames / 15 seconds
- *
- * Internet asset source:
- * Lucide Static v1.27.0 — ISC License
- * https://lucide.dev/icons/
- * https://lucide.dev/license
- *
- * Embedded official icon geometry:
- * ScanSearch, Target, PencilRuler, Blocks, Rocket,
- * ChartNoAxesCombined.
- */
-
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const CX = WIDTH / 2;
-const CY = 528;
-const INNER_RADIUS = 265;
-const OUTER_RADIUS = 438;
-const STAGE_SPAN = 32;
-const STAGE_GAP = 8;
-// Six 32° panels with 8° gaps span 232°. Starting at 154° centers the
-// complete arc on the vertical 270° axis, so the outer left/right panels
-// finish at exactly the same height.
-const STAGE_START_ANGLE = 154;
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
   extrapolateRight: "clamp" as const,
 };
 
-const smoothOut = Easing.bezier(0.22, 1, 0.36, 1);
-const softInOut = Easing.bezier(0.65, 0, 0.35, 1);
+const COLORS = {
+  black: "#010304",
+  panel: "#05090c",
+  white: "#edf9fb",
+  soft: "#9aaeb2",
+  dim: "#45575b",
+  faint: "#182528",
+  cyan: "#2de2f2",
+  cyanSoft: "#87f7ff",
+  amber: "#ffca62",
+};
 
-const progress = (
-  frame: number,
-  start: number,
-  end: number,
-  easing: (input: number) => number = smoothOut,
-) =>
-  interpolate(frame, [start, end], [0, 1], {
+const seeded = (index: number) => {
+  const value = Math.sin(index * 73.417 + 18.391) * 43758.5453;
+  return value - Math.floor(value);
+};
+
+const revealAt = (frame: number, start: number, duration = 34) =>
+  interpolate(frame, [start, start + duration], [0, 1], {
     ...clamp,
-    easing,
+    easing: Easing.out(Easing.cubic),
   });
 
-const polar = (radius: number, angleDegrees: number) => {
-  const angle = (angleDegrees * Math.PI) / 180;
-  return {
-    x: CX + Math.cos(angle) * radius,
-    y: CY + Math.sin(angle) * radius,
-  };
-};
+const pathFromPoints = (points: readonly [number, number][]) =>
+  points
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`)
+    .join(" ");
 
-const annularSegmentPath = (
-  startAngle: number,
-  endAngle: number,
-  innerRadius: number,
-  outerRadius: number,
-) => {
-  const outerStart = polar(outerRadius, startAngle);
-  const outerEnd = polar(outerRadius, endAngle);
-  const innerEnd = polar(innerRadius, endAngle);
-  const innerStart = polar(innerRadius, startAngle);
-  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
-
-  return [
-    `M ${outerStart.x} ${outerStart.y}`,
-    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
-    `L ${innerEnd.x} ${innerEnd.y}`,
-    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
-    "Z",
-  ].join(" ");
-};
-
-type IconName =
-  | "scan-search"
-  | "target"
-  | "pencil-ruler"
-  | "blocks"
-  | "rocket"
-  | "chart";
-
-type Stage = {
-  label: string;
-  icon: IconName;
-  colorA: string;
-  colorB: string;
-  start: number;
-};
-
-const stages: Stage[] = [
-  {
-    label: "DISCOVER",
-    icon: "scan-search",
-    colorA: "#20D5E8",
-    colorB: "#2D78D9",
-    start: 342,
-  },
-  {
-    label: "DEFINE",
-    icon: "target",
-    colorA: "#FF6B68",
-    colorB: "#F13D70",
-    start: 408,
-  },
-  {
-    label: "DESIGN",
-    icon: "pencil-ruler",
-    colorA: "#62DCF5",
-    colorB: "#268FC7",
-    start: 474,
-  },
-  {
-    label: "BUILD",
-    icon: "blocks",
-    colorA: "#FF7A5C",
-    colorB: "#F04466",
-    start: 540,
-  },
-  {
-    label: "LAUNCH",
-    icon: "rocket",
-    colorA: "#45D9C8",
-    colorB: "#1C9ED8",
-    start: 606,
-  },
-  {
-    label: "SCALE",
-    icon: "chart",
-    colorA: "#FF668A",
-    colorB: "#EB2D62",
-    start: 672,
-  },
-];
-
-const Glyph: React.FC<{
-  name: IconName;
+const HudPanel: React.FC<{
   x: number;
   y: number;
-  size: number;
-  opacity?: number;
-}> = ({name, x, y, size, opacity = 1}) => {
-  const common = {
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2.15,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    vectorEffect: "non-scaling-stroke" as const,
-  };
-
-  return (
-    <svg
-      x={x}
-      y={y}
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      color="#FFFFFF"
-      opacity={opacity}
-      overflow="visible"
-      aria-hidden="true"
-    >
-      {name === "scan-search" ? (
-        <>
-          <path d="M3 7V5a2 2 0 0 1 2-2h2" {...common} />
-          <path d="M17 3h2a2 2 0 0 1 2 2v2" {...common} />
-          <path d="M21 17v2a2 2 0 0 1-2 2h-2" {...common} />
-          <path d="M7 21H5a2 2 0 0 1-2-2v-2" {...common} />
-          <circle cx="12" cy="12" r="3" {...common} />
-          <path d="m16 16-1.9-1.9" {...common} />
-        </>
-      ) : null}
-
-      {name === "target" ? (
-        <>
-          <circle cx="12" cy="12" r="10" {...common} />
-          <circle cx="12" cy="12" r="6" {...common} />
-          <circle cx="12" cy="12" r="2" {...common} />
-        </>
-      ) : null}
-
-      {name === "pencil-ruler" ? (
-        <>
-          <path
-            d="M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13"
-            {...common}
-          />
-          <path d="m8 6 2-2" {...common} />
-          <path d="m18 16 2-2" {...common} />
-          <path
-            d="m17 11 4.3 4.3c.94.94.94 2.46 0 3.4l-2.6 2.6c-.94.94-2.46.94-3.4 0L11 17"
-            {...common}
-          />
-          <path
-            d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
-            {...common}
-          />
-          <path d="m15 5 4 4" {...common} />
-        </>
-      ) : null}
-
-      {name === "blocks" ? (
-        <>
-          <path
-            d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2"
-            {...common}
-          />
-          <rect x="14" y="2" width="8" height="8" rx="1" {...common} />
-        </>
-      ) : null}
-
-      {name === "rocket" ? (
-        <>
-          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" {...common} />
-          <path
-            d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"
-            {...common}
-          />
-          <path
-            d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"
-            {...common}
-          />
-          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05" {...common} />
-        </>
-      ) : null}
-
-      {name === "chart" ? (
-        <>
-          <path d="M12 16v5" {...common} />
-          <path d="M16 14.639V21" {...common} />
-          <path d="M20 10.656V21" {...common} />
-          <path
-            d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"
-            {...common}
-          />
-          <path d="M4 18.463V21" {...common} />
-          <path d="M8 14.656V21" {...common} />
-        </>
-      ) : null}
-    </svg>
-  );
-};
-
-const ConcentricWipe: React.FC<{frame: number}> = ({frame}) => {
-  const rings = [
-    {start: 0, end: 30, color: "#FFD85A", initial: 35},
-    {start: 18, end: 49, color: "#F7F3EA", initial: 20},
-    {start: 37, end: 70, color: "#38BEE5", initial: 16},
-    {start: 58, end: 95, color: "#071F39", initial: 12},
-  ];
-  const opacity = interpolate(frame, [92, 104], [1, 0], clamp);
-
-  return (
-    <svg
-      width={WIDTH}
-      height={HEIGHT}
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      style={{position: "absolute", inset: 0, opacity}}
-    >
-      <defs>
-        <filter id="wipe-soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
-          <feDropShadow dx="0" dy="12" stdDeviation="24" floodOpacity="0.16" />
-        </filter>
-      </defs>
-      {rings.map((ring, index) => {
-        const p = progress(frame, ring.start, ring.end, softInOut);
-        const radius = interpolate(p, [0, 1], [ring.initial, 1320], clamp);
-        const ringOpacity = frame < ring.start ? 0 : 1;
-        return (
-          <circle
-            key={ring.color}
-            cx={CX}
-            cy={CY}
-            r={radius}
-            fill={ring.color}
-            opacity={ringOpacity}
-            filter={index < 3 ? "url(#wipe-soft-shadow)" : undefined}
-          />
-        );
-      })}
-    </svg>
-  );
-};
-
-const RadialBurst: React.FC<{
-  frame: number;
-  start: number;
-  end: number;
-  inner: number;
-  outer: number;
-  count?: number;
-}> = ({frame, start, end, inner, outer, count = 12}) => {
-  const open = progress(frame, start, start + Math.round((end - start) * 0.46));
-  const close = interpolate(
-    frame,
-    [end - Math.round((end - start) * 0.26), end],
-    [1, 0],
-    clamp,
-  );
-  const p = open * close;
-
-  return (
-    <g opacity={p}>
-      {Array.from({length: count}).map((_, index) => {
-        const angle = (index / count) * 360 - 90;
-        const a = (angle * Math.PI) / 180;
-        const stagger = progress(
-          frame,
-          start + index * 2,
-          start + index * 2 + 18,
-        );
-        const lineInner = inner + (1 - stagger) * 26;
-        const lineOuter = interpolate(stagger, [0, 1], [lineInner, outer], clamp);
-        return (
-          <line
-            key={angle}
-            x1={CX + Math.cos(a) * lineInner}
-            y1={CY + Math.sin(a) * lineInner}
-            x2={CX + Math.cos(a) * lineOuter}
-            y2={CY + Math.sin(a) * lineOuter}
-            stroke={index % 3 === 0 ? "#FFD85A" : "#DFF7FF"}
-            strokeWidth={index % 2 === 0 ? 4 : 3}
-            strokeLinecap="round"
-            opacity={0.5 + (index % 3) * 0.16}
-          />
-        );
-      })}
-    </g>
-  );
-};
-
-const BulbCore: React.FC<{frame: number}> = ({frame}) => {
-  const enter = progress(frame, 186, 238);
-  const translateY = interpolate(enter, [0, 1], [155, 0], clamp);
-  const scale = interpolate(enter, [0, 0.72, 1], [0.84, 1.025, 1], clamp);
-  const opacity = interpolate(enter, [0, 0.18, 1], [0, 1, 1], clamp);
-  const breathe =
-    frame > 730 ? 1 + Math.sin(((frame - 730) / 60) * Math.PI * 2) * 0.008 : 1;
-  const glow = interpolate(
-    frame,
-    [186, 238, 730, 790, 840],
-    [0, 0.42, 0.42, 0.7, 0.45],
-    clamp,
-  );
-
-  return (
-    <g
-      transform={`translate(${CX} ${CY}) translate(0 ${translateY}) scale(${
-        scale * breathe
-      }) translate(${-CX} ${-CY})`}
-      opacity={opacity}
-    >
-      <circle
-        cx={CX}
-        cy={CY + 5}
-        r={215}
-        fill="url(#core-halo)"
-        opacity={glow}
-        filter="url(#soft-glow)"
-      />
-      <path
-        d={[
-          `M ${CX} ${CY - 172}`,
-          `C ${CX - 116} ${CY - 172}, ${CX - 178} ${CY - 89}, ${CX - 162} ${
-            CY + 14
-          }`,
-          `C ${CX - 152} ${CY + 79}, ${CX - 104} ${CY + 106}, ${CX - 79} ${
-            CY + 142
-          }`,
-          `C ${CX - 59} ${CY + 171}, ${CX - 58} ${CY + 190}, ${CX - 58} ${
-            CY + 204
-          }`,
-          `L ${CX + 58} ${CY + 204}`,
-          `C ${CX + 58} ${CY + 190}, ${CX + 59} ${CY + 171}, ${CX + 79} ${
-            CY + 142
-          }`,
-          `C ${CX + 104} ${CY + 106}, ${CX + 152} ${CY + 79}, ${CX + 162} ${
-            CY + 14
-          }`,
-          `C ${CX + 178} ${CY - 89}, ${CX + 116} ${CY - 172}, ${CX} ${
-            CY - 172
-          } Z`,
-        ].join(" ")}
-        fill="url(#bulb-gradient)"
-        filter="url(#bulb-shadow)"
-      />
-      <path
-        d={`M ${CX - 81} ${CY - 72} C ${CX - 40} ${CY - 124}, ${
-          CX + 31
-        } ${CY - 130}, ${CX + 73} ${CY - 83}`}
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={22}
-        strokeLinecap="round"
-        opacity={0.72}
-      />
-      <path
-        d={`M ${CX - 26} ${CY + 115} L ${CX - 11} ${CY + 188} M ${
-          CX + 26
-        } ${CY + 115} L ${CX + 11} ${CY + 188}`}
-        fill="none"
-        stroke="#F0B636"
-        strokeWidth={7}
-        strokeLinecap="round"
-        opacity={0.72}
-      />
-      <rect
-        x={CX - 72}
-        y={CY + 192}
-        width={144}
-        height={26}
-        rx={8}
-        fill="#F8FCFF"
-      />
-      <rect
-        x={CX - 82}
-        y={CY + 221}
-        width={164}
-        height={26}
-        rx={8}
-        fill="#D8EEFA"
-      />
-      <rect
-        x={CX - 48}
-        y={CY + 250}
-        width={96}
-        height={23}
-        rx={8}
-        fill="#FFFFFF"
-      />
-      <rect
-        x={CX - 22}
-        y={CY + 273}
-        width={44}
-        height={14}
-        rx={7}
-        fill="#79BBD6"
-      />
-    </g>
-  );
-};
-
-const RadialStage: React.FC<{
-  frame: number;
-  stage: Stage;
+  width: number;
+  height: number;
+  title: string;
   index: number;
-}> = ({frame, stage, index}) => {
-  const buildStart = 246 + index * 10;
-  const build = progress(frame, buildStart, buildStart + 34);
-  const stageScale = interpolate(build, [0, 0.72, 1], [0.55, 1.035, 1], clamp);
-  const stageRotation = interpolate(build, [0, 1], [-7, 0], clamp);
-  const active = progress(frame, stage.start, stage.start + 46);
-  const loaderOpacity = interpolate(active, [0, 0.15, 0.62, 0.82], [0, 1, 1, 0], clamp);
-  const iconOpacity = interpolate(active, [0.58, 0.82, 1], [0, 1, 1], clamp);
-  const iconScale = interpolate(active, [0.55, 0.82, 1], [0.58, 1.1, 1], clamp);
-  const labelOpacity = interpolate(active, [0.72, 1], [0, 1], clamp);
-  const labelY = interpolate(active, [0.72, 1], [12, 0], clamp);
-  const sweep = progress(frame, 738 + index * 6, 780 + index * 6);
-  const startAngle = STAGE_START_ANGLE + index * (STAGE_SPAN + STAGE_GAP);
-  const endAngle = startAngle + STAGE_SPAN;
-  const midAngle = (startAngle + endAngle) / 2;
-  const stagePoint = polar((INNER_RADIUS + OUTER_RADIUS) / 2, midAngle);
-  const stagePath = annularSegmentPath(
-    startAngle,
-    endAngle,
-    INNER_RADIUS,
-    OUTER_RADIUS,
-  );
-  const loaderRotation = (frame - stage.start) * 5.4;
-  const isLongLabel = stage.label.length >= 8;
-  const labelFontSize = isLongLabel ? 18.5 : stage.label.length >= 6 ? 20.5 : 22;
-  const labelLetterSpacing = isLongLabel ? 1.35 : 2.05;
+  frame: number;
+  activePanel: number;
+  children: React.ReactNode;
+}> = ({x, y, width, height, title, index, frame, activePanel, children}) => {
+  const reveal = revealAt(frame, 10 + index * 6);
+  const active = activePanel === index;
+  const pulse = 0.5 + 0.5 * Math.sin(frame * 0.08 + index);
+  const perimeter = width * 2 + height * 2;
 
   return (
     <g
-      opacity={build}
-      transform={[
-        `translate(${stagePoint.x} ${stagePoint.y})`,
-        `rotate(${stageRotation})`,
-        `scale(${stageScale})`,
-        `translate(${-stagePoint.x} ${-stagePoint.y})`,
-      ].join(" ")}
+      transform={`translate(${x} ${y + (1 - reveal) * 10})`}
+      opacity={reveal}
     >
-      <defs>
-        <clipPath
-          id={`stage-safe-area-${index}`}
-          clipPathUnits="userSpaceOnUse"
-        >
-          <path d={stagePath} />
-        </clipPath>
-      </defs>
-      <path
-        d={stagePath}
-        fill={`url(#stage-gradient-${index})`}
-        stroke="rgba(255,255,255,0.14)"
-        strokeWidth={6}
-        strokeLinejoin="round"
-        filter="url(#stage-shadow)"
+      <rect
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx="3"
+        fill={COLORS.panel}
+        fillOpacity={0.88}
+        stroke={active ? COLORS.cyan : COLORS.dim}
+        strokeOpacity={active ? 0.8 + pulse * 0.2 : 0.78}
+        strokeWidth={active ? 1.8 : 1}
+        pathLength={perimeter}
+        strokeDasharray={perimeter}
+        strokeDashoffset={perimeter * (1 - reveal)}
+        filter={active ? "url(#cyan-glow)" : undefined}
       />
       <path
-        d={stagePath}
-        fill="url(#stage-sheen)"
-        opacity={0.12 + sweep * 0.22}
+        d={`M0 18V0H30 M${width - 30} 0H${width}V18 M0 ${
+          height - 18
+        }V${height}H30 M${width - 30} ${height}H${width}V${height - 18}`}
+        fill="none"
+        stroke={active ? COLORS.cyanSoft : COLORS.white}
+        strokeOpacity={0.64 + (active ? pulse * 0.25 : 0)}
+        strokeWidth="2"
       />
-
-      <circle
-        cx={stagePoint.x}
-        cy={stagePoint.y - 17}
-        r={49}
-        fill="rgba(4, 24, 45, 0.22)"
-        stroke="rgba(255,255,255,0.22)"
-        strokeWidth={2}
-        opacity={iconOpacity}
-        transform={`translate(${stagePoint.x} ${stagePoint.y - 17}) scale(${iconScale}) translate(${
-          -stagePoint.x
-        } ${-(stagePoint.y - 17)})`}
+      <rect
+        x="15"
+        y="11"
+        width={Math.min(width - 30, 166)}
+        height="19"
+        fill={COLORS.black}
       />
-
-      <g
-        opacity={loaderOpacity}
-        transform={`rotate(${loaderRotation} ${stagePoint.x} ${stagePoint.y - 17})`}
-      >
-        <circle
-          cx={stagePoint.x}
-          cy={stagePoint.y - 17}
-          r={52}
-          fill="none"
-          stroke="#FFFFFF"
-          strokeWidth={4}
-          strokeLinecap="round"
-          strokeDasharray="4 11"
-        />
-        <circle
-          cx={stagePoint.x}
-          cy={stagePoint.y - 69}
-          r={7}
-          fill="#FFFFFF"
-          filter="url(#tiny-glow)"
-        />
-      </g>
-
-      <g
-        transform={`translate(${stagePoint.x} ${stagePoint.y - 17}) scale(${iconScale}) translate(${
-          -stagePoint.x
-        } ${-(stagePoint.y - 17)})`}
-      >
-        <Glyph
-          name={stage.icon}
-          x={stagePoint.x - 30}
-          y={stagePoint.y - 47}
-          size={60}
-          opacity={iconOpacity}
-        />
-      </g>
-
       <text
-        x={stagePoint.x}
-        y={stagePoint.y + 64 + labelY}
-        textAnchor="middle"
-        fill="#FFFFFF"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize={labelFontSize}
-        fontWeight={800}
-        letterSpacing={labelLetterSpacing}
-        opacity={labelOpacity}
-        clipPath={`url(#stage-safe-area-${index})`}
-        style={{textShadow: "0 3px 12px rgba(4,18,38,0.35)"}}
+        x="23"
+        y="25"
+        fill={active ? COLORS.cyanSoft : COLORS.soft}
+        fontSize="13"
+        letterSpacing="2.4"
       >
-        {stage.label}
+        {title}
       </text>
+      <line
+        x1="15"
+        y1="38"
+        x2={width - 15}
+        y2="38"
+        stroke={active ? COLORS.cyan : COLORS.dim}
+        strokeOpacity={active ? 0.75 : 0.55}
+      />
+      <g opacity={interpolate(reveal, [0.55, 1], [0, 1], clamp)}>{children}</g>
     </g>
   );
 };
 
-const LightTracer: React.FC<{frame: number}> = ({frame}) => {
-  const p = progress(frame, 738, 816, softInOut);
-  const opacity = interpolate(frame, [738, 756, 798, 816], [0, 1, 1, 0], clamp);
-  const angle = interpolate(p, [0, 1], [132, 502], clamp);
-  const point = polar(482, angle);
+const MiniBars: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  count: number;
+  frame: number;
+  seed: number;
+  accent?: boolean;
+}> = ({x, y, width, height, count, frame, seed, accent = false}) => {
+  const gap = 3;
+  const barWidth = (width - gap * (count - 1)) / count;
 
   return (
-    <g opacity={opacity}>
-      {[0, 1, 2, 3].map((trail) => {
-        const trailAngle = angle - trail * 5;
-        const trailPoint = polar(482, trailAngle);
+    <g>
+      {Array.from({length: count}, (_, index) => {
+        const base = 0.18 + seeded(index + seed) * 0.64;
+        const motion =
+          Math.sin(frame * (0.018 + seeded(seed + 31) * 0.012) + index * 0.72) *
+          0.11;
+        const h = Math.max(3, height * Math.min(0.95, Math.max(0.08, base + motion)));
+        const isHot = accent && index > count - 4;
         return (
-          <circle
-            key={trail}
-            cx={trail === 0 ? point.x : trailPoint.x}
-            cy={trail === 0 ? point.y : trailPoint.y}
-            r={trail === 0 ? 12 : 9 - trail * 1.3}
-            fill={trail % 2 === 0 ? "#FFF4A8" : "#84F2FF"}
-            opacity={1 - trail * 0.2}
-            filter="url(#tracer-glow)"
+          <rect
+            key={index}
+            x={x + index * (barWidth + gap)}
+            y={y + height - h}
+            width={Math.max(1, barWidth)}
+            height={h}
+            fill={isHot ? COLORS.cyan : COLORS.white}
+            fillOpacity={isHot ? 0.88 : 0.48 + seeded(index + 2) * 0.32}
           />
         );
       })}
@@ -610,208 +152,1055 @@ const LightTracer: React.FC<{frame: number}> = ({frame}) => {
   );
 };
 
-const Background: React.FC<{frame: number}> = ({frame}) => {
-  const atmosphere = progress(frame, 85, 170);
-  const drift = frame * 0.12;
+const Waveform: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  frame: number;
+  accent?: boolean;
+}> = ({x, y, width, height, frame, accent = false}) => {
+  const count = 74;
+  const points = Array.from({length: count}, (_, index) => {
+    const p = index / (count - 1);
+    const envelope = 0.22 + 0.78 * Math.pow(Math.sin(p * Math.PI), 0.45);
+    const wave =
+      Math.sin(index * 1.94 + frame * 0.16) * 0.34 +
+      Math.sin(index * 0.47 - frame * 0.07) * 0.2 +
+      Math.sin(index * 3.7 + frame * 0.04) * 0.12;
+    return [
+      x + p * width,
+      y + height / 2 + wave * envelope * height * 0.76,
+    ] as [number, number];
+  });
+
   return (
-    <AbsoluteFill
-      style={{
-        background:
-          "radial-gradient(circle at 50% 48%, #0D4365 0%, #082B49 34%, #061D34 69%, #041529 100%)",
-      }}
-    >
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0}}
-      >
-        <defs>
-          <radialGradient id="ambient-orb">
-            <stop offset="0%" stopColor="#33D6E9" stopOpacity="0.22" />
-            <stop offset="58%" stopColor="#1D86C7" stopOpacity="0.06" />
-            <stop offset="100%" stopColor="#071F39" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <circle
-          cx={CX}
-          cy={CY}
-          r={620}
-          fill="url(#ambient-orb)"
-          opacity={atmosphere}
+    <g>
+      {Array.from({length: 9}, (_, index) => (
+        <line
+          key={index}
+          x1={x + (index / 8) * width}
+          y1={y}
+          x2={x + (index / 8) * width}
+          y2={y + height}
+          stroke={COLORS.dim}
+          strokeOpacity="0.45"
         />
-        {[525, 590, 665].map((radius, index) => (
-          <circle
-            key={radius}
-            cx={CX}
-            cy={CY}
-            r={radius}
-            fill="none"
-            stroke="#72D9EE"
-            strokeWidth={1.5}
-            strokeDasharray={index === 1 ? "3 18" : "2 28"}
-            opacity={0.05 * atmosphere}
-            transform={`rotate(${drift * (index % 2 === 0 ? 1 : -1)} ${CX} ${CY})`}
-          />
-        ))}
-        {Array.from({length: 34}).map((_, index) => {
-          const seed = index * 91.73;
-          const x = 80 + ((Math.sin(seed) + 1) / 2) * (WIDTH - 160);
-          const y = 60 + ((Math.sin(seed * 1.67 + 2.1) + 1) / 2) * (HEIGHT - 120);
-          const r = 1.2 + (index % 3) * 0.55;
-          return (
-            <circle
-              key={index}
-              cx={x}
-              cy={y}
-              r={r}
-              fill="#B8EEFA"
-              opacity={(0.08 + (index % 5) * 0.015) * atmosphere}
-            />
-          );
-        })}
-      </svg>
-    </AbsoluteFill>
+      ))}
+      <line
+        x1={x}
+        y1={y + height / 2}
+        x2={x + width}
+        y2={y + height / 2}
+        stroke={COLORS.dim}
+        strokeOpacity="0.55"
+      />
+      <path
+        d={pathFromPoints(points)}
+        fill="none"
+        stroke={accent ? COLORS.cyanSoft : COLORS.white}
+        strokeWidth={accent ? 1.8 : 1.2}
+        strokeOpacity={accent ? 0.95 : 0.82}
+        filter={accent ? "url(#cyan-glow)" : undefined}
+      />
+    </g>
   );
 };
+
+const LinePlot: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  frame: number;
+  seed: number;
+  accent?: boolean;
+  fill?: boolean;
+}> = ({x, y, width, height, frame, seed, accent = false, fill = false}) => {
+  const count = 22;
+  const points = Array.from({length: count}, (_, index) => {
+    const p = index / (count - 1);
+    const baseline = 0.36 + seeded(seed + index) * 0.46;
+    const wave = Math.sin(frame * 0.018 + index * 0.68 + seed) * 0.08;
+    return [
+      x + p * width,
+      y + height * (1 - Math.min(0.92, Math.max(0.08, baseline + wave))),
+    ] as [number, number];
+  });
+  const line = pathFromPoints(points);
+  const area = `${line} L${x + width} ${y + height} L${x} ${y + height} Z`;
+
+  return (
+    <g>
+      {fill ? (
+        <path d={area} fill={accent ? COLORS.cyan : COLORS.white} fillOpacity="0.1" />
+      ) : null}
+      <path
+        d={line}
+        fill="none"
+        stroke={accent ? COLORS.cyanSoft : COLORS.white}
+        strokeWidth={accent ? 2 : 1.4}
+        strokeOpacity={accent ? 0.92 : 0.75}
+        filter={accent ? "url(#cyan-glow)" : undefined}
+      />
+      {points.filter((_, index) => index % 5 === 0).map(([px, py], index) => (
+        <circle
+          key={index}
+          cx={px}
+          cy={py}
+          r="2.4"
+          fill={COLORS.black}
+          stroke={accent ? COLORS.cyanSoft : COLORS.white}
+          strokeWidth="1"
+        />
+      ))}
+    </g>
+  );
+};
+
+const CircularGauge: React.FC<{
+  cx: number;
+  cy: number;
+  radius: number;
+  value: number;
+  accent?: boolean;
+}> = ({cx, cy, radius, value, accent = false}) => {
+  const circumference = Math.PI * radius * 1.45;
+  return (
+    <g>
+      <path
+        d={`M${cx - radius * 0.78} ${cy + radius * 0.62} A${radius} ${radius} 0 1 1 ${
+          cx + radius * 0.78
+        } ${cy + radius * 0.62}`}
+        fill="none"
+        stroke={COLORS.dim}
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d={`M${cx - radius * 0.78} ${cy + radius * 0.62} A${radius} ${radius} 0 1 1 ${
+          cx + radius * 0.78
+        } ${cy + radius * 0.62}`}
+        fill="none"
+        stroke={accent ? COLORS.cyan : COLORS.white}
+        strokeWidth="4"
+        strokeLinecap="round"
+        pathLength={circumference}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - value)}
+        filter={accent ? "url(#cyan-glow)" : undefined}
+      />
+      <circle cx={cx} cy={cy} r="3" fill={accent ? COLORS.cyanSoft : COLORS.white} />
+      <line
+        x1={cx}
+        y1={cy}
+        x2={cx + Math.cos(Math.PI * (1.22 + value * 1.56)) * radius * 0.72}
+        y2={cy + Math.sin(Math.PI * (1.22 + value * 1.56)) * radius * 0.72}
+        stroke={accent ? COLORS.cyanSoft : COLORS.white}
+        strokeWidth="1.5"
+      />
+    </g>
+  );
+};
+
+const TrackRows: React.FC<{
+  x: number;
+  y: number;
+  width: number;
+  rows: number;
+  frame: number;
+  seed: number;
+  accent?: boolean;
+}> = ({x, y, width, rows, frame, seed, accent = false}) => (
+  <g>
+    {Array.from({length: rows}, (_, index) => {
+      const value =
+        0.24 +
+        seeded(seed + index * 2) * 0.58 +
+        Math.sin(frame * 0.013 + index * 1.13) * 0.07;
+      const normalized = Math.min(0.96, Math.max(0.08, value));
+      return (
+        <g key={index} transform={`translate(0 ${index * 26})`}>
+          <text x={x} y={y + 10} fill={COLORS.soft} fontSize="9" letterSpacing="1.1">
+            {String.fromCharCode(65 + ((index + seed) % 22))}
+            {String((index * 17 + seed) % 97).padStart(2, "0")}
+          </text>
+          <line
+            x1={x + 34}
+            y1={y + 7}
+            x2={x + width}
+            y2={y + 7}
+            stroke={COLORS.dim}
+            strokeWidth="1"
+          />
+          <line
+            x1={x + 34}
+            y1={y + 7}
+            x2={x + 34 + (width - 34) * normalized}
+            y2={y + 7}
+            stroke={accent && index === rows - 2 ? COLORS.cyan : COLORS.white}
+            strokeWidth={accent && index === rows - 2 ? 2 : 1.4}
+            strokeOpacity="0.9"
+          />
+          <rect
+            x={x + 34 + (width - 34) * normalized - 2}
+            y={y + 3}
+            width="4"
+            height="8"
+            fill={accent && index === rows - 2 ? COLORS.cyanSoft : COLORS.white}
+          />
+        </g>
+      );
+    })}
+  </g>
+);
+
+const ButtonGrid: React.FC<{
+  x: number;
+  y: number;
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  frame: number;
+}> = ({x, y, columns, rows, cellWidth, cellHeight, frame}) => (
+  <g>
+    {Array.from({length: columns * rows}, (_, index) => {
+      const active = Math.floor(frame / 48) % (columns * rows) === index;
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      return (
+        <g key={index} transform={`translate(${x + col * cellWidth} ${y + row * cellHeight})`}>
+          <rect
+            x="0"
+            y="0"
+            width={cellWidth - 8}
+            height={cellHeight - 8}
+            fill={active ? COLORS.cyan : "transparent"}
+            fillOpacity={active ? 0.14 : 0}
+            stroke={active ? COLORS.cyan : COLORS.dim}
+            strokeWidth={active ? 1.5 : 1}
+          />
+          <circle
+            cx={(cellWidth - 8) / 2}
+            cy={(cellHeight - 8) / 2 - 5}
+            r={active ? 3.4 : 2.2}
+            fill={active ? COLORS.cyanSoft : COLORS.soft}
+          />
+          <text
+            x={(cellWidth - 8) / 2}
+            y={(cellHeight - 8) / 2 + 14}
+            textAnchor="middle"
+            fill={active ? COLORS.cyanSoft : COLORS.soft}
+            fontSize="7.5"
+            letterSpacing="1"
+          >
+            {["SYNC", "SCAN", "LINK", "PING", "TEST", "LOCK"][index % 6]}
+          </text>
+        </g>
+      );
+    })}
+  </g>
+);
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {width, height} = useVideoConfig();
-  const renderScaleX = width / WIDTH;
-  const renderScaleY = height / HEIGHT;
-  const camera = interpolate(frame, [170, 816], [0.965, 1.025], {
+
+  if (frame === 0 || frame >= 899) {
+    return <AbsoluteFill style={{backgroundColor: "#000000"}} />;
+  }
+
+  const seconds = frame / 60;
+  const intro = interpolate(frame, [0, 34, 84], [0, 0.84, 1], {
     ...clamp,
-    easing: softInOut,
+    easing: Easing.out(Easing.cubic),
   });
-  const cameraY = interpolate(frame, [170, 816], [22, 0], {
+  const outro = interpolate(frame, [820, 899], [1, 0], {
     ...clamp,
-    easing: softInOut,
+    easing: Easing.inOut(Easing.cubic),
   });
+  const opacity = intro * outro;
+  const dataProgress = interpolate(frame, [70, 720], [0, 1], clamp);
+  const mainValue = 67.39 + dataProgress * 3.61;
+  const activePanel = frame < 145 ? -1 : Math.floor((frame - 145) / 76) % 13;
+  const clock = String(Math.floor(seconds * 1000) % 1000000).padStart(6, "0");
+  const packet = 367 + Math.floor(frame / 18) % 43;
+  const statusPulse = Math.floor(frame / 32) % 4;
 
   return (
-    <AbsoluteFill style={{backgroundColor: "#061D34", overflow: "hidden"}}>
+    <AbsoluteFill
+      style={{
+        backgroundColor: COLORS.black,
+        overflow: "hidden",
+        fontFamily:
+          '"IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+      }}
+    >
+      <svg
+        width="1920"
+        height="1080"
+        viewBox="0 0 1920 1080"
+        style={{position: "absolute", inset: 0, opacity}}
+      >
+        <defs>
+          <filter id="cyan-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="3.2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="soft-white" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="1.1" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <linearGradient id="metric-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={COLORS.cyan} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={COLORS.cyan} stopOpacity="0" />
+          </linearGradient>
+          <pattern id="micro-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path
+              d="M40 0H0V40"
+              fill="none"
+              stroke={COLORS.faint}
+              strokeWidth="0.65"
+              strokeOpacity="0.54"
+            />
+          </pattern>
+        </defs>
+
+        <rect x="0" y="0" width="1920" height="1080" fill={COLORS.black} />
+        <rect
+          x="60"
+          y="48"
+          width="1800"
+          height="944"
+          fill="url(#micro-grid)"
+          opacity="0.24"
+        />
+
+        <g opacity={revealAt(frame, 0, 42)}>
+          <path
+            d="M74 62H386 M432 62H722 M770 62H1086 M1132 62H1462 M1510 62H1846"
+            stroke={COLORS.white}
+            strokeOpacity="0.72"
+            strokeWidth="1.3"
+            strokeDasharray="48 8 4 8"
+          />
+          <text x="74" y="52" fill={COLORS.soft} fontSize="10" letterSpacing="2">
+            NEXUS // ANALYTICS CORE
+          </text>
+          <text
+            x="1846"
+            y="52"
+            textAnchor="end"
+            fill={COLORS.soft}
+            fontSize="10"
+            letterSpacing="2"
+          >
+            T+{clock} / LIVE
+          </text>
+          <circle cx="1812" cy="51" r="3" fill={COLORS.cyan} filter="url(#cyan-glow)" />
+        </g>
+
+        <HudPanel
+          x={74}
+          y={82}
+          width={410}
+          height={248}
+          title="DATA STREAM"
+          index={0}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <text x="22" y="72" fill={COLORS.white} fontSize="14" letterSpacing="2.2">
+            DATA LOADING_
+          </text>
+          <text x="22" y="92" fill={COLORS.soft} fontSize="8.5" letterSpacing="1.1">
+            PACKET QUEUE / NODE ARRAY / LIVE INGEST
+          </text>
+          <line x1="22" y1="112" x2="238" y2="112" stroke={COLORS.dim} />
+          <line
+            x1="22"
+            y1="112"
+            x2={22 + 216 * (0.2 + dataProgress * 0.8)}
+            y2="112"
+            stroke={activePanel === 0 ? COLORS.cyan : COLORS.white}
+            strokeWidth="2"
+          />
+          <rect
+            x={19 + 216 * (0.2 + dataProgress * 0.8)}
+            y="108"
+            width="7"
+            height="8"
+            fill={activePanel === 0 ? COLORS.cyanSoft : COLORS.white}
+          />
+          <MiniBars
+            x={22}
+            y={138}
+            width={225}
+            height={67}
+            count={24}
+            frame={frame}
+            seed={11}
+            accent={activePanel === 0}
+          />
+          <text x="282" y="70" fill={COLORS.soft} fontSize="9" letterSpacing="2">
+            AUTO
+          </text>
+          <CircularGauge
+            cx={328}
+            cy={132}
+            radius={43}
+            value={0.38 + 0.23 * (0.5 + 0.5 * Math.sin(frame * 0.018))}
+            accent={activePanel === 0}
+          />
+          <text
+            x="328"
+            y="190"
+            textAnchor="middle"
+            fill={COLORS.white}
+            fontSize="24"
+          >
+            {String((packet * 7) % 100).padStart(2, "0")}
+          </text>
+          <text x="22" y="225" fill={COLORS.soft} fontSize="8.5" letterSpacing="1.6">
+            CH {packet} / {Math.floor(928 + dataProgress * 67)} MB/S
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={500}
+          y={82}
+          width={300}
+          height={248}
+          title="SENSORS"
+          index={1}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          {Array.from({length: 7}, (_, index) => {
+            const active = statusPulse === index % 4;
+            return (
+              <g key={index} transform={`translate(22 ${61 + index * 23})`}>
+                <text x="0" y="9" fill={COLORS.soft} fontSize="8.5">
+                  S-{String(index + 1).padStart(2, "0")}
+                </text>
+                <rect
+                  x="42"
+                  y="1"
+                  width="24"
+                  height="11"
+                  fill={active ? COLORS.cyan : "transparent"}
+                  fillOpacity="0.18"
+                  stroke={active ? COLORS.cyan : COLORS.dim}
+                />
+                <text
+                  x="54"
+                  y="10"
+                  textAnchor="middle"
+                  fill={active ? COLORS.cyanSoft : COLORS.white}
+                  fontSize="7"
+                >
+                  {active ? "ON" : "ST"}
+                </text>
+                <line
+                  x1="81"
+                  y1="7"
+                  x2="195"
+                  y2="7"
+                  stroke={COLORS.dim}
+                  strokeWidth="1"
+                />
+                <line
+                  x1="81"
+                  y1="7"
+                  x2={81 + 114 * (0.26 + seeded(index + 30) * 0.63)}
+                  y2="7"
+                  stroke={active ? COLORS.cyanSoft : COLORS.white}
+                  strokeWidth={active ? 2 : 1}
+                />
+                <text x="213" y="9" fill={COLORS.soft} fontSize="7.5">
+                  {(31 + index * 7 + Math.floor(frame / 40) % 9).toString().padStart(2, "0")}
+                </text>
+              </g>
+            );
+          })}
+          <text x="22" y="231" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.3">
+            TEMP / OPTICAL / PRESSURE / FIELD
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={816}
+          y={82}
+          width={346}
+          height={248}
+          title="INDICATORS"
+          index={2}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          {Array.from({length: 8}, (_, index) => {
+            const angle = (index / 8) * Math.PI * 2 - Math.PI / 2;
+            const active = Math.floor(frame / 26) % 8 === index;
+            return (
+              <g key={index}>
+                <circle
+                  cx={173 + Math.cos(angle) * 76}
+                  cy={113 + Math.sin(angle) * 48}
+                  r="12"
+                  fill={active ? COLORS.cyan : "transparent"}
+                  fillOpacity="0.12"
+                  stroke={active ? COLORS.cyan : COLORS.soft}
+                  strokeWidth={active ? 1.7 : 1}
+                />
+                <text
+                  x={173 + Math.cos(angle) * 76}
+                  y={116 + Math.sin(angle) * 48}
+                  textAnchor="middle"
+                  fill={active ? COLORS.cyanSoft : COLORS.soft}
+                  fontSize="7"
+                >
+                  {String((index * 13 + Math.floor(frame / 18)) % 99).padStart(2, "0")}
+                </text>
+              </g>
+            );
+          })}
+          <circle cx="173" cy="113" r="31" fill="none" stroke={COLORS.dim} />
+          <circle
+            cx="173"
+            cy="113"
+            r={7 + (0.5 + 0.5 * Math.sin(frame * 0.08)) * 5}
+            fill="none"
+            stroke={activePanel === 2 ? COLORS.cyan : COLORS.white}
+            strokeOpacity="0.8"
+          />
+          <text
+            x="173"
+            y="190"
+            textAnchor="middle"
+            fill={COLORS.white}
+            fontSize="12"
+            letterSpacing="2"
+          >
+            INDICATORS INFO
+          </text>
+          <text
+            x="173"
+            y="208"
+            textAnchor="middle"
+            fill={COLORS.soft}
+            fontSize="7.5"
+            letterSpacing="1"
+          >
+            SYNCHRONICITY / PROCESS / QUALITY
+          </text>
+          <line x1="34" y1="221" x2="312" y2="221" stroke={COLORS.dim} />
+        </HudPanel>
+
+        <HudPanel
+          x={1178}
+          y={82}
+          width={328}
+          height={248}
+          title="CALCULATION"
+          index={3}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          {Array.from({length: 6}, (_, index) => {
+            const progress =
+              0.25 +
+              seeded(index + 58) * 0.58 +
+              Math.sin(frame * 0.012 + index * 0.75) * 0.08;
+            return (
+              <g key={index} transform={`translate(22 ${61 + index * 28})`}>
+                <text x="0" y="9" fill={COLORS.soft} fontSize="8">
+                  {["CORE", "MESH", "NODE", "RATE", "SYNC", "HASH"][index]}
+                </text>
+                <line x1="56" y1="6" x2="280" y2="6" stroke={COLORS.dim} />
+                <line
+                  x1="56"
+                  y1="6"
+                  x2={56 + 224 * Math.max(0.08, Math.min(0.96, progress))}
+                  y2="6"
+                  stroke={index === statusPulse ? COLORS.cyan : COLORS.white}
+                  strokeWidth={index === statusPulse ? 2 : 1.3}
+                />
+                <rect
+                  x={54 + 224 * Math.max(0.08, Math.min(0.96, progress))}
+                  y="2"
+                  width="5"
+                  height="8"
+                  fill={index === statusPulse ? COLORS.cyanSoft : COLORS.white}
+                />
+              </g>
+            );
+          })}
+          <text x="22" y="228" fill={COLORS.dim} fontSize="8" letterSpacing="1.4">
+            CYCLE {String(Math.floor(frame / 4) % 9999).padStart(4, "0")} / NOMINAL
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={1522}
+          y={82}
+          width={324}
+          height={248}
+          title="SIGNAL WAVE"
+          index={4}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <Waveform
+            x={18}
+            y={57}
+            width={288}
+            height={112}
+            frame={frame}
+            accent={activePanel === 4}
+          />
+          <text x="18" y="191" fill={COLORS.soft} fontSize="8.5" letterSpacing="1.2">
+            FREQ 034.88 KHZ
+          </text>
+          <text x="306" y="191" textAnchor="end" fill={COLORS.soft} fontSize="8.5">
+            ±0.004
+          </text>
+          <line x1="18" y1="204" x2="306" y2="204" stroke={COLORS.dim} />
+          <line
+            x1="18"
+            y1="204"
+            x2={18 + 288 * (0.58 + Math.sin(frame * 0.015) * 0.08)}
+            y2="204"
+            stroke={COLORS.white}
+          />
+          <text x="18" y="226" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.5">
+            RX / PHASE / MODULATION
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={74}
+          y={346}
+          width={410}
+          height={254}
+          title="PRIMARY METRIC"
+          index={5}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <text
+            x="24"
+            y="101"
+            fill={activePanel === 5 ? COLORS.cyanSoft : COLORS.white}
+            fontSize="44"
+            fontWeight="600"
+            letterSpacing="1.6"
+            filter={activePanel === 5 ? "url(#cyan-glow)" : "url(#soft-white)"}
+          >
+            {mainValue.toFixed(2)}
+          </text>
+          <text x="25" y="124" fill={COLORS.soft} fontSize="8.5" letterSpacing="1.8">
+            NETWORK CONFIDENCE / INDEX
+          </text>
+          <g transform="translate(228 61)">
+            {Array.from({length: 8}, (_, index) => (
+              <g key={index}>
+                <line
+                  x1="0"
+                  y1={index * 18}
+                  x2="152"
+                  y2={index * 18}
+                  stroke={COLORS.dim}
+                  strokeOpacity="0.55"
+                />
+                <rect
+                  x={index * 18}
+                  y={index * 18 - 4}
+                  width={26 + seeded(index + 91) * 58}
+                  height="5"
+                  fill={index === statusPulse ? COLORS.cyan : COLORS.white}
+                  fillOpacity={index === statusPulse ? 0.85 : 0.68}
+                />
+              </g>
+            ))}
+          </g>
+          <LinePlot
+            x={24}
+            y={160}
+            width={356}
+            height={61}
+            frame={frame}
+            seed={21}
+            accent={activePanel === 5}
+            fill
+          />
+          <line x1="24" y1="231" x2="380" y2="231" stroke={COLORS.dim} />
+        </HudPanel>
+
+        <HudPanel
+          x={500}
+          y={346}
+          width={400}
+          height={254}
+          title={`ANALYTICS / NO ${packet}`}
+          index={6}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <MiniBars
+            x={20}
+            y={61}
+            width={358}
+            height={88}
+            count={34}
+            frame={frame}
+            seed={64}
+            accent={activePanel === 6}
+          />
+          <LinePlot
+            x={20}
+            y={166}
+            width={358}
+            height={52}
+            frame={frame}
+            seed={73}
+            accent={activePanel === 6}
+            fill
+          />
+          <text x="20" y="237" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.4">
+            SAMPLE / TICK / DELTA / DISTRIBUTION
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={916}
+          y={346}
+          width={246}
+          height={254}
+          title="ACTION GRID"
+          index={7}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <ButtonGrid
+            x={20}
+            y={60}
+            columns={3}
+            rows={3}
+            cellWidth={70}
+            cellHeight={54}
+            frame={frame}
+          />
+          <text x="20" y="230" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.2">
+            CONTROL BUS / READY
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={1178}
+          y={346}
+          width={328}
+          height={254}
+          title="NUMERIC MATRIX"
+          index={8}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <g transform="translate(22 59)">
+            {[0, 1, 2].map((index) => {
+              const value = (47 + index * 11 + Math.floor(frame / 42) * 7) % 99;
+              return (
+                <g key={index} transform={`translate(0 ${index * 51})`}>
+                  <text x="0" y="30" fill={COLORS.soft} fontSize="18">
+                    ×
+                  </text>
+                  <text
+                    x="32"
+                    y="30"
+                    fill={index === statusPulse % 3 ? COLORS.cyanSoft : COLORS.white}
+                    fontSize="31"
+                  >
+                    {String(value).padStart(2, "0")}
+                  </text>
+                  <line x1="80" y1="29" x2="181" y2="29" stroke={COLORS.dim} />
+                  <rect
+                    x="88"
+                    y="19"
+                    width={38 + seeded(index + 14) * 54}
+                    height="5"
+                    fill={index === statusPulse % 3 ? COLORS.cyan : COLORS.white}
+                    fillOpacity="0.72"
+                  />
+                </g>
+              );
+            })}
+            <g transform="translate(229 5)">
+              {Array.from({length: 16}, (_, index) => (
+                <rect
+                  key={index}
+                  x="0"
+                  y={index * 8}
+                  width="33"
+                  height="4"
+                  fill={index < 6 + Math.floor((Math.sin(frame * 0.025) + 1) * 4)
+                    ? index > 11
+                      ? COLORS.amber
+                      : COLORS.cyan
+                    : COLORS.dim}
+                  fillOpacity="0.76"
+                />
+              ))}
+            </g>
+          </g>
+          <rect x="22" y="223" width="119" height="16" fill="none" stroke={COLORS.dim} />
+          <text x="82" y="234" textAnchor="middle" fill={COLORS.soft} fontSize="7.5">
+            CONNECT
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={1522}
+          y={346}
+          width={324}
+          height={254}
+          title="CONTROL PANEL"
+          index={9}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <g transform="translate(18 56)">
+            {Array.from({length: 9}, (_, index) => (
+              <line
+                key={`v-${index}`}
+                x1={(index / 8) * 288}
+                y1="0"
+                x2={(index / 8) * 288}
+                y2="151"
+                stroke={COLORS.dim}
+                strokeOpacity="0.5"
+              />
+            ))}
+            {Array.from({length: 7}, (_, index) => (
+              <line
+                key={`h-${index}`}
+                x1="0"
+                y1={(index / 6) * 151}
+                x2="288"
+                y2={(index / 6) * 151}
+                stroke={COLORS.dim}
+                strokeOpacity="0.5"
+              />
+            ))}
+            <LinePlot
+              x={0}
+              y={0}
+              width={288}
+              height={151}
+              frame={frame}
+              seed={102}
+              accent={activePanel === 9}
+            />
+            <line x1="144" y1="0" x2="144" y2="151" stroke={COLORS.white} strokeOpacity="0.25" />
+            <line x1="0" y1="75.5" x2="288" y2="75.5" stroke={COLORS.white} strokeOpacity="0.25" />
+          </g>
+          <text x="18" y="230" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.5">
+            VECTOR LOCK / AUTONOMOUS
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={74}
+          y={616}
+          width={826}
+          height={346}
+          title="DATA INDEX"
+          index={10}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <g transform="translate(20 57)">
+            {Array.from({length: 7}, (_, row) => {
+              const rowActive = Math.floor(frame / 36) % 7 === row;
+              return (
+                <g key={row} transform={`translate(0 ${row * 36})`}>
+                  <rect
+                    x="0"
+                    y="-3"
+                    width="786"
+                    height="28"
+                    fill={rowActive ? COLORS.cyan : COLORS.white}
+                    fillOpacity={rowActive ? 0.08 : row % 2 === 0 ? 0.025 : 0}
+                  />
+                  <line x1="0" y1="25" x2="786" y2="25" stroke={COLORS.dim} strokeOpacity="0.54" />
+                  <text x="8" y="15" fill={rowActive ? COLORS.cyanSoft : COLORS.soft} fontSize="9">
+                    {["26B", "41C", "59A", "71F", "83D", "92E", "A17"][row]} /
+                    {String((packet + row * 13) % 999).padStart(3, "0")}
+                  </text>
+                  <text x="155" y="15" fill={COLORS.white} fontSize="9">
+                    {String(118 + row * 147 + Math.floor(frame / 24) % 19).padStart(4, "0")} MB
+                  </text>
+                  <text x="300" y="15" fill={COLORS.soft} fontSize="9">
+                    NODE {String((row * 7 + 12) % 46).padStart(2, "0")}
+                  </text>
+                  <text x="446" y="15" fill={COLORS.white} fontSize="9">
+                    CH {String((row * 31 + packet) % 999).padStart(3, "0")}
+                  </text>
+                  <line
+                    x1="588"
+                    y1="11"
+                    x2="750"
+                    y2="11"
+                    stroke={COLORS.dim}
+                    strokeWidth="2"
+                  />
+                  <line
+                    x1="588"
+                    y1="11"
+                    x2={588 + 162 * (0.28 + seeded(row + 205) * 0.66)}
+                    y2="11"
+                    stroke={rowActive ? COLORS.cyan : COLORS.white}
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx="774"
+                    cy="11"
+                    r="3"
+                    fill={rowActive ? COLORS.cyanSoft : COLORS.soft}
+                  />
+                </g>
+              );
+            })}
+          </g>
+          <text x="20" y="327" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.5">
+            INDEX / ADDRESS / CAPACITY / CONTROLLER / INTEGRITY
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={916}
+          y={616}
+          width={590}
+          height={346}
+          title="SYSTEM CONSOLE"
+          index={11}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <g transform="translate(22 57)">
+            {[
+              "initialize mesh --channel primary",
+              "verify sensor-array / checksum accepted",
+              "compile data-map / nodes synchronized",
+              "calculate vector field / delta nominal",
+              "stream packet-bus / no collision",
+              "commit runtime state / integrity 100%",
+              "observe telemetry / autonomous mode",
+              "archive cycle / await next command",
+            ].map((line, index) => {
+              const visible =
+                ((Math.floor(frame / 28) + index + 4) % 10) < 8;
+              return (
+                <g key={line} transform={`translate(0 ${index * 26})`} opacity={visible ? 1 : 0.25}>
+                  <text x="0" y="10" fill={index === statusPulse ? COLORS.cyanSoft : COLORS.soft} fontSize="8.5">
+                    {String(index + 1).padStart(2, "0")}:
+                  </text>
+                  <text x="34" y="10" fill={COLORS.white} fontSize="8.5" letterSpacing="0.55">
+                    {line}
+                  </text>
+                  <text x="528" y="10" textAnchor="end" fill={COLORS.dim} fontSize="8">
+                    [{visible ? "OK" : ".."}]
+                  </text>
+                </g>
+              );
+            })}
+            <line x1="0" y1="224" x2="546" y2="224" stroke={COLORS.dim} />
+            <text x="0" y="247" fill={COLORS.soft} fontSize="8.5">
+              DOWNLOAD / PROCESSING
+            </text>
+            <rect x="151" y="239" width="301" height="9" fill="none" stroke={COLORS.dim} />
+            <rect
+              x="153"
+              y="241"
+              width={297 * (0.18 + ((frame % 240) / 240) * 0.8)}
+              height="5"
+              fill={activePanel === 11 ? COLORS.cyan : COLORS.white}
+              fillOpacity="0.82"
+            />
+            <text x="466" y="248" fill={COLORS.white} fontSize="8.5">
+              {String(Math.floor(18 + ((frame % 240) / 240) * 80)).padStart(2, "0")}%
+            </text>
+            <path
+              d="M520 243h22M531 232v22M525 237l12 12M537 237l-12 12"
+              stroke={COLORS.soft}
+              strokeWidth="1"
+            />
+          </g>
+          <text x="22" y="327" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.4">
+            ROOT / SYSTEM / LIVE TELEMETRY
+          </text>
+        </HudPanel>
+
+        <HudPanel
+          x={1522}
+          y={616}
+          width={324}
+          height={346}
+          title="STATUS TRACKS"
+          index={12}
+          frame={frame}
+          activePanel={activePanel}
+        >
+          <TrackRows
+            x={18}
+            y={63}
+            width={286}
+            rows={9}
+            frame={frame}
+            seed={41}
+            accent={activePanel === 12}
+          />
+          <text x="18" y="322" fill={COLORS.dim} fontSize="7.5" letterSpacing="1.4">
+            SIGNAL / BUFFER / RESPONSE
+          </text>
+        </HudPanel>
+
+        <g opacity="0.5">
+          <path d="M60 74V48H88 M1832 48H1860V74 M60 966V992H88 M1832 992H1860V966" stroke={COLORS.white} strokeWidth="2" fill="none" />
+          <line x1="60" y1="1008" x2="1860" y2="1008" stroke={COLORS.dim} />
+          <text x="60" y="1026" fill={COLORS.dim} fontSize="8" letterSpacing="1.45">
+            INT / UNSIGNED COUNT / GROUP INFO / NODE / BLOCK / CONTROLLER / SYSTEM
+          </text>
+          <text x="1860" y="1026" textAnchor="end" fill={COLORS.dim} fontSize="8" letterSpacing="1.45">
+            CORE STATUS: NOMINAL
+          </text>
+        </g>
+      </svg>
+
       <div
         style={{
           position: "absolute",
-          width: WIDTH,
-          height: HEIGHT,
-          left: 0,
-          top: 0,
-          transformOrigin: "top left",
-          transform: `scale(${renderScaleX}, ${renderScaleY})`,
+          inset: 0,
+          opacity: opacity * 0.2,
+          pointerEvents: "none",
+          background:
+            "repeating-linear-gradient(0deg,rgba(255,255,255,.026) 0px,rgba(255,255,255,.026) 1px,transparent 1px,transparent 4px)",
+          mixBlendMode: "screen",
         }}
-      >
-        <Background frame={frame} />
-
-        <svg
-          width={WIDTH}
-          height={HEIGHT}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          style={{position: "absolute", inset: 0}}
-        >
-          <defs>
-            <linearGradient id="bulb-gradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#FFF176" />
-              <stop offset="46%" stopColor="#FFD84D" />
-              <stop offset="100%" stopColor="#F1AA2D" />
-            </linearGradient>
-            <radialGradient id="core-halo">
-              <stop offset="0%" stopColor="#FFE888" stopOpacity="0.82" />
-              <stop offset="54%" stopColor="#FFD64F" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#FFD64F" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="stage-sheen" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.42" />
-              <stop offset="36%" stopColor="#FFFFFF" stopOpacity="0.08" />
-              <stop offset="70%" stopColor="#FFFFFF" stopOpacity="0" />
-              <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.18" />
-            </linearGradient>
-            {stages.map((stage, index) => (
-              <linearGradient
-                key={stage.label}
-                id={`stage-gradient-${index}`}
-                x1="0"
-                y1="0"
-                x2="1"
-                y2="1"
-              >
-                <stop offset="0%" stopColor={stage.colorA} />
-                <stop offset="100%" stopColor={stage.colorB} />
-              </linearGradient>
-            ))}
-            <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="28" />
-            </filter>
-            <filter id="bulb-shadow" x="-50%" y="-40%" width="200%" height="210%">
-              <feDropShadow
-                dx="0"
-                dy="24"
-                stdDeviation="26"
-                floodColor="#02111F"
-                floodOpacity="0.5"
-              />
-            </filter>
-            <filter id="stage-shadow" x="-40%" y="-40%" width="180%" height="200%">
-              <feDropShadow
-                dx="0"
-                dy="18"
-                stdDeviation="16"
-                floodColor="#010C18"
-                floodOpacity="0.42"
-              />
-            </filter>
-            <filter id="tiny-glow" x="-180%" y="-180%" width="460%" height="460%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="tracer-glow" x="-260%" y="-260%" width="620%" height="620%">
-              <feGaussianBlur stdDeviation="10" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          <g
-            transform={`translate(${CX} ${CY}) translate(0 ${cameraY}) scale(${camera}) translate(${-CX} ${-CY})`}
-          >
-            <RadialBurst
-              frame={frame}
-              start={96}
-              end={180}
-              inner={70}
-              outer={215}
-              count={10}
-            />
-            {stages.map((stage, index) => (
-              <RadialStage
-                key={stage.label}
-                frame={frame}
-                stage={stage}
-                index={index}
-              />
-            ))}
-            <BulbCore frame={frame} />
-            <LightTracer frame={frame} />
-            <RadialBurst
-              frame={frame}
-              start={748}
-              end={842}
-              inner={482}
-              outer={540}
-              count={12}
-            />
-          </g>
-        </svg>
-
-        <ConcentricWipe frame={frame} />
-      </div>
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.42) 100%)",
+        }}
+      />
     </AbsoluteFill>
   );
 };
