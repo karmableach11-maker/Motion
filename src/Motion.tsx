@@ -8,499 +8,560 @@ import {
   useVideoConfig,
 } from "remotion";
 
+/**
+ * Icon source: Lucide Static v1.27.0
+ * https://lucide.dev/icons/
+ * License: ISC — https://lucide.dev/license
+ *
+ * The selected SVG paths are embedded so the render is deterministic and
+ * does not require a network connection.
+ */
+
 const clamp = {
   extrapolateLeft: "clamp" as const,
   extrapolateRight: "clamp" as const,
 };
 
-type IconName = "chart" | "coins" | "rocket";
+const easeOut = Easing.bezier(0.22, 1, 0.36, 1);
+const easeInOut = Easing.bezier(0.65, 0, 0.35, 1);
+
+const routePath =
+  "M 270 825 C 360 835 445 710 475 560 C 493 470 455 420 510 360 C 610 245 742 210 842 282 C 925 342 910 500 1032 530 C 1137 556 1080 682 1095 748 C 1228 895 1455 890 1535 704 C 1602 548 1510 474 1572 362 C 1627 263 1695 225 1770 184";
+
+type IconName = "lightbulb" | "search" | "cog" | "clock" | "target";
 
 type Stage = {
-  number: "01" | "02" | "03";
-  color: string;
-  light: string;
-  dark: string;
-  tint: string;
   x: number;
-  arrive: number;
+  y: number;
+  labelX: number;
+  labelY: number;
+  color: string;
+  color2: string;
+  glow: string;
   icon: IconName;
+  ringRotation: number;
+  enter: number;
 };
 
-const STAGES: readonly Stage[] = [
+const stages: Stage[] = [
   {
-    number: "01",
-    color: "#ff9418",
-    light: "#ffb43f",
-    dark: "#c76800",
-    tint: "#fff4df",
-    x: 115,
-    arrive: 42,
-    icon: "chart",
+    x: 270,
+    y: 825,
+    labelX: 425,
+    labelY: 803,
+    color: "#6BCB00",
+    color2: "#A4E91B",
+    glow: "rgba(107, 203, 0, 0.28)",
+    icon: "lightbulb",
+    ringRotation: -106,
+    enter: 78,
   },
   {
-    number: "02",
-    color: "#f45450",
-    light: "#ff7972",
-    dark: "#bd312f",
-    tint: "#fff0ef",
-    x: 695,
-    arrive: 205,
-    icon: "coins",
+    x: 500,
+    y: 440,
+    labelX: 615,
+    labelY: 520,
+    color: "#00B98D",
+    color2: "#21D7A4",
+    glow: "rgba(0, 185, 141, 0.27)",
+    icon: "search",
+    ringRotation: -36,
+    enter: 180,
   },
   {
-    number: "03",
-    color: "#1aa5a9",
-    light: "#27c2c4",
-    dark: "#087377",
-    tint: "#e9f8f7",
-    x: 1275,
-    arrive: 368,
-    icon: "rocket",
+    x: 842,
+    y: 282,
+    labelX: 970,
+    labelY: 126,
+    color: "#06BFC8",
+    color2: "#21DCE0",
+    glow: "rgba(6, 191, 200, 0.27)",
+    icon: "cog",
+    ringRotation: -122,
+    enter: 286,
   },
-] as const;
+  {
+    x: 1032,
+    y: 705,
+    labelX: 1190,
+    labelY: 660,
+    color: "#087FC4",
+    color2: "#19A3E1",
+    glow: "rgba(8, 127, 196, 0.27)",
+    icon: "clock",
+    ringRotation: -104,
+    enter: 398,
+  },
+  {
+    x: 1545,
+    y: 430,
+    labelX: 1622,
+    labelY: 584,
+    color: "#6900D1",
+    color2: "#9600EB",
+    glow: "rgba(105, 0, 209, 0.27)",
+    icon: "target",
+    ringRotation: -80,
+    enter: 510,
+  },
+];
 
-const drawStyle = (progress: number): React.CSSProperties => ({
-  strokeDasharray: 1,
-  strokeDashoffset: 1 - progress,
-});
-
-const InternetIcon: React.FC<{
-  name: IconName;
-  color: string;
-  progress: number;
-  frame: number;
-  fps: number;
-  start: number;
-}> = ({name, color, progress, frame, fps, start}) => {
-  const iconSpring = spring({
+const progressSpring = (
+  frame: number,
+  fps: number,
+  start: number,
+  duration = 58,
+) =>
+  spring({
     frame: frame - start,
     fps,
-    config: {damping: 14, stiffness: 125, mass: 0.72},
-    durationInFrames: 52,
+    durationInFrames: duration,
+    config: {
+      damping: 17,
+      stiffness: 118,
+      mass: 0.82,
+    },
   });
-  const settle = interpolate(
-    Math.sin(((frame - start) / fps) * Math.PI * 2 * 0.55),
-    [-1, 1],
-    [-1.2, 1.2],
-  );
-  const active = interpolate(progress, [0, 0.18], [0, 1], clamp);
-  const accent = "#ffc13b";
+
+const pulse = (frame: number, start: number, duration: number) => {
+  const p = interpolate(frame, [start, start + duration], [0, 1], clamp);
+  return Math.sin(p * Math.PI);
+};
+
+type LucideIconProps = {
+  name: IconName;
+  color: string;
+  active: number;
+  frame: number;
+};
+
+const LucideIcon: React.FC<LucideIconProps> = ({
+  name,
+  color,
+  active,
+  frame,
+}) => {
+  const common = {
+    fill: "none",
+    stroke: "#172026",
+    strokeWidth: 1.65,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  if (name === "lightbulb") {
+    const breathe = 1 + active * 0.055;
+    return (
+      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+        <g
+          {...common}
+          transform={`translate(12 12) scale(${breathe}) translate(-12 -12)`}
+        >
+          <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+          <path d="M9 18h6" />
+          <path d="M10 22h4" />
+        </g>
+        {[
+          [12, 0.8, 12, 3.1],
+          [3.5, 4, 5.2, 5.7],
+          [20.5, 4, 18.8, 5.7],
+          [2.1, 11, 4.5, 11],
+          [21.9, 11, 19.5, 11],
+        ].map(([x1, y1, x2, y2], i) => (
+          <line
+            key={i}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={color}
+            strokeWidth="1.35"
+            strokeLinecap="round"
+            opacity={0.34 + active * 0.66}
+          />
+        ))}
+        <path
+          d="M9.2 14h5.6"
+          stroke={color}
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          opacity={0.5 + active * 0.5}
+        />
+      </svg>
+    );
+  }
+
+  if (name === "search") {
+    const focus = 1 + active * 0.045;
+    const scanX = interpolate(active, [0, 1], [7.6, 13.8], clamp);
+    return (
+      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+        <g
+          {...common}
+          transform={`translate(11 11) scale(${focus}) translate(-11 -11)`}
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.34-4.34" />
+        </g>
+        <path
+          d={`M${scanX} 7.2v7.6`}
+          fill="none"
+          stroke={color}
+          strokeWidth="1.55"
+          strokeLinecap="round"
+          opacity={active * 0.86}
+          style={{filter: `drop-shadow(0 0 ${active * 3}px ${color})`}}
+        />
+      </svg>
+    );
+  }
+
+  if (name === "cog") {
+    const rotation = active * 26 + Math.sin(frame / 22) * active * 2.5;
+    return (
+      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+        <g {...common} transform={`rotate(${rotation} 12 12)`}>
+          <path d="M11 10.27 7 3.34" />
+          <path d="m11 13.73-4 6.93" />
+          <path d="M12 22v-2" />
+          <path d="M12 2v2" />
+          <path d="M14 12h8" />
+          <path d="m17 20.66-1-1.73" />
+          <path d="m17 3.34-1 1.73" />
+          <path d="M2 12h2" />
+          <path d="m20.66 17-1.73-1" />
+          <path d="m20.66 7-1.73 1" />
+          <path d="m3.34 17 1.73-1" />
+          <path d="m3.34 7 1.73 1" />
+          <circle cx="12" cy="12" r="8" />
+        </g>
+        <circle
+          cx="12"
+          cy="12"
+          r={2 + active * 0.28}
+          fill="rgba(255,255,255,0.96)"
+          stroke={color}
+          strokeWidth="1.9"
+          style={{filter: `drop-shadow(0 0 ${active * 4}px ${color})`}}
+        />
+      </svg>
+    );
+  }
+
+  if (name === "clock") {
+    const handRotation = active * 115;
+    return (
+      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+        <circle {...common} cx="12" cy="12" r="10" />
+        <g
+          fill="none"
+          stroke="#172026"
+          strokeWidth="1.65"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          transform={`rotate(${handRotation} 12 12)`}
+        >
+          <path d="M12 6v6l4 2" />
+        </g>
+        <path
+          d="M12 6v6"
+          stroke={color}
+          strokeWidth="1.05"
+          strokeLinecap="round"
+          opacity={active * 0.8}
+          transform={`rotate(${handRotation} 12 12)`}
+        />
+      </svg>
+    );
+  }
 
   return (
-    <g
-      opacity={active}
-      transform={`translate(255 218) translate(0 ${settle * active}) scale(${
-        0.76 + iconSpring * 0.24
-      }) translate(-255 -218)`}
-    >
-      <circle
-        cx="255"
-        cy="218"
-        r={59 + iconSpring * 3}
-        fill="#ffffff"
-        stroke={color}
-        strokeWidth="2"
-        opacity="0.98"
-      />
-      <circle
-        cx="255"
-        cy="218"
-        r="50"
-        fill={color}
-        opacity={interpolate(progress, [0.45, 1], [0.035, 0.075], clamp)}
-      />
-
-      <svg
-        x="208"
-        y="171"
-        width="94"
-        height="94"
-        viewBox="0 0 24 24"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        overflow="visible"
+    <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+      <g
+        {...common}
+        transform={`translate(12 12) scale(${1 + active * 0.055}) translate(-12 -12)`}
       >
-        {name === "chart" ? (
-          <>
-            <path
-              d="M12 16v5M16 14v7M20 10v11M4 18v3M8 14v7"
-              stroke={color}
-              strokeWidth="1.8"
-              pathLength="1"
-              style={drawStyle(progress)}
-            />
-            <path
-              d="m22 3-8.65 8.65a.5.5 0 0 1-.7 0L9.35 8.35a.5.5 0 0 0-.7 0L2 15"
-              stroke={color}
-              strokeWidth="1.8"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.18, 1], [0, 1], clamp))}
-            />
-            <circle
-              cx="22"
-              cy="3"
-              r="1.15"
-              fill={accent}
-              stroke="#ffffff"
-              strokeWidth="0.55"
-              opacity={interpolate(progress, [0.68, 0.9], [0, 1], clamp)}
-            />
-          </>
-        ) : null}
-
-        {name === "coins" ? (
-          <>
-            <path
-              d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17"
-              stroke={color}
-              strokeWidth="1.7"
-              pathLength="1"
-              style={drawStyle(progress)}
-            />
-            <path
-              d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9M2 16l6 6"
-              stroke={color}
-              strokeWidth="1.7"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.14, 1], [0, 1], clamp))}
-            />
-            <circle
-              cx="16"
-              cy="6.8"
-              r="3.1"
-              fill={accent}
-              stroke={color}
-              strokeWidth="1.15"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.28, 0.88], [0, 1], clamp))}
-            />
-            <path
-              d="M16 5.45v2.7M15.1 6h1.45a.65.65 0 0 1 0 1.3h-1.1"
-              stroke="#ffffff"
-              strokeWidth="0.72"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.62, 1], [0, 1], clamp))}
-            />
-          </>
-        ) : null}
-
-        {name === "rocket" ? (
-          <>
-            <path
-              d="m12 15-3-3a22 22 0 0 1 2-3.95A12.66 12.66 0 0 1 22 2c0 2.72-.78 7.5-6.1 11.2A23 23 0 0 1 12 15Z"
-              fill="#ffffff"
-              stroke={color}
-              strokeWidth="1.65"
-              pathLength="1"
-              style={drawStyle(progress)}
-            />
-            <path
-              d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"
-              stroke={color}
-              strokeWidth="1.65"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.12, 1], [0, 1], clamp))}
-            />
-            <circle
-              cx="16.15"
-              cy="7.85"
-              r="2.15"
-              fill={accent}
-              stroke={color}
-              strokeWidth="1.1"
-              opacity={interpolate(progress, [0.48, 0.78], [0, 1], clamp)}
-            />
-            <path
-              d="M8.2 16.4c-1.6-.1-3 .45-3.9 1.35-.95.95-1.35 3.75-1.35 3.75s2.8-.4 3.75-1.35c.9-.9 1.45-2.3 1.35-3.9"
-              fill={accent}
-              stroke="#f28a16"
-              strokeWidth="1.1"
-              pathLength="1"
-              style={drawStyle(interpolate(progress, [0.48, 1], [0, 1], clamp))}
-            />
-          </>
-        ) : null}
-      </svg>
-    </g>
+        <circle cx="12" cy="12" r="10" />
+        <circle cx="12" cy="12" r="6" />
+        <circle cx="12" cy="12" r="2" fill={color} stroke={color} />
+      </g>
+      <circle
+        cx="12"
+        cy="12"
+        r={2.2 + active * 7.4}
+        fill="none"
+        stroke={color}
+        strokeWidth="0.8"
+        opacity={active * 0.32}
+      />
+    </svg>
   );
 };
 
-const StageCard: React.FC<{
-  stage: Stage;
+type NodeProps = {
+  item: Stage;
   index: number;
   frame: number;
   fps: number;
-}> = ({stage, index, frame, fps}) => {
-  const local = frame - stage.arrive;
+};
 
-  const ribbonProgress = interpolate(local, [0, 48], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const cardSpring = spring({
-    frame: local - 18,
-    fps,
-    config: {damping: 15, stiffness: 105, mass: 0.8},
-    durationInFrames: 62,
-  });
-  const badgeSpring = spring({
-    frame: local - 58,
-    fps,
-    config: {damping: 12, stiffness: 135, mass: 0.72},
-    durationInFrames: 58,
-  });
-  const iconProgress = interpolate(local, [96, 166], [0, 1], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic),
-  });
-  const connectorProgress = interpolate(local, [78, 164], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
-  const sceneHold = interpolate(frame, [740, 800], [0, 1], clamp);
-  const floatY =
-    Math.sin((frame / fps) * Math.PI * 2 * 0.22 + index * 0.75) *
-    2.5 *
-    interpolate(local, [160, 230], [0, 1], clamp) *
-    (1 - sceneHold * 0.45);
-  const badgePulse =
-    1 +
-    Math.sin((frame / fps) * Math.PI * 2 * 0.42 + index * 0.8) *
-      0.012 *
-      interpolate(local, [122, 190], [0, 1], clamp);
-  const highlightX = interpolate(frame, [588 + index * 18, 700 + index * 18], [-180, 620], clamp);
-  const highlightOpacity = interpolate(
-    frame,
-    [570 + index * 18, 600 + index * 18, 680 + index * 18, 714 + index * 18],
-    [0, 0.82, 0.82, 0],
-    clamp,
-  );
+const Node: React.FC<NodeProps> = ({item, index, frame, fps}) => {
+  const entered = progressSpring(frame, fps, item.enter);
+  const iconIn = progressSpring(frame, fps, item.enter + 25, 46);
+  const labelIn = progressSpring(frame, fps, item.enter + 38, 48);
+  const exitStart = 758 + (stages.length - 1 - index) * 24;
+  const leaving = progressSpring(frame, fps, exitStart, 44);
+  const visible = Math.max(0, Math.min(1, entered * (1 - leaving)));
+  const active =
+    Math.min(
+      1,
+      pulse(frame, item.enter + 50, 86) +
+        pulse(frame, 620 + index * 9, 110) * 0.58,
+    ) * visible;
+  const iconVisible = Math.max(0, Math.min(1, iconIn * (1 - leaving)));
+  const labelVisible = Math.max(0, Math.min(1, labelIn * (1 - leaving)));
+  const lift =
+    interpolate(entered, [0, 1], [38, 0], {...clamp, easing: easeOut}) +
+    interpolate(leaving, [0, 1], [0, -24], {...clamp, easing: easeInOut});
+  const scale = 0.72 + visible * 0.28 + active * 0.018;
+  const mainArc = Math.max(0.0001, 0.68 * visible);
+  const grayArc = Math.max(0.0001, 0.145 * visible);
+  const capArc = Math.max(0.0001, 0.085 * visible);
+  const gradientId = `ring-gradient-${index}`;
 
   return (
-    <g transform={`translate(${stage.x} ${330 + floatY})`}>
-      <defs>
-        <linearGradient id={`ribbon-${index}`} x1="0" y1="0" x2="0.9" y2="1">
-          <stop offset="0%" stopColor={stage.light} />
-          <stop offset="58%" stopColor={stage.color} />
-          <stop offset="100%" stopColor={stage.dark} />
-        </linearGradient>
-        <linearGradient id={`badge-${index}`} x1="0" y1="0" x2="0.7" y2="1">
-          <stop offset="0%" stopColor={stage.light} />
-          <stop offset="65%" stopColor={stage.color} />
-          <stop offset="100%" stopColor={stage.dark} />
-        </linearGradient>
-        <linearGradient id={`card-${index}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="100%" stopColor="#fbfcfd" />
-        </linearGradient>
-        <linearGradient id={`glint-${index}`} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-          <stop offset="48%" stopColor="#ffffff" stopOpacity="0.74" />
-          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.45" />
-          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-        </linearGradient>
-        <clipPath id={`card-clip-${index}`}>
-          <rect x="35" y="105" width="460" height="230" rx="16" />
-        </clipPath>
-        <mask id={`connector-mask-${index}`}>
-          <path
-            d="M65 322v28q0 14 14 14h420q16 0 16-16V210"
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth="7"
-            pathLength="1"
-            strokeDasharray={`${connectorProgress} 1`}
-          />
-        </mask>
-        <filter id={`card-shadow-${index}`} x="-30%" y="-30%" width="180%" height="200%">
-          <feDropShadow
-            dx="0"
-            dy="19"
-            stdDeviation="18"
-            floodColor="#5c6670"
-            floodOpacity="0.18"
-          />
-          <feDropShadow
-            dx="0"
-            dy="3"
-            stdDeviation="3"
-            floodColor="#66717b"
-            floodOpacity="0.12"
-          />
-        </filter>
-        <filter id={`badge-shadow-${index}`} x="-50%" y="-50%" width="200%" height="220%">
-          <feDropShadow
-            dx="0"
-            dy="10"
-            stdDeviation="10"
-            floodColor={stage.dark}
-            floodOpacity="0.28"
-          />
-        </filter>
-        <filter id={`ribbon-shadow-${index}`} x="-30%" y="-30%" width="180%" height="200%">
-          <feDropShadow
-            dx="0"
-            dy="11"
-            stdDeviation="9"
-            floodColor={stage.dark}
-            floodOpacity="0.23"
-          />
-        </filter>
-      </defs>
-
-      <g mask={`url(#connector-mask-${index})`}>
-        <path
-          d="M65 322v28q0 14 14 14h420q16 0 16-16V210"
-          fill="none"
-          stroke={stage.color}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray="10 10"
-        />
-      </g>
-      <circle
-        cx="515"
-        cy="210"
-        r={7 + Math.sin(frame * 0.08 + index) * 0.8}
-        fill={stage.color}
-        opacity={interpolate(connectorProgress, [0.88, 1], [0, 1], clamp)}
-      />
-      <circle
-        cx="515"
-        cy="210"
-        r="14"
-        fill="none"
-        stroke={stage.color}
-        strokeWidth="2"
-        opacity={
-          interpolate(connectorProgress, [0.9, 1], [0, 0.28], clamp) *
-          interpolate(Math.sin(frame * 0.065 + index), [-1, 1], [0.3, 1])
-        }
-      />
-
-      <g
-        opacity={interpolate(ribbonProgress, [0, 0.16], [0, 1], clamp)}
-        transform={`translate(0 65) scale(${ribbonProgress} 1) translate(0 -65)`}
-        style={{transformOrigin: "0px 65px"}}
-        filter={`url(#ribbon-shadow-${index})`}
+    <>
+      <div
+        style={{
+          position: "absolute",
+          left: item.x - 112,
+          top: item.y - 112,
+          width: 224,
+          height: 224,
+          opacity: visible,
+          transform: `translateY(${lift}px) scale(${scale})`,
+          transformOrigin: "50% 50%",
+          zIndex: 4,
+        }}
       >
-        <path
-          d="M28 66C12 66 0 78 0 94v66c0-24 18-38 42-38h216V66Z"
-          fill={`url(#ribbon-${index})`}
+        <div
+          style={{
+            position: "absolute",
+            left: 31,
+            top: 35,
+            width: 162,
+            height: 162,
+            borderRadius: "50%",
+            background: "rgba(36, 48, 55, 0.18)",
+            filter: "blur(16px)",
+            transform: "translate(9px, 12px)",
+          }}
         />
-        <path d="M0 122h42v58C18 176 0 160 0 138Z" fill={stage.dark} />
-        <path d="M174 66h84l-8 56h-76Z" fill={stage.light} opacity="0.92" />
-      </g>
-
-      <g
-        opacity={interpolate(cardSpring, [0, 0.12], [0, 1], clamp)}
-        transform={`translate(265 220) translate(0 ${(1 - cardSpring) * 34}) scale(${
-          0.94 + cardSpring * 0.06
-        }) translate(-265 -220)`}
-      >
-        <rect
-          x="35"
-          y="105"
-          width="460"
-          height="230"
-          rx="16"
-          fill={`url(#card-${index})`}
-          filter={`url(#card-shadow-${index})`}
-        />
-        <rect
-          x="36.5"
-          y="106.5"
-          width="457"
-          height="227"
-          rx="14.5"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="3"
-          opacity="0.9"
-        />
-        <path
-          d="M53 116h422"
-          stroke={stage.color}
-          strokeWidth="3"
-          opacity="0.1"
-          strokeLinecap="round"
-        />
-        <ellipse cx="255" cy="218" rx="104" ry="86" fill={stage.tint} opacity="0.8" />
-        <ellipse
-          cx="255"
-          cy="218"
-          rx="80"
-          ry="66"
-          fill="none"
-          stroke={stage.color}
-          strokeWidth="2"
-          strokeDasharray="2 11"
-          strokeLinecap="round"
-          opacity="0.25"
-          transform={`rotate(${frame * 0.11 + index * 31} 255 218)`}
-        />
-
-        <InternetIcon
-          name={stage.icon}
-          color={stage.color}
-          progress={iconProgress}
-          frame={frame}
-          fps={fps}
-          start={stage.arrive + 92}
-        />
-
-        <g clipPath={`url(#card-clip-${index})`} opacity={highlightOpacity}>
-          <rect
-            x={highlightX}
-            y="90"
-            width="145"
-            height="270"
-            fill={`url(#glint-${index})`}
-            transform={`skewX(-18)`}
-            style={{mixBlendMode: "screen"}}
-          />
-        </g>
-      </g>
-
-      <g
-        opacity={interpolate(badgeSpring, [0, 0.08], [0, 1], clamp)}
-        transform={`translate(160 70) scale(${badgeSpring * badgePulse}) translate(-160 -70)`}
-        filter={`url(#badge-shadow-${index})`}
-      >
-        <circle cx="160" cy="70" r="65" fill="#ffffff" />
-        <circle cx="160" cy="70" r="53" fill={`url(#badge-${index})`} />
-        <circle
-          cx="160"
-          cy="70"
-          r="45"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="2"
-          opacity="0.24"
-        />
-        <path
-          d="M128 38a45 45 0 0 1 44-10"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="4"
-          strokeLinecap="round"
-          opacity="0.52"
-        />
-        <text
-          x="160"
-          y="91"
-          textAnchor="middle"
-          fill="#ffffff"
-          fontFamily="Arial, Helvetica, sans-serif"
-          fontSize="62"
-          fontWeight="400"
-          letterSpacing="-2"
+        <svg
+          viewBox="0 0 224 224"
+          width="224"
+          height="224"
+          style={{
+            position: "absolute",
+            inset: 0,
+            overflow: "visible",
+            filter: `drop-shadow(0 11px 10px rgba(26, 39, 47, 0.17)) drop-shadow(0 0 ${active * 16}px ${item.glow})`,
+          }}
+          aria-hidden
         >
-          {stage.number}
-        </text>
-      </g>
-    </g>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor={item.color2} />
+              <stop offset="0.58" stopColor={item.color} />
+              <stop offset="1" stopColor={item.color} />
+            </linearGradient>
+          </defs>
+          <circle
+            cx="112"
+            cy="112"
+            r="96"
+            fill="none"
+            stroke="#BFC4C8"
+            strokeWidth="20"
+            pathLength="1"
+            strokeDasharray={`${grayArc} ${1 - grayArc}`}
+            transform={`rotate(${item.ringRotation + 224} 112 112)`}
+          />
+          <circle
+            cx="112"
+            cy="112"
+            r="96"
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            strokeWidth="20"
+            pathLength="1"
+            strokeDasharray={`${mainArc} ${1 - mainArc}`}
+            transform={`rotate(${item.ringRotation} 112 112)`}
+          />
+          <circle
+            cx="112"
+            cy="112"
+            r="96"
+            fill="none"
+            stroke={item.color2}
+            strokeWidth="20"
+            pathLength="1"
+            strokeDasharray={`${capArc} ${1 - capArc}`}
+            transform={`rotate(${item.ringRotation + 278} 112 112)`}
+          />
+        </svg>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 36,
+            top: 36,
+            width: 152,
+            height: 152,
+            borderRadius: "50%",
+            boxSizing: "border-box",
+            background:
+              "radial-gradient(circle at 42% 32%, #FFFFFF 0%, #FFFFFF 55%, #F3F5F6 100%)",
+            border: "2px solid rgba(223, 227, 229, 0.9)",
+            boxShadow:
+              "inset 0 2px 3px rgba(255,255,255,0.96), 0 8px 16px rgba(28,42,50,0.16)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 75,
+            top: 75,
+            width: 74,
+            height: 74,
+            color: "#172026",
+            opacity: iconVisible,
+            transform: `translateY(${interpolate(iconIn, [0, 1], [18, 0], {
+              ...clamp,
+              easing: easeOut,
+            })}px) scale(${0.72 + iconVisible * 0.28})`,
+            filter: `drop-shadow(0 5px 5px rgba(22, 31, 37, 0.11)) drop-shadow(0 0 ${active * 10}px ${item.glow})`,
+          }}
+        >
+          <LucideIcon
+            name={item.icon}
+            color={item.color}
+            active={active}
+            frame={frame}
+          />
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: item.labelX,
+          top: item.labelY,
+          opacity: labelVisible,
+          transform: `translateY(${interpolate(labelIn, [0, 1], [22, 0], {
+            ...clamp,
+            easing: easeOut,
+          })}px) translateX(${interpolate(leaving, [0, 1], [0, 18], clamp)}px)`,
+          zIndex: 5,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 8,
+            fontFamily:
+              "Arial, Helvetica, ui-sans-serif, system-ui, sans-serif",
+            fontSize: 35,
+            fontWeight: 800,
+            lineHeight: 1,
+            letterSpacing: "-0.025em",
+            color: "#161B1F",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span>STEP</span>
+          <span style={{color: item.color}}>
+            {String(index + 1).padStart(2, "0")}
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            marginTop: 12,
+            width: 128,
+            height: 4,
+          }}
+        >
+          <div
+            style={{
+              width: 45,
+              height: 3,
+              borderRadius: 99,
+              background: "#1C2226",
+            }}
+          />
+          <div
+            style={{
+              width: interpolate(labelVisible, [0, 1], [0, 68], clamp),
+              height: 3,
+              borderRadius: 99,
+              background: item.color,
+              boxShadow: `0 0 ${active * 8}px ${item.glow}`,
+            }}
+          />
+        </div>
+      </div>
+    </>
+  );
+};
+
+type PaperPlaneProps = {
+  frame: number;
+  fps: number;
+};
+
+const PaperPlane: React.FC<PaperPlaneProps> = ({frame, fps}) => {
+  const entered = progressSpring(frame, fps, 594, 52);
+  const leaving = progressSpring(frame, fps, 748, 42);
+  const visible = Math.max(0, Math.min(1, entered * (1 - leaving)));
+  const fly = interpolate(entered, [0, 1], [-48, 0], {
+    ...clamp,
+    easing: easeOut,
+  });
+  const drift = Math.sin((frame - 594) / 15) * 3 * visible;
+  const tilt = Math.sin((frame - 594) / 19) * 1.8 * visible;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 1680,
+        top: 122,
+        width: 118,
+        height: 118,
+        opacity: visible,
+        transform: `translate(${fly + leaving * 28}px, ${-fly * 0.42 + drift}px) rotate(${tilt + leaving * 8}deg) scale(${0.8 + visible * 0.2})`,
+        transformOrigin: "50% 50%",
+        zIndex: 5,
+        color: "#11181D",
+        filter: "drop-shadow(0 8px 8px rgba(20,31,37,0.13))",
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden>
+        <g
+          fill="rgba(255,255,255,0.96)"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+          <path d="m21.854 2.147-10.94 10.939" fill="none" />
+        </g>
+      </svg>
+    </div>
   );
 };
 
@@ -508,73 +569,103 @@ export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  const sceneOpacity = interpolate(frame, [0, 22, 838, 899], [0, 1, 1, 0], clamp);
-  const cameraScale = interpolate(
-    frame,
-    [0, 520, 710, 835],
-    [0.975, 1, 1.012, 1],
-    {
-      ...clamp,
-      easing: Easing.inOut(Easing.cubic),
-    },
-  );
-  const floorOpacity = interpolate(frame, [26, 130, 790, 850], [0, 0.08, 0.08, 0], clamp);
+  const routeProgress = interpolate(frame, [54, 620], [0, 1], {
+    ...clamp,
+    easing: Easing.bezier(0.55, 0.05, 0.35, 0.98),
+  });
+  const routeFade = interpolate(frame, [810, 892], [1, 0], {
+    ...clamp,
+    easing: easeInOut,
+  });
+  const cameraIn = interpolate(frame, [560, 670], [0, 1], {
+    ...clamp,
+    easing: easeOut,
+  });
+  const cameraOut = interpolate(frame, [690, 830], [0, 1], {
+    ...clamp,
+    easing: easeInOut,
+  });
+  const camera = cameraIn * (1 - cameraOut);
+  const cameraScale = 1 + camera * 0.012;
+  const cameraX = -7 * camera;
+  const cameraY = 2 * camera;
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "#eeeeef",
         overflow: "hidden",
-        fontFamily: "Arial, Helvetica, sans-serif",
+        background:
+          "radial-gradient(circle at 50% 45%, #FFFFFF 0%, #FCFCFD 58%, #F7F8F9 100%)",
+        fontFamily:
+          "Arial, Helvetica, ui-sans-serif, system-ui, sans-serif",
       }}
     >
-      <AbsoluteFill
+      <div
         style={{
-          background:
-            "radial-gradient(circle at 50% 45%, #f8f8f9 0%, #eeeeef 58%, #e4e5e7 100%)",
+          position: "absolute",
+          inset: 0,
+          opacity: 0.18,
+          backgroundImage:
+            "radial-gradient(circle at 22% 24%, rgba(0,185,141,0.12) 0, transparent 18%), radial-gradient(circle at 77% 65%, rgba(105,0,209,0.08) 0, transparent 19%)",
         }}
       />
 
-      <svg
-        width="1920"
-        height="1080"
-        viewBox="0 0 1920 1080"
-        style={{position: "absolute", inset: 0, opacity: sceneOpacity}}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          transform: `translate(${cameraX}px, ${cameraY}px) scale(${cameraScale})`,
+          transformOrigin: "50% 50%",
+        }}
       >
-        <defs>
-          <filter id="floor-blur" x="-20%" y="-300%" width="140%" height="700%">
-            <feGaussianBlur stdDeviation="20" />
-          </filter>
-          <radialGradient id="floor-gradient">
-            <stop offset="0%" stopColor="#55616a" stopOpacity="0.54" />
-            <stop offset="100%" stopColor="#55616a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        <g
-          transform={`translate(960 540) scale(${cameraScale}) translate(-960 -540)`}
+        <svg
+          viewBox="0 0 1920 1080"
+          width="1920"
+          height="1080"
+          style={{position: "absolute", inset: 0, overflow: "visible"}}
+          aria-hidden
         >
-          <ellipse
-            cx="960"
-            cy="724"
-            rx="805"
-            ry="24"
-            fill="url(#floor-gradient)"
-            opacity={floorOpacity}
-            filter="url(#floor-blur)"
+          <defs>
+            <mask id="route-reveal-mask">
+              <rect width="1920" height="1080" fill="black" />
+              <path
+                d={routePath}
+                pathLength="1"
+                fill="none"
+                stroke="white"
+                strokeWidth="22"
+                strokeLinecap="round"
+                strokeDasharray={`${Math.max(0.0001, routeProgress)} ${Math.max(
+                  0.0001,
+                  1 - routeProgress,
+                )}`}
+              />
+            </mask>
+          </defs>
+          <path
+            d={routePath}
+            fill="none"
+            stroke="#13191D"
+            strokeWidth="5.3"
+            strokeLinecap="round"
+            strokeDasharray="1 19"
+            mask="url(#route-reveal-mask)"
+            opacity={0.95 * routeFade}
           />
+        </svg>
 
-          {STAGES.map((stage, index) => (
-            <StageCard
-              key={stage.number}
-              stage={stage}
-              index={index}
-              frame={frame}
-              fps={fps}
-            />
-          ))}
-        </g>
-      </svg>
+        {stages.map((item, index) => (
+          <Node
+            key={`${item.x}-${item.y}`}
+            item={item}
+            index={index}
+            frame={frame}
+            fps={fps}
+          />
+        ))}
+        <PaperPlane frame={frame} fps={fps} />
+      </div>
+
     </AbsoluteFill>
   );
 };
