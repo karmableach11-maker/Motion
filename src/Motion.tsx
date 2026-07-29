@@ -8,304 +8,645 @@ import {
   useVideoConfig,
 } from "remotion";
 
-type IconName = "search" | "idea" | "strategy" | "process" | "goal";
-
-type CardSpec = {
-  color: string;
-  dark: string;
-  icon: IconName;
-};
-
-const CARDS: CardSpec[] = [
-  {color: "#F15A2A", dark: "#C83C17", icon: "search"},
-  {color: "#FFAE24", dark: "#D68600", icon: "idea"},
-  {color: "#20B9B5", dark: "#0B8D8A", icon: "strategy"},
-  {color: "#087A9F", dark: "#045A79", icon: "process"},
-  {color: "#4D4D82", dark: "#34345F", icon: "goal"},
-];
-
-const clamp = {
-  extrapolateLeft: "clamp" as const,
-  extrapolateRight: "clamp" as const,
-};
-
-const gearOutlinePath = ({
-  cx,
-  cy,
-  teeth,
-  rootRadius,
-  tipRadius,
-  rotation = -Math.PI / 2,
-}: {
-  cx: number;
-  cy: number;
-  teeth: number;
-  rootRadius: number;
-  tipRadius: number;
-  rotation?: number;
-}) => {
-  const points: string[] = [];
-  const step = (Math.PI * 2) / teeth;
-
-  for (let tooth = 0; tooth < teeth; tooth++) {
-    const center = rotation + tooth * step;
-    const profile = [
-      {offset: -0.5, radius: rootRadius},
-      {offset: -0.31, radius: rootRadius},
-      {offset: -0.2, radius: tipRadius},
-      {offset: 0.2, radius: tipRadius},
-      {offset: 0.31, radius: rootRadius},
-      {offset: 0.5, radius: rootRadius},
-    ];
-
-    for (const point of profile) {
-      const angle = center + point.offset * step;
-      points.push(
-        `${cx + Math.cos(angle) * point.radius},${cy + Math.sin(angle) * point.radius}`,
-      );
-    }
-  }
-
-  return `M ${points.join(" L ")} Z`;
-};
-
-const LineIcon: React.FC<{
-  name: IconName;
+type IconProps = {
   progress: number;
-  accent: string;
-}> = ({name, progress, accent}) => {
-  const common = {
-    fill: "none",
-    stroke: "#666B6F",
-    strokeWidth: 3.1,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    vectorEffect: "non-scaling-stroke" as const,
-  };
+};
 
-  const iconStyle: React.CSSProperties = {
-    opacity: progress,
-    transform: `scale(${0.78 + progress * 0.22})`,
-    transformOrigin: "50% 50%",
-    filter: `drop-shadow(0 2px 1px rgba(255,255,255,.85))`,
-  };
+type CardData = {
+  number: string;
+  eyebrow: string;
+  label: string;
+  color: string;
+  colorDark: string;
+  colorLight: string;
+  icon: React.FC<IconProps>;
+};
 
-  const accentOpacity = interpolate(progress, [0.55, 1], [0, 0.34], clamp);
+const clamp: Parameters<typeof interpolate>[3] = {
+  extrapolateLeft: "clamp",
+  extrapolateRight: "clamp",
+};
 
-  if (name === "search") {
-    return (
-      <svg viewBox="0 0 100 100" width="66" height="66" style={iconStyle}>
-        <circle cx="42" cy="42" r="19" {...common} />
-        <path d="M56 56 78 78" {...common} strokeWidth={5} />
-        <path d="M28 42a14 14 0 0 1 14-14" {...common} stroke={accent} opacity={accentOpacity} />
-      </svg>
-    );
-  }
+const iconPhases = (progress: number) => ({
+  line: interpolate(progress, [0, 0.58], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  }),
+  fill: interpolate(progress, [0.48, 1], [0, 1], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic),
+  }),
+});
 
-  if (name === "idea") {
-    return (
-      <svg viewBox="0 0 100 100" width="68" height="68" style={iconStyle}>
-        <path d="M37 59c-7-5-11-13-10-22 1-12 11-22 24-22 13 0 23 10 24 23 0 8-4 16-11 21-4 3-5 6-5 10H42c0-4-1-7-5-10Z" {...common} />
-        <path d="M43 76h16M46 83h10M50 3V-5M20 14l-6-7M80 14l6-7M16 43H6M84 43h10" {...common} />
-        <path d="m42 45 7-9 5 8 7-9" {...common} stroke={accent} opacity={accentOpacity} />
-      </svg>
-    );
-  }
-
-  if (name === "strategy") {
-    return (
-      <svg viewBox="0 0 100 100" width="70" height="70" style={iconStyle}>
-        <path d="M18 75h64M22 68V41h14v27M43 68V26h14v42M64 68V36h14v32" {...common} />
-        <path d="M25 34c11-7 18-1 27-10 7-7 14-5 23-14" {...common} />
-        <path d="m67 10 9-1-1 9" {...common} stroke={accent} opacity={accentOpacity} />
-        <circle cx="29" cy="48" r="3" fill={accent} opacity={accentOpacity} />
-        <circle cx="50" cy="34" r="3" fill={accent} opacity={accentOpacity} />
-        <circle cx="71" cy="44" r="3" fill={accent} opacity={accentOpacity} />
-      </svg>
-    );
-  }
-
-  if (name === "process") {
-    return (
-      <svg viewBox="0 0 100 100" width="70" height="70" style={iconStyle}>
-        <g transform={`rotate(${(1 - progress) * -18} 62 39)`}>
-          <path
-            d={gearOutlinePath({
-              cx: 62,
-              cy: 39,
-              teeth: 10,
-              rootRadius: 19.5,
-              tipRadius: 25.5,
-            })}
-            {...common}
-            fill="rgba(250,252,252,.96)"
-          />
-          <circle cx="62" cy="39" r="7.4" {...common} />
-        </g>
-        <g transform={`rotate(${(1 - progress) * 22} 34 67)`}>
-          <path
-            d={gearOutlinePath({
-              cx: 34,
-              cy: 67,
-              teeth: 8,
-              rootRadius: 13.8,
-              tipRadius: 19.2,
-              rotation: -Math.PI / 2 + Math.PI / 8,
-            })}
-            {...common}
-            fill="rgba(250,252,252,.98)"
-          />
-          <circle
-            cx="34"
-            cy="67"
-            r="5.2"
-            {...common}
-            stroke={accent}
-            opacity={0.55 + accentOpacity}
-          />
-        </g>
-      </svg>
-    );
-  }
+const EnergyIcon: React.FC<IconProps> = ({progress}) => {
+  const {line, fill} = iconPhases(progress);
+  const rayScale = interpolate(progress, [0.1, 0.76], [0.72, 1], clamp);
 
   return (
-    <svg viewBox="0 0 100 100" width="70" height="70" style={iconStyle}>
-      <circle cx="50" cy="50" r="35" {...common} />
-      <circle cx="50" cy="50" r="24" {...common} />
-      <circle cx="50" cy="50" r="13" {...common} />
-      <circle cx="50" cy="50" r="4" fill={accent} opacity={0.7 * progress} />
-      <path d="M50 50 76 24M69 24h7v7" {...common} stroke={accent} opacity={accentOpacity} />
+    <svg width="166" height="166" viewBox="0 0 166 166">
+      <g
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={1 - fill * 0.72}
+      >
+        <circle
+          cx="83"
+          cy="83"
+          r="52"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - line}
+        />
+        <path
+          d="M92 35 L58 89 H80 L73 131 L109 72 H86 Z"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - line}
+        />
+      </g>
+      <circle
+        cx="83"
+        cy="83"
+        r={52 * rayScale}
+        fill="none"
+        stroke="rgba(255,255,255,0.3)"
+        strokeWidth="12"
+        opacity={fill}
+      />
+      <path
+        d="M92 35 L58 89 H80 L73 131 L109 72 H86 Z"
+        fill="#FFFFFF"
+        opacity={fill}
+        transform={`translate(${83 * (1 - 0.88 - fill * 0.12)} ${83 * (1 - 0.88 - fill * 0.12)}) scale(${0.88 + fill * 0.12})`}
+        style={{transformOrigin: "83px 83px"}}
+      />
     </svg>
   );
 };
 
-const Card: React.FC<{
-  spec: CardSpec;
-  index: number;
-}> = ({spec, index}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
+// Geometry adapted from Lucide Icons (ISC License):
+// https://lucide.dev/icons/recycle
+// https://lucide.dev/icons/gauge
+// https://lucide.dev/icons/chart-no-axes-combined
+const RecycleIcon: React.FC<IconProps> = ({progress}) => {
+  const {line, fill} = iconPhases(progress);
+  const rotation = interpolate(progress, [0, 1], [-12, 0], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const paths = [
+    "M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5",
+    "M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12",
+    "m14 16-3 3 3 3",
+    "M8.293 13.596 7.196 9.5 3.1 10.598",
+    "m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843",
+    "m13.378 9.633 4.096 1.098 1.097-4.096",
+  ];
 
-  const enterStart = 34 + index * 31;
-  const cardIn = spring({
-    frame: frame - enterStart,
-    fps,
-    config: {damping: 16, stiffness: 105, mass: 0.82},
-    durationInFrames: 62,
-  });
-  const ringIn = spring({
-    frame: frame - enterStart - 15,
-    fps,
-    config: {damping: 13, stiffness: 125, mass: 0.66},
-    durationInFrames: 52,
-  });
-  const iconIn = spring({
-    frame: frame - enterStart - 31,
-    fps,
-    config: {damping: 17, stiffness: 145, mass: 0.55},
-    durationInFrames: 44,
-  });
-
-  const reverseIndex = CARDS.length - 1 - index;
-  const exitStart = 755 + reverseIndex * 24;
-  const exit = interpolate(
-    frame,
-    [exitStart, exitStart + 52],
-    [0, 1],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
+  return (
+    <svg width="166" height="166" viewBox="0 0 24 24">
+      <circle
+        cx="12"
+        cy="12"
+        r="10.35"
+        fill="rgba(255,255,255,0.08)"
+        stroke="rgba(255,255,255,0.2)"
+        strokeWidth="0.45"
+        opacity={fill}
+      />
+      <g
+        fill="none"
+        stroke="#FFFFFF"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        transform={`rotate(${rotation} 12 12)`}
+        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
+      >
+        {paths.map((path, index) => {
+          const pathProgress = interpolate(
+            line,
+            [index * 0.055, 0.58 + index * 0.055],
+            [0, 1],
+            clamp,
+          );
+          return (
+          <path
+            key={path}
+            d={path}
+            pathLength={1}
+            strokeDasharray={1}
+            strokeDashoffset={1 - pathProgress}
+            strokeWidth={1.02 + fill * 0.42}
+            opacity={0.8 + fill * 0.2}
+          />
+          );
+        })}
+      </g>
+      <circle
+        cx="12"
+        cy="12"
+        r="1.05"
+        fill="rgba(255,255,255,0.2)"
+        stroke="#FFFFFF"
+        strokeWidth="0.32"
+        opacity={fill}
+      />
+    </svg>
   );
+};
 
-  const active = interpolate(frame, [205, 290, 675, 748], [0, 1, 1, 0], clamp);
-  const floatY = Math.sin((frame + index * 21) / 42) * 3.2 * active;
-  const ringBreathe = 1 + Math.sin((frame + index * 18) / 34) * 0.012 * active;
-  const cardOpacity = cardIn * (1 - exit);
-  const cardY = (1 - cardIn) * 128 + exit * 92 + floatY;
-  const cardScale = (0.9 + cardIn * 0.1) * (1 - exit * 0.035);
-  const ringExit = interpolate(exit, [0, 0.58, 1], [0, 0.05, 1], clamp);
-  const shadowOpacity = interpolate(cardOpacity, [0, 1], [0, 0.22], clamp);
+const EfficiencyIcon: React.FC<IconProps> = ({progress}) => {
+  const {line, fill} = iconPhases(progress);
+  const needleRotation = interpolate(progress, [0.22, 1], [-58, 28], {
+    ...clamp,
+    easing: Easing.out(Easing.back(1.1)),
+  });
+  const ticks = [-62, -31, 0, 31, 62];
 
-  const shimmer = interpolate(
+  return (
+    <svg width="166" height="166" viewBox="0 0 24 24">
+      <circle
+        cx="12"
+        cy="12"
+        r="10.35"
+        fill="rgba(255,255,255,0.08)"
+        stroke="rgba(255,255,255,0.2)"
+        strokeWidth="0.45"
+        opacity={fill}
+      />
+      <path
+        d="M3.34 19a10 10 0 1 1 17.32 0"
+        fill="none"
+        stroke="rgba(255,255,255,0.24)"
+        strokeWidth="1.38"
+        strokeLinecap="round"
+        opacity={fill}
+      />
+      <path
+        d="M3.34 19a10 10 0 1 1 17.32 0"
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={1.04 + fill * 0.4}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={1 - line}
+        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
+      />
+      <g transform="translate(12 14)">
+        {ticks.map((angle, index) => {
+          const tickProgress = interpolate(
+            line,
+            [0.1 + index * 0.06, 0.54 + index * 0.055],
+            [0, 1],
+            clamp,
+          );
+          return (
+            <line
+              key={angle}
+              x1="0"
+              y1="-7.75"
+              x2="0"
+              y2="-6.45"
+              stroke="#FFFFFF"
+              strokeWidth="0.68"
+              strokeLinecap="round"
+              opacity={tickProgress}
+              transform={`rotate(${angle})`}
+            />
+          );
+        })}
+      </g>
+      <g transform={`rotate(${needleRotation} 12 14)`}>
+        <line
+          x1="12"
+          y1="14"
+          x2="12"
+          y2="7.35"
+          stroke="#FFFFFF"
+          strokeWidth={0.84 + fill * 0.22}
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - line}
+          style={{filter: "drop-shadow(0 1px 1px rgba(0,48,40,0.22))"}}
+        />
+        <circle cx="12" cy="14" r="1.48" fill="#FFFFFF" opacity={fill} />
+      </g>
+      <circle
+        cx="12"
+        cy="14"
+        r="1.18"
+        fill="#FFFFFF"
+        opacity={fill}
+      />
+      <circle
+        cx="12"
+        cy="14"
+        r="0.48"
+        fill="rgba(8,121,111,0.78)"
+        opacity={fill}
+      />
+    </svg>
+  );
+};
+
+const GrowthIcon: React.FC<IconProps> = ({progress}) => {
+  const {line, fill} = iconPhases(progress);
+  const bars = [
+    {d: "M4 18.463V21", delay: 0.12},
+    {d: "M8 14.656V21", delay: 0.2},
+    {d: "M12 16V21", delay: 0.28},
+    {d: "M16 14.639V21", delay: 0.36},
+    {d: "M20 10.656V21", delay: 0.44},
+  ];
+  const trend = interpolate(progress, [0.08, 0.72], [0, 1], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const points = [
+    {cx: 2, cy: 15},
+    {cx: 9, cy: 8.354},
+    {cx: 13, cy: 11.646},
+    {cx: 22, cy: 3},
+  ];
+
+  return (
+    <svg width="166" height="166" viewBox="0 0 24 24">
+      <circle
+        cx="12"
+        cy="12"
+        r="10.35"
+        fill="rgba(255,255,255,0.08)"
+        stroke="rgba(255,255,255,0.2)"
+        strokeWidth="0.45"
+        opacity={fill}
+      />
+      {bars.map((bar) => {
+        const barProgress = interpolate(
+          progress,
+          [bar.delay, Math.min(1, bar.delay + 0.42)],
+          [0, 1],
+          {
+            ...clamp,
+            easing: Easing.out(Easing.cubic),
+          },
+        );
+        return (
+          <path
+            key={bar.d}
+            d={bar.d}
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth={1.02 + fill * 0.42}
+            strokeLinecap="round"
+            pathLength={1}
+            strokeDasharray={1}
+            strokeDashoffset={1 - barProgress}
+            opacity={0.82 + fill * 0.18}
+          />
+        );
+      })}
+      <path
+        d="m2 15 6.647-6.646a.5.5 0 0 1 .707 0l3.292 3.292a.5.5 0 0 0 .708 0L22 3"
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={1.05 + fill * 0.38}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={1 - trend}
+        style={{filter: "drop-shadow(0 1.1px 1.6px rgba(0,48,40,0.2))"}}
+      />
+      <path
+        d="M18.5 3H22v3.5"
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={1.05 + fill * 0.38}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={1 - trend}
+      />
+      {points.map((point, index) => {
+        const pointProgress = interpolate(
+          fill,
+          [index * 0.11, 0.55 + index * 0.09],
+          [0, 1],
+          clamp,
+        );
+        return (
+          <circle
+            key={`${point.cx}-${point.cy}`}
+            cx={point.cx}
+            cy={point.cy}
+            r={0.55 + pointProgress * 0.18}
+            fill="#FFFFFF"
+            opacity={pointProgress}
+          />
+        );
+      })}
+    </svg>
+  );
+};
+
+const cards: CardData[] = [
+  {
+    number: "01",
+    eyebrow: "CLEAN",
+    label: "ENERGY",
+    color: "#0B8F77",
+    colorDark: "#076454",
+    colorLight: "#42C3A4",
+    icon: EnergyIcon,
+  },
+  {
+    number: "02",
+    eyebrow: "CIRCULAR",
+    label: "RECYCLE",
+    color: "#079E8F",
+    colorDark: "#057166",
+    colorLight: "#52CCB8",
+    icon: RecycleIcon,
+  },
+  {
+    number: "03",
+    eyebrow: "SMART",
+    label: "EFFICIENCY",
+    color: "#08A99A",
+    colorDark: "#08796F",
+    colorLight: "#61D2C1",
+    icon: EfficiencyIcon,
+  },
+  {
+    number: "04",
+    eyebrow: "POSITIVE",
+    label: "GROWTH",
+    color: "#19A979",
+    colorDark: "#0D7554",
+    colorLight: "#66D1A6",
+    icon: GrowthIcon,
+  },
+];
+
+const CARD_WIDTH = 326;
+const CARD_HEIGHT = 526;
+const GAP = 38;
+const GROUP_WIDTH = CARD_WIDTH * cards.length + GAP * (cards.length - 1);
+const START_X = (1920 - GROUP_WIDTH) / 2;
+const CARD_TOP = 263;
+
+const SustainableCard: React.FC<{
+  data: CardData;
+  index: number;
+  frame: number;
+  fps: number;
+}> = ({data, index, frame, fps}) => {
+  const start = 36 + index * 96;
+  const localFrame = Math.max(0, frame - start);
+  const entrance = spring({
+    frame: localFrame,
+    fps,
+    durationInFrames: 86,
+    config: {
+      damping: 15,
+      mass: 0.82,
+      stiffness: 92,
+    },
+  });
+  const opacityIn = interpolate(frame, [start, start + 18], [0, 1], clamp);
+  const exit = interpolate(frame, [824 + index * 4, 898], [1, 0], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const iconProgress = interpolate(
     frame,
-    [enterStart + 12, enterStart + 58],
-    [-180, 360],
+    [start + 43, start + 128],
+    [0, 1],
+    {
+      ...clamp,
+      easing: Easing.inOut(Easing.cubic),
+    },
+  );
+  const copyProgress = interpolate(
+    frame,
+    [start + 88, start + 132],
+    [0, 1],
+    {
+      ...clamp,
+      easing: Easing.out(Easing.cubic),
+    },
+  );
+  const cornerProgress = interpolate(
+    frame,
+    [start + 18, start + 64],
+    [0, 1],
+    {
+      ...clamp,
+      easing: Easing.out(Easing.cubic),
+    },
+  );
+  const shimmerX = interpolate(frame, [602, 676], [-170, CARD_WIDTH + 170], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const shimmerOpacity = interpolate(
+    frame,
+    [590, 610, 660, 686],
+    [0, 0.5, 0.5, 0],
     clamp,
   );
+  const climaxGlow = interpolate(
+    frame,
+    [584, 620, 675, 708],
+    [0, 1, 1, 0],
+    clamp,
+  );
+  const floatY =
+    Math.sin((frame + index * 18) / 34) *
+    2.2 *
+    interpolate(frame, [start + 110, start + 170], [0, 1], clamp);
+  const Icon = data.icon;
 
   return (
     <div
       style={{
-        position: "relative",
-        width: 300,
-        height: 615,
-        opacity: cardOpacity,
-        transform: `translateY(${cardY}px) scale(${cardScale}) perspective(1100px) rotateX(${(1 - cardIn) * 7 - exit * 5}deg)`,
-        transformOrigin: "50% 75%",
-        willChange: "transform, opacity",
+        position: "absolute",
+        left: START_X + index * (CARD_WIDTH + GAP),
+        top: CARD_TOP,
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        opacity: opacityIn * exit,
+        transform: `translateY(${(1 - entrance) * 178 + floatY}px) rotate(${(1 - entrance) * (index % 2 === 0 ? -2.1 : 2.1)}deg) scale(${0.9 + entrance * 0.1})`,
+        transformOrigin: "50% 92%",
+        filter: `drop-shadow(0 28px 25px rgba(13,75,64,${0.16 + climaxGlow * 0.08})) drop-shadow(0 8px 10px rgba(20,58,51,0.09))`,
       }}
     >
       <div
         style={{
           position: "absolute",
-          left: 24,
-          right: 24,
-          bottom: -20,
-          height: 60,
-          borderRadius: "0 0 30px 30px",
-          background: `linear-gradient(180deg, ${spec.color}, ${spec.dark})`,
-          boxShadow: `0 17px 23px rgba(55, 63, 71, ${shadowOpacity * 0.55})`,
-          transform: `scaleX(${interpolate(cardIn, [0.25, 1], [0.58, 1], clamp)})`,
-          transformOrigin: "50% 0%",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
           inset: 0,
-          overflow: "hidden",
           borderRadius: 28,
-          border: "2px solid rgba(255,255,255,.9)",
-          background:
-            "linear-gradient(145deg, rgba(255,255,255,1) 0%, rgba(252,253,253,1) 58%, rgba(241,244,245,1) 100%)",
-          boxShadow: `13px 18px 25px rgba(49, 58, 67, ${shadowOpacity}), inset 0 2px 1px rgba(255,255,255,.9), inset 0 -1px 0 rgba(158,169,177,.25)`,
+          overflow: "hidden",
+          background: `linear-gradient(148deg, ${data.colorLight} 0%, ${data.color} 42%, ${data.colorDark} 118%)`,
+          border: "1px solid rgba(255,255,255,0.4)",
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.42), inset 0 -70px 90px rgba(0,42,34,0.16), 0 0 ${climaxGlow * 32}px rgba(51,210,175,0.24)`,
         }}
       >
         <div
           style={{
             position: "absolute",
-            top: -110,
-            left: shimmer,
-            width: 112,
-            height: 850,
-            opacity: 0.48,
-            transform: "rotate(17deg)",
-            background:
-              "linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: 25,
-            right: 25,
-            top: 235,
-            height: 1,
-            opacity: 0.22,
-            background:
-              "linear-gradient(90deg, transparent, rgba(119,128,134,.4), transparent)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: 315,
-            width: 130,
-            height: 130,
+            width: 360,
+            height: 360,
             borderRadius: "50%",
-            transform: "translateX(-50%)",
-            opacity: 0.07,
-            background: `radial-gradient(circle, ${spec.color} 0%, transparent 68%)`,
+            top: -205,
+            right: -150,
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.07) 42%, rgba(255,255,255,0) 72%)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 250,
+            height: 250,
+            borderRadius: "50%",
+            left: -145,
+            bottom: -125,
+            border: "1px solid rgba(255,255,255,0.13)",
+          }}
+        />
+
+        {[0, 1, 2].map((ring) => (
+          <div
+            key={ring}
+            style={{
+              position: "absolute",
+              left: 78 - ring * 13,
+              top: 134 - ring * 13,
+              width: 170 + ring * 26,
+              height: 170 + ring * 26,
+              borderRadius: "50%",
+              border: "1px solid rgba(255,255,255,0.1)",
+              opacity: cornerProgress,
+              transform: `scale(${0.84 + cornerProgress * 0.16})`,
+            }}
+          />
+        ))}
+
+        <div
+          style={{
+            position: "absolute",
+            top: 28,
+            left: 29,
+            right: 27,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              color: "rgba(255,255,255,0.98)",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontSize: 31,
+              fontWeight: 700,
+              letterSpacing: -1,
+            }}
+          >
+            {data.number}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: "rgba(255,255,255,0.76)",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: 2.4,
+            }}
+          >
+            <span>{data.eyebrow}</span>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#FFFFFF",
+                boxShadow: "0 0 12px rgba(255,255,255,0.75)",
+              }}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: 143,
+            height: 178,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            transform: `scale(${0.88 + iconProgress * 0.12})`,
+          }}
+        >
+          <Icon progress={iconProgress} />
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: 29,
+            right: 29,
+            bottom: 31,
+            transform: `translateY(${(1 - copyProgress) * 24}px)`,
+            opacity: copyProgress,
+          }}
+        >
+          <div
+            style={{
+              width: 32,
+              height: 3,
+              borderRadius: 2,
+              marginBottom: 16,
+              background: "rgba(255,255,255,0.56)",
+            }}
+          />
+          <div
+            style={{
+              color: "#FFFFFF",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontSize: data.label === "EFFICIENCY" ? 27 : 32,
+              lineHeight: 1,
+              fontWeight: 700,
+              letterSpacing: data.label === "EFFICIENCY" ? 0.4 : 1.2,
+            }}
+          >
+            {data.label}
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: shimmerX,
+            top: -70,
+            width: 94,
+            height: CARD_HEIGHT + 140,
+            transform: "skewX(-16deg)",
+            opacity: shimmerOpacity,
+            background:
+              "linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.84), rgba(255,255,255,0))",
+            mixBlendMode: "screen",
           }}
         />
       </div>
@@ -313,48 +654,29 @@ const Card: React.FC<{
       <div
         style={{
           position: "absolute",
-          zIndex: 3,
-          top: -84,
-          left: 70,
-          width: 160,
-          height: 160,
-          borderRadius: "50%",
-          opacity: ringIn * (1 - ringExit),
-          transform: `translateY(${(1 - ringIn) * -54 - ringExit * 48}px) scale(${(0.65 + ringIn * 0.35) * ringBreathe * (1 - ringExit * 0.14)}) rotate(${(1 - ringIn) * -14 + ringExit * 9}deg)`,
-          background: `linear-gradient(145deg, ${spec.color} 8%, ${spec.dark} 100%)`,
-          boxShadow: `0 17px 19px rgba(48,55,60,.27), 0 4px 0 rgba(255,255,255,.72), inset 0 3px 2px rgba(255,255,255,.34), inset 0 -4px 5px rgba(0,0,0,.16)`,
-          willChange: "transform, opacity",
+          right: 18,
+          top: 18,
+          width: 40,
+          height: 40,
+          opacity: cornerProgress,
+          transform: `scale(${cornerProgress}) rotate(${45 * (1 - cornerProgress)}deg)`,
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 20,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle at 35% 28%, #FFFFFF 0%, #FAFBFB 52%, #E8EBEC 100%)",
-            boxShadow:
-              "inset 0 3px 3px rgba(255,255,255,.95), inset 0 -4px 8px rgba(112,122,128,.16), 0 1px 3px rgba(0,0,0,.2)",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              width: 35,
-              height: 150,
-              top: -16,
-              left: shimmer / 4 - 24,
-              transform: "rotate(20deg)",
-              background:
-                "linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent)",
-            }}
+        <svg width="40" height="40" viewBox="0 0 40 40">
+          <path
+            d="M4 20 H36 M20 4 V36"
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth="1"
           />
-          <LineIcon name={spec.icon} progress={iconIn * (1 - exit)} accent={spec.color} />
-        </div>
+          <circle
+            cx="20"
+            cy="20"
+            r="7"
+            fill="none"
+            stroke="rgba(255,255,255,0.38)"
+            strokeWidth="1"
+          />
+        </svg>
       </div>
     </div>
   );
@@ -362,74 +684,124 @@ const Card: React.FC<{
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-
-  const opening = interpolate(frame, [0, 28], [0, 1], {
-    ...clamp,
-    easing: Easing.out(Easing.cubic),
-  });
+  const {fps} = useVideoConfig();
+  const cameraX = interpolate(
+    frame,
+    [0, 120, 350, 545, 690, 900],
+    [34, 34, 10, -34, 0, 0],
+    {
+      ...clamp,
+      easing: Easing.inOut(Easing.cubic),
+    },
+  );
   const cameraScale = interpolate(
     frame,
-    [0, 260, 410, 610, 750, 860, 899],
-    [1, 1, 1.018, 1.032, 1.02, 1, 1],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
+    [0, 230, 520, 700],
+    [1, 1.008, 1.018, 1],
+    clamp,
   );
-  const cameraY = interpolate(
-    frame,
-    [0, 310, 560, 750, 860],
-    [0, 0, -11, -7, 0],
-    {...clamp, easing: Easing.inOut(Easing.cubic)},
-  );
-  const ambient = interpolate(frame, [0, 320, 600, 899], [0.05, 0.16, 0.18, 0.05], clamp);
+  const backgroundDrift = -cameraX * 0.34;
+  const sceneExit = interpolate(frame, [824, 899], [1, 0], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const floorOpacity =
+    interpolate(frame, [20, 380], [0, 0.52], clamp) * sceneExit;
+  const climaxLine = interpolate(frame, [574, 652], [0, 1], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic),
+  });
+  const climaxLineOut = interpolate(frame, [680, 730], [1, 0], clamp);
 
   return (
     <AbsoluteFill
       style={{
         overflow: "hidden",
-        backgroundColor: "#DDE6F2",
-        backgroundImage:
-          "radial-gradient(circle at 50% 42%, rgba(255,255,255,.52) 0%, rgba(231,238,247,.3) 40%, rgba(205,217,232,.42) 100%)",
+        backgroundColor: "#EEF3F0",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
       <div
         style={{
           position: "absolute",
-          inset: -120,
-          opacity: ambient,
+          inset: 0,
+          transform: `translateX(${backgroundDrift}px)`,
           background:
-            "radial-gradient(circle at 18% 38%, #FFFFFF 0%, transparent 27%), radial-gradient(circle at 82% 58%, #A8C2DD 0%, transparent 29%)",
-          transform: `translateX(${Math.sin(frame / 110) * 18}px)`,
+            "radial-gradient(circle at 17% 19%, rgba(103,205,173,0.2) 0%, rgba(103,205,173,0) 28%), radial-gradient(circle at 82% 78%, rgba(29,156,131,0.13) 0%, rgba(29,156,131,0) 31%), linear-gradient(135deg, #F4F7F5 0%, #E8F0EC 100%)",
         }}
       />
 
       <div
         style={{
           position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 1712,
-          height: 700,
-          display: "flex",
-          gap: 53,
-          alignItems: "flex-start",
-          opacity: opening,
-          transform: `translate(-50%, -45%) translateY(${cameraY}px) scale(${cameraScale})`,
-          transformOrigin: "50% 50%",
-          willChange: "transform",
+          inset: 0,
+          opacity: 0.21,
+          transform: `translateX(${backgroundDrift * 1.4}px)`,
+          backgroundImage:
+            "radial-gradient(circle, rgba(17,102,83,0.28) 1.15px, transparent 1.15px)",
+          backgroundSize: "42px 42px",
+          maskImage:
+            "radial-gradient(ellipse at center, black 0%, rgba(0,0,0,0.5) 45%, transparent 77%)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 190,
+          right: 190,
+          top: 744,
+          height: 138,
+          borderRadius: "50%",
+          opacity: floorOpacity,
+          background:
+            "radial-gradient(ellipse at center, rgba(20,85,69,0.28) 0%, rgba(20,85,69,0.08) 43%, rgba(20,85,69,0) 73%)",
+          filter: "blur(20px)",
+          transform: `translateX(${cameraX * 0.35}px)`,
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 268,
+          right: 268,
+          top: 809,
+          height: 2,
+          opacity: climaxLine * climaxLineOut * 0.58,
+          overflow: "hidden",
+          background: "rgba(11,143,119,0.14)",
         }}
       >
-        {CARDS.map((card, index) => (
-          <Card key={card.icon} spec={card} index={index} />
-        ))}
+        <div
+          style={{
+            width: `${climaxLine * 100}%`,
+            height: "100%",
+            margin: "0 auto",
+            background:
+              "linear-gradient(90deg, rgba(58,196,163,0), rgba(58,196,163,0.9), rgba(58,196,163,0))",
+          }}
+        />
       </div>
 
       <div
         style={{
           position: "absolute",
           inset: 0,
-          pointerEvents: "none",
-          boxShadow: "inset 0 0 150px rgba(91,112,135,.12)",
+          transform: `translateX(${cameraX}px) scale(${cameraScale})`,
+          transformOrigin: "50% 54%",
         }}
-      />
+      >
+        {cards.map((card, index) => (
+          <SustainableCard
+            key={card.number}
+            data={card}
+            index={index}
+            frame={frame}
+            fps={fps}
+          />
+        ))}
+      </div>
     </AbsoluteFill>
   );
 };
