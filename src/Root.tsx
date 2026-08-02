@@ -1,4 +1,3 @@
-import "./index.css";
 import { Motion } from "./Motion";
 export const RemotionRoot: React.FC = () => {
   return (
