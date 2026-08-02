@@ -1,345 +1,346 @@
-import React, {useMemo} from 'react';
-import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  spring,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+import React from "react";
+import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from "remotion";
 
-const VIOLET = '#8d78ff';
-const VIOLET_SOFT = '#b5a8ff';
-const CHAMPAGNE = '#e3c580';
-const IVORY = '#f7f1e5';
-const MUTED = '#aaa8b7';
-const CELL_COUNT = 8;
+const WIDTH = 1920;
+const HEIGHT = 1080;
 
-const clamp = (value: number) => Math.max(0, Math.min(1, value));
-
-const smooth = (value: number) => {
-  const t = clamp(value);
-  return t * t * (3 - 2 * t);
+const CARD = {
+  left: 436,
+  top: 208,
+  width: 1048,
+  height: 664,
+  radius: 76,
 };
 
-type Dust = {
-  x: number;
-  y: number;
-  r: number;
-  depth: number;
-  phase: number;
-  warm: boolean;
+const RAIL = {
+  left: 176,
+  top: 370,
+  width: 702,
+  height: 58,
 };
 
-const mono =
-  '"SFMono-Regular", "Cascadia Mono", "Roboto Mono", "Liberation Mono", ui-monospace, monospace';
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-const Atmosphere: React.FC<{
-  frame: number;
-  duration: number;
-  charge: number;
-  complete: number;
-}> = ({frame, duration, charge, complete}) => {
-  const dust = useMemo<Dust[]>(
-    () =>
-      Array.from({length: 38}, (_, index) => ({
-        x: (index * 37.73 + Math.sin(index * 2.11) * 19 + 100) % 100,
-        y: (index * 61.27 + Math.cos(index * 1.37) * 23 + 100) % 100,
-        r: 0.7 + ((index * 17) % 19) / 10,
-        depth: 0.5 + (index % 5) * 0.18,
-        phase: index * 0.83,
-        warm: index % 7 === 0,
-      })),
-    [],
-  );
-  const loop = (frame / Math.max(1, duration - 1)) * Math.PI * 2;
-  const energy = 0.55 + charge * 0.45 + complete * 0.28;
+const MicroTick: React.FC<{index: number; active: boolean}> = ({
+  index,
+  active,
+}) => (
+  <div
+    style={{
+      position: "relative",
+      flex: 1,
+      height: index % 5 === 0 ? 7 : 4,
+      borderRadius: 4,
+      background: active
+        ? "linear-gradient(90deg, rgba(58,232,255,0.64), rgba(108,116,255,0.58))"
+        : "rgba(139,177,208,0.15)",
+      boxShadow: active ? "0 0 9px rgba(58,210,255,0.18)" : undefined,
+    }}
+  />
+);
+
+const Background: React.FC<{frame: number}> = ({frame}) => {
+  // The 10-second reference completes five broad-glow cycles. The target is
+  // proportionally stretched to 15 seconds, so one cycle lasts 180 frames.
+  const phase = (frame / 180) * Math.PI * 2;
+  const topLeftPulse = 0.5 + 0.5 * Math.sin(phase);
+  const bottomRightPulse = 0.5 + 0.5 * Math.cos(phase);
 
   return (
     <AbsoluteFill
       style={{
-        overflow: 'hidden',
+        overflow: "hidden",
         background:
-          'radial-gradient(circle at 55% 45%, #17122d 0%, #0b0a14 36%, #050507 72%, #020203 100%)',
+          "radial-gradient(circle at 50% 48%, #091b3d 0%, #050d25 36%, #020718 68%, #01030c 100%)",
       }}
     >
-      <AbsoluteFill
+      <div
         style={{
-          transform: `translate3d(${Math.sin(loop * 0.48) * 28}px, ${Math.cos(loop * 0.39) * 18}px, 0) scale(1.08)`,
+          position: "absolute",
+          inset: 0,
           background:
-            'radial-gradient(ellipse at 18% 72%, rgba(114,82,242,0.18), transparent 43%), radial-gradient(ellipse at 83% 24%, rgba(226,191,116,0.105), transparent 38%), radial-gradient(ellipse at 61% 58%, rgba(102,70,217,0.13), transparent 48%)',
-          filter: 'blur(12px)',
-          opacity: energy,
-        }}
-      />
-
-      <AbsoluteFill
-        style={{
-          opacity: 0.42,
-          transform: `perspective(1300px) rotateX(68deg) rotateZ(-8deg) translate3d(${Math.sin(loop * 0.34) * 32}px, ${76 + Math.cos(loop * 0.29) * 20}px, 0) scale(1.25)`,
-          transformOrigin: '50% 70%',
-          backgroundImage:
-            'linear-gradient(rgba(157,139,255,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(157,139,255,0.055) 1px, transparent 1px)',
-          backgroundSize: '84px 84px',
-          maskImage:
-            'radial-gradient(ellipse at 54% 54%, black 0%, rgba(0,0,0,0.8) 44%, transparent 78%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse at 54% 54%, black 0%, rgba(0,0,0,0.8) 44%, transparent 78%)',
+            "linear-gradient(118deg, rgba(31,74,136,0.13) 0%, transparent 31%, transparent 68%, rgba(34,23,105,0.16) 100%)",
         }}
       />
 
       <div
         style={{
-          position: 'absolute',
-          left: -430 + charge * 1660,
-          top: -550,
-          width: 290,
-          height: 2200,
-          transform: 'rotate(31deg)',
+          position: "absolute",
+          left: 34,
+          top: -54,
+          width: 690,
+          height: 520,
+          borderRadius: "48%",
+          transform: `scale(${0.94 + topLeftPulse * 0.08})`,
+          opacity: 0.02 + topLeftPulse * 0.7,
           background:
-            'linear-gradient(90deg, transparent, rgba(137,112,255,0.045), rgba(215,196,255,0.14), rgba(234,201,132,0.055), transparent)',
-          filter: 'blur(32px)',
-          opacity: 0.36 + charge * 0.36,
-          mixBlendMode: 'screen',
+            "radial-gradient(ellipse at 45% 45%, rgba(27,237,255,0.70) 0%, rgba(16,160,215,0.35) 18%, rgba(13,82,162,0.13) 44%, transparent 72%)",
+          filter: "blur(24px)",
         }}
       />
 
-      {dust.map((particle, index) => {
-        const driftX =
-          Math.sin(frame * (0.007 + particle.depth * 0.0018) + particle.phase) *
-          38 *
-          particle.depth;
-        const driftY =
-          Math.cos(frame * (0.005 + particle.depth * 0.0014) + particle.phase) *
-          23 *
-          particle.depth;
-        const twinkle =
-          0.12 +
-          0.07 * Math.sin(frame * 0.035 + particle.phase) +
-          (index % 11 === 0 ? complete * 0.25 : 0);
-        return (
-          <div
-            key={index}
-            style={{
-              position: 'absolute',
-              left: `${particle.x}%`,
-              top: `${particle.y}%`,
-              width: particle.r * 2,
-              height: particle.r * 2,
-              borderRadius: '50%',
-              background: particle.warm ? CHAMPAGNE : VIOLET_SOFT,
-              opacity: twinkle,
-              transform: `translate3d(${driftX}px, ${driftY}px, 0) scale(${0.7 + particle.depth * 0.34})`,
-              boxShadow: particle.warm
-                ? '0 0 12px rgba(227,197,128,0.42)'
-                : '0 0 12px rgba(141,120,255,0.42)',
-            }}
-          />
-        );
-      })}
-
-      <AbsoluteFill
+      <div
         style={{
+          position: "absolute",
+          right: 18,
+          bottom: -94,
+          width: 720,
+          height: 560,
+          borderRadius: "48%",
+          transform: `scale(${0.95 + bottomRightPulse * 0.07})`,
+          opacity: 0.08 + bottomRightPulse * 0.55,
           background:
-            'linear-gradient(116deg, rgba(255,255,255,0.02), transparent 24%, transparent 72%, rgba(223,191,122,0.018))',
-          opacity: 0.8,
+            "radial-gradient(ellipse at 50% 48%, rgba(35,226,255,0.68) 0%, rgba(19,150,213,0.34) 20%, rgba(27,83,169,0.13) 48%, transparent 74%)",
+          filter: "blur(27px)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 552,
+          top: 86,
+          width: 820,
+          height: 760,
+          borderRadius: "50%",
+          opacity: 0.19,
+          background:
+            "radial-gradient(circle, rgba(52,79,180,0.20) 0%, rgba(24,40,107,0.08) 45%, transparent 72%)",
+          filter: "blur(36px)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.34,
+          backgroundImage:
+            "linear-gradient(rgba(132,188,223,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(132,188,223,0.022) 1px, transparent 1px)",
+          backgroundSize: "96px 96px",
+          maskImage:
+            "radial-gradient(ellipse 66% 72% at 50% 51%, #000 0%, rgba(0,0,0,0.56) 55%, transparent 94%)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.22,
+          backgroundImage:
+            "repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(174,220,255,0.018) 4px)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          boxShadow:
+            "inset 0 0 220px rgba(0,0,0,0.72), inset 0 -130px 180px rgba(0,0,0,0.28)",
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const IncomingEnergy: React.FC<{
-  frame: number;
-  charge: number;
-  complete: number;
-}> = ({frame, charge, complete}) => {
-  const reveal = smooth(charge / 0.18);
-  return (
-    <svg
-      width="1920"
-      height="1080"
-      viewBox="0 0 1920 1080"
-      style={{position: 'absolute', inset: 0, overflow: 'visible'}}
-    >
-      <defs>
-        <linearGradient id="incoming-gradient" x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0" stopColor="#5541bb" stopOpacity="0" />
-          <stop offset="0.48" stopColor={VIOLET} stopOpacity="0.82" />
-          <stop offset="1" stopColor={CHAMPAGNE} stopOpacity="0.96" />
-        </linearGradient>
-        <filter id="incoming-glow" x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="9" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      {[0, 1, 2, 3].map((lane) => {
-        const dash = 116 + lane * 21;
-        const offset = -(frame * (4.8 + lane * 0.72) + lane * 87);
-        const yShift = lane * 24 - 36;
-        return (
-          <path
-            key={lane}
-            d={`M -180 ${970 + yShift} C 180 ${880 + yShift}, 292 ${748 + yShift}, 463 ${674 + yShift} S 650 ${596 + yShift}, 758 ${560 + yShift}`}
-            fill="none"
-            stroke="url(#incoming-gradient)"
-            strokeWidth={lane === 1 ? 4 : 2}
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${245 - lane * 18}`}
-            strokeDashoffset={offset}
-            opacity={(0.18 + lane * 0.08) * reveal * (1 - complete * 0.65)}
-            filter="url(#incoming-glow)"
-          />
-        );
-      })}
-      <circle
-        cx={758}
-        cy={560}
-        r={12 + Math.sin(frame * 0.18) * 4}
-        fill={CHAMPAGNE}
-        opacity={reveal * (0.5 + Math.sin(frame * 0.15) * 0.18)}
-        filter="url(#incoming-glow)"
-      />
-    </svg>
-  );
-};
+const OpticalBorder: React.FC = () => (
+  <svg
+    width={CARD.width}
+    height={CARD.height}
+    viewBox={`0 0 ${CARD.width} ${CARD.height}`}
+    style={{position: "absolute", inset: 0, overflow: "visible"}}
+  >
+    <defs>
+      <linearGradient id="outer-border" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#8df4ff" stopOpacity="0.40" />
+        <stop offset="0.28" stopColor="#e8fbff" stopOpacity="0.92" />
+        <stop offset="0.59" stopColor="#9ab7ff" stopOpacity="0.38" />
+        <stop offset="0.82" stopColor="#f5fbff" stopOpacity="0.96" />
+        <stop offset="1" stopColor="#76e8ff" stopOpacity="0.48" />
+      </linearGradient>
+      <linearGradient id="inner-border" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stopColor="#58dfff" stopOpacity="0.20" />
+        <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.04" />
+        <stop offset="1" stopColor="#9e91ff" stopOpacity="0.24" />
+      </linearGradient>
+      <filter id="border-glow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="9" />
+      </filter>
+    </defs>
 
-const CircuitDetails: React.FC<{frame: number; charge: number}> = ({
-  frame,
-  charge,
+    <rect
+      x="2"
+      y="2"
+      width={CARD.width - 4}
+      height={CARD.height - 4}
+      rx={CARD.radius - 2}
+      fill="none"
+      stroke="url(#outer-border)"
+      strokeWidth="2.3"
+    />
+    <rect
+      x="13"
+      y="13"
+      width={CARD.width - 26}
+      height={CARD.height - 26}
+      rx={CARD.radius - 12}
+      fill="none"
+      stroke="url(#inner-border)"
+      strokeWidth="1"
+    />
+    <path
+      d={`M70 3 H310 M${CARD.width - 305} ${CARD.height - 3} H${CARD.width - 70}`}
+      stroke="#e8fdff"
+      strokeWidth="3"
+      strokeLinecap="round"
+      opacity="0.48"
+      filter="url(#border-glow)"
+    />
+  </svg>
+);
+
+const ProgressRail: React.FC<{progress: number; percentage: number}> = ({
+  progress,
+  percentage,
 }) => {
-  return (
-    <svg
-      width="1540"
-      height="520"
-      viewBox="0 0 1540 520"
-      style={{position: 'absolute', left: -60, top: -68, overflow: 'visible'}}
-    >
-      <g opacity={0.24 + charge * 0.2}>
-        <path
-          d="M110 82 H318 L354 118 H515"
-          fill="none"
-          stroke="rgba(181,168,255,0.48)"
-          strokeWidth="1.4"
-          strokeDasharray="7 14"
-          strokeDashoffset={-frame * 0.8}
-        />
-        <path
-          d="M1040 408 H1256 L1304 358 H1454"
-          fill="none"
-          stroke="rgba(227,197,128,0.48)"
-          strokeWidth="1.4"
-          strokeDasharray="7 14"
-          strokeDashoffset={frame * 0.9}
-        />
-        <circle cx="100" cy="82" r="4" fill={VIOLET_SOFT} />
-        <circle cx="1464" cy="358" r="4" fill={CHAMPAGNE} />
-      </g>
-    </svg>
-  );
-};
-
-const BatteryCell: React.FC<{
-  index: number;
-  frame: number;
-  charge: number;
-  complete: number;
-}> = ({index, frame, charge, complete}) => {
-  const segmentStart = index / CELL_COUNT;
-  const local = clamp((charge - segmentStart) * CELL_COUNT);
-  const filled = smooth(local);
-  const active = Math.sin(Math.min(1, local) * Math.PI);
-  const cellComplete = charge >= (index + 1) / CELL_COUNT;
-  const rise = 1 - filled;
-  const wave = Math.sin(frame * 0.11 + index * 0.94);
-  const glint = ((frame * 3.4 + index * 113) % 380) - 130;
-  const surge = complete * (0.88 + Math.sin(frame * 0.16 + index) * 0.12);
+  const fillWidth = RAIL.width * progress;
+  const endpointOpacity = clamp01(progress * 24);
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: 146,
-        height: 254,
-        borderRadius: 20,
-        overflow: 'hidden',
-        background:
-          'linear-gradient(145deg, rgba(255,255,255,0.058), rgba(255,255,255,0.014) 47%, rgba(0,0,0,0.24))',
-        border: `1px solid rgba(${cellComplete ? '226,199,137' : '174,166,209'},${0.18 + filled * 0.42})`,
-        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -26px 34px rgba(0,0,0,0.22), 0 0 ${18 + active * 34 + surge * 24}px rgba(126,99,255,${0.08 + active * 0.23 + surge * 0.16})`,
-        transform: `translateY(${-active * 8 - surge * 2}px) scale(${1 + active * 0.018 + surge * 0.006})`,
-      }}
-    >
+    <>
       <div
         style={{
-          position: 'absolute',
-          left: 9,
-          right: 9,
-          top: 9,
-          bottom: 9,
-          borderRadius: 13,
-          overflow: 'hidden',
+          position: "absolute",
+          left: RAIL.left,
+          top: RAIL.top - 42,
+          width: RAIL.width,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          color: "rgba(199,230,246,0.58)",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 15,
+          fontWeight: 700,
+          letterSpacing: 3.2,
+        }}
+      >
+        <span>SECURE DELIVERY CHANNEL</span>
+        <span
+          style={{
+            color: "rgba(219,247,255,0.86)",
+            fontSize: 18,
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: 1.2,
+            minWidth: 70,
+            textAlign: "right",
+          }}
+        >
+          {String(percentage).padStart(3, "0")}%
+        </span>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: RAIL.left,
+          top: RAIL.top,
+          width: RAIL.width,
+          height: RAIL.height,
+          borderRadius: RAIL.height / 2,
           background:
-            'linear-gradient(180deg, rgba(255,255,255,0.025), rgba(83,60,164,0.07))',
+            "linear-gradient(180deg, rgba(3,9,27,0.95) 0%, rgba(7,18,45,0.86) 100%)",
+          border: "1px solid rgba(133,189,224,0.30)",
+          boxShadow:
+            "inset 0 2px 8px rgba(0,0,0,0.68), inset 0 -1px 0 rgba(180,220,255,0.09), 0 13px 28px rgba(0,0,0,0.24)",
+          overflow: "hidden",
         }}
       >
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
-            transformOrigin: '50% 100%',
-            transform: `translateY(${rise * 100}%)`,
-            background:
-              'linear-gradient(180deg, rgba(246,224,172,0.96) 0%, rgba(200,169,255,0.92) 25%, rgba(125,99,244,0.9) 64%, rgba(75,52,175,0.95) 100%)',
-            boxShadow:
-              'inset 12px 0 24px rgba(255,255,255,0.12), inset -16px 0 28px rgba(41,21,108,0.28), 0 -12px 28px rgba(233,205,146,0.7)',
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: fillWidth,
+            overflow: "hidden",
+            borderRadius: RAIL.height / 2,
           }}
         >
           <div
             style={{
-              position: 'absolute',
-              left: -18,
-              right: -18,
-              top: -7 + wave * 2.8,
-              height: 16,
-              borderRadius: '50%',
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: RAIL.width,
+              height: RAIL.height,
+              borderRadius: RAIL.height / 2,
               background:
-                'radial-gradient(ellipse at center, rgba(255,249,231,0.98), rgba(236,206,145,0.78) 32%, rgba(157,132,255,0.22) 70%, transparent)',
-              filter: 'blur(1px)',
+                "linear-gradient(90deg, #36e8ff 0%, #27bdf5 31%, #347dff 68%, #7258ff 100%)",
               boxShadow:
-                '0 0 18px rgba(243,218,165,0.9), 0 0 38px rgba(146,117,255,0.75)',
+                "inset 0 1px 0 rgba(238,255,255,0.58), inset 0 -8px 18px rgba(21,32,122,0.24)",
             }}
           />
           <div
             style={{
-              position: 'absolute',
-              left: glint,
-              top: -40,
-              width: 66,
-              height: 340,
-              transform: 'rotate(18deg)',
+              position: "absolute",
+              left: 3,
+              right: 3,
+              top: 4,
+              height: 14,
+              borderRadius: 10,
               background:
-                'linear-gradient(90deg, transparent, rgba(255,255,255,0.34), transparent)',
-              filter: 'blur(5px)',
-              opacity: 0.32,
+                "linear-gradient(90deg, rgba(234,255,255,0.28), rgba(234,255,255,0.08) 58%, rgba(255,255,255,0.20))",
+              filter: "blur(0.5px)",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              width: 156,
+              height: RAIL.height,
+              opacity: endpointOpacity,
+              background:
+                "linear-gradient(90deg, transparent 0%, rgba(43,192,255,0.05) 24%, rgba(73,221,255,0.18) 56%, rgba(177,249,255,0.46) 82%, rgba(244,255,255,0.76) 100%)",
+              mixBlendMode: "screen",
+              pointerEvents: "none",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 7,
+              bottom: 7,
+              width: 3,
+              borderRadius: 3,
+              opacity: endpointOpacity,
+              background:
+                "linear-gradient(180deg, transparent 0%, rgba(224,255,255,0.74) 24%, rgba(248,255,255,0.96) 50%, rgba(190,247,255,0.78) 76%, transparent 100%)",
+              boxShadow:
+                "-16px 0 24px rgba(86,230,255,0.34), -48px 0 42px rgba(52,142,255,0.18)",
+              mixBlendMode: "screen",
+              pointerEvents: "none",
             }}
           />
         </div>
 
-        {Array.from({length: 5}, (_, marker) => (
+        {Array.from({length: 22}).map((_, index) => (
           <div
-            key={marker}
+            key={index}
             style={{
-              position: 'absolute',
-              left: 12,
-              right: 12,
-              top: 22 + marker * 44,
-              height: 1,
-              background: 'rgba(255,255,255,0.09)',
-              mixBlendMode: 'screen',
+              position: "absolute",
+              top: 9,
+              bottom: 9,
+              left: `${((index + 1) / 23) * 100}%`,
+              width: 1,
+              background: "rgba(222,246,255,0.08)",
+              mixBlendMode: "screen",
             }}
           />
         ))}
@@ -347,501 +348,234 @@ const BatteryCell: React.FC<{
 
       <div
         style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 11,
-          textAlign: 'center',
-          color: filled > 0.74 ? '#fff8e9' : 'rgba(215,209,229,0.46)',
-          fontFamily: mono,
-          fontSize: 12,
-          letterSpacing: 2.2,
-          textShadow: filled > 0.74 ? '0 0 10px rgba(250,225,173,0.8)' : 'none',
-        }}
-      >
-        C{String(index + 1).padStart(2, '0')}
-      </div>
-
-      {active > 0.04 ? (
-        <div
-          style={{
-            position: 'absolute',
-            inset: -1,
-            borderRadius: 20,
-            border: '1px solid rgba(244,218,166,0.76)',
-            opacity: active * (0.58 + Math.sin(frame * 0.2) * 0.17),
-            boxShadow:
-              'inset 0 0 18px rgba(245,220,168,0.22), 0 0 28px rgba(139,111,255,0.42)',
-          }}
-        />
-      ) : null}
-    </div>
-  );
-};
-
-const BatteryPack: React.FC<{
-  frame: number;
-  charge: number;
-  complete: number;
-}> = ({frame, charge, complete}) => {
-  const activeCell = Math.min(CELL_COUNT - 1, Math.floor(charge * CELL_COUNT));
-  const railDash = -(frame * 3.2);
-  const completionRing = complete * (1 + Math.sin(frame * 0.12) * 0.025);
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        width: 1510,
-        height: 430,
-      }}
-    >
-      <CircuitDetails frame={frame} charge={charge} />
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 42,
-          top: 42,
-          width: 1390,
-          height: 340,
-          borderRadius: 54,
+          position: "absolute",
+          left: RAIL.left + fillWidth,
+          top: RAIL.top + RAIL.height / 2,
+          width: 172,
+          height: 40,
+          transform: "translate(-91%, -50%)",
+          opacity: endpointOpacity,
           background:
-            'linear-gradient(145deg, rgba(255,255,255,0.072), rgba(255,255,255,0.016) 32%, rgba(0,0,0,0.19) 74%, rgba(225,195,127,0.035))',
-          border: `1px solid rgba(218,211,232,${0.19 + charge * 0.12 + complete * 0.18})`,
-          boxShadow: `inset 0 2px 0 rgba(255,255,255,0.09), inset 0 -34px 54px rgba(0,0,0,0.26), 0 34px 80px rgba(0,0,0,0.5), 0 0 ${38 + complete * 50}px rgba(130,101,255,${0.08 + complete * 0.12})`,
-          backdropFilter: 'blur(5px)',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            inset: 13,
-            borderRadius: 43,
-            border: '1px solid rgba(255,255,255,0.045)',
-          }}
-        />
-
-        <div
-          style={{
-            position: 'absolute',
-            left: 44,
-            top: 42,
-            display: 'flex',
-            gap: 15,
-          }}
-        >
-          {Array.from({length: CELL_COUNT}, (_, index) => (
-            <React.Fragment key={index}>
-              <BatteryCell
-                index={index}
-                frame={frame}
-                charge={charge}
-                complete={complete}
-              />
-              {index < CELL_COUNT - 1 ? (
-                <div
-                  style={{
-                    position: 'relative',
-                    alignSelf: 'center',
-                    width: 10,
-                    height: 58,
-                    marginLeft: -10,
-                    marginRight: -10,
-                    borderRadius: 4,
-                    background:
-                      charge * CELL_COUNT > index + 0.94
-                        ? 'linear-gradient(180deg, #f2ddad, #8f76ff)'
-                        : 'rgba(194,187,215,0.13)',
-                    boxShadow:
-                      charge * CELL_COUNT > index + 0.94
-                        ? '0 0 16px rgba(226,197,128,0.52)'
-                        : 'none',
-                    zIndex: 3,
-                  }}
-                />
-              ) : null}
-            </React.Fragment>
-          ))}
-        </div>
-
-        <svg
-          width="1296"
-          height="26"
-          viewBox="0 0 1296 26"
-          style={{position: 'absolute', left: 46, bottom: 14, overflow: 'visible'}}
-        >
-          <defs>
-            <linearGradient id="rail-gradient" x1="0" x2="1">
-              <stop offset="0" stopColor={VIOLET} stopOpacity="0.45" />
-              <stop offset="0.72" stopColor={VIOLET_SOFT} stopOpacity="0.9" />
-              <stop offset="1" stopColor={CHAMPAGNE} stopOpacity="1" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M8 13 H1288"
-            stroke="rgba(196,188,218,0.15)"
-            strokeWidth="2"
-          />
-          <path
-            d="M8 13 H1288"
-            stroke="url(#rail-gradient)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            pathLength="1"
-            strokeDasharray={`${charge} ${1 - charge}`}
-            filter="drop-shadow(0 0 7px rgba(141,120,255,0.8))"
-          />
-          <path
-            d="M8 13 H1288"
-            stroke="rgba(252,231,189,0.7)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray="18 120"
-            strokeDashoffset={railDash}
-            opacity={charge > 0.01 ? 0.74 : 0}
-            style={{clipPath: `inset(0 ${100 - charge * 100}% 0 0)`}}
-          />
-        </svg>
-
-        <div
-          style={{
-            position: 'absolute',
-            left: 38 + activeCell * 161,
-            bottom: -7,
-            width: 178,
-            height: 40,
-            borderRadius: '50%',
-            background:
-              'radial-gradient(ellipse, rgba(228,198,134,0.32), rgba(139,109,255,0.15) 44%, transparent 72%)',
-            filter: 'blur(9px)',
-            opacity: charge > 0.01 && complete < 0.8 ? 0.8 : 0,
-            transition: 'none',
-          }}
-        />
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 9,
-          top: 152,
-          width: 66,
-          height: 118,
-          borderRadius: '0 22px 22px 0',
-          background:
-            'linear-gradient(180deg, rgba(255,255,255,0.13), rgba(116,90,190,0.2) 50%, rgba(228,196,126,0.12))',
-          border: '1px solid rgba(228,216,236,0.2)',
-          borderLeft: 0,
-          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.13), 16px 0 38px rgba(130,99,255,${0.08 + complete * 0.25})`,
+            "linear-gradient(90deg, transparent 0%, rgba(43,140,255,0.05) 24%, rgba(55,202,255,0.13) 54%, rgba(131,239,255,0.28) 78%, rgba(224,255,255,0.34) 91%, transparent 100%)",
+          filter: "blur(9px)",
+          mixBlendMode: "screen",
+          pointerEvents: "none",
         }}
       />
 
-      {complete > 0 ? (
-        <>
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: 1540,
-              height: 430,
-              borderRadius: 90,
-              border: '2px solid rgba(239,213,158,0.5)',
-              transform: `translate(-50%, -50%) scale(${0.96 + completionRing * 0.09})`,
-              opacity: (1 - complete) * 0.85,
-              boxShadow:
-                '0 0 44px rgba(235,207,150,0.3), inset 0 0 40px rgba(142,112,255,0.22)',
-            }}
+      <div
+        style={{
+          position: "absolute",
+          left: RAIL.left,
+          top: RAIL.top + RAIL.height + 26,
+          width: RAIL.width,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        {Array.from({length: 20}).map((_, index) => (
+          <MicroTick
+            key={index}
+            index={index}
+            active={(index + 1) / 20 <= progress}
           />
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: 1620,
-              height: 510,
-              transform: 'translate(-50%, -50%)',
-              background:
-                'radial-gradient(ellipse, rgba(249,226,176,0.22), rgba(134,103,255,0.13) 38%, transparent 70%)',
-              filter: 'blur(18px)',
-              opacity: complete * (1 - complete * 0.46),
-              mixBlendMode: 'screen',
-            }}
-          />
-        </>
-      ) : null}
-    </div>
+        ))}
+      </div>
+    </>
   );
 };
 
-const Hud: React.FC<{
-  frame: number;
-  charge: number;
-  complete: number;
-  intro: number;
-}> = ({frame, charge, complete, intro}) => {
-  const percent = Math.min(100, Math.floor(charge * 100));
-  const cursor = Math.floor(frame / 20) % 2 === 0;
-  const pulse = 0.76 + Math.sin(frame * 0.11) * 0.18;
-  const voltage = (342.6 + charge * 58.2).toFixed(1);
-  const temperature = (24.8 + Math.sin(frame * 0.018) * 0.7 + charge * 2.3).toFixed(1);
-  const completeLift = interpolate(complete, [0, 1], [18, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-
-  return (
-    <AbsoluteFill
+const GlassCard: React.FC<{progress: number; percentage: number}> = ({
+  progress,
+  percentage,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      left: CARD.left,
+      top: CARD.top,
+      width: CARD.width,
+      height: CARD.height,
+      borderRadius: CARD.radius,
+      background:
+        "linear-gradient(142deg, rgba(21,45,75,0.50) 0%, rgba(5,13,38,0.78) 44%, rgba(8,10,37,0.76) 71%, rgba(21,38,75,0.50) 100%)",
+      boxShadow:
+        "0 54px 140px rgba(0,0,0,0.46), 0 18px 42px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.10)",
+      backdropFilter: "blur(24px) saturate(135%)",
+      WebkitBackdropFilter: "blur(24px) saturate(135%)",
+      overflow: "hidden",
+    }}
+  >
+    <div
       style={{
-        fontFamily: mono,
-        color: IVORY,
-        letterSpacing: 1.5,
-        opacity: intro,
+        position: "absolute",
+        inset: 0,
+        borderRadius: CARD.radius,
+        background:
+          "radial-gradient(ellipse at 15% 2%, rgba(105,234,255,0.18) 0%, transparent 35%), radial-gradient(ellipse at 92% 100%, rgba(79,96,255,0.16) 0%, transparent 38%)",
+      }}
+    />
+
+    <div
+      style={{
+        position: "absolute",
+        left: 72,
+        right: 72,
+        top: 48,
+        height: 1,
+        background:
+          "linear-gradient(90deg, transparent, rgba(215,249,255,0.17), transparent)",
+      }}
+    />
+
+    <div
+      style={{
+        position: "absolute",
+        left: 84,
+        top: 68,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        color: "rgba(171,211,232,0.55)",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: 13,
+        fontWeight: 700,
+        letterSpacing: 3.4,
+      }}
+    >
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: "#53e7ff",
+          boxShadow: "0 0 13px rgba(83,231,255,0.72)",
+        }}
+      />
+      SYSTEM INTEGRITY / LIVE
+    </div>
+
+    <div
+      style={{
+        position: "absolute",
+        right: 84,
+        top: 66,
+        color: "rgba(162,193,217,0.38)",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: 13,
+        fontWeight: 700,
+        letterSpacing: 3,
+      }}
+    >
+      BUILD 24.08
+    </div>
+
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: 245,
+        textAlign: "center",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
       <div
         style={{
-          position: 'absolute',
-          left: 126,
-          top: 96,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 18,
+          color: "#f4fbff",
+          fontSize: 64,
+          lineHeight: 1,
+          fontWeight: 700,
+          letterSpacing: -1.4,
+          transform: "scale(1.056, 1.28)",
+          transformOrigin: "center center",
+          textShadow:
+            "0 2px 0 rgba(255,255,255,0.10), 0 10px 32px rgba(26,170,255,0.10)",
         }}
       >
-        <div
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            background: complete > 0.8 ? CHAMPAGNE : VIOLET,
-            opacity: pulse,
-            boxShadow:
-              complete > 0.8
-                ? '0 0 18px rgba(227,197,128,0.86)'
-                : '0 0 18px rgba(141,120,255,0.86)',
-          }}
-        />
-        <div style={{fontSize: 15, color: '#cbc6d8'}}>EV POWER SYSTEM</div>
-        <div
-          style={{
-            width: 76,
-            height: 1,
-            background: 'linear-gradient(90deg, rgba(181,168,255,0.55), transparent)',
-          }}
-        />
-        <div style={{fontSize: 13, color: '#817e8d'}}>UNIT // BMS-08</div>
+        SYSTEM UPDATE
       </div>
+    </div>
 
-      <div
-        style={{
-          position: 'absolute',
-          right: 126,
-          top: 96,
-          fontSize: 13,
-          color: '#8e8a99',
-          textAlign: 'right',
-          lineHeight: 1.8,
-        }}
-      >
-        <div>SECURE LINK // ACTIVE</div>
-        <div style={{color: 'rgba(227,197,128,0.72)'}}>FW 08.42.16</div>
-      </div>
+    <ProgressRail progress={progress} percentage={percentage} />
 
-      <div
-        style={{
-          position: 'absolute',
-          left: 126,
-          bottom: 112,
-          display: 'flex',
-          gap: 54,
-          color: MUTED,
-          fontSize: 13,
-        }}
-      >
-        <div>
-          <div style={{fontSize: 10, color: '#6d6978', marginBottom: 10}}>PACK VOLTAGE</div>
-          <span style={{fontSize: 20, color: '#d7d2de'}}>{voltage}</span>
-          <span style={{marginLeft: 7, color: '#777381'}}>V</span>
-        </div>
-        <div>
-          <div style={{fontSize: 10, color: '#6d6978', marginBottom: 10}}>CORE TEMP</div>
-          <span style={{fontSize: 20, color: '#d7d2de'}}>{temperature}</span>
-          <span style={{marginLeft: 7, color: '#777381'}}>°C</span>
-        </div>
-        <div>
-          <div style={{fontSize: 10, color: '#6d6978', marginBottom: 10}}>CELL BALANCE</div>
-          <span style={{fontSize: 20, color: '#d7d2de'}}>{charge > 0.96 ? 'SYNCED' : 'ACTIVE'}</span>
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 126,
-          bottom: 100,
-          width: 580,
-          textAlign: 'right',
-          transform: `translateY(${completeLift}px)`,
-        }}
-      >
-        <div
-          style={{
-            fontSize: complete > 0.25 ? 43 : 17,
-            letterSpacing: complete > 0.25 ? 5.5 : 2.8,
-            color: complete > 0.25 ? '#f5e7c7' : '#a7a2b3',
-            textShadow:
-              complete > 0.25
-                ? '0 0 18px rgba(227,197,128,0.32), 0 10px 28px rgba(0,0,0,0.5)'
-                : '0 0 12px rgba(141,120,255,0.22)',
-            opacity: complete > 0.01 ? 0.55 + complete * 0.45 : pulse,
-          }}
-        >
-          {complete > 0.25 ? 'UPDATE COMPLETE' : 'INSTALLING FIRMWARE'}
-          {complete < 0.25 && cursor ? <span style={{color: VIOLET}}> _</span> : null}
-        </div>
-
-        <div
-          style={{
-            marginTop: complete > 0.25 ? 16 : 12,
-            marginLeft: 'auto',
-            width: complete > 0.25 ? 380 : 470,
-            height: 2,
-            background: 'rgba(255,255,255,0.08)',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${charge * 100}%`,
-              height: '100%',
-              background:
-                'linear-gradient(90deg, rgba(125,98,239,0.72), rgba(181,158,255,0.95), rgba(231,202,143,0.96))',
-              boxShadow: '0 0 12px rgba(145,118,255,0.65)',
-            }}
-          />
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 130,
-          top: 188,
-          minWidth: 260,
-          textAlign: 'right',
-          transform: `scale(${1 + Math.sin(frame * 0.08) * 0.004 + complete * 0.015})`,
-          transformOrigin: '100% 50%',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 64,
-            fontWeight: 300,
-            letterSpacing: -1,
-            fontVariantNumeric: 'tabular-nums',
-            color: complete > 0.75 ? '#f6e6c2' : IVORY,
-            textShadow:
-              complete > 0.75
-                ? '0 0 22px rgba(231,202,143,0.42)'
-                : '0 0 18px rgba(163,143,255,0.24)',
-          }}
-        >
-          {String(percent).padStart(3, '0')}
-        </span>
-        <span style={{fontSize: 19, marginLeft: 9, color: CHAMPAGNE}}>%</span>
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-const LensFinish: React.FC<{complete: number}> = ({complete}) => (
-  <AbsoluteFill style={{pointerEvents: 'none'}}>
-    <AbsoluteFill
+    <div
       style={{
-        background:
-          'radial-gradient(ellipse at 52% 49%, transparent 0%, transparent 48%, rgba(0,0,0,0.3) 76%, rgba(0,0,0,0.82) 100%)',
+        position: "absolute",
+        left: RAIL.left,
+        right: RAIL.left,
+        bottom: 72,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        color: "rgba(137,180,207,0.40)",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: 2.7,
+      }}
+    >
+      <span>PACKET SIGNATURE VALID</span>
+      <span>END-TO-END ENCRYPTED</span>
+    </div>
+
+    <OpticalBorder />
+
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        borderRadius: CARD.radius,
+        opacity: 0.23,
+        pointerEvents: "none",
+        backgroundImage:
+          "repeating-linear-gradient(112deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 10px)",
+        maskImage:
+          "linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.12) 64%, transparent)",
       }}
     />
-    <AbsoluteFill
-      style={{
-        boxShadow:
-          'inset 0 0 160px rgba(0,0,0,0.5), inset 0 0 420px rgba(0,0,0,0.28)',
-        background: `linear-gradient(180deg, rgba(0,0,0,0.24), transparent 22%, transparent 76%, rgba(0,0,0,0.34)), radial-gradient(circle at 72% 56%, rgba(239,211,153,${complete * 0.035}), transparent 36%)`,
-      }}
-    />
-  </AbsoluteFill>
+  </div>
 );
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames, fps} = useVideoConfig();
-  const bootEnd = Math.round(durationInFrames * 0.05);
-  const chargeEnd = Math.round(durationInFrames * 0.78);
-  const completeStart = Math.round(durationInFrames * 0.79);
-  const completeEnd = Math.round(durationInFrames * 0.87);
-
-  const intro = interpolate(frame, [0, bootEnd], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic),
-  });
-  const charge = interpolate(frame, [bootEnd, chargeEnd], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.inOut(Easing.sin),
-  });
-  const completionSpring = spring({
-    frame: frame - completeStart,
-    fps,
-    config: {damping: 14, mass: 0.62, stiffness: 128},
-    durationInFrames: Math.max(1, completeEnd - completeStart),
-  });
-  const complete = frame < completeStart ? 0 : clamp(completionSpring);
-
-  const tracking = smooth(charge);
-  const cameraX = interpolate(tracking, [0, 1], [94, -86]);
-  const cameraY = interpolate(tracking, [0, 1], [58, -54]);
-  const cameraScale = interpolate(tracking, [0, 1], [0.93, 1.075]);
-  const cameraBreathe = Math.sin(frame * 0.012) * 0.006;
-  const introLift = interpolate(intro, [0, 1], [74, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic),
-  });
-  const completionKick = complete * 0.018;
+  const {durationInFrames} = useVideoConfig();
+  const lastFrame = Math.max(1, durationInFrames - 1);
+  const progress = clamp01(
+    interpolate(frame, [0, lastFrame], [0, 1], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    }),
+  );
+  const percentage = Math.floor(progress * 100);
 
   return (
-    <AbsoluteFill style={{overflow: 'hidden', backgroundColor: '#040405'}}>
-      <Atmosphere
-        frame={frame}
-        duration={durationInFrames}
-        charge={charge}
-        complete={complete}
-      />
-      <IncomingEnergy frame={frame} charge={charge} complete={complete} />
+    <AbsoluteFill
+      style={{
+        width: WIDTH,
+        height: HEIGHT,
+        background: "#01030c",
+        overflow: "hidden",
+      }}
+    >
+      <Background frame={frame} />
 
       <div
         style={{
-          position: 'absolute',
-          left: 205,
-          top: 318,
-          width: 1510,
-          height: 430,
-          opacity: 0.42 + intro * 0.58,
-          transformOrigin: '57% 53%',
-          transform: `translate3d(${cameraX}px, ${cameraY + introLift}px, 0) perspective(1900px) rotateX(${-2.2 + tracking * 1.15}deg) rotateY(${-5.2 + tracking * 2.1}deg) rotateZ(${-7.6 + tracking * 2.4}deg) scale(${cameraScale + cameraBreathe + completionKick})`,
-          filter: `blur(${(1 - intro) * 2}px)`,
+          position: "absolute",
+          left: CARD.left - 96,
+          top: CARD.top - 80,
+          width: CARD.width + 192,
+          height: CARD.height + 160,
+          borderRadius: CARD.radius + 92,
+          background:
+            "radial-gradient(ellipse at center, rgba(59,134,218,0.12) 0%, rgba(20,59,133,0.05) 44%, transparent 72%)",
+          filter: "blur(34px)",
         }}
-      >
-        <BatteryPack frame={frame} charge={charge} complete={complete} />
-      </div>
+      />
 
-      <Hud frame={frame} charge={charge} complete={complete} intro={intro} />
-      <LensFinish complete={complete} />
+      <GlassCard progress={progress} percentage={percentage} />
     </AbsoluteFill>
   );
 };
