@@ -1,616 +1,646 @@
-import React from "react";
+import React from 'react';
 import {
   AbsoluteFill,
-  Easing,
-  interpolate,
   useCurrentFrame,
   useVideoConfig,
-} from "remotion";
+} from 'remotion';
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const PANEL = {x: 568, y: 401, width: 862, height: 271};
-const COMPLETE_FRAME = 807;
+const FPS = 60;
+const DURATION_SECONDS = 15;
+const COMPLETION_SECONDS = 12.1;
 
-type Theme = {
-  accent: string;
-  bright: string;
-  core: string;
-  deep: string;
-  glass: string;
-  fog: string;
+const COLORS = {
+  black: '#010402',
+  deepGreen: '#021109',
+  glass: '#03130B',
+  green: '#00F56A',
+  greenBright: '#56FF9A',
+  greenWhite: '#D8FFE7',
+  emerald: '#00B94F',
+  muted: '#0A6635',
 };
 
-const GREEN: Theme = {
-  accent: "#00ff66",
-  bright: "#5dff9c",
-  core: "#e4ffed",
-  deep: "#006b30",
-  glass: "rgba(0, 20, 11, 0.86)",
-  fog: "rgba(0, 255, 102, 0.15)",
+const HUD = {
+  left: 645,
+  top: 390,
+  width: 730,
+  height: 360,
 };
 
-const RED: Theme = {
-  accent: "#ff123f",
-  bright: "#ff5574",
-  core: "#fff0f3",
-  deep: "#7b001e",
-  glass: "rgba(27, 0, 7, 0.88)",
-  fog: "rgba(255, 18, 63, 0.16)",
+const TRACK = {
+  left: 25,
+  top: 132,
+  width: 659,
+  height: 140,
 };
 
-type GlitchEvent = {
-  start: number;
-  end: number;
-  from: Theme;
-  to: Theme;
+const clamp = (value: number, min = 0, max = 1) =>
+  Math.max(min, Math.min(max, value));
+
+type CurvePoint = readonly [seconds: number, value: number];
+
+const PERCENT_SAMPLES = [
+  [0, 1],
+  [0.4, 1.7],
+  [0.9, 4],
+  [1.45, 8.3],
+  [2, 13.1],
+  [2.5, 17.8],
+  [3, 22.2],
+  [4.2, 29.8],
+  [4.7, 31.5],
+  [6, 45.7],
+  [7.2, 53.5],
+  [8.45, 62.2],
+  [9, 71],
+  [10.2, 83.2],
+  [11.2, 90],
+  [11.9, 99],
+  [COMPLETION_SECONDS, 100],
+] as const satisfies readonly CurvePoint[];
+
+const FILL_SAMPLES = [
+  [0, 0.0525],
+  [3, 0.172],
+  [6, 0.324],
+  [9, 0.624],
+  [11.9, 0.985],
+  [COMPLETION_SECONDS, 1],
+] as const satisfies readonly CurvePoint[];
+
+const buildSlopes = (samples: readonly CurvePoint[]) => {
+  const widths = Array.from(
+    {length: samples.length - 1},
+    (_, index) => samples[index + 1][0] - samples[index][0],
+  );
+  const secants = widths.map(
+    (width, index) =>
+      (samples[index + 1][1] - samples[index][1]) / width,
+  );
+  const slopes = Array.from({length: samples.length}, () => 0);
+  slopes[0] = secants[0];
+  slopes[slopes.length - 1] = secants[secants.length - 1];
+
+  for (let index = 1; index < slopes.length - 1; index++) {
+    const before = secants[index - 1];
+    const after = secants[index];
+    if (before <= 0 || after <= 0) {
+      slopes[index] = 0;
+      continue;
+    }
+    const beforeWidth = widths[index - 1];
+    const afterWidth = widths[index];
+    const weightA = 2 * afterWidth + beforeWidth;
+    const weightB = afterWidth + 2 * beforeWidth;
+    slopes[index] =
+      (weightA + weightB) / (weightA / before + weightB / after);
+  }
+
+  return slopes;
 };
 
-const GLITCH_EVENTS: GlitchEvent[] = [
-  {start: 0, end: 40, from: GREEN, to: GREEN},
-  {start: 171, end: 211, from: GREEN, to: RED},
-  {start: 353, end: 393, from: RED, to: GREEN},
-  {start: 537, end: 582, from: GREEN, to: RED},
-  {start: 739, end: 784, from: RED, to: GREEN},
-];
+const PERCENT_SLOPES = buildSlopes(PERCENT_SAMPLES);
+const FILL_SLOPES = buildSlopes(FILL_SAMPLES);
 
-const codeStatements = [
-  "private String neuralAddress;",
-  "private String accessToken;",
-  "private String nodeSignature;",
-  "public CoreNode(String id, String key) {",
-  "  this.nodeId = id;",
-  "  this.sessionKey = key;",
-  "  this.status = ACTIVE;",
-  "  this.signal = validate(hash);",
-  "}",
-  "public String getCipherState() {",
-  "  return cipherState;",
-  "}",
-  "public void setRoute(String route) {",
-  "  this.route = sanitize(route);",
-  "}",
-  "// integrity and system checks",
-  "public void verifyPacket() {",
-  "  checksum = stream.getHash();",
-  "  if (checksum != null) commit();",
-  "}",
-  "private boolean authorize(int level) {",
-  "  return level <= clearance;",
-  "}",
-  "public void syncNeuralCache() {",
-  "  memory.merge(activeIndex);",
-  "  gateway.broadcast(SYNC);",
-  "}",
-  "@Override",
-  "public String toString() {",
-  "  return nodeId + status;",
-  "}",
-  "public void updateVector(float[] v) {",
-  "  engine.normalize(v);",
-  "}",
-  "private long timestamp = clock.now();",
-  "public boolean isSecure() {",
-  "  return firewall.isVerified();",
-  "}",
-  "// encrypted transport layer",
-  "packet.route(primaryGateway);",
-  "monitor.watch(systemState);",
-  "buffer.flushOnComplete();",
-  "return Response.accepted();",
-];
+const monotoneAt = (
+  seconds: number,
+  samples: readonly CurvePoint[],
+  slopes: readonly number[],
+) => {
+  if (seconds <= samples[0][0]) return samples[0][1];
+  const final = samples[samples.length - 1];
+  if (seconds >= final[0]) return final[1];
 
-const seeded = (seed: number) => {
-  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
-  return x - Math.floor(x);
-};
+  let segment = 0;
+  while (
+    segment < samples.length - 2 &&
+    seconds > samples[segment + 1][0]
+  ) {
+    segment++;
+  }
 
-const themeForFrame = (frame: number): Theme => {
-  if (frame >= 739) return GREEN;
-  if (frame >= 537) return RED;
-  if (frame >= 353) return GREEN;
-  if (frame >= 171) return RED;
-  return GREEN;
-};
-
-const activeGlitch = (frame: number) => {
-  const event = GLITCH_EVENTS.find((item) => frame >= item.start && frame <= item.end);
-  if (!event) return null;
-  const duration = Math.max(1, event.end - event.start);
-  const phase = (frame - event.start) / duration;
-  const envelope = Math.sin(Math.PI * Math.min(1, Math.max(0, phase)));
-  const chatter = 0.44 + 0.56 * Math.abs(Math.sin(phase * Math.PI * 8.2 + 0.8));
-  return {event, phase, strength: Math.min(1, envelope * chatter + (phase < 0.08 ? 0.2 : 0))};
-};
-
-const rgba = (hex: string, alpha: number) => {
-  const clean = hex.replace("#", "");
-  const value = Number.parseInt(clean, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-const MatrixCodeField: React.FC<{theme: Theme}> = ({theme}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const rowHeight = 36;
-  const scroll = ((frame / fps) * 113) % (rowHeight * codeStatements.length);
-  const columns = [
-    {x: 64, width: 730, seed: 3, opacity: 0.76},
-    {x: 1125, width: 720, seed: 17, opacity: 0.72},
-  ];
+  const [x0, y0] = samples[segment];
+  const [x1, y1] = samples[segment + 1];
+  const width = x1 - x0;
+  const t = clamp((seconds - x0) / width);
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
 
   return (
-    <AbsoluteFill style={{overflow: "hidden"}}>
-      {columns.map((column, columnIndex) => (
+    h00 * y0 +
+    h10 * width * slopes[segment] +
+    h01 * y1 +
+    h11 * width * slopes[segment + 1]
+  );
+};
+
+const GLYPHS =
+  '01ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+-/:;<=>?@[]{}()ΞΛΣΩЖЯ中界数据';
+
+const hash = (value: number) => {
+  let result = value | 0;
+  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
+  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
+  return (result ^ (result >>> 16)) >>> 0;
+};
+
+const makeCodeRows = (count: number, length: number, seed: number) =>
+  Array.from({length: count}, (_, row) => {
+    let line = '';
+    for (let column = 0; column < length; column++) {
+      const value = hash(seed + row * 4099 + column * 131);
+      const separator = column % 11 === 10 ? ' ' : '';
+      line += GLYPHS[value % GLYPHS.length] + separator;
+    }
+    return line;
+  });
+
+const LEFT_ROWS = makeCodeRows(74, 96, 1103);
+const CENTER_ROWS = makeCodeRows(62, 94, 7301);
+const RIGHT_ROWS = makeCodeRows(52, 72, 19001);
+
+const CodePlane: React.FC<{
+  frame: number;
+  rows: readonly string[];
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  rowHeight: number;
+  fontSize: number;
+  letterSpacing: number;
+  opacity: number;
+  transform: string;
+  transformOrigin: string;
+  speed: number;
+  phase: number;
+}> = ({
+  frame,
+  rows,
+  left,
+  top,
+  width,
+  height,
+  rowHeight,
+  fontSize,
+  letterSpacing,
+  opacity,
+  transform,
+  transformOrigin,
+  speed,
+  phase,
+}) => {
+  const travel = (frame / FPS) * speed;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        width,
+        height,
+        overflow: 'hidden',
+        transform,
+        transformOrigin,
+        maskImage:
+          'linear-gradient(180deg, transparent 0%, #000 4%, #000 95%, transparent 100%)',
+        WebkitMaskImage:
+          'linear-gradient(180deg, transparent 0%, #000 4%, #000 95%, transparent 100%)',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          transform: `translateY(${travel}px)`,
+        }}
+      >
+        {rows.map((row, index) => {
+          const pulse = Math.sin(
+            frame * 0.1309 + index * 1.37 + phase * 0.61,
+          );
+          const redLevel = Math.round(40 + 25 * pulse);
+          const greenLevel = Math.round(220 + 25 * pulse);
+          const blueLevel = Math.round(95 + 45 * pulse);
+          const rowColor =
+            index % 9 === 0
+              ? `rgb(${Math.min(255, redLevel + 22)}, ${Math.min(
+                  255,
+                  greenLevel + 18,
+                )}, ${Math.min(255, blueLevel + 24)})`
+              : `rgb(${redLevel}, ${greenLevel}, ${blueLevel})`;
+          const xJitter = ((hash(index * 977 + phase * 31) % 13) - 6) * 2;
+          const rowOpacity =
+            index % 6 === 0
+              ? 0.35 +
+                0.65 *
+                  (0.5 +
+                    0.5 *
+                      Math.sin(
+                        frame * 0.2618 + index * 0.91 + phase * 0.77,
+                      ))
+              : 1;
+
+          return (
+            <div
+              key={index}
+              style={{
+                position: 'absolute',
+                left: -180 + xJitter,
+                top: -310 + index * rowHeight,
+                width: width + 480,
+                height: rowHeight,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                color: rowColor,
+                fontFamily:
+                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                fontSize,
+                fontWeight: index % 7 === 0 ? 600 : 450,
+                lineHeight: `${rowHeight}px`,
+                letterSpacing,
+                opacity: opacity * rowOpacity,
+                textShadow: '0 0 3px rgba(0,245,106,0.42)',
+                filter: index % 8 === 0 ? 'brightness(1.18)' : undefined,
+              }}
+            >
+              {row}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const MatrixCurtain: React.FC<{frame: number}> = ({frame}) => (
+  <AbsoluteFill
+    style={{
+      overflow: 'hidden',
+      backgroundColor: COLORS.black,
+      backgroundImage: [
+        'radial-gradient(ellipse 56% 64% at 53% 52%, rgba(0,245,106,0.10) 0%, rgba(0,94,44,0.055) 42%, transparent 76%)',
+        'linear-gradient(90deg, #010402 0%, #021008 42%, #010703 100%)',
+      ].join(','),
+      perspective: 1280,
+      perspectiveOrigin: '53% 50%',
+    }}
+  >
+    <CodePlane
+      frame={frame}
+      rows={LEFT_ROWS}
+      left={-395}
+      top={-190}
+      width={1320}
+      height={1480}
+      rowHeight={22}
+      fontSize={17}
+      letterSpacing={2.5}
+      opacity={1}
+      transform="rotateY(47deg) rotateZ(0.45deg)"
+      transformOrigin="94% 50%"
+      speed={10.3}
+      phase={1}
+    />
+    <CodePlane
+      frame={frame}
+      rows={CENTER_ROWS}
+      left={325}
+      top={-205}
+      width={1260}
+      height={1500}
+      rowHeight={27}
+      fontSize={21}
+      letterSpacing={3.1}
+      opacity={0.94}
+      transform="rotateY(17deg) rotateZ(-0.2deg)"
+      transformOrigin="68% 50%"
+      speed={10.6}
+      phase={4}
+    />
+    <CodePlane
+      frame={frame}
+      rows={RIGHT_ROWS}
+      left={1110}
+      top={-220}
+      width={1060}
+      height={1520}
+      rowHeight={35}
+      fontSize={29}
+      letterSpacing={4.2}
+      opacity={1}
+      transform="rotateY(-19deg) rotateZ(-0.25deg)"
+      transformOrigin="2% 50%"
+      speed={10.9}
+      phase={8}
+    />
+    <AbsoluteFill
+      style={{
+        backgroundImage: [
+          'linear-gradient(90deg, rgba(0,0,0,0.48) 0%, transparent 20%, transparent 82%, rgba(0,0,0,0.32) 100%)',
+          'radial-gradient(ellipse 72% 72% at 51% 50%, transparent 44%, rgba(0,0,0,0.46) 100%)',
+          'repeating-linear-gradient(180deg, rgba(0,255,112,0.022) 0px, rgba(0,255,112,0.022) 1px, transparent 1px, transparent 4px)',
+        ].join(','),
+      }}
+    />
+  </AbsoluteFill>
+);
+
+const ChevronBracket: React.FC = () => (
+  <svg
+    width="158"
+    height="244"
+    viewBox="0 0 158 244"
+    style={{
+      position: 'absolute',
+      left: 493,
+      top: 437,
+      overflow: 'visible',
+      transform: 'rotate(-1deg)',
+      filter: 'drop-shadow(0 0 14px rgba(0,245,106,0.25))',
+    }}
+  >
+    <path
+      d="M18 122 L72 22 L106 22 L56 122 L106 222 L72 222 Z"
+      fill="rgba(0,28,14,0.68)"
+      stroke="rgba(0,245,106,0.22)"
+      strokeWidth="3"
+    />
+    <path
+      d="M62 122 L111 43 L139 43 L96 122 L139 201 L111 201 Z"
+      fill="rgba(0,48,23,0.62)"
+      stroke="rgba(86,255,154,0.30)"
+      strokeWidth="3"
+    />
+    <path
+      d="M85 122 L112 73 L130 73 L105 122 L130 171 L112 171 Z"
+      fill="rgba(0,245,106,0.18)"
+    />
+  </svg>
+);
+
+const FillTexture: React.FC<{frame: number}> = ({frame}) => {
+  const symbols = '101101  SYSTEM  DATA  010011  LINK  111000  ';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+        opacity: 0.23,
+        color: '#003B1B',
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontWeight: 800,
+        fontSize: 18,
+        lineHeight: '28px',
+        letterSpacing: 3,
+        transform: `translateY(${(frame / FPS) * 5}px)`,
+      }}
+    >
+      {Array.from({length: 8}, (_, index) => (
         <div
-          key={column.x}
+          key={index}
           style={{
-            position: "absolute",
-            left: column.x,
-            top: -rowHeight * codeStatements.length - scroll,
-            width: column.width,
-            fontFamily: '"Courier New", "Lucida Console", monospace',
-            fontSize: 24,
-            lineHeight: `${rowHeight}px`,
-            fontWeight: 900,
-            letterSpacing: 0.25,
-            color: theme.bright,
-            opacity:
-              column.opacity *
-              (0.9 + 0.1 * Math.sin(frame * 0.41 + columnIndex * 1.7) ** 2),
-            filter: "blur(0.45px)",
-            textShadow: `0 0 7px ${rgba(theme.accent, 0.72)}, 0 0 18px ${rgba(theme.accent, 0.22)}`,
-            transform: `translateY(${rowHeight * codeStatements.length}px)`,
+            position: 'absolute',
+            left: -80 + (index % 2) * 34,
+            top: -70 + index * 28,
+            whiteSpace: 'nowrap',
           }}
         >
-          {[0, 1, 2].flatMap((cycle) =>
-            codeStatements.map((line, index) => {
-              const number = ((index + cycle * codeStatements.length + columnIndex * 3) % 97) + 1;
-              const opacity = 0.52 + seeded(index * 9 + cycle * 31 + column.seed) * 0.48;
-              const flickerSample = seeded(
-                index * 83 +
-                  cycle * 149 +
-                  column.seed * 17 +
-                  Math.floor(frame / 4) * 271,
-              );
-              const temporalOpacity = flickerSample < 0.05 ? 0.02 : flickerSample < 0.1 ? 0.28 : 1;
-              const indent = seeded(index * 13 + column.seed) > 0.76 ? 34 : 0;
-              return (
-                <div
-                  key={`${cycle}-${index}`}
-                  style={{
-                    height: rowHeight,
-                    whiteSpace: "nowrap",
-                    opacity: opacity * temporalOpacity,
-                    transform: `translateX(${indent}px)`,
-                  }}
-                >
-                  <span style={{display: "inline-block", width: 48, opacity: 0.66}}>
-                    {String(number).padStart(2, "0")}
-                  </span>
-                  {line}
-                </div>
-              );
-            }),
-          )}
+          {symbols.repeat(5)}
         </div>
       ))}
-
-      {Array.from({length: 13}).map((_, index) => {
-        const speed = 0.5 + seeded(index + 20) * 0.9;
-        const baseY = seeded(index + 51) * HEIGHT;
-        const y = (baseY - frame * speed + HEIGHT + 140) % (HEIGHT + 140) - 70;
-        const left = index % 2 === 0 ? 30 : 1040;
-        const width = 180 + seeded(index + 81) * 680;
-        const breathe = 0.45 + 0.55 * Math.sin(frame * 0.045 + index * 1.7) ** 2;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left,
-              top: y,
-              width,
-              height: 8 + seeded(index + 91) * 18,
-              borderRadius: 999,
-              background: `linear-gradient(90deg, transparent, ${rgba(theme.accent, 0.22 * breathe)}, transparent)`,
-              filter: `blur(${8 + seeded(index + 101) * 13}px)`,
-              opacity: 0.42,
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
+    </div>
   );
 };
 
-const AtmosphericStreaks: React.FC<{theme: Theme}> = ({theme}) => {
-  const frame = useCurrentFrame();
-  return (
-    <AbsoluteFill style={{overflow: "hidden", mixBlendMode: "screen"}}>
-      {Array.from({length: 11}).map((_, index) => {
-        const width = 130 + seeded(index + 231) * 520;
-        const xBase = seeded(index + 241) * (WIDTH + width) - width;
-        const speed = 1.1 + seeded(index + 251) * 2.4;
-        const x = ((xBase + frame * speed) % (WIDTH + width * 1.8)) - width;
-        const y = 45 + seeded(index + 261) * 990;
-        const flash = Math.pow(Math.max(0, Math.sin(frame * 0.031 + index * 2.37)), 8);
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width,
-              height: index % 3 === 0 ? 4 : 2,
-              background: `linear-gradient(90deg, transparent, ${rgba(theme.bright, 0.16 + flash * 0.2)}, transparent)`,
-              boxShadow: `0 0 15px ${rgba(theme.accent, 0.16 + flash * 0.18)}`,
-              opacity: 0.54,
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
-  );
-};
-
-const ProgressSystem: React.FC<{theme: Theme; progress: number; dim?: number}> = ({
-  theme,
-  progress,
-  dim = 1,
-}) => {
-  const frame = useCurrentFrame();
-  const completed = progress >= 100;
-  const dots = ".".repeat(((Math.floor(frame / 25) % 3) + 1));
-  const pulse = 0.78 + 0.22 * Math.sin(frame * 0.067) ** 2;
-  const fillWidth = Math.max(0, Math.min(100, progress));
+const HudPanel: React.FC<{
+  frame: number;
+  percent: number;
+  fill: number;
+}> = ({frame, percent, fill}) => {
+  const fillWidth = TRACK.width * clamp(fill);
+  const percentage = `${percent.toFixed(1)}%`;
 
   return (
     <>
+      <ChevronBracket />
       <div
         style={{
-          position: "absolute",
-          top: 45,
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          color: theme.core,
-          fontFamily: 'Inter, Arial, Helvetica, sans-serif',
-          fontSize: 34,
-          lineHeight: 1,
-          fontWeight: 650,
-          letterSpacing: 1.8,
-          opacity: dim,
-          textShadow: `0 0 5px ${theme.core}, 0 0 14px ${theme.accent}, 0 0 34px ${rgba(theme.accent, 0.68)}`,
+          position: 'absolute',
+          left: HUD.left,
+          top: HUD.top,
+          width: HUD.width,
+          height: HUD.height,
+          transform: 'rotate(-1deg)',
+          transformOrigin: '50% 50%',
+          filter: 'drop-shadow(0 0 24px rgba(0,245,106,0.16))',
         }}
       >
-        SYSTEM UPDATE{dots}
-      </div>
+        <svg
+          width={HUD.width}
+          height={HUD.height}
+          viewBox={`0 0 ${HUD.width} ${HUD.height}`}
+          style={{position: 'absolute', inset: 0, overflow: 'visible'}}
+        >
+          <defs>
+            <linearGradient id="matrixPanelGlass" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#04170C" stopOpacity="0.88" />
+              <stop offset="52%" stopColor="#010905" stopOpacity="0.74" />
+              <stop offset="100%" stopColor="#052111" stopOpacity="0.86" />
+            </linearGradient>
+            <filter id="matrixPanelGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="8" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <polygon
+            points="4,12 726,2 726,346 4,358"
+            fill="url(#matrixPanelGlass)"
+            stroke="rgba(0,245,106,0.34)"
+            strokeWidth="15"
+            filter="url(#matrixPanelGlow)"
+          />
+          <polygon
+            points="4,12 726,2 726,346 4,358"
+            fill="none"
+            stroke={COLORS.greenBright}
+            strokeWidth="5"
+          />
+          <path
+            d="M26 31 L198 28"
+            fill="none"
+            stroke="rgba(216,255,231,0.42)"
+            strokeWidth="2"
+          />
+          <path
+            d="M529 344 L704 341"
+            fill="none"
+            stroke="rgba(0,245,106,0.46)"
+            strokeWidth="2"
+          />
+        </svg>
 
-      <div
-        style={{
-          position: "absolute",
-          left: 101,
-          top: 126,
-          width: 670,
-          height: 45,
-          padding: 5,
-          border: `2px solid ${theme.core}`,
-          background: "rgba(0,0,0,0.68)",
-          boxShadow: `0 0 5px ${theme.core}, inset 0 0 12px ${rgba(theme.accent, 0.38)}, 0 0 16px ${rgba(theme.accent, 0.65)}`,
-          opacity: dim,
-          overflow: "hidden",
-        }}
-      >
-        {fillWidth > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: TRACK.left,
+            top: TRACK.top,
+            width: TRACK.width,
+            height: TRACK.height,
+            overflow: 'hidden',
+            clipPath: 'polygon(0 4%, 100% 0, 100% 96%, 0 100%)',
+            background: 'rgba(0,37,18,0.38)',
+            borderTop: '2px solid rgba(86,255,154,0.12)',
+            borderBottom: '2px solid rgba(0,245,106,0.18)',
+          }}
+        >
           <div
             style={{
-              height: "100%",
-              width: `${fillWidth}%`,
-              position: "relative",
-              background: `linear-gradient(90deg, ${theme.deep} 0%, ${theme.accent} 30%, ${theme.bright} 76%, ${theme.core} 100%)`,
-              boxShadow: `0 0 5px ${theme.core}, 0 0 14px ${theme.accent}, 0 0 34px ${rgba(theme.accent, 0.82)}, inset 0 0 11px ${theme.core}`,
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: fillWidth,
+              height: '100%',
+              overflow: 'hidden',
+              background: [
+                'linear-gradient(180deg, rgba(216,255,231,0.96) 0%, rgba(86,255,154,0.96) 12%, rgba(0,245,106,0.92) 62%, rgba(0,185,79,0.94) 100%)',
+                'repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, transparent 2px, transparent 22px)',
+              ].join(','),
+              boxShadow: [
+                '0 0 36px rgba(0,245,106,0.72)',
+                '0 0 78px rgba(0,245,106,0.30)',
+                'inset 0 3px 1px rgba(255,255,255,0.46)',
+              ].join(','),
             }}
           >
+            <FillTexture frame={frame} />
             <div
               style={{
-                position: "absolute",
-                inset: 0,
-                background: `linear-gradient(100deg, transparent 0%, ${rgba(theme.core, 0.86)} 47%, transparent 58%)`,
-                transform: `translateX(${((frame * 8.2) % 420) - 210}px)`,
-                opacity: 0.65,
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 3,
+                background: 'rgba(235,255,243,0.84)',
+                boxShadow: '0 0 14px rgba(216,255,231,0.9)',
               }}
             />
-            {!completed && (
-              <div
-                style={{
-                  position: "absolute",
-                  right: -4,
-                  top: -5,
-                  width: 11,
-                  height: 42,
-                  backgroundColor: theme.core,
-                  boxShadow: `0 0 7px ${theme.core}, 0 0 20px ${theme.accent}, 0 0 42px ${theme.accent}`,
-                  opacity: pulse,
-                }}
-              />
-            )}
           </div>
-        )}
-      </div>
+          <div
+            style={{
+              position: 'absolute',
+              left: Math.max(0, fillWidth - 7),
+              top: 0,
+              width: 7,
+              height: '100%',
+              background: 'rgba(216,255,231,0.82)',
+              boxShadow: '0 0 20px rgba(86,255,154,0.92)',
+              opacity: fillWidth < 10 ? 0 : 1,
+            }}
+          />
+        </div>
 
-      <div
-        style={{
-          position: "absolute",
-          top: 197,
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          color: theme.core,
-          fontFamily: 'Inter, Arial, Helvetica, sans-serif',
-          fontSize: 29,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          lineHeight: 1,
-          opacity: dim,
-          textShadow: `0 0 5px ${theme.core}, 0 0 13px ${theme.accent}, 0 0 30px ${rgba(theme.accent, 0.74)}`,
-        }}
-      >
-        {Math.floor(progress)}%
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 57,
+            width: 630,
+            textAlign: 'center',
+            color: COLORS.greenBright,
+            fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
+            fontSize: 29,
+            lineHeight: 1,
+            fontWeight: 700,
+            letterSpacing: 2.2,
+            textShadow: [
+              '0 0 6px rgba(86,255,154,0.82)',
+              '0 0 18px rgba(0,245,106,0.46)',
+            ].join(','),
+          }}
+        >
+          DOWNLOADING
+        </div>
+
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 172,
+            width: 630,
+            textAlign: 'center',
+            color: COLORS.greenWhite,
+            fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
+            fontSize: 59,
+            lineHeight: 1,
+            fontWeight: 800,
+            letterSpacing: -1.6,
+            fontVariantNumeric: 'tabular-nums',
+            textShadow: [
+              '0 0 6px rgba(216,255,231,0.96)',
+              '0 0 18px rgba(0,245,106,0.82)',
+              '0 0 42px rgba(0,185,79,0.52)',
+            ].join(','),
+          }}
+        >
+          {percentage}
+        </div>
       </div>
     </>
   );
 };
 
-const UpdateHud: React.FC<{theme: Theme; progress: number; opacity?: number}> = ({
-  theme,
-  progress,
-  opacity = 1,
-}) => {
-  const frame = useCurrentFrame();
-  const breath = 0.77 + 0.23 * Math.sin(frame * 0.038 + 0.4) ** 2;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: PANEL.x,
-        top: PANEL.y,
-        width: PANEL.width,
-        height: PANEL.height,
-        opacity,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: -42,
-          background: `radial-gradient(ellipse at center, ${rgba(theme.accent, 0.17 * breath)} 0%, ${rgba(theme.accent, 0.055)} 45%, transparent 72%)`,
-          filter: "blur(18px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `linear-gradient(180deg, ${rgba(theme.accent, 0.035)}, ${theme.glass})`,
-          border: `3px solid ${theme.core}`,
-          boxShadow: `0 0 5px ${theme.core}, 0 0 15px ${theme.accent}, 0 0 42px ${rgba(theme.accent, 0.74 * breath)}, inset 0 0 34px ${rgba(theme.accent, 0.15)}`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 3,
-          right: 3,
-          top: 3,
-          height: 2,
-          background: `linear-gradient(90deg, transparent, ${theme.core}, transparent)`,
-          opacity: 0.78,
-        }}
-      />
-      <ProgressSystem theme={theme} progress={progress} />
-    </div>
-  );
-};
-
-const GlitchSlices: React.FC<{
-  glitch: NonNullable<ReturnType<typeof activeGlitch>>;
-  progress: number;
-}> = ({glitch, progress}) => {
-  const frame = useCurrentFrame();
-  const {event, phase, strength} = glitch;
-  const slices = [
-    {top: 325, height: 34, direction: -1, gain: 0.42},
-    {top: 359, height: 27, direction: 1, gain: 0.78},
-    {top: 386, height: 31, direction: -1, gain: 0.94},
-    {top: 417, height: 39, direction: 1, gain: 0.68},
-    {top: 456, height: 30, direction: -1, gain: 1},
-    {top: 486, height: 48, direction: 1, gain: 0.88},
-    {top: 534, height: 36, direction: -1, gain: 0.71},
-    {top: 570, height: 43, direction: 1, gain: 0.96},
-    {top: 613, height: 35, direction: -1, gain: 0.63},
-    {top: 648, height: 38, direction: 1, gain: 0.48},
-  ];
-  const chatter = Math.sin(frame * 5.13) >= 0 ? 1 : -1;
-
-  return (
-    <AbsoluteFill style={{pointerEvents: "none"}}>
-      {slices.map((slice, index) => {
-        const offset =
-          slice.direction *
-          chatter *
-          strength *
-          slice.gain *
-          (22 + seeded(index + event.start) * 76);
-        const useIncoming = index % 3 !== 0 || phase > 0.55;
-        const sliceTheme = useIncoming ? event.to : event.from;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              inset: 0,
-              clipPath: `inset(${slice.top}px 0 ${HEIGHT - slice.top - slice.height}px 0)`,
-              transform: `translateX(${offset}px)`,
-              opacity: 0.46 + strength * 0.54,
-              filter: index % 4 === 0 ? `blur(${0.6 + strength * 1.4}px)` : undefined,
-              mixBlendMode: "screen",
-            }}
-          >
-            <UpdateHud theme={sliceTheme} progress={progress} />
-          </div>
-        );
-      })}
-
-      {Array.from({length: 18}).map((_, index) => {
-        const direction = index % 2 === 0 ? -1 : 1;
-        const lane = index % 9;
-        const x = PANEL.x - 68 + seeded(index + event.start * 2) * (PANEL.width + 136);
-        const y = PANEL.y - 35 + lane * 38 + seeded(index + 31) * 13;
-        const dashWidth = 14 + seeded(index + 44) * 116;
-        const theme = index % 4 === 0 ? event.from : event.to;
-        const shift = direction * strength * (18 + seeded(index + 62) * 92);
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: x + shift,
-              top: y,
-              width: dashWidth,
-              height: index % 5 === 0 ? 5 : 3,
-              background: theme.core,
-              boxShadow: `0 0 5px ${theme.core}, 0 0 13px ${theme.accent}`,
-              opacity: Math.min(1, strength * (0.55 + seeded(index + 72) * 0.65)),
-            }}
-          />
-        );
-      })}
-
-      {Array.from({length: 5}).map((_, index) => {
-        const y = PANEL.y + 22 + index * 49 + seeded(index + event.start) * 15;
-        return (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              left: PANEL.x - 40 - strength * (30 + index * 7),
-              top: y,
-              width: PANEL.width + 80 + strength * (64 + index * 9),
-              height: 5 + (index % 2) * 4,
-              background: `linear-gradient(90deg, transparent 0%, ${rgba(event.to.accent, 0.78)} 17%, ${event.to.core} 49%, ${rgba(event.from.accent, 0.72)} 80%, transparent 100%)`,
-              filter: `blur(${1 + index * 0.45}px)`,
-              opacity: strength * (0.18 + seeded(index + 5) * 0.42),
-              mixBlendMode: "screen",
-            }}
-          />
-        );
-      })}
-    </AbsoluteFill>
-  );
-};
-
-const ScanFinish: React.FC<{theme: Theme}> = ({theme}) => {
-  const frame = useCurrentFrame();
-  const scanY = ((frame * 3.05) % (HEIGHT + 260)) - 130;
-  const opacity = 0.2 + 0.13 * Math.sin(frame * 0.027 + 0.7) ** 2;
-  return (
-    <AbsoluteFill style={{pointerEvents: "none", overflow: "hidden"}}>
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: scanY,
-          height: 110,
-          background: `linear-gradient(180deg, transparent, ${rgba(theme.accent, 0.06)}, transparent)`,
-          opacity,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "repeating-linear-gradient(180deg, rgba(255,255,255,0.016) 0px, rgba(255,255,255,0.016) 1px, transparent 2px, transparent 5px)",
-          opacity: 0.7,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(ellipse at 52% 50%, transparent 24%, rgba(0,0,0,0.27) 65%, rgba(0,0,0,0.72) 100%)",
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
+const Finish: React.FC = () => (
+  <AbsoluteFill
+    style={{
+      pointerEvents: 'none',
+      background: [
+        'radial-gradient(ellipse 68% 64% at 52% 52%, transparent 44%, rgba(0,0,0,0.40) 78%, rgba(0,0,0,0.76) 100%)',
+        'linear-gradient(180deg, rgba(0,0,0,0.18) 0%, transparent 16%, transparent 83%, rgba(0,0,0,0.34) 100%)',
+      ].join(','),
+    }}
+  />
+);
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const theme = themeForFrame(frame);
-  const glitch = activeGlitch(frame);
-  const progress = interpolate(frame, [0, COMPLETE_FRAME], [0, 100], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.linear,
-  });
-  const glitchStrength = glitch?.strength ?? 0;
-  const panelOpacity = 1 - glitchStrength * 0.27;
-  const globalFlash = glitchStrength * (0.08 + 0.08 * Math.abs(Math.sin(frame * 2.31)));
+  const {fps} = useVideoConfig();
+  const seconds = frame / fps;
+  const percent = monotoneAt(
+    Math.min(seconds, COMPLETION_SECONDS),
+    PERCENT_SAMPLES,
+    PERCENT_SLOPES,
+  );
+  const fill = monotoneAt(
+    Math.min(seconds, COMPLETION_SECONDS),
+    FILL_SAMPLES,
+    FILL_SLOPES,
+  );
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
-        overflow: "hidden",
-        backgroundColor: "#010504",
-        WebkitFontSmoothing: "antialiased",
+        width: 1920,
+        height: 1080,
+        overflow: 'hidden',
+        backgroundColor: COLORS.black,
       }}
     >
-      <AbsoluteFill
-        style={{
-          background: `
-            radial-gradient(ellipse at 52% 50%, ${theme.fog} 0%, transparent 48%),
-            linear-gradient(112deg, #010302 0%, ${rgba(theme.deep, 0.2)} 52%, #010304 100%)
-          `,
-        }}
-      />
-      <MatrixCodeField theme={theme} />
-      <AtmosphericStreaks theme={theme} />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 790,
-          top: -40,
-          width: 340,
-          height: 1160,
-          background: "linear-gradient(90deg, transparent, rgba(0,0,0,0.56), transparent)",
-          filter: "blur(26px)",
-        }}
-      />
-
-      <UpdateHud theme={theme} progress={progress} opacity={panelOpacity} />
-      {glitch && <GlitchSlices glitch={glitch} progress={progress} />}
-
-      {glitch && (
-        <AbsoluteFill
-          style={{
-            background: `linear-gradient(180deg, transparent 0%, ${rgba(glitch.event.to.accent, globalFlash)} 43%, transparent 62%)`,
-            mixBlendMode: "screen",
-          }}
-        />
-      )}
-      <ScanFinish theme={theme} />
+      <MatrixCurtain frame={frame} />
+      <HudPanel frame={frame} percent={percent} fill={fill} />
+      <Finish />
     </AbsoluteFill>
   );
 };
+
+void DURATION_SECONDS;
