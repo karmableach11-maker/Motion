@@ -1,746 +1,581 @@
-import React from 'react';
+import React, {useMemo} from 'react';
 import {
   AbsoluteFill,
+  Easing,
+  interpolate,
+  spring,
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
 
-const FPS = 60;
-const DURATION_SECONDS = 15;
-const COMPLETION_SECONDS = 12.1;
+const INK = '#f5f0e7';
+const INK_MUTED = '#c9c1b5';
+const CHAMPAGNE = '#d7b977';
+const VIOLET = '#8f7cff';
+const COMPLETE_FRAME = 837;
 
-const COLORS = {
-  black: '#010402',
-  deepGreen: '#021109',
-  glass: '#03130B',
-  green: '#00F56A',
-  greenBright: '#56FF9A',
-  greenWhite: '#D8FFE7',
-  emerald: '#00B94F',
-  muted: '#0A6635',
-};
-
-const HUD = {
-  left: 380,
-  top: 332,
-  width: 1160,
-  height: 416,
-};
-
-const TRACK = {
-  left: 80,
-  top: 196,
-  width: 1000,
-  height: 96,
-};
-
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.max(min, Math.min(max, value));
-
-type CurvePoint = readonly [seconds: number, value: number];
-
-const PERCENT_SAMPLES = [
-  [0, 0],
-  [0.4, 1.7],
-  [0.9, 4],
-  [1.45, 8.3],
-  [2, 13.1],
-  [2.5, 17.8],
-  [3, 22.2],
-  [4.2, 29.8],
-  [4.7, 31.5],
-  [6, 45.7],
-  [7.2, 53.5],
-  [8.45, 62.2],
-  [9, 71],
-  [10.2, 83.2],
-  [11.2, 90],
-  [11.9, 99],
-  [COMPLETION_SECONDS, 100],
-] as const satisfies readonly CurvePoint[];
-
-const FILL_SAMPLES = [
-  [0, 0],
-  [3, 0.172],
-  [6, 0.324],
-  [9, 0.624],
-  [11.9, 0.985],
-  [COMPLETION_SECONDS, 1],
-] as const satisfies readonly CurvePoint[];
-
-const buildSlopes = (samples: readonly CurvePoint[]) => {
-  const widths = Array.from(
-    {length: samples.length - 1},
-    (_, index) => samples[index + 1][0] - samples[index][0],
-  );
-  const secants = widths.map(
-    (width, index) =>
-      (samples[index + 1][1] - samples[index][1]) / width,
-  );
-  const slopes = Array.from({length: samples.length}, () => 0);
-  slopes[0] = secants[0];
-  slopes[slopes.length - 1] = secants[secants.length - 1];
-
-  for (let index = 1; index < slopes.length - 1; index++) {
-    const before = secants[index - 1];
-    const after = secants[index];
-    if (before <= 0 || after <= 0) {
-      slopes[index] = 0;
-      continue;
-    }
-    const beforeWidth = widths[index - 1];
-    const afterWidth = widths[index];
-    const weightA = 2 * afterWidth + beforeWidth;
-    const weightB = afterWidth + 2 * beforeWidth;
-    slopes[index] =
-      (weightA + weightB) / (weightA / before + weightB / after);
-  }
-
-  return slopes;
-};
-
-const PERCENT_SLOPES = buildSlopes(PERCENT_SAMPLES);
-const FILL_SLOPES = buildSlopes(FILL_SAMPLES);
-
-const monotoneAt = (
-  seconds: number,
-  samples: readonly CurvePoint[],
-  slopes: readonly number[],
-) => {
-  if (seconds <= samples[0][0]) return samples[0][1];
-  const final = samples[samples.length - 1];
-  if (seconds >= final[0]) return final[1];
-
-  let segment = 0;
-  while (
-    segment < samples.length - 2 &&
-    seconds > samples[segment + 1][0]
-  ) {
-    segment++;
-  }
-
-  const [x0, y0] = samples[segment];
-  const [x1, y1] = samples[segment + 1];
-  const width = x1 - x0;
-  const t = clamp((seconds - x0) / width);
-  const t2 = t * t;
-  const t3 = t2 * t;
-  const h00 = 2 * t3 - 3 * t2 + 1;
-  const h10 = t3 - 2 * t2 + t;
-  const h01 = -2 * t3 + 3 * t2;
-  const h11 = t3 - t2;
-
-  return (
-    h00 * y0 +
-    h10 * width * slopes[segment] +
-    h01 * y1 +
-    h11 * width * slopes[segment + 1]
-  );
-};
-
-// Original, generic data alphabet: hexadecimal characters, operators and
-// geometric sigils only. No franchise-specific typography or assets.
-const DATA_GLYPHS = '0123456789ABCDEF+-*/=<>[]{}()|:.;_△◇○□⌁⌗';
-
-const hash = (value: number) => {
-  let result = value | 0;
-  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
-  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
-  return (result ^ (result >>> 16)) >>> 0;
-};
-
-const makeGlyphString = (length: number, seed: number) =>
-  Array.from({length}, (_, index) => {
-    const value = hash(seed + index * 4099);
-    return DATA_GLYPHS[value % DATA_GLYPHS.length];
-  }).join('\n');
-
-type StreamConfig = {
+type OrbSpec = {
   x: number;
-  speed: number;
-  offset: number;
-  fontSize: number;
-  lineHeight: number;
+  y: number;
+  size: number;
+  blur: number;
   opacity: number;
-  length: number;
-  seed: number;
-  accent: boolean;
+  hue: 'violet' | 'champagne' | 'slate';
+  driftX: number;
+  driftY: number;
+  phase: number;
 };
 
-const makeStreams = (
-  count: number,
-  seed: number,
-  minSpeed: number,
-  maxSpeed: number,
-  minFont: number,
-  maxFont: number,
-  opacity: number,
-): readonly StreamConfig[] =>
-  Array.from({length: count}, (_, index) => {
-    const a = hash(seed + index * 811);
-    const b = hash(seed + index * 2029 + 17);
-    const c = hash(seed + index * 4079 + 31);
-    const fontSize = minFont + (a % Math.max(1, maxFont - minFont + 1));
-    return {
-      x: (index + 0.18 + ((b % 65) / 100)) * (1920 / count),
-      speed: minSpeed + (c % Math.max(1, maxSpeed - minSpeed + 1)),
-      offset: a % 1800,
-      fontSize,
-      lineHeight: Math.round(fontSize * 1.16),
-      opacity: opacity * (0.7 + (b % 31) / 100),
-      length: 18 + (c % 23),
-      seed: seed + index * 131,
-      accent: index % 11 === 3,
-    };
+type ParticleSpec = {
+  x: number;
+  y: number;
+  radius: number;
+  alpha: number;
+  phase: number;
+  depth: number;
+};
+
+const ORBS: OrbSpec[] = [
+  {x: 9, y: 13, size: 420, blur: 12, opacity: 0.12, hue: 'slate', driftX: 9, driftY: 5, phase: 0.4},
+  {x: 29, y: 69, size: 530, blur: 18, opacity: 0.11, hue: 'violet', driftX: -7, driftY: 8, phase: 1.7},
+  {x: 53, y: 23, size: 660, blur: 24, opacity: 0.14, hue: 'violet', driftX: 8, driftY: -5, phase: 2.6},
+  {x: 75, y: 61, size: 470, blur: 15, opacity: 0.1, hue: 'champagne', driftX: -6, driftY: -7, phase: 4.1},
+  {x: 92, y: 18, size: 340, blur: 14, opacity: 0.08, hue: 'slate', driftX: -9, driftY: 4, phase: 5.2},
+  {x: 93, y: 87, size: 620, blur: 22, opacity: 0.07, hue: 'violet', driftX: 5, driftY: -8, phase: 0.9},
+];
+
+const orbBackground = (hue: OrbSpec['hue']) => {
+  if (hue === 'champagne') {
+    return 'radial-gradient(circle at 42% 38%, rgba(232,204,146,0.22) 0%, rgba(173,131,66,0.08) 34%, rgba(7,7,10,0) 70%)';
+  }
+  if (hue === 'slate') {
+    return 'radial-gradient(circle at 42% 40%, rgba(147,158,181,0.16) 0%, rgba(59,67,86,0.06) 42%, rgba(7,7,10,0) 72%)';
+  }
+  return 'radial-gradient(circle at 42% 38%, rgba(133,108,255,0.23) 0%, rgba(72,52,166,0.08) 38%, rgba(7,7,10,0) 72%)';
+};
+
+const PremiumBackdrop: React.FC<{frame: number; duration: number}> = ({
+  frame,
+  duration,
+}) => {
+  const particles = useMemo<ParticleSpec[]>(() => {
+    return Array.from({length: 24}, (_, index) => {
+      const x = (index * 41.83 + Math.sin(index * 2.17) * 26 + 100) % 100;
+      const y = (index * 67.11 + Math.cos(index * 1.43) * 21 + 100) % 100;
+      const radius = 1.8 + ((index * 13) % 31) / 10;
+      const alpha = 0.055 + ((index * 17) % 29) / 1000;
+      return {
+        x,
+        y,
+        radius,
+        alpha,
+        phase: index * 0.91,
+        depth: 0.55 + (index % 4) * 0.24,
+      };
+    });
+  }, []);
+
+  const time = frame / Math.max(1, duration - 1);
+  const orbit = time * Math.PI * 2;
+  const gridShift = Math.sin(orbit * 0.72) * 26;
+  const sweepProgress = (frame % 510) / 510;
+  const sweepX = interpolate(sweepProgress, [0, 1], [-760, 2460], {
+    easing: Easing.inOut(Easing.quad),
   });
 
-const FAR_STREAMS = makeStreams(58, 1307, 42, 86, 13, 18, 0.32);
-const MID_STREAMS = makeStreams(42, 7309, 76, 138, 18, 25, 0.58);
-const NEAR_STREAMS = makeStreams(24, 19009, 118, 205, 24, 34, 0.78);
-
-const DataStream: React.FC<{frame: number; stream: StreamConfig}> = ({
-  frame,
-  stream,
-}) => {
-  const text = makeGlyphString(stream.length, stream.seed);
-  const loopHeight = stream.length * stream.lineHeight + 420;
-  const travel =
-    ((frame * (stream.speed / FPS) + stream.offset) % loopHeight) - 340;
-  const pulse = 0.88 + 0.12 * Math.sin(frame * 0.071 + stream.seed * 0.013);
-  const gradient = stream.accent
-    ? 'linear-gradient(180deg, #F0FFF5 0%, #8CFFB3 6%, #13F071 24%, rgba(0,179,79,0.68) 66%, rgba(0,91,43,0.08) 100%)'
-    : 'linear-gradient(180deg, #C9FFDA 0%, #52FF91 7%, #00D864 28%, rgba(0,155,72,0.62) 68%, rgba(0,65,31,0.06) 100%)';
-
-  const renderCopy = (copy: number, top: number) => (
-    <div
-      key={copy}
-      style={{
-        position: 'absolute',
-        top,
-        left: 0,
-        whiteSpace: 'pre',
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: stream.fontSize,
-        fontWeight: stream.accent ? 760 : 560,
-        lineHeight: `${stream.lineHeight}px`,
-        textAlign: 'center',
-        color: 'transparent',
-        backgroundImage: gradient,
-        backgroundClip: 'text',
-        WebkitBackgroundClip: 'text',
-        textShadow: stream.accent
-          ? '0 0 5px rgba(130,255,174,0.82), 0 0 14px rgba(0,232,104,0.48)'
-          : '0 0 4px rgba(0,238,108,0.38)',
-      }}
-    >
-      {text}
-    </div>
-  );
-
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: stream.x,
-        top: 0,
-        width: stream.fontSize * 1.25,
-        height: 1080,
-        overflow: 'hidden',
-        opacity: stream.opacity * pulse,
-        transform: `translate3d(0, ${travel}px, 0)`,
-        maskImage:
-          'linear-gradient(180deg, transparent 0%, #000 5%, #000 92%, transparent 100%)',
-        WebkitMaskImage:
-          'linear-gradient(180deg, transparent 0%, #000 5%, #000 92%, transparent 100%)',
-      }}
-    >
-      {renderCopy(0, -loopHeight)}
-      {renderCopy(1, 0)}
-      {renderCopy(2, loopHeight)}
-    </div>
-  );
-};
-
-const StreamLayer: React.FC<{
-  frame: number;
-  streams: readonly StreamConfig[];
-  blur: number;
-  scale: number;
-}> = ({frame, streams, blur, scale}) => (
-  <AbsoluteFill
-    style={{
-      transform: `scale(${scale})`,
-      filter: blur > 0 ? `blur(${blur}px)` : undefined,
-      transformOrigin: '50% 50%',
-    }}
-  >
-    {streams.map((stream) => (
-      <DataStream key={stream.seed} frame={frame} stream={stream} />
-    ))}
-  </AbsoluteFill>
-);
-
-const DigitalRainField: React.FC<{frame: number}> = ({frame}) => (
-  <AbsoluteFill
-    style={{
-      zIndex: 0,
-      isolation: 'isolate',
-      overflow: 'hidden',
-      backgroundColor: COLORS.black,
-      backgroundImage: [
-        'radial-gradient(ellipse 52% 62% at 50% 50%, rgba(0,245,106,0.105) 0%, rgba(0,94,44,0.045) 46%, transparent 78%)',
-        'linear-gradient(115deg, #010403 0%, #021009 48%, #010604 100%)',
-      ].join(','),
-    }}
-  >
-    <StreamLayer frame={frame} streams={FAR_STREAMS} blur={0.7} scale={0.99} />
-    <StreamLayer frame={frame} streams={MID_STREAMS} blur={0.2} scale={1} />
-    <StreamLayer frame={frame} streams={NEAR_STREAMS} blur={0} scale={1.015} />
     <AbsoluteFill
       style={{
-        backgroundImage: [
-          'linear-gradient(90deg, rgba(0,0,0,0.44) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.42) 100%)',
-          'radial-gradient(ellipse 72% 72% at 50% 50%, transparent 40%, rgba(0,0,0,0.52) 100%)',
-          'repeating-linear-gradient(180deg, rgba(0,255,112,0.025) 0px, rgba(0,255,112,0.025) 1px, transparent 1px, transparent 4px)',
-        ].join(','),
+        overflow: 'hidden',
+        background:
+          'radial-gradient(circle at 52% 43%, #151229 0%, #0a0a13 34%, #050507 69%, #030304 100%)',
       }}
-    />
-  </AbsoluteFill>
-);
+    >
+      <AbsoluteFill
+        style={{
+          background:
+            'linear-gradient(118deg, rgba(126,103,255,0.035) 0%, rgba(255,255,255,0) 42%, rgba(211,174,105,0.035) 75%, rgba(255,255,255,0) 100%)',
+          opacity: 0.85,
+          transform: `scale(1.07) translate3d(${Math.sin(orbit * 0.48) * 18}px, ${Math.cos(orbit * 0.41) * 12}px, 0)`,
+        }}
+      />
 
-const FillTexture: React.FC<{frame: number}> = ({frame}) => {
-  const symbols = '101101  DATA  010011  LINK  111000  ';
+      {ORBS.map((orb, index) => {
+        const depth = 2.4 + (index % 3) * 0.8;
+        const driftX =
+          Math.sin(orbit * (0.3 + index * 0.018) + orb.phase) *
+          orb.driftX *
+          depth;
+        const driftY =
+          Math.cos(orbit * (0.25 + index * 0.014) + orb.phase) *
+          orb.driftY *
+          depth;
+        const breathe = 0.94 + Math.sin(orbit * 0.46 + orb.phase) * 0.075;
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: `${orb.x}%`,
+              top: `${orb.y}%`,
+              width: orb.size,
+              height: orb.size,
+              borderRadius: '50%',
+              transform: `translate(-50%, -50%) translate3d(${driftX}px, ${driftY}px, 0) scale(${breathe})`,
+              background: orbBackground(orb.hue),
+              filter: `blur(${orb.blur}px)`,
+              opacity: orb.opacity,
+              boxShadow:
+                orb.hue === 'champagne'
+                  ? 'inset 0 0 0 1px rgba(225,196,134,0.12)'
+                  : 'inset 0 0 0 1px rgba(158,147,255,0.08)',
+            }}
+          />
+        );
+      })}
+
+      <AbsoluteFill
+        style={{
+          background:
+            'repeating-linear-gradient(112deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 78px)',
+          maskImage:
+            'radial-gradient(ellipse at 50% 48%, black 0%, rgba(0,0,0,0.7) 44%, transparent 82%)',
+          WebkitMaskImage:
+            'radial-gradient(ellipse at 50% 48%, black 0%, rgba(0,0,0,0.7) 44%, transparent 82%)',
+          opacity: 0.55,
+          transform: `scale(1.12) translate3d(${gridShift}px, ${-gridShift * 0.24}px, 0)`,
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          left: sweepX,
+          top: -610,
+          width: 330,
+          height: 2300,
+          transform: 'rotate(23deg)',
+          background:
+            'linear-gradient(90deg, transparent, rgba(146,123,255,0.025) 18%, rgba(190,174,255,0.13) 48%, rgba(239,211,153,0.06) 62%, transparent)',
+          filter: 'blur(26px)',
+          opacity:
+            Math.sin(Math.min(1, sweepProgress * 1.05) * Math.PI) * 0.82,
+          mixBlendMode: 'screen',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          left: -300 + Math.sin(orbit * 0.52 + 1.2) * 145,
+          top: 785 + Math.cos(orbit * 0.38) * 34,
+          width: 2520,
+          height: 220,
+          transform: 'rotate(-8deg)',
+          background:
+            'radial-gradient(ellipse at center, rgba(116,89,235,0.12), rgba(208,176,108,0.035) 38%, transparent 73%)',
+          filter: 'blur(34px)',
+          opacity: 0.72,
+          mixBlendMode: 'screen',
+        }}
+      />
+
+      {particles.map((particle, index) => {
+        const driftX =
+          Math.sin(frame * (0.009 + particle.depth * 0.002) + particle.phase) *
+          34 *
+          particle.depth;
+        const driftY =
+          Math.cos(frame * (0.006 + particle.depth * 0.0015) + particle.phase) *
+          21 *
+          particle.depth;
+        const flicker = particle.alpha + Math.sin(frame * 0.045 + particle.phase) * 0.018;
+        const particleScale = 0.86 + particle.depth * 0.18;
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              width: particle.radius * 5.2,
+              height: particle.radius * 5.2,
+              borderRadius: '50%',
+              background: index % 9 === 0 ? '#d8c08b' : '#c5c0dc',
+              opacity: Math.max(0.01, flicker),
+              transform: `translate3d(${driftX}px, ${driftY}px, 0) scale(${particleScale})`,
+              boxShadow:
+                index % 9 === 0
+                  ? '0 0 9px rgba(216,192,139,0.15)'
+                  : '0 0 7px rgba(166,151,255,0.11)',
+            }}
+          />
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+const EnergyTrails: React.FC<{frame: number; progress: number}> = ({
+  frame,
+  progress,
+}) => {
+  const visibleWidth = Math.max(0, progress * 1320);
+
   return (
     <div
       style={{
         position: 'absolute',
-        inset: 0,
+        left: 0,
+        top: 92,
+        width: visibleWidth,
+        height: 83,
         overflow: 'hidden',
-        opacity: 0.18,
-        color: '#004922',
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontWeight: 800,
-        fontSize: 13,
-        lineHeight: '22px',
-        letterSpacing: 2.4,
-        transform: `translate3d(${(frame / FPS) * 8}px, ${(frame / FPS) * 3}px, 0)`,
+        opacity: 0.72,
+        maskImage:
+          'linear-gradient(90deg, transparent 0%, black 12%, black 92%, transparent 100%)',
+        WebkitMaskImage:
+          'linear-gradient(90deg, transparent 0%, black 12%, black 92%, transparent 100%)',
       }}
     >
-      {Array.from({length: 7}, (_, index) => (
-        <div
-          key={index}
-          style={{
-            position: 'absolute',
-            left: -140 + (index % 2) * 28,
-            top: -30 + index * 22,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {symbols.repeat(5)}
-        </div>
-      ))}
+      {Array.from({length: 6}, (_, index) => {
+        const laneY = 7 + index * 13;
+        const travel = (frame * (4.2 + index * 0.38) + index * 213) % 1530;
+        const length = 80 + (index % 3) * 42;
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: travel - 150,
+              top: laneY,
+              width: length,
+              height: index % 2 === 0 ? 2 : 1,
+              borderRadius: 999,
+              transform: `skewX(-28deg) translateY(${Math.sin(frame * 0.08 + index) * 2}px)`,
+              background:
+                index % 3 === 0
+                  ? 'linear-gradient(90deg, transparent, rgba(242,217,164,0.82), transparent)'
+                  : 'linear-gradient(90deg, transparent, rgba(164,144,255,0.74), transparent)',
+              filter: 'blur(0.5px)',
+              boxShadow:
+                index % 3 === 0
+                  ? '0 0 10px rgba(223,190,122,0.38)'
+                  : '0 0 10px rgba(132,107,255,0.34)',
+            }}
+          />
+        );
+      })}
     </div>
   );
 };
 
-const HudPanel: React.FC<{
+const ProgressRail: React.FC<{
+  progress: number;
   frame: number;
-  percent: number;
-  fill: number;
-}> = ({frame, percent, fill}) => {
-  const fillWidth = TRACK.width * clamp(fill);
-  const percentage = `${percent.toFixed(1)}%`;
-  const completionFrame = COMPLETION_SECONDS * FPS;
-  const completionAge = frame - completionFrame;
-  const complete = completionAge >= 0;
-  const completionEase = complete
-    ? 1 - Math.pow(1 - clamp(completionAge / 24), 3)
-    : 0;
-  const completionPulse = complete ? clamp(1 - completionAge / 54) : 0;
-  const glowBreath = 0.82 + 0.18 * Math.sin(frame * 0.045);
-  const scanX = ((frame * 4.2) % (TRACK.width + 180)) - 180;
-  const statusLabel = complete ? 'TRANSFER COMPLETE' : 'SECURE DATA TRANSFER';
+  completed: boolean;
+}> = ({progress, frame, completed}) => {
+  const shimmerX = ((frame * 2.4) % 980) - 210;
+  const headPulse = 0.5 + 0.5 * Math.sin(frame * 0.17);
+  const completionPulse = completed
+    ? interpolate(frame, [COMPLETE_FRAME, COMPLETE_FRAME + 28], [1.45, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      })
+    : 1;
 
   return (
     <div
       style={{
         position: 'absolute',
-        zIndex: 10,
-        isolation: 'isolate',
-        left: HUD.left,
-        top: HUD.top,
-        width: HUD.width,
-        height: HUD.height,
-        filter: `drop-shadow(0 0 ${26 + completionPulse * 18}px rgba(0,245,106,${0.18 + completionPulse * 0.22}))`,
+        left: 0,
+        top: 118,
+        width: 1320,
+        height: 30,
+        borderRadius: 2,
+        overflow: 'visible',
+        background:
+          'linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0.045))',
+        border: '1px solid rgba(246,238,222,0.24)',
+        boxShadow:
+          '0 16px 35px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.11), 0 0 42px rgba(116,91,255,0.08)',
+        transform: `translateY(${Math.sin(frame * 0.045) * 1.2}px)`,
       }}
     >
-      <svg
-        width={HUD.width}
-        height={HUD.height}
-        viewBox={`0 0 ${HUD.width} ${HUD.height}`}
+      <div
         style={{
           position: 'absolute',
           inset: 0,
-          overflow: 'visible',
-        }}
-      >
-        <defs>
-          <linearGradient id="premiumPanelGlass" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#061B10" stopOpacity="0.96" />
-            <stop offset="52%" stopColor="#010704" stopOpacity="0.93" />
-            <stop offset="100%" stopColor="#04170D" stopOpacity="0.96" />
-          </linearGradient>
-          <linearGradient id="premiumPanelStroke" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#00A84B" stopOpacity="0.58" />
-            <stop offset="48%" stopColor="#8CFFB6" stopOpacity="0.94" />
-            <stop offset="100%" stopColor="#00CB5B" stopOpacity="0.62" />
-          </linearGradient>
-          <filter id="premiumPanelGlow" x="-20%" y="-30%" width="140%" height="160%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <path
-          d="M31 5 H1129 L1155 31 V385 L1129 411 H31 L5 385 V31 Z"
-          fill="url(#premiumPanelGlass)"
-          stroke="rgba(0,245,106,0.22)"
-          strokeWidth="14"
-          filter="url(#premiumPanelGlow)"
-        />
-        <path
-          d="M31 5 H1129 L1155 31 V385 L1129 411 H31 L5 385 V31 Z"
-          fill="none"
-          stroke="url(#premiumPanelStroke)"
-          strokeWidth="3"
-        />
-        <path
-          d="M5 97 V31 L31 5 H236"
-          fill="none"
-          stroke="rgba(216,255,231,0.62)"
-          strokeWidth="2"
-        />
-        <path
-          d="M924 411 H1129 L1155 385 V319"
-          fill="none"
-          stroke="rgba(86,255,154,0.52)"
-          strokeWidth="2"
-        />
-        <path
-          d="M80 163 H1080"
-          fill="none"
-          stroke="rgba(0,245,106,0.15)"
-          strokeWidth="1"
-        />
-      </svg>
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 82,
-          top: 62,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }}
-      >
-        <div
-          style={{
-            width: 13,
-            height: 13,
-            borderRadius: '50%',
-            background: complete ? COLORS.greenWhite : COLORS.green,
-            boxShadow: `0 0 8px rgba(86,255,154,0.95), 0 0 ${18 + completionPulse * 16}px rgba(0,245,106,0.68)`,
-            opacity: complete ? 1 : glowBreath,
-          }}
-        />
-        <div
-          style={{
-            color: complete ? COLORS.greenWhite : COLORS.greenBright,
-            fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
-            fontSize: 27,
-            lineHeight: 1,
-            fontWeight: 760,
-            letterSpacing: 4.8,
-            textShadow: '0 0 12px rgba(0,245,106,0.52)',
-          }}
-        >
-          {statusLabel}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 82,
-          top: 113,
-          color: 'rgba(153,255,190,0.58)',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 13,
-          fontWeight: 650,
-          letterSpacing: 2.6,
-        }}
-      >
-        ENCRYPTED CHANNEL&nbsp;&nbsp;•&nbsp;&nbsp;DATA STREAM 04
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 78,
-          top: 51,
-          width: 310,
-          textAlign: 'right',
-          color: COLORS.greenWhite,
-          fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
-          fontSize: 76,
-          lineHeight: 1,
-          fontWeight: 820,
-          letterSpacing: -2.6,
-          fontVariantNumeric: 'tabular-nums',
-          textShadow: [
-            '0 0 7px rgba(216,255,231,0.92)',
-            '0 0 22px rgba(0,245,106,0.72)',
-            '0 0 48px rgba(0,185,79,0.34)',
-          ].join(','),
-        }}
-      >
-        {percentage}
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          left: TRACK.left,
-          top: TRACK.top,
-          width: TRACK.width,
-          height: TRACK.height,
+          width: `${progress * 100}%`,
           overflow: 'hidden',
-          clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
-          background: 'rgba(0,16,8,0.88)',
-          border: `2px solid rgba(86,255,154,${0.24 + completionPulse * 0.5})`,
-          boxShadow: [
-            'inset 0 0 24px rgba(0,0,0,0.82)',
-            'inset 0 0 10px rgba(0,245,106,0.10)',
-            `0 0 ${18 + completionPulse * 34}px rgba(0,245,106,${0.12 + completionPulse * 0.42})`,
-          ].join(','),
+          borderRadius: 1,
+          background:
+            'linear-gradient(90deg, #7464e7 0%, #a38ef8 38%, #d7b977 78%, #f4ead2 100%)',
+          boxShadow: `0 0 ${28 * completionPulse}px rgba(159,131,255,0.38), 0 0 ${15 * completionPulse}px rgba(226,196,133,0.35)`,
         }}
       >
+        <div
+          style={{
+            position: 'absolute',
+            left: shimmerX,
+            top: -22,
+            width: 190,
+            height: 78,
+            transform: 'skewX(-24deg)',
+            background:
+              'linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent)',
+            filter: 'blur(5px)',
+            opacity: 0.48,
+          }}
+        />
         <div
           style={{
             position: 'absolute',
             left: 0,
-            top: 0,
-            width: fillWidth,
-            height: '100%',
-            overflow: 'hidden',
-            background: [
-              'linear-gradient(180deg, rgba(203,255,222,0.98) 0%, rgba(61,255,132,0.98) 12%, rgba(0,235,98,0.96) 58%, rgba(0,145,62,0.98) 100%)',
-              'repeating-linear-gradient(100deg, transparent 0px, transparent 24px, rgba(255,255,255,0.14) 24px, rgba(255,255,255,0.14) 27px)',
-            ].join(','),
-            boxShadow: [
-              '0 0 34px rgba(0,245,106,0.66)',
-              '0 0 76px rgba(0,245,106,0.24)',
-              'inset 0 3px 1px rgba(255,255,255,0.52)',
-              'inset 0 -8px 18px rgba(0,74,31,0.25)',
-            ].join(','),
-          }}
-        >
-          <FillTexture frame={frame} />
-          <div
-            style={{
-              position: 'absolute',
-              left: scanX,
-              top: 0,
-              width: 170,
-              height: '100%',
-              background:
-                'linear-gradient(90deg, transparent 0%, rgba(235,255,243,0.03) 28%, rgba(255,255,255,0.42) 50%, rgba(235,255,243,0.03) 72%, transparent 100%)',
-              transform: 'skewX(-14deg)',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              height: 3,
-              background: 'rgba(236,255,243,0.92)',
-              boxShadow: '0 0 14px rgba(216,255,231,0.86)',
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            position: 'absolute',
-            left: Math.max(0, fillWidth - 6),
-            top: 0,
-            width: 6,
-            height: '100%',
-            background: COLORS.greenWhite,
-            boxShadow:
-              '0 0 10px rgba(216,255,231,0.98), 0 0 30px rgba(0,245,106,0.96), 0 0 58px rgba(0,245,106,0.50)',
-            opacity: fillWidth < 8 ? 0 : 1,
-          }}
-        />
-
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
+            right: 0,
+            top: 1,
+            height: 3,
             background:
-              'repeating-linear-gradient(90deg, transparent 0px, transparent 49px, rgba(0,0,0,0.21) 49px, rgba(0,0,0,0.21) 51px)',
-            mixBlendMode: 'multiply',
-            pointerEvents: 'none',
+              'linear-gradient(90deg, rgba(255,255,255,0.24), rgba(255,255,255,0.66), rgba(255,255,255,0.31))',
+            opacity: 0.65,
           }}
         />
       </div>
 
-      <div
-        style={{
-          position: 'absolute',
-          left: TRACK.left,
-          top: 314,
-          width: TRACK.width,
-          display: 'flex',
-          justifyContent: 'space-between',
-          color: 'rgba(138,255,179,0.50)',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 12,
-          fontWeight: 650,
-          letterSpacing: 1.4,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {[0, 25, 50, 75, 100].map((mark) => (
+      {progress > 0.004 ? (
+        <>
           <div
-            key={mark}
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: mark === 0 ? 'flex-start' : mark === 100 ? 'flex-end' : 'center',
-              gap: 8,
+              position: 'absolute',
+              left: `${progress * 100}%`,
+              top: '50%',
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              transform: `translate(-50%, -50%) scale(${1 + headPulse * 0.7})`,
+              border: '1px solid rgba(243,220,171,0.72)',
+              opacity: 0.42 * (1 - headPulse * 0.55),
+              boxShadow: '0 0 18px rgba(151,126,255,0.32)',
             }}
-          >
-            <div
-              style={{
-                width: 1,
-                height: 10,
-                background: 'rgba(86,255,154,0.42)',
-                boxShadow: '0 0 5px rgba(0,245,106,0.34)',
-              }}
-            />
-            <span>{mark.toString().padStart(3, '0')}</span>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          left: TRACK.left,
-          bottom: 30,
-          color: 'rgba(122,255,170,0.42)',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 11,
-          fontWeight: 620,
-          letterSpacing: 2.2,
-        }}
-      >
-        PACKET INTEGRITY&nbsp;&nbsp;•&nbsp;&nbsp;VERIFIED STREAM
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: TRACK.left,
-          bottom: 30,
-          color: complete
-            ? `rgba(216,255,231,${0.52 + completionEase * 0.36})`
-            : 'rgba(122,255,170,0.42)',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 2.2,
-          textShadow: complete ? '0 0 10px rgba(0,245,106,0.54)' : undefined,
-        }}
-      >
-        {complete ? 'READY FOR DEPLOYMENT' : 'LIVE TRANSFER'}
-      </div>
-
-      {complete ? (
-        <div
-          style={{
-            position: 'absolute',
-            left: TRACK.left - 8,
-            top: TRACK.top - 8,
-            width: TRACK.width + 16,
-            height: TRACK.height + 16,
-            clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
-            border: '2px solid rgba(216,255,231,0.88)',
-            boxShadow:
-              '0 0 18px rgba(86,255,154,0.72), inset 0 0 18px rgba(0,245,106,0.26)',
-            opacity: completionPulse,
-            transform: `scale(${1 + completionEase * 0.018})`,
-          }}
-        />
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: `${progress * 100}%`,
+              top: '50%',
+              width: 6,
+              height: 45,
+              borderRadius: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: '#fff7e9',
+              filter: 'blur(3px)',
+              opacity: 0.76,
+              boxShadow:
+                '0 0 22px rgba(255,240,208,0.86), 0 0 46px rgba(144,119,255,0.48)',
+            }}
+          />
+        </>
       ) : null}
     </div>
   );
 };
 
-const Finish: React.FC = () => (
-  <AbsoluteFill
-    style={{
-      zIndex: 20,
-      pointerEvents: 'none',
-      background: [
-        'radial-gradient(ellipse 68% 64% at 52% 52%, transparent 44%, rgba(0,0,0,0.40) 78%, rgba(0,0,0,0.76) 100%)',
-        'linear-gradient(180deg, rgba(0,0,0,0.18) 0%, transparent 16%, transparent 83%, rgba(0,0,0,0.34) 100%)',
-      ].join(','),
-    }}
-  />
-);
+const UpdateInterface: React.FC<{frame: number; duration: number; fps: number}> = ({
+  frame,
+  duration,
+  fps,
+}) => {
+  const rawProgress = interpolate(frame, [0, 834], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const progress = Math.min(1, Math.max(0, rawProgress));
+  const percent = Math.min(100, Math.round(progress * 100));
+  const completed = frame >= COMPLETE_FRAME;
+  const dotCount = Math.floor(frame / 18) % 4;
+  const dots = '.'.repeat(dotCount);
+  const textGlow = 0.32 + Math.sin(frame * 0.026) * 0.025;
+  const cycle = frame / Math.max(1, duration - 1);
+  const cameraX = Math.sin(cycle * Math.PI * 2 * 0.78 + 0.25) * 24;
+  const cameraY = Math.cos(cycle * Math.PI * 2 * 0.62 + 0.9) * 13;
+  const cameraScale = 1.012 + Math.sin(cycle * Math.PI * 2 * 0.48) * 0.012;
+  const tiltX = -2.2 + Math.sin(cycle * Math.PI * 2 * 0.7) * 0.32;
+  const tiltY = -3.8 + Math.cos(cycle * Math.PI * 2 * 0.64) * 0.62;
+  const tiltZ = 10.5 + Math.sin(cycle * Math.PI * 2 * 0.56 + 1.2) * 0.32;
+  const completionSpring = spring({
+    frame: frame - COMPLETE_FRAME,
+    fps,
+    config: {damping: 13, mass: 0.58, stiffness: 125},
+    durationInFrames: 44,
+  });
+  const completionKick = completed
+    ? Math.sin(completionSpring * Math.PI) * 0.017
+    : 0;
 
-export const Motion: React.FC = () => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const seconds = frame / fps;
-  const percent = monotoneAt(
-    Math.min(seconds, COMPLETION_SECONDS),
-    PERCENT_SAMPLES,
-    PERCENT_SLOPES,
-  );
-  const fill = monotoneAt(
-    Math.min(seconds, COMPLETION_SECONDS),
-    FILL_SAMPLES,
-    FILL_SLOPES,
-  );
+  const mono =
+    '"SFMono-Regular", "Cascadia Mono", "Roboto Mono", "Liberation Mono", ui-monospace, monospace';
 
   return (
-    <AbsoluteFill
+    <div
       style={{
-        width: 1920,
-        height: 1080,
-        overflow: 'hidden',
-        backgroundColor: COLORS.black,
+        position: 'absolute',
+        left: 235,
+        top: 380,
+        width: 1320,
+        height: 420,
+        transformOrigin: '50% 50%',
+        transform: `translate3d(${cameraX}px, ${cameraY}px, 0) perspective(2200px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotateZ(${tiltZ}deg) skewX(-1.1deg) scale(${cameraScale + completionKick})`,
+        color: INK,
+        fontFamily: mono,
+        fontWeight: 400,
+        letterSpacing: 1.8,
+        textRendering: 'geometricPrecision',
       }}
     >
-      <DigitalRainField frame={frame} />
-      <HudPanel frame={frame} percent={percent} fill={fill} />
-      <Finish />
+      <div
+        style={{
+          position: 'absolute',
+          left: 72,
+          top: 3,
+          fontSize: 70,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          color: INK,
+          textShadow: `0 0 17px rgba(211,199,255,${textGlow}), 0 8px 24px rgba(0,0,0,0.48)`,
+        }}
+      >
+        Installing Software Updates
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 690,
+          top: -67,
+          display: 'flex',
+          alignItems: 'baseline',
+          minWidth: 210,
+          fontSize: 52,
+          lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums',
+          color: INK_MUTED,
+          textShadow: '0 0 15px rgba(154,135,255,0.34)',
+        }}
+      >
+        <span style={{minWidth: 142, textAlign: 'right'}}>{percent}</span>
+        <span
+          style={{
+            marginLeft: 9,
+            fontSize: 29,
+            color: CHAMPAGNE,
+            opacity: 0.94,
+          }}
+        >
+          %
+        </span>
+      </div>
+
+      <EnergyTrails frame={frame} progress={progress} />
+      <ProgressRail progress={progress} frame={frame} completed={completed} />
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 188,
+          width: 1320,
+          textAlign: 'center',
+          fontSize: 64,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          color: completed ? '#f5ead0' : INK,
+          textShadow: completed
+            ? '0 0 18px rgba(218,184,111,0.28), 0 9px 25px rgba(0,0,0,0.46)'
+            : '0 0 16px rgba(170,156,255,0.28), 0 9px 25px rgba(0,0,0,0.46)',
+        }}
+      >
+        {completed ? 'Update completed' : 'Updating in progress'}
+        <span
+          style={{
+            display: 'inline-block',
+            marginLeft: 20,
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            verticalAlign: 'middle',
+            background: completed ? CHAMPAGNE : VIOLET,
+            opacity: 0.46 + Math.sin(frame * 0.12) * 0.25,
+            boxShadow: completed
+              ? '0 0 18px rgba(215,185,119,0.75)'
+              : '0 0 17px rgba(143,124,255,0.75)',
+          }}
+        />
+      </div>
+
+      {!completed ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 278,
+            width: 1320,
+            textAlign: 'center',
+            fontSize: 54,
+            lineHeight: 1,
+            whiteSpace: 'pre',
+            color: '#ded8ce',
+            textShadow: '0 0 14px rgba(150,132,255,0.23)',
+          }}
+        >
+          Please wait
+          <span
+            style={{
+              display: 'inline-block',
+              width: 92,
+              textAlign: 'left',
+              color: VIOLET,
+              textShadow: '0 0 13px rgba(143,124,255,0.65)',
+            }}
+          >
+            {dots}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const LensFinish: React.FC = () => {
+  return (
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(ellipse at 49% 48%, transparent 0%, transparent 41%, rgba(0,0,0,0.28) 73%, rgba(0,0,0,0.78) 100%)',
+        }}
+      />
+
+      <AbsoluteFill
+        style={{
+          boxShadow:
+            'inset 0 0 150px rgba(0,0,0,0.48), inset 0 0 380px rgba(0,0,0,0.34)',
+          background:
+            'linear-gradient(180deg, rgba(0,0,0,0.22), transparent 18%, transparent 82%, rgba(0,0,0,0.32))',
+        }}
+      />
     </AbsoluteFill>
   );
 };
 
-void DURATION_SECONDS;
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {durationInFrames, fps} = useVideoConfig();
+
+  return (
+    <AbsoluteFill style={{backgroundColor: '#050507', overflow: 'hidden'}}>
+      <PremiumBackdrop frame={frame} duration={durationInFrames} />
+      <UpdateInterface frame={frame} duration={durationInFrames} fps={fps} />
+      <LensFinish />
+    </AbsoluteFill>
+  );
+};
