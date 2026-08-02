@@ -1,967 +1,746 @@
-import React from "react";
-import {AbsoluteFill, interpolate, useCurrentFrame} from "remotion";
+import React from 'react';
+import {
+  AbsoluteFill,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-// Internet asset source: Google Material Symbols — "man" (Rounded).
-// https://fonts.google.com/icons
-// Apache License 2.0:
-// https://developers.google.com/fonts/docs/material_symbols#licensing
-const MAN_PATH =
-  "M420-110v-250h-50q-12.75 0-21.37-8.63Q340-377.25 340-390v-223q0-24.75 17.63-42.38Q375.25-673 400-673h160q24.75 0 42.38 17.62Q620-637.75 620-613v223q0 12.75-8.62 21.37Q602.75-360 590-360h-50v250q0 12.75-8.65 21.37Q522.71-80 509.93-80h-60.15Q437-80 428.5-88.63 420-97.25 420-110Zm60.08-624q-30.08 0-51.58-21.42t-21.5-51.5q0-30.08 21.42-51.58t51.5-21.5q30.08 0 51.58 21.42t21.5 51.5q0 30.08-21.42 51.58t-51.5 21.5Z";
-
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp01(value), 3);
+const FPS = 60;
+const DURATION_SECONDS = 15;
+const COMPLETION_SECONDS = 12.1;
 
 const COLORS = {
-  ink: "#02080d",
-  panel: "rgba(7, 24, 32, 0.78)",
-  cyan: "#67ecff",
-  cyanBright: "#d6fbff",
-  cyanDark: "#159ab7",
-  emerald: "#5ff5b5",
-  emeraldBright: "#d7ffed",
-  white: "#f3fbff",
-  muted: "#86a6b2",
-  dim: "#385762",
+  black: '#010402',
+  deepGreen: '#021109',
+  glass: '#03130B',
+  green: '#00F56A',
+  greenBright: '#56FF9A',
+  greenWhite: '#D8FFE7',
+  emerald: '#00B94F',
+  muted: '#0A6635',
 };
 
-const PROGRESS_START = 90;
-const PROGRESS_END = 690;
-const MOTION_SETTLE = 780;
+const HUD = {
+  left: 380,
+  top: 332,
+  width: 1160,
+  height: 416,
+};
 
-const PersonIcon: React.FC<{
-  color: string;
-  glow?: boolean;
-  style?: React.CSSProperties;
-}> = ({color, glow = false, style}) => (
-  <svg
-    viewBox="300 -930 360 870"
-    aria-hidden="true"
-    style={{
-      display: "block",
-      overflow: "visible",
-      filter: glow
-        ? "drop-shadow(0 0 9px rgba(103,236,255,0.72)) drop-shadow(0 0 24px rgba(95,245,181,0.30))"
-        : undefined,
-      ...style,
-    }}
-  >
-    <path d={MAN_PATH} fill={color} />
-  </svg>
-);
+const TRACK = {
+  left: 80,
+  top: 196,
+  width: 1000,
+  height: 96,
+};
 
-const Corner: React.FC<{
-  horizontal: "left" | "right";
-  vertical: "top" | "bottom";
-}> = ({horizontal, vertical}) => (
-  <div
-    style={{
-      position: "absolute",
-      width: 34,
-      height: 34,
-      [horizontal]: 24,
-      [vertical]: 24,
-      borderLeft:
-        horizontal === "left" ? "2px solid rgba(122,230,245,0.32)" : undefined,
-      borderRight:
-        horizontal === "right" ? "2px solid rgba(122,230,245,0.32)" : undefined,
-      borderTop:
-        vertical === "top" ? "2px solid rgba(122,230,245,0.32)" : undefined,
-      borderBottom:
-        vertical === "bottom" ? "2px solid rgba(122,230,245,0.32)" : undefined,
-    }}
-  />
-);
+const clamp = (value: number, min = 0, max = 1) =>
+  Math.max(min, Math.min(max, value));
 
-const Background: React.FC<{frame: number}> = ({frame}) => {
-  const frozenFrame = Math.min(frame, MOTION_SETTLE);
-  const scanX = interpolate(
-    frozenFrame,
-    [0, MOTION_SETTLE],
-    [-300, WIDTH + 300],
-    {extrapolateLeft: "clamp", extrapolateRight: "clamp"},
+type CurvePoint = readonly [seconds: number, value: number];
+
+const PERCENT_SAMPLES = [
+  [0, 0],
+  [0.4, 1.7],
+  [0.9, 4],
+  [1.45, 8.3],
+  [2, 13.1],
+  [2.5, 17.8],
+  [3, 22.2],
+  [4.2, 29.8],
+  [4.7, 31.5],
+  [6, 45.7],
+  [7.2, 53.5],
+  [8.45, 62.2],
+  [9, 71],
+  [10.2, 83.2],
+  [11.2, 90],
+  [11.9, 99],
+  [COMPLETION_SECONDS, 100],
+] as const satisfies readonly CurvePoint[];
+
+const FILL_SAMPLES = [
+  [0, 0],
+  [3, 0.172],
+  [6, 0.324],
+  [9, 0.624],
+  [11.9, 0.985],
+  [COMPLETION_SECONDS, 1],
+] as const satisfies readonly CurvePoint[];
+
+const buildSlopes = (samples: readonly CurvePoint[]) => {
+  const widths = Array.from(
+    {length: samples.length - 1},
+    (_, index) => samples[index + 1][0] - samples[index][0],
   );
+  const secants = widths.map(
+    (width, index) =>
+      (samples[index + 1][1] - samples[index][1]) / width,
+  );
+  const slopes = Array.from({length: samples.length}, () => 0);
+  slopes[0] = secants[0];
+  slopes[slopes.length - 1] = secants[secants.length - 1];
+
+  for (let index = 1; index < slopes.length - 1; index++) {
+    const before = secants[index - 1];
+    const after = secants[index];
+    if (before <= 0 || after <= 0) {
+      slopes[index] = 0;
+      continue;
+    }
+    const beforeWidth = widths[index - 1];
+    const afterWidth = widths[index];
+    const weightA = 2 * afterWidth + beforeWidth;
+    const weightB = afterWidth + 2 * beforeWidth;
+    slopes[index] =
+      (weightA + weightB) / (weightA / before + weightB / after);
+  }
+
+  return slopes;
+};
+
+const PERCENT_SLOPES = buildSlopes(PERCENT_SAMPLES);
+const FILL_SLOPES = buildSlopes(FILL_SAMPLES);
+
+const monotoneAt = (
+  seconds: number,
+  samples: readonly CurvePoint[],
+  slopes: readonly number[],
+) => {
+  if (seconds <= samples[0][0]) return samples[0][1];
+  const final = samples[samples.length - 1];
+  if (seconds >= final[0]) return final[1];
+
+  let segment = 0;
+  while (
+    segment < samples.length - 2 &&
+    seconds > samples[segment + 1][0]
+  ) {
+    segment++;
+  }
+
+  const [x0, y0] = samples[segment];
+  const [x1, y1] = samples[segment + 1];
+  const width = x1 - x0;
+  const t = clamp((seconds - x0) / width);
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
 
   return (
-    <AbsoluteFill
+    h00 * y0 +
+    h10 * width * slopes[segment] +
+    h01 * y1 +
+    h11 * width * slopes[segment + 1]
+  );
+};
+
+// Original, generic data alphabet: hexadecimal characters, operators and
+// geometric sigils only. No franchise-specific typography or assets.
+const DATA_GLYPHS = '0123456789ABCDEF+-*/=<>[]{}()|:.;_△◇○□⌁⌗';
+
+const hash = (value: number) => {
+  let result = value | 0;
+  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
+  result = Math.imul(result ^ (result >>> 16), 0x45d9f3b);
+  return (result ^ (result >>> 16)) >>> 0;
+};
+
+const makeGlyphString = (length: number, seed: number) =>
+  Array.from({length}, (_, index) => {
+    const value = hash(seed + index * 4099);
+    return DATA_GLYPHS[value % DATA_GLYPHS.length];
+  }).join('\n');
+
+type StreamConfig = {
+  x: number;
+  speed: number;
+  offset: number;
+  fontSize: number;
+  lineHeight: number;
+  opacity: number;
+  length: number;
+  seed: number;
+  accent: boolean;
+};
+
+const makeStreams = (
+  count: number,
+  seed: number,
+  minSpeed: number,
+  maxSpeed: number,
+  minFont: number,
+  maxFont: number,
+  opacity: number,
+): readonly StreamConfig[] =>
+  Array.from({length: count}, (_, index) => {
+    const a = hash(seed + index * 811);
+    const b = hash(seed + index * 2029 + 17);
+    const c = hash(seed + index * 4079 + 31);
+    const fontSize = minFont + (a % Math.max(1, maxFont - minFont + 1));
+    return {
+      x: (index + 0.18 + ((b % 65) / 100)) * (1920 / count),
+      speed: minSpeed + (c % Math.max(1, maxSpeed - minSpeed + 1)),
+      offset: a % 1800,
+      fontSize,
+      lineHeight: Math.round(fontSize * 1.16),
+      opacity: opacity * (0.7 + (b % 31) / 100),
+      length: 18 + (c % 23),
+      seed: seed + index * 131,
+      accent: index % 11 === 3,
+    };
+  });
+
+const FAR_STREAMS = makeStreams(58, 1307, 42, 86, 13, 18, 0.32);
+const MID_STREAMS = makeStreams(42, 7309, 76, 138, 18, 25, 0.58);
+const NEAR_STREAMS = makeStreams(24, 19009, 118, 205, 24, 34, 0.78);
+
+const DataStream: React.FC<{frame: number; stream: StreamConfig}> = ({
+  frame,
+  stream,
+}) => {
+  const text = makeGlyphString(stream.length, stream.seed);
+  const loopHeight = stream.length * stream.lineHeight + 420;
+  const travel =
+    ((frame * (stream.speed / FPS) + stream.offset) % loopHeight) - 340;
+  const pulse = 0.88 + 0.12 * Math.sin(frame * 0.071 + stream.seed * 0.013);
+  const gradient = stream.accent
+    ? 'linear-gradient(180deg, #F0FFF5 0%, #8CFFB3 6%, #13F071 24%, rgba(0,179,79,0.68) 66%, rgba(0,91,43,0.08) 100%)'
+    : 'linear-gradient(180deg, #C9FFDA 0%, #52FF91 7%, #00D864 28%, rgba(0,155,72,0.62) 68%, rgba(0,65,31,0.06) 100%)';
+
+  const renderCopy = (copy: number, top: number) => (
+    <div
+      key={copy}
       style={{
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle at 50% 45%, #123845 0%, #071b25 31%, #031018 66%, #010509 100%)",
+        position: 'absolute',
+        top,
+        left: 0,
+        whiteSpace: 'pre',
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontSize: stream.fontSize,
+        fontWeight: stream.accent ? 760 : 560,
+        lineHeight: `${stream.lineHeight}px`,
+        textAlign: 'center',
+        color: 'transparent',
+        backgroundImage: gradient,
+        backgroundClip: 'text',
+        WebkitBackgroundClip: 'text',
+        textShadow: stream.accent
+          ? '0 0 5px rgba(130,255,174,0.82), 0 0 14px rgba(0,232,104,0.48)'
+          : '0 0 4px rgba(0,238,108,0.38)',
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundImage:
-            "linear-gradient(rgba(88,194,214,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(88,194,214,0.055) 1px, transparent 1px)",
-          backgroundSize: "84px 84px",
-          maskImage:
-            "radial-gradient(ellipse 66% 64% at 50% 52%, #000 0%, rgba(0,0,0,0.66) 58%, transparent 100%)",
-        }}
-      />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{position: "absolute", inset: 0}}
-      >
-        <defs>
-          <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#5de8ff" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#5de8ff" stopOpacity="0.22" />
-            <stop offset="1" stopColor="#5de8ff" stopOpacity="0" />
-          </linearGradient>
-          <radialGradient id="floorGlow">
-            <stop offset="0" stopColor="#67ecff" stopOpacity="0.20" />
-            <stop offset="0.55" stopColor="#47d8c3" stopOpacity="0.07" />
-            <stop offset="1" stopColor="#47d8c3" stopOpacity="0" />
-          </radialGradient>
-          <filter id="wideBlur" x="-50%" y="-100%" width="200%" height="300%">
-            <feGaussianBlur stdDeviation="34" />
-          </filter>
-        </defs>
-        <ellipse
-          cx="960"
-          cy="845"
-          rx="760"
-          ry="145"
-          fill="url(#floorGlow)"
-          filter="url(#wideBlur)"
-        />
-        <path
-          d="M205 620 C390 215 1530 215 1715 620"
-          fill="none"
-          stroke="url(#arc)"
-          strokeWidth="1.3"
-        />
-        <path
-          d="M285 695 C460 360 1460 360 1635 695"
-          fill="none"
-          stroke="url(#arc)"
-          strokeWidth="1"
-          opacity="0.58"
-        />
-        <path
-          d="M250 876 C600 930 1320 930 1670 876"
-          fill="none"
-          stroke="url(#arc)"
-          strokeWidth="1"
-          opacity="0.45"
-        />
-      </svg>
-
-      <div
-        style={{
-          position: "absolute",
-          left: scanX,
-          top: -100,
-          width: 160,
-          height: 1280,
-          transform: "rotate(12deg)",
-          background:
-            "linear-gradient(90deg, transparent, rgba(160,244,255,0.018), rgba(160,244,255,0.055), rgba(160,244,255,0.018), transparent)",
-          filter: "blur(10px)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          boxShadow: "inset 0 0 230px rgba(0,0,0,0.76)",
-        }}
-      />
-    </AbsoluteFill>
+      {text}
+    </div>
   );
-};
-
-const Header: React.FC<{
-  frame: number;
-  progress: number;
-  complete: number;
-}> = ({frame, progress, complete}) => {
-  const reveal = easeOutCubic((frame - 18) / 32);
-  const running = progress > 0 && progress < 1;
-
-  return (
-    <>
-      <div
-        style={{
-          position: "absolute",
-          left: 78,
-          top: 64,
-          height: 80,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            transform: `translateY(${(1 - reveal) * 62}px)`,
-            opacity: reveal,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "Inter, Arial, Helvetica, sans-serif",
-              fontSize: 14,
-              fontWeight: 700,
-              letterSpacing: 4.2,
-              color: COLORS.cyan,
-            }}
-          >
-            AI WORKFORCE INTELLIGENCE
-          </div>
-          <div
-            style={{
-              marginTop: 11,
-              fontFamily: "Inter, Arial, Helvetica, sans-serif",
-              fontSize: 25,
-              fontWeight: 500,
-              letterSpacing: 0.2,
-              color: COLORS.white,
-            }}
-          >
-            Capacity Forecast
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 78,
-          top: 72,
-          height: 45,
-          padding: "0 20px",
-          borderRadius: 24,
-          border: `1px solid ${
-            complete > 0.5
-              ? "rgba(95,245,181,0.52)"
-              : "rgba(103,236,255,0.24)"
-          }`,
-          background:
-            complete > 0.5
-              ? "rgba(31,112,83,0.19)"
-              : "rgba(8,32,42,0.54)",
-          display: "flex",
-          alignItems: "center",
-          gap: 11,
-          opacity: reveal,
-        }}
-      >
-        <div
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: complete > 0.5 ? COLORS.emerald : COLORS.cyan,
-            boxShadow: `0 0 14px ${
-              complete > 0.5 ? COLORS.emerald : COLORS.cyan
-            }`,
-          }}
-        />
-        <div
-          style={{
-            fontFamily: "Inter, Arial, Helvetica, sans-serif",
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: 2.2,
-            color: complete > 0.5 ? COLORS.emeraldBright : COLORS.cyanBright,
-          }}
-        >
-          {complete > 0.5
-            ? "FORECAST CONFIRMED"
-            : progress >= 1
-              ? "VERIFYING OUTPUT"
-              : running
-                ? "MODEL PROCESSING"
-                : "MODEL READY"}
-        </div>
-      </div>
-    </>
-  );
-};
-
-const Checkmark: React.FC<{reveal: number}> = ({reveal}) => {
-  const first = clamp01(reveal * 2);
-  const second = clamp01(reveal * 2 - 1);
-
-  return (
-    <svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true">
-      <path
-        d="M2 9.5 L8 15.5"
-        fill="none"
-        stroke={COLORS.emeraldBright}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeDasharray="8.5"
-        strokeDashoffset={8.5 * (1 - first)}
-      />
-      <path
-        d="M8 15.5 L20 2.5"
-        fill="none"
-        stroke={COLORS.emeraldBright}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeDasharray="18"
-        strokeDashoffset={18 * (1 - second)}
-      />
-    </svg>
-  );
-};
-
-const AvatarCard: React.FC<{
-  index: number;
-  frame: number;
-  fill: number;
-  complete: number;
-  emission: number;
-}> = ({index, frame, fill, complete, emission}) => {
-  const entrance = easeOutCubic((frame - (36 + index * 5)) / 26);
-  const completed = fill >= 0.999;
-  const checkReveal = easeOutCubic(
-    (frame - (PROGRESS_END + 18 + index * 2)) / 22,
-  );
-  const cardLift = (1 - entrance) * 28;
 
   return (
     <div
       style={{
-        position: "relative",
-        width: 138,
-        height: 292,
-        opacity: entrance,
-        transform: `translateY(${cardLift}px) scale(${1 + emission * 0.025})`,
-        borderRadius: 24,
-        border: `1px solid ${
-          completed
-            ? "rgba(95,245,181,0.34)"
-            : "rgba(133,213,227,0.16)"
-        }`,
-        background:
-          "linear-gradient(150deg, rgba(29,71,81,0.44), rgba(7,25,33,0.70) 54%, rgba(3,15,21,0.84))",
-        boxShadow: completed
-          ? `inset 0 1px 0 rgba(214,255,247,0.16), 0 0 ${
-              18 + emission * 36
-            }px rgba(70,232,194,${0.10 + emission * 0.20})`
-          : "inset 0 1px 0 rgba(222,248,255,0.09), 0 20px 35px rgba(0,0,0,0.18)",
-        overflow: "hidden",
+        position: 'absolute',
+        left: stream.x,
+        top: 0,
+        width: stream.fontSize * 1.25,
+        height: 1080,
+        overflow: 'hidden',
+        opacity: stream.opacity * pulse,
+        transform: `translate3d(0, ${travel}px, 0)`,
+        maskImage:
+          'linear-gradient(180deg, transparent 0%, #000 5%, #000 92%, transparent 100%)',
+        WebkitMaskImage:
+          'linear-gradient(180deg, transparent 0%, #000 5%, #000 92%, transparent 100%)',
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(115deg, transparent 12%, rgba(255,255,255,0.055) 44%, transparent 68%)",
-          transform: "translateX(-18%)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          top: 17,
-          fontFamily: "Inter, Arial, Helvetica, sans-serif",
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: 1.8,
-          color: completed ? "rgba(183,255,227,0.76)" : "rgba(135,176,188,0.60)",
-        }}
-      >
-        UNIT {String(index + 1).padStart(2, "0")}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 15,
-          top: 14,
-          width: 12,
-          height: 12,
-          borderRadius: "50%",
-          border: `1px solid ${
-            completed ? "rgba(95,245,181,0.72)" : "rgba(112,168,181,0.30)"
-          }`,
-          background: completed ? "rgba(95,245,181,0.18)" : "transparent",
-          boxShadow: completed ? "0 0 12px rgba(95,245,181,0.60)" : undefined,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 29,
-          top: 54,
-          width: 80,
-          height: 186,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: -15,
-            top: 22,
-            width: 110,
-            height: 150,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(79,198,218,0.10), transparent 67%)",
-          }}
-        />
-
-        <PersonIcon
-          color="rgba(93,128,139,0.24)"
-          style={{position: "absolute", inset: 0, width: 80, height: 186}}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            clipPath: `inset(${(1 - fill) * 100}% 0 0 0)`,
-          }}
-        >
-          <PersonIcon
-            color={completed ? COLORS.emerald : COLORS.cyan}
-            glow
-            style={{position: "absolute", inset: 0, width: 80, height: 186}}
-          />
-        </div>
-
-        {fill > 0 && fill < 1 ? (
-          <div
-            style={{
-              position: "absolute",
-              left: -8,
-              right: -8,
-              bottom: fill * 186 - 1,
-              height: 2,
-              background: COLORS.cyanBright,
-              boxShadow:
-                "0 0 8px rgba(214,251,255,0.9), 0 0 22px rgba(103,236,255,0.72)",
-              opacity: 0.84,
-            }}
-          />
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          right: 18,
-          bottom: 18,
-          height: 3,
-          borderRadius: 2,
-          background: "rgba(98,144,156,0.14)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${fill * 100}%`,
-            height: "100%",
-            background: completed
-              ? `linear-gradient(90deg, ${COLORS.cyan}, ${COLORS.emerald})`
-              : COLORS.cyan,
-            boxShadow: "0 0 10px rgba(103,236,255,0.70)",
-          }}
-        />
-      </div>
-
-      {complete > 0 ? (
-        <>
-          <div
-            style={{
-              position: "absolute",
-              left: -28,
-              right: -28,
-              top: 18,
-              height: 235,
-              borderRadius: "50%",
-              border: "1px solid rgba(95,245,181,0.72)",
-              opacity: emission * 0.58,
-              transform: `scale(${0.72 + emission * 0.62})`,
-              boxShadow:
-                "0 0 38px rgba(95,245,181,0.30), inset 0 0 34px rgba(95,245,181,0.18)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: 127,
-              width: 3,
-              height: 220,
-              transform: "translate(-50%, -50%)",
-              background:
-                "linear-gradient(transparent, rgba(210,255,238,0.85), transparent)",
-              filter: "blur(1px)",
-              opacity: emission * 0.48,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: 49,
-              top: 121,
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: "rgba(9,55,47,0.92)",
-              border: "1px solid rgba(139,255,211,0.60)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: checkReveal,
-              transform: `scale(${0.65 + 0.35 * checkReveal})`,
-              boxShadow:
-                "0 0 24px rgba(95,245,181,0.46), inset 0 0 13px rgba(95,245,181,0.12)",
-            }}
-          >
-            <Checkmark reveal={checkReveal} />
-          </div>
-        </>
-      ) : null}
+      {renderCopy(0, -loopHeight)}
+      {renderCopy(1, 0)}
+      {renderCopy(2, loopHeight)}
     </div>
   );
 };
 
-const ProgressRail: React.FC<{
-  progress: number;
-  complete: number;
-}> = ({progress, complete}) => {
-  const width = 958;
-  const endpointX = progress * width;
+const StreamLayer: React.FC<{
+  frame: number;
+  streams: readonly StreamConfig[];
+  blur: number;
+  scale: number;
+}> = ({frame, streams, blur, scale}) => (
+  <AbsoluteFill
+    style={{
+      transform: `scale(${scale})`,
+      filter: blur > 0 ? `blur(${blur}px)` : undefined,
+      transformOrigin: '50% 50%',
+    }}
+  >
+    {streams.map((stream) => (
+      <DataStream key={stream.seed} frame={frame} stream={stream} />
+    ))}
+  </AbsoluteFill>
+);
 
+const DigitalRainField: React.FC<{frame: number}> = ({frame}) => (
+  <AbsoluteFill
+    style={{
+      zIndex: 0,
+      isolation: 'isolate',
+      overflow: 'hidden',
+      backgroundColor: COLORS.black,
+      backgroundImage: [
+        'radial-gradient(ellipse 52% 62% at 50% 50%, rgba(0,245,106,0.105) 0%, rgba(0,94,44,0.045) 46%, transparent 78%)',
+        'linear-gradient(115deg, #010403 0%, #021009 48%, #010604 100%)',
+      ].join(','),
+    }}
+  >
+    <StreamLayer frame={frame} streams={FAR_STREAMS} blur={0.7} scale={0.99} />
+    <StreamLayer frame={frame} streams={MID_STREAMS} blur={0.2} scale={1} />
+    <StreamLayer frame={frame} streams={NEAR_STREAMS} blur={0} scale={1.015} />
+    <AbsoluteFill
+      style={{
+        backgroundImage: [
+          'linear-gradient(90deg, rgba(0,0,0,0.44) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.42) 100%)',
+          'radial-gradient(ellipse 72% 72% at 50% 50%, transparent 40%, rgba(0,0,0,0.52) 100%)',
+          'repeating-linear-gradient(180deg, rgba(0,255,112,0.025) 0px, rgba(0,255,112,0.025) 1px, transparent 1px, transparent 4px)',
+        ].join(','),
+      }}
+    />
+  </AbsoluteFill>
+);
+
+const FillTexture: React.FC<{frame: number}> = ({frame}) => {
+  const symbols = '101101  DATA  010011  LINK  111000  ';
   return (
     <div
       style={{
-        position: "absolute",
-        left: 103,
-        top: 663,
-        width,
-        height: 40,
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+        opacity: 0.18,
+        color: '#004922',
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontWeight: 800,
+        fontSize: 13,
+        lineHeight: '22px',
+        letterSpacing: 2.4,
+        transform: `translate3d(${(frame / FPS) * 8}px, ${(frame / FPS) * 3}px, 0)`,
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 18,
-          height: 4,
-          borderRadius: 2,
-          background: "rgba(89,133,146,0.17)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${progress * 100}%`,
-            height: "100%",
-            background:
-              complete > 0.5
-                ? `linear-gradient(90deg, ${COLORS.cyan}, ${COLORS.emerald})`
-                : `linear-gradient(90deg, ${COLORS.cyanDark}, ${COLORS.cyanBright})`,
-            boxShadow: "0 0 14px rgba(103,236,255,0.66)",
-          }}
-        />
-      </div>
-
-      {progress > 0 && progress < 1 ? (
-        <div
-          style={{
-            position: "absolute",
-            left: endpointX - 2,
-            top: 10,
-            width: 4,
-            height: 20,
-            borderRadius: 2,
-            background: COLORS.cyanBright,
-            boxShadow:
-              "0 0 9px rgba(214,251,255,0.95), 0 0 25px rgba(103,236,255,0.82)",
-          }}
-        />
-      ) : null}
-
-      {Array.from({length: 7}).map((_, index) => (
+      {Array.from({length: 7}, (_, index) => (
         <div
           key={index}
           style={{
-            position: "absolute",
-            left: `${(index / 6) * 100}%`,
-            top: 31,
-            width: 1,
-            height: index === 0 || index === 6 ? 7 : 5,
-            background:
-              index / 6 <= progress
-                ? "rgba(153,244,255,0.48)"
-                : "rgba(104,145,155,0.22)",
+            position: 'absolute',
+            left: -140 + (index % 2) * 28,
+            top: -30 + index * 22,
+            whiteSpace: 'nowrap',
           }}
-        />
+        >
+          {symbols.repeat(5)}
+        </div>
       ))}
     </div>
   );
 };
 
-const Dashboard: React.FC<{frame: number}> = ({frame}) => {
-  const frozenFrame = Math.min(frame, MOTION_SETTLE);
-  const entrance = easeOutCubic((frozenFrame - 5) / 38);
-  const progress = clamp01(
-    (frozenFrame - PROGRESS_START) / (PROGRESS_END - PROGRESS_START),
-  );
-  const percentage = progress >= 1 ? 100 : Math.floor(progress * 100);
-  const numberReveal = easeOutCubic((frozenFrame - 48) / 32);
-  const complete = easeOutCubic((frozenFrame - PROGRESS_END) / 42);
-  const emissionEnvelope = clamp01(
-    interpolate(
-      frozenFrame,
-      [PROGRESS_END, PROGRESS_END + 12, PROGRESS_END + 40, PROGRESS_END + 70],
-      [0, 1, 0.40, 0],
-      {extrapolateLeft: "clamp", extrapolateRight: "clamp"},
-    ),
-  );
-  const completionText = easeOutCubic((frozenFrame - (PROGRESS_END + 34)) / 28);
+const HudPanel: React.FC<{
+  frame: number;
+  percent: number;
+  fill: number;
+}> = ({frame, percent, fill}) => {
+  const fillWidth = TRACK.width * clamp(fill);
+  const percentage = `${percent.toFixed(1)}%`;
+  const completionFrame = COMPLETION_SECONDS * FPS;
+  const completionAge = frame - completionFrame;
+  const complete = completionAge >= 0;
+  const completionEase = complete
+    ? 1 - Math.pow(1 - clamp(completionAge / 24), 3)
+    : 0;
+  const completionPulse = complete ? clamp(1 - completionAge / 54) : 0;
+  const glowBreath = 0.82 + 0.18 * Math.sin(frame * 0.045);
+  const scanX = ((frame * 4.2) % (TRACK.width + 180)) - 180;
+  const statusLabel = complete ? 'TRANSFER COMPLETE' : 'SECURE DATA TRANSFER';
 
   return (
     <div
       style={{
-        position: "absolute",
-        left: 300,
-        top: 120,
-        width: 1320,
-        height: 820,
-        opacity: entrance,
-        transform: `translateY(${(1 - entrance) * 28}px)`,
-        borderRadius: 42,
-        border: "1px solid rgba(133,222,237,0.22)",
-        background:
-          "linear-gradient(145deg, rgba(26,61,72,0.56), rgba(6,23,31,0.83) 46%, rgba(2,14,20,0.92))",
-        boxShadow:
-          "inset 0 1px 0 rgba(220,251,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.34), 0 48px 140px rgba(0,0,0,0.42), 0 0 90px rgba(56,206,225,0.055)",
-        overflow: "hidden",
+        position: 'absolute',
+        zIndex: 10,
+        isolation: 'isolate',
+        left: HUD.left,
+        top: HUD.top,
+        width: HUD.width,
+        height: HUD.height,
+        filter: `drop-shadow(0 0 ${26 + completionPulse * 18}px rgba(0,245,106,${0.18 + completionPulse * 0.22}))`,
       }}
     >
-      <div
+      <svg
+        width={HUD.width}
+        height={HUD.height}
+        viewBox={`0 0 ${HUD.width} ${HUD.height}`}
         style={{
-          position: "absolute",
-          left: -270,
-          top: -330,
-          width: 1220,
-          height: 630,
-          transform: "rotate(-14deg)",
-          background:
-            "linear-gradient(115deg, transparent 28%, rgba(255,255,255,0.085) 49%, rgba(255,255,255,0.018) 64%, transparent 78%)",
+          position: 'absolute',
+          inset: 0,
+          overflow: 'visible',
         }}
-      />
+      >
+        <defs>
+          <linearGradient id="premiumPanelGlass" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#061B10" stopOpacity="0.96" />
+            <stop offset="52%" stopColor="#010704" stopOpacity="0.93" />
+            <stop offset="100%" stopColor="#04170D" stopOpacity="0.96" />
+          </linearGradient>
+          <linearGradient id="premiumPanelStroke" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#00A84B" stopOpacity="0.58" />
+            <stop offset="48%" stopColor="#8CFFB6" stopOpacity="0.94" />
+            <stop offset="100%" stopColor="#00CB5B" stopOpacity="0.62" />
+          </linearGradient>
+          <filter id="premiumPanelGlow" x="-20%" y="-30%" width="140%" height="160%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path
+          d="M31 5 H1129 L1155 31 V385 L1129 411 H31 L5 385 V31 Z"
+          fill="url(#premiumPanelGlass)"
+          stroke="rgba(0,245,106,0.22)"
+          strokeWidth="14"
+          filter="url(#premiumPanelGlow)"
+        />
+        <path
+          d="M31 5 H1129 L1155 31 V385 L1129 411 H31 L5 385 V31 Z"
+          fill="none"
+          stroke="url(#premiumPanelStroke)"
+          strokeWidth="3"
+        />
+        <path
+          d="M5 97 V31 L31 5 H236"
+          fill="none"
+          stroke="rgba(216,255,231,0.62)"
+          strokeWidth="2"
+        />
+        <path
+          d="M924 411 H1129 L1155 385 V319"
+          fill="none"
+          stroke="rgba(86,255,154,0.52)"
+          strokeWidth="2"
+        />
+        <path
+          d="M80 163 H1080"
+          fill="none"
+          stroke="rgba(0,245,106,0.15)"
+          strokeWidth="1"
+        />
+      </svg>
+
       <div
         style={{
-          position: "absolute",
-          left: 58,
-          right: 58,
-          top: 155,
-          height: 1,
-          background:
-            "linear-gradient(90deg, transparent, rgba(129,214,229,0.20), transparent)",
-        }}
-      />
-
-      <Corner horizontal="left" vertical="top" />
-      <Corner horizontal="right" vertical="top" />
-      <Corner horizontal="left" vertical="bottom" />
-      <Corner horizontal="right" vertical="bottom" />
-
-      <Header frame={frozenFrame} progress={progress} complete={complete} />
-
-      <div
-        style={{
-          position: "absolute",
-          left: 80,
-          top: 186,
-          width: 1160,
-          height: 182,
-          display: "flex",
-          alignItems: "flex-end",
+          position: 'absolute',
+          left: 82,
+          top: 62,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
         }}
       >
         <div
           style={{
-            width: 450,
-            height: 158,
-            overflow: "hidden",
-            display: "flex",
-            alignItems: "flex-end",
-          }}
-        >
-          <div
-            style={{
-              transform: `translateY(${(1 - numberReveal) * 132}px)`,
-              opacity: numberReveal,
-              display: "flex",
-              alignItems: "baseline",
-              fontFamily: "Inter, Arial, Helvetica, sans-serif",
-              fontVariantNumeric: "tabular-nums",
-              color: complete > 0.5 ? COLORS.emeraldBright : COLORS.white,
-              textShadow:
-                complete > 0.5
-                  ? "0 0 46px rgba(95,245,181,0.30)"
-                  : "0 0 48px rgba(103,236,255,0.19)",
-            }}
-          >
-            <div
-              style={{
-                width: 298,
-                textAlign: "right",
-                fontSize: 148,
-                lineHeight: 0.85,
-                fontWeight: 280,
-                letterSpacing: -7,
-              }}
-            >
-              {percentage}
-            </div>
-            <div
-              style={{
-                marginLeft: 18,
-                fontSize: 47,
-                lineHeight: 1,
-                fontWeight: 400,
-                color: complete > 0.5 ? COLORS.emerald : COLORS.cyan,
-              }}
-            >
-              %
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            marginLeft: "auto",
-            width: 620,
-            height: 116,
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            borderTop: "1px solid rgba(123,200,214,0.15)",
-            borderBottom: "1px solid rgba(123,200,214,0.15)",
-            opacity: numberReveal,
-          }}
-        >
-          {[
-            ["ACTIVE UNITS", `${Math.min(6, Math.floor(progress * 6))} / 6`],
-            ["MODEL CONFIDENCE", `${Math.floor(91 + progress * 8)}%`],
-            ["FORECAST WINDOW", "Q4 / 90D"],
-          ].map(([label, value], index) => (
-            <div
-              key={label}
-              style={{
-                padding: "24px 22px",
-                borderLeft:
-                  index > 0 ? "1px solid rgba(123,200,214,0.13)" : undefined,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "Inter, Arial, Helvetica, sans-serif",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 1.8,
-                  color: "rgba(133,176,188,0.72)",
-                }}
-              >
-                {label}
-              </div>
-              <div
-                style={{
-                  marginTop: 13,
-                  fontFamily: "Inter, Arial, Helvetica, sans-serif",
-                  fontSize: 24,
-                  fontWeight: 500,
-                  letterSpacing: 0.4,
-                  color: complete > 0.5 ? COLORS.emeraldBright : COLORS.cyanBright,
-                }}
-              >
-                {value}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 103,
-          top: 382,
-          width: 958,
-          height: 292,
-          display: "flex",
-          gap: 26,
-        }}
-      >
-        {Array.from({length: 6}).map((_, index) => {
-          const fill = clamp01(progress * 6 - index);
-          return (
-            <AvatarCard
-              key={index}
-              index={index}
-              frame={frozenFrame}
-              fill={fill}
-              complete={complete}
-              emission={emissionEnvelope}
-            />
-          );
-        })}
-      </div>
-
-      <ProgressRail progress={progress} complete={complete} />
-
-      <div
-        style={{
-          position: "absolute",
-          right: 100,
-          top: 423,
-          width: 112,
-          height: 235,
-          borderLeft: "1px solid rgba(118,190,204,0.16)",
-          paddingLeft: 27,
-          opacity: numberReveal,
-        }}
-      >
-        {[
-          ["01", "PLAN"],
-          ["02", "MAP"],
-          ["03", "SCALE"],
-          ["04", "VERIFY"],
-        ].map(([number, label], index) => {
-          const active = progress >= index / 4;
-          return (
-            <div
-              key={number}
-              style={{
-                height: 52,
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "Inter, Arial, Helvetica, sans-serif",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: active ? COLORS.cyan : "rgba(108,148,159,0.35)",
-                }}
-              >
-                {number}
-              </div>
-              <div
-                style={{
-                  fontFamily: "Inter, Arial, Helvetica, sans-serif",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 1.3,
-                  color: active ? COLORS.white : "rgba(108,148,159,0.35)",
-                }}
-              >
-                {label}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 103,
-          bottom: 56,
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          opacity: numberReveal,
-        }}
-      >
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: complete > 0.5 ? COLORS.emerald : COLORS.cyan,
-            boxShadow: `0 0 14px ${
-              complete > 0.5 ? COLORS.emerald : COLORS.cyan
-            }`,
+            width: 13,
+            height: 13,
+            borderRadius: '50%',
+            background: complete ? COLORS.greenWhite : COLORS.green,
+            boxShadow: `0 0 8px rgba(86,255,154,0.95), 0 0 ${18 + completionPulse * 16}px rgba(0,245,106,0.68)`,
+            opacity: complete ? 1 : glowBreath,
           }}
         />
         <div
           style={{
-            height: 18,
-            overflow: "hidden",
-            fontFamily: "Inter, Arial, Helvetica, sans-serif",
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: 2.4,
-            color: complete > 0.5 ? COLORS.emeraldBright : "rgba(158,205,216,0.74)",
+            color: complete ? COLORS.greenWhite : COLORS.greenBright,
+            fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
+            fontSize: 27,
+            lineHeight: 1,
+            fontWeight: 760,
+            letterSpacing: 4.8,
+            textShadow: '0 0 12px rgba(0,245,106,0.52)',
           }}
         >
-          <div
-            style={{
-              transform: `translateY(${complete > 0.5 ? -18 * completionText : 0}px)`,
-            }}
-          >
-            <div style={{height: 18}}>ALLOCATING DIGITAL WORKFORCE</div>
-            <div style={{height: 18}}>ALL CAPACITY UNITS VERIFIED</div>
-          </div>
+          {statusLabel}
         </div>
       </div>
 
       <div
         style={{
-          position: "absolute",
-          right: 103,
-          bottom: 56,
-          fontFamily: "Inter, Arial, Helvetica, sans-serif",
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: 2.1,
-          color: "rgba(126,170,181,0.52)",
-          opacity: numberReveal,
+          position: 'absolute',
+          left: 82,
+          top: 113,
+          color: 'rgba(153,255,190,0.58)',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          fontSize: 13,
+          fontWeight: 650,
+          letterSpacing: 2.6,
         }}
       >
-        ENGINE / WFC–06
+        ENCRYPTED CHANNEL&nbsp;&nbsp;•&nbsp;&nbsp;DATA STREAM 04
       </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          right: 78,
+          top: 51,
+          width: 310,
+          textAlign: 'right',
+          color: COLORS.greenWhite,
+          fontFamily: 'Arial Narrow, Inter, Arial, sans-serif',
+          fontSize: 76,
+          lineHeight: 1,
+          fontWeight: 820,
+          letterSpacing: -2.6,
+          fontVariantNumeric: 'tabular-nums',
+          textShadow: [
+            '0 0 7px rgba(216,255,231,0.92)',
+            '0 0 22px rgba(0,245,106,0.72)',
+            '0 0 48px rgba(0,185,79,0.34)',
+          ].join(','),
+        }}
+      >
+        {percentage}
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: TRACK.left,
+          top: TRACK.top,
+          width: TRACK.width,
+          height: TRACK.height,
+          overflow: 'hidden',
+          clipPath: 'polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)',
+          background: 'rgba(0,16,8,0.88)',
+          border: `2px solid rgba(86,255,154,${0.24 + completionPulse * 0.5})`,
+          boxShadow: [
+            'inset 0 0 24px rgba(0,0,0,0.82)',
+            'inset 0 0 10px rgba(0,245,106,0.10)',
+            `0 0 ${18 + completionPulse * 34}px rgba(0,245,106,${0.12 + completionPulse * 0.42})`,
+          ].join(','),
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: fillWidth,
+            height: '100%',
+            overflow: 'hidden',
+            background: [
+              'linear-gradient(180deg, rgba(203,255,222,0.98) 0%, rgba(61,255,132,0.98) 12%, rgba(0,235,98,0.96) 58%, rgba(0,145,62,0.98) 100%)',
+              'repeating-linear-gradient(100deg, transparent 0px, transparent 24px, rgba(255,255,255,0.14) 24px, rgba(255,255,255,0.14) 27px)',
+            ].join(','),
+            boxShadow: [
+              '0 0 34px rgba(0,245,106,0.66)',
+              '0 0 76px rgba(0,245,106,0.24)',
+              'inset 0 3px 1px rgba(255,255,255,0.52)',
+              'inset 0 -8px 18px rgba(0,74,31,0.25)',
+            ].join(','),
+          }}
+        >
+          <FillTexture frame={frame} />
+          <div
+            style={{
+              position: 'absolute',
+              left: scanX,
+              top: 0,
+              width: 170,
+              height: '100%',
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(235,255,243,0.03) 28%, rgba(255,255,255,0.42) 50%, rgba(235,255,243,0.03) 72%, transparent 100%)',
+              transform: 'skewX(-14deg)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 3,
+              background: 'rgba(236,255,243,0.92)',
+              boxShadow: '0 0 14px rgba(216,255,231,0.86)',
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position: 'absolute',
+            left: Math.max(0, fillWidth - 6),
+            top: 0,
+            width: 6,
+            height: '100%',
+            background: COLORS.greenWhite,
+            boxShadow:
+              '0 0 10px rgba(216,255,231,0.98), 0 0 30px rgba(0,245,106,0.96), 0 0 58px rgba(0,245,106,0.50)',
+            opacity: fillWidth < 8 ? 0 : 1,
+          }}
+        />
+
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'repeating-linear-gradient(90deg, transparent 0px, transparent 49px, rgba(0,0,0,0.21) 49px, rgba(0,0,0,0.21) 51px)',
+            mixBlendMode: 'multiply',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: TRACK.left,
+          top: 314,
+          width: TRACK.width,
+          display: 'flex',
+          justifyContent: 'space-between',
+          color: 'rgba(138,255,179,0.50)',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          fontSize: 12,
+          fontWeight: 650,
+          letterSpacing: 1.4,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {[0, 25, 50, 75, 100].map((mark) => (
+          <div
+            key={mark}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: mark === 0 ? 'flex-start' : mark === 100 ? 'flex-end' : 'center',
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                width: 1,
+                height: 10,
+                background: 'rgba(86,255,154,0.42)',
+                boxShadow: '0 0 5px rgba(0,245,106,0.34)',
+              }}
+            />
+            <span>{mark.toString().padStart(3, '0')}</span>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: TRACK.left,
+          bottom: 30,
+          color: 'rgba(122,255,170,0.42)',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          fontSize: 11,
+          fontWeight: 620,
+          letterSpacing: 2.2,
+        }}
+      >
+        PACKET INTEGRITY&nbsp;&nbsp;•&nbsp;&nbsp;VERIFIED STREAM
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          right: TRACK.left,
+          bottom: 30,
+          color: complete
+            ? `rgba(216,255,231,${0.52 + completionEase * 0.36})`
+            : 'rgba(122,255,170,0.42)',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 2.2,
+          textShadow: complete ? '0 0 10px rgba(0,245,106,0.54)' : undefined,
+        }}
+      >
+        {complete ? 'READY FOR DEPLOYMENT' : 'LIVE TRANSFER'}
+      </div>
+
+      {complete ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: TRACK.left - 8,
+            top: TRACK.top - 8,
+            width: TRACK.width + 16,
+            height: TRACK.height + 16,
+            clipPath: 'polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%)',
+            border: '2px solid rgba(216,255,231,0.88)',
+            boxShadow:
+              '0 0 18px rgba(86,255,154,0.72), inset 0 0 18px rgba(0,245,106,0.26)',
+            opacity: completionPulse,
+            transform: `scale(${1 + completionEase * 0.018})`,
+          }}
+        />
+      ) : null}
     </div>
   );
 };
 
+const Finish: React.FC = () => (
+  <AbsoluteFill
+    style={{
+      zIndex: 20,
+      pointerEvents: 'none',
+      background: [
+        'radial-gradient(ellipse 68% 64% at 52% 52%, transparent 44%, rgba(0,0,0,0.40) 78%, rgba(0,0,0,0.76) 100%)',
+        'linear-gradient(180deg, rgba(0,0,0,0.18) 0%, transparent 16%, transparent 83%, rgba(0,0,0,0.34) 100%)',
+      ].join(','),
+    }}
+  />
+);
+
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const seconds = frame / fps;
+  const percent = monotoneAt(
+    Math.min(seconds, COMPLETION_SECONDS),
+    PERCENT_SAMPLES,
+    PERCENT_SLOPES,
+  );
+  const fill = monotoneAt(
+    Math.min(seconds, COMPLETION_SECONDS),
+    FILL_SAMPLES,
+    FILL_SLOPES,
+  );
 
   return (
     <AbsoluteFill
       style={{
-        width: WIDTH,
-        height: HEIGHT,
-        backgroundColor: COLORS.ink,
-        overflow: "hidden",
+        width: 1920,
+        height: 1080,
+        overflow: 'hidden',
+        backgroundColor: COLORS.black,
       }}
     >
-      <Background frame={frame} />
-      <Dashboard frame={frame} />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          boxShadow: "inset 0 0 180px rgba(0,0,0,0.42)",
-        }}
-      />
+      <DigitalRainField frame={frame} />
+      <HudPanel frame={frame} percent={percent} fill={fill} />
+      <Finish />
     </AbsoluteFill>
   );
 };
+
+void DURATION_SECONDS;
