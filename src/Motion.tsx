@@ -7,372 +7,727 @@ import {
   useVideoConfig,
 } from 'remotion';
 
-type RiskKind = 'phishing' | 'spam' | 'suspicious';
+type FolderKey = 'mail' | 'spam' | 'draft' | 'sent' | 'archive';
 
 type Message = {
-  kind: RiskKind;
-  label: string;
+  initials: string;
+  sender: string;
   subject: string;
-  time: string;
-  emphasized: boolean;
+  preview: string;
+  color: string;
+  tint: string;
+  meta: string;
 };
 
-const messages: Message[] = [
+type Folder = {
+  key: FolderKey;
+  label: string;
+  count: number;
+  totalLabel: string;
+  messages: Message[];
+};
+
+const BLUE = '#2f78ed';
+const BLUE_DARK = '#1762d8';
+const INK = '#1d2738';
+const MUTED = '#8993a6';
+const SHELL = '#f8f9fc';
+const PANEL = '#ffffff';
+
+const FOLDERS: Folder[] = [
   {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'Unusual mailbox rule created automatically',
-    time: '08:12  MAY 14',
-    emphasized: false,
+    key: 'mail',
+    label: 'Mail',
+    count: 128,
+    totalLabel: '128 emails',
+    messages: [
+      {
+        initials: 'MC',
+        sender: 'Maya Chen',
+        subject: 'Q3 strategy review tomorrow',
+        preview: 'Agenda, growth metrics, and key decisions for the morning session.',
+        color: '#f49a32',
+        tint: '#fff8ee',
+        meta: '09:42',
+      },
+      {
+        initials: 'CS',
+        sender: 'Creative Studio',
+        subject: 'Design handoff is ready',
+        preview: 'The final interface package and motion notes are ready to review.',
+        color: '#8758e8',
+        tint: '#faf7ff',
+        meta: '08:18',
+      },
+      {
+        initials: 'AA',
+        sender: 'Atlas Analytics',
+        subject: 'Weekly performance report',
+        preview: 'Traffic, conversion, and retention improved across every channel.',
+        color: '#2f7eea',
+        tint: '#f3f8ff',
+        meta: 'Yesterday',
+      },
+      {
+        initials: 'PL',
+        sender: 'Product Lab',
+        subject: 'Prototype feedback collected',
+        preview: 'Twelve new insights were added to the research summary.',
+        color: '#38b979',
+        tint: '#f2fcf7',
+        meta: 'Yesterday',
+      },
+    ],
   },
   {
-    kind: 'spam',
-    label: 'Spam Warning',
-    subject: 'Exclusive loyalty reward waiting for confirmation',
-    time: '08:26  MAY 14',
-    emphasized: false,
+    key: 'spam',
+    label: 'Spam',
+    count: 24,
+    totalLabel: '24 suspicious emails',
+    messages: [
+      {
+        initials: 'PC',
+        sender: 'Prize Center',
+        subject: 'You have been selected',
+        preview: 'Unverified reward notification blocked by your mail protection.',
+        color: '#ef5f62',
+        tint: '#fff3f3',
+        meta: '10:06',
+      },
+      {
+        initials: 'US',
+        sender: 'Unknown Sender',
+        subject: 'Urgent account action',
+        preview: 'This message contains an untrusted link and unusual sender details.',
+        color: '#d19a26',
+        tint: '#fffaeb',
+        meta: '08:52',
+      },
+      {
+        initials: 'DB',
+        sender: 'Discount Blast',
+        subject: 'Limited-time offer inside',
+        preview: 'Promotional content moved here automatically by smart filtering.',
+        color: '#c95adf',
+        tint: '#fdf5ff',
+        meta: 'Monday',
+      },
+      {
+        initials: 'AN',
+        sender: 'Automated Notice',
+        subject: 'Unverified delivery update',
+        preview: 'Sender authentication failed and tracking details were removed.',
+        color: '#6d7f96',
+        tint: '#f5f7fa',
+        meta: 'Sunday',
+      },
+    ],
   },
   {
-    kind: 'phishing',
-    label: 'Phishing Alert',
-    subject: 'Password reset requested from an unknown device',
-    time: '08:41  MAY 14',
-    emphasized: true,
+    key: 'draft',
+    label: 'Draft',
+    count: 6,
+    totalLabel: '6 draft emails',
+    messages: [
+      {
+        initials: 'UP',
+        sender: 'Untitled Proposal',
+        subject: 'Add launch timeline and scope',
+        preview: 'The commercial plan still needs milestones, owners, and budget.',
+        color: '#e8a439',
+        tint: '#fff9ee',
+        meta: 'Edited 2m',
+      },
+      {
+        initials: 'PF',
+        sender: 'Partnership Follow-up',
+        subject: 'Great meeting with your team',
+        preview: 'Hi Jordan, thank you for the thoughtful discussion this morning…',
+        color: '#4f8de8',
+        tint: '#f4f8ff',
+        meta: 'Edited 1h',
+      },
+      {
+        initials: 'TO',
+        sender: 'Team Offsite Notes',
+        subject: 'Ideas for the September session',
+        preview: 'Workshop topics, travel options, and the final attendee list…',
+        color: '#42b889',
+        tint: '#f2fbf7',
+        meta: 'Friday',
+      },
+      {
+        initials: 'NR',
+        sender: 'Newsletter Review',
+        subject: 'August product highlights',
+        preview: 'Finalize the opening paragraph and confirm the release date…',
+        color: '#8c61df',
+        tint: '#faf7ff',
+        meta: 'Thursday',
+      },
+    ],
   },
   {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'Shared cloud document expires at midnight',
-    time: '08:57  MAY 14',
-    emphasized: false,
+    key: 'sent',
+    label: 'Sent',
+    count: 48,
+    totalLabel: '48 sent emails',
+    messages: [
+      {
+        initials: 'MC',
+        sender: 'To: Maya Chen',
+        subject: 'Q3 strategy review',
+        preview: 'Sharing the updated agenda and metrics before tomorrow morning.',
+        color: '#f49a32',
+        tint: '#fff8ee',
+        meta: '10:21',
+      },
+      {
+        initials: 'DT',
+        sender: 'To: Design Team',
+        subject: 'Final campaign files attached',
+        preview: 'The approved exports and delivery checklist are included here.',
+        color: '#ef5a58',
+        tint: '#fff4f3',
+        meta: '09:11',
+      },
+      {
+        initials: 'FN',
+        sender: 'To: Finance',
+        subject: 'Budget approval requested',
+        preview: 'Please review the revised forecast and confirm the next step.',
+        color: '#397fe0',
+        tint: '#f2f7ff',
+        meta: 'Yesterday',
+      },
+      {
+        initials: 'OP',
+        sender: 'To: Operations',
+        subject: 'Launch checklist complete',
+        preview: 'All critical owners have confirmed readiness for deployment.',
+        color: '#3faf7c',
+        tint: '#f1fbf6',
+        meta: 'Yesterday',
+      },
+    ],
   },
   {
-    kind: 'spam',
-    label: 'Spam Warning',
-    subject: 'Tax refund approved — claim your transfer now',
-    time: '09:04  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'phishing',
-    label: 'Phishing Alert',
-    subject: 'Payroll profile requires immediate verification',
-    time: '09:18  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'Encrypted voicemail attachment could not be scanned',
-    time: '09:32  MAY 14',
-    emphasized: false,
-  },
-  {
-    kind: 'spam',
-    label: 'Spam Warning',
-    subject: 'Executive request: purchase gift cards before noon',
-    time: '09:47  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'phishing',
-    label: 'Phishing Alert',
-    subject: 'Delivery failed — confirm your home address',
-    time: '10:03  MAY 14',
-    emphasized: false,
-  },
-  {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'New vendor bank details included in invoice',
-    time: '10:19  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'spam',
-    label: 'Spam Warning',
-    subject: 'Storage quota exceeded — upgrade without charge',
-    time: '10:34  MAY 14',
-    emphasized: false,
-  },
-  {
-    kind: 'phishing',
-    label: 'Phishing Alert',
-    subject: 'One-time access code requested from a new location',
-    time: '10:51  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'E-signature request expires in two hours',
-    time: '11:06  MAY 14',
-    emphasized: false,
-  },
-  {
-    kind: 'spam',
-    label: 'Spam Warning',
-    subject: 'Crypto bonus reserved for your account',
-    time: '11:22  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'phishing',
-    label: 'Phishing Alert',
-    subject: 'Account recovery email was changed',
-    time: '11:39  MAY 14',
-    emphasized: true,
-  },
-  {
-    kind: 'suspicious',
-    label: 'Unverified Sender',
-    subject: 'Secure file transfer invitation expires tonight',
-    time: '11:55  MAY 14',
-    emphasized: false,
+    key: 'archive',
+    label: 'Archive',
+    count: 91,
+    totalLabel: '91 archived emails',
+    messages: [
+      {
+        initials: 'TT',
+        sender: 'Talent Team',
+        subject: 'Onboarding completed',
+        preview: 'All documents are signed and the first-week plan is confirmed.',
+        color: '#44b783',
+        tint: '#f1fbf6',
+        meta: 'Aug 12',
+      },
+      {
+        initials: 'CC',
+        sender: 'Cloud Console',
+        subject: 'Monthly usage report',
+        preview: 'Your workspace remained healthy with optimized resource usage.',
+        color: '#4384df',
+        tint: '#f3f7ff',
+        meta: 'Aug 08',
+      },
+      {
+        initials: 'AS',
+        sender: 'Aurora Studio',
+        subject: 'Campaign assets delivered',
+        preview: 'The complete brand-safe media package is stored in your workspace.',
+        color: '#8f5ede',
+        tint: '#faf6ff',
+        meta: 'Jul 29',
+      },
+      {
+        initials: 'RS',
+        sender: 'Research Summary',
+        subject: 'Customer study closed',
+        preview: 'Final findings and recommendations were archived for the team.',
+        color: '#ea8d35',
+        tint: '#fff8ef',
+        meta: 'Jul 18',
+      },
+    ],
   },
 ];
 
-const ROW_HEIGHT = 183;
+const CLICK_FRAMES = [48, 180, 360, 540, 720];
 
-const clamp = {
-  extrapolateLeft: 'clamp' as const,
-  extrapolateRight: 'clamp' as const,
-};
+const clampInterpolate = (
+  frame: number,
+  input: [number, number],
+  output: [number, number],
+  easing = Easing.linear,
+) =>
+  interpolate(frame, input, output, {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing,
+  });
 
-const hermite = (
-  x: number,
-  x0: number,
-  x1: number,
-  y0: number,
-  y1: number,
-  slope0: number,
-  slope1: number,
-) => {
-  const width = x1 - x0;
-  const u = (x - x0) / width;
-  const u2 = u * u;
-  const u3 = u2 * u;
-  const h00 = 2 * u3 - 3 * u2 + 1;
-  const h10 = u3 - 2 * u2 + u;
-  const h01 = -2 * u3 + 3 * u2;
-  const h11 = u3 - u2;
-  return h00 * y0 + h10 * width * slope0 + h01 * y1 + h11 * width * slope1;
-};
-
-const cameraProgress = (progress: number) => {
-  const xs = [0, 0.333, 0.6, 0.8, 1];
-  const ys = [0, 0.255, 0.635, 0.855, 1];
-  const slopes = [0.14, 1, 1.22, 0.88, 0.12];
-
-  for (let index = 0; index < xs.length - 1; index++) {
-    if (progress <= xs[index + 1]) {
-      return hermite(
-        progress,
-        xs[index],
-        xs[index + 1],
-        ys[index],
-        ys[index + 1],
-        slopes[index],
-        slopes[index + 1],
+const selectionPosition = (frame: number) => {
+  let value = 0;
+  for (let i = 1; i < CLICK_FRAMES.length; i++) {
+    const click = CLICK_FRAMES[i];
+    if (frame >= click) {
+      value = clampInterpolate(
+        frame,
+        [click, click + 14],
+        [i - 1, i],
+        Easing.inOut(Easing.cubic),
       );
     }
   }
-
-  return 1;
+  return value;
 };
 
-const CheckBox: React.FC = () => (
-  <span
-    style={{
-      width: 51,
-      height: 51,
-      border: '5px solid #4D535B',
-      borderRadius: 3,
-      boxSizing: 'border-box',
-      display: 'block',
-      boxShadow: '0 0 0 1px rgba(20, 25, 31, 0.08)',
-    }}
-  />
-);
+const currentFolderIndex = (frame: number) => {
+  let active = 0;
+  for (let i = 1; i < CLICK_FRAMES.length; i++) {
+    if (frame >= CLICK_FRAMES[i]) active = i;
+  }
+  return active;
+};
 
-const RiskIcon: React.FC<{kind: RiskKind}> = ({kind}) => {
-  if (kind === 'phishing') {
-    return (
-      <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-        <path
-          d="M28 5.5 47 12v13.3c0 12.2-7.1 20.8-19 25.2C16.1 46.1 9 37.5 9 25.3V12Z"
-          fill="#E62C75"
-        />
-        <path d="M28 10.3v34.5c8.6-3.8 13.7-10.4 13.7-19.3V16Z" fill="#F34788" />
-        <path d="M28 12.2v29.9c-7.9-3.6-12.3-9.3-12.3-17.1v-8.7Z" fill="#D91D66" />
-        <path d="M28 14.6v25.2" stroke="#FFF" strokeWidth="3.2" opacity="0.92" />
-      </svg>
-    );
+const cursorPointForIndex = (index: number) => ({
+  x: 302 + index * 21,
+  y: 338 + index * 140,
+});
+
+const cursorPosition = (frame: number) => {
+  const initial = {x: 1520, y: 900};
+  const first = cursorPointForIndex(0);
+  if (frame <= 42) {
+    const p = clampInterpolate(frame, [0, 42], [0, 1], Easing.inOut(Easing.cubic));
+    return {
+      x: initial.x + (first.x - initial.x) * p,
+      y: initial.y + (first.y - initial.y) * p,
+    };
   }
 
-  if (kind === 'spam') {
-    return (
-      <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-        <path
-          d="M19 5.8h18L50.2 19v18L37 50.2H19L5.8 37V19Z"
-          fill="#EE3D42"
-        />
-        <rect x="25.2" y="14" width="5.6" height="20" rx="2.8" fill="#FFF" />
-        <circle cx="28" cy="41" r="3.4" fill="#FFF" />
-      </svg>
-    );
+  let point = first;
+  for (let i = 1; i < CLICK_FRAMES.length; i++) {
+    const click = CLICK_FRAMES[i];
+    const from = cursorPointForIndex(i - 1);
+    const to = cursorPointForIndex(i);
+    const moveStart = click - 54;
+    const moveEnd = click - 8;
+    if (frame >= moveStart && frame <= moveEnd) {
+      const p = clampInterpolate(
+        frame,
+        [moveStart, moveEnd],
+        [0, 1],
+        Easing.inOut(Easing.cubic),
+      );
+      return {x: from.x + (to.x - from.x) * p, y: from.y + (to.y - from.y) * p};
+    }
+    if (frame > moveEnd) point = to;
   }
+  return point;
+};
+
+const clickPulse = (frame: number) => {
+  for (const click of CLICK_FRAMES) {
+    if (frame >= click - 4 && frame <= click + 20) {
+      const local = frame - click;
+      return {
+        scale:
+          local < 0
+            ? clampInterpolate(local, [-4, 0], [1, 0.86], Easing.out(Easing.cubic))
+            : clampInterpolate(local, [0, 10], [0.86, 1], Easing.out(Easing.cubic)),
+        ripple: clampInterpolate(local, [0, 20], [0, 1], Easing.out(Easing.cubic)),
+      };
+    }
+  }
+  return {scale: 1, ripple: -1};
+};
+
+const Sidebar: React.FC<{position: number}> = ({position}) => {
+  const selectedIndex = Math.max(0, Math.min(4, Math.round(position)));
+  const activeTop = 300 + position * 140;
+  const activeLeft = 120 + position * 15;
+  const activeWidth = 890 + position * 5;
 
   return (
-    <svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true">
-      <path
-        d="M29 6.5 53 49H5Z"
-        fill="none"
-        stroke="#F1A51C"
-        strokeWidth="5"
-        strokeLinejoin="round"
+    <>
+      <div
+        style={{
+          position: 'absolute',
+          left: 156,
+          top: 50,
+          width: 772,
+          height: 160,
+          borderRadius: 88,
+          background: `linear-gradient(135deg, ${BLUE} 0%, #3a83f1 100%)`,
+          boxShadow: '0 8px 18px rgba(31, 101, 214, 0.14)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 48,
+          fontWeight: 500,
+          letterSpacing: -0.6,
+        }}
+      >
+        Compose
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: activeLeft,
+          top: activeTop,
+          width: activeWidth,
+          height: 132,
+          background: `linear-gradient(90deg, ${BLUE_DARK} 0%, ${BLUE} 100%)`,
+          clipPath: 'polygon(0 2%, 98.4% 0, 100% 100%, 2.1% 100%)',
+          boxShadow: '0 5px 15px rgba(31, 105, 222, 0.12)',
+        }}
       />
-      <rect x="26.4" y="20" width="5.2" height="15.5" rx="2.6" fill="#F1A51C" />
-      <circle cx="29" cy="42" r="3" fill="#F1A51C" />
-    </svg>
+
+      {FOLDERS.map((folder, index) => {
+        const y = 321 + index * 140;
+        const x = 174 + index * 21;
+        const active = index === selectedIndex;
+        const countX = 922 + index * 20;
+        return (
+          <React.Fragment key={folder.key}>
+            <div
+              style={{
+                position: 'absolute',
+                left: x,
+                top: y,
+                height: 88,
+                display: 'flex',
+                alignItems: 'center',
+                color: active ? '#ffffff' : INK,
+                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontSize: 57,
+                fontWeight: active ? 500 : 400,
+                letterSpacing: -1.1,
+              }}
+            >
+              <span>{folder.label}</span>
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                left: countX,
+                top: y + 24,
+                color: active ? '#ffd0c8' : '#ef6f6b',
+                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontSize: 32,
+                fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {folder.count}
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </>
   );
 };
 
-const MessageRow: React.FC<{message: Message}> = ({message}) => (
-  <div
-    style={{
-      height: ROW_HEIGHT,
-      display: 'grid',
-      gridTemplateColumns: '280px 120px minmax(0, 1fr) 190px',
-      alignItems: 'center',
-      borderBottom: '2px solid rgba(104, 116, 130, 0.19)',
-      boxSizing: 'border-box',
-      color: '#16191E',
-    }}
-  >
-    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-      <CheckBox />
-    </div>
-    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-      <RiskIcon kind={message.kind} />
-    </div>
+const MessageRow: React.FC<{
+  message: Message;
+  index: number;
+  translateY: number;
+  opacity: number;
+}> = ({message, index, translateY, opacity}) => {
+  const top = 342 + index * 205;
+  const left = 1015 + top * 0.11;
+  return (
     <div
       style={{
-        minWidth: 0,
-        paddingRight: 30,
-        fontFamily: 'Arial Narrow, Helvetica Neue, Arial, sans-serif',
-        fontSize: 40,
-        fontWeight: message.emphasized ? 760 : 450,
-        letterSpacing: message.emphasized ? -1.25 : -1.05,
-        lineHeight: 1.22,
-        whiteSpace: 'normal',
+        position: 'absolute',
+        left,
+        top: top + translateY,
+        width: 1040,
+        height: 194,
+        opacity,
+        background: `linear-gradient(90deg, ${message.tint} 0%, rgba(255,255,255,0.92) 82%)`,
+        borderLeft: `8px solid ${BLUE}`,
+        borderBottom: '1px solid #edf0f5',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
       }}
     >
-      <span style={{fontWeight: message.emphasized ? 780 : 500}}>
-        [*** {message.label} ***]
-      </span>{' '}
-      <span>{message.subject}</span>
+      <div
+        style={{
+          position: 'absolute',
+          left: 46,
+          top: 50,
+          width: 72,
+          height: 72,
+          borderRadius: '50%',
+          background: message.color,
+          color: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 27,
+          fontWeight: 700,
+          letterSpacing: 0.2,
+          boxShadow: '0 3px 8px rgba(31,45,72,0.09)',
+        }}
+      >
+        {message.initials}
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 145,
+          top: 26,
+          width: 760,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'clip',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          color: INK,
+        }}
+      >
+        <div style={{fontSize: 31, lineHeight: 1.25, fontWeight: 500, letterSpacing: -0.25}}>
+          {message.sender}
+        </div>
+        <div style={{fontSize: 39, lineHeight: 1.34, fontWeight: 600, letterSpacing: -0.65}}>
+          {message.subject}
+        </div>
+        <div style={{fontSize: 28, lineHeight: 1.35, color: MUTED, fontWeight: 400}}>
+          {message.preview}
+        </div>
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          right: 28,
+          top: 34,
+          color: '#9ba4b4',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 25,
+          fontWeight: 500,
+        }}
+      >
+        {message.meta}
+      </div>
     </div>
-    <div
-      style={{
-        justifySelf: 'end',
-        paddingRight: 28,
-        whiteSpace: 'nowrap',
-        color: '#AEB4BC',
-        fontFamily: 'Arial Narrow, Helvetica Neue, Arial, sans-serif',
-        fontSize: 20,
-        fontWeight: 650,
-        letterSpacing: 0.3,
-      }}
-    >
-      {message.time}
-    </div>
-  </div>
-);
+  );
+};
 
-const InboxRows: React.FC = () => (
+const Rows: React.FC<{
+  messages: Message[];
+  opacity: number;
+  translateY: number;
+  frame: number;
+}> = ({messages, opacity, translateY}) => (
   <>
     {messages.map((message, index) => (
-      <MessageRow key={`${message.subject}-${index}`} message={message} />
+      <MessageRow
+        key={`${message.initials}-${message.subject}`}
+        message={message}
+        index={index}
+        translateY={translateY + index * Math.max(0, translateY * 0.025)}
+        opacity={opacity}
+      />
     ))}
   </>
 );
 
-const InboxPlane: React.FC<{
-  transform: string;
-  blurred?: boolean;
-}> = ({transform, blurred = false}) => (
-  <div
-    style={{
-      position: 'absolute',
-      left: 50,
-      top: 0,
-      width: 1870,
-      minHeight: messages.length * ROW_HEIGHT + 220,
-      background:
-        'linear-gradient(104deg, #F5F6F8 0%, #FAFAFB 45%, #F3F5F7 100%)',
-      transform,
-      transformOrigin: '50% 0%',
-      transformStyle: 'preserve-3d',
-      willChange: 'transform',
-      filter: blurred ? 'blur(2.35px)' : undefined,
-      WebkitMaskImage: blurred
-        ? 'radial-gradient(ellipse 67% 72% at 35% 55%, transparent 0%, transparent 42%, rgba(0,0,0,0.15) 60%, #000 96%)'
-        : undefined,
-      maskImage: blurred
-        ? 'radial-gradient(ellipse 67% 72% at 35% 55%, transparent 0%, transparent 42%, rgba(0,0,0,0.15) 60%, #000 96%)'
-        : undefined,
-    }}
-  >
-    <InboxRows />
-  </div>
-);
+const MessageViewport: React.FC<{frame: number}> = ({frame}) => {
+  let eventIndex = -1;
+  for (let i = 0; i < CLICK_FRAMES.length; i++) {
+    if (frame >= CLICK_FRAMES[i]) eventIndex = i;
+  }
+
+  // Mail is already open at the beginning. Clicking the active Mail folder is
+  // intentionally idempotent: the same rows remain visible with no refresh.
+  if (eventIndex <= 0) {
+    return <Rows messages={FOLDERS[0].messages} opacity={1} translateY={0} frame={frame} />;
+  }
+
+  const click = CLICK_FRAMES[eventIndex];
+  const local = frame - click;
+  const previous = FOLDERS[eventIndex - 1].messages;
+  const current = FOLDERS[eventIndex].messages;
+  const oldOpacity = clampInterpolate(local, [0, 5], [1, 0], Easing.in(Easing.cubic));
+  const oldY = clampInterpolate(local, [0, 5], [0, 145], Easing.in(Easing.cubic));
+  const newOpacity = clampInterpolate(local, [7, 18], [0, 1], Easing.out(Easing.cubic));
+  const newY = clampInterpolate(local, [7, 18], [130, 0], Easing.out(Easing.cubic));
+
+  return (
+    <>
+      {local <= 6 ? <Rows messages={previous} opacity={oldOpacity} translateY={oldY} frame={frame} /> : null}
+      {local >= 7 ? (
+        <Rows
+          messages={current}
+          opacity={newOpacity}
+          translateY={newY}
+          frame={frame}
+        />
+      ) : null}
+    </>
+  );
+};
+
+const Toolbar: React.FC<{folderIndex: number}> = ({folderIndex}) => {
+  const title = FOLDERS[folderIndex].totalLabel;
+  return (
+    <>
+      <div
+        style={{
+          position: 'absolute',
+          left: 1048,
+          top: 0,
+          width: 872,
+          height: 187,
+          background: 'rgba(255,255,255,0.82)',
+          borderBottom: '2px solid #e7ebf2',
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: 18,
+          gap: 78,
+          boxSizing: 'border-box',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 29,
+          fontWeight: 500,
+          color: '#4d82d1',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+        }}
+      >
+        <span>Archive</span>
+        <span>Delete</span>
+        <span>Mark as spam</span>
+        <span>Move to</span>
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 1063,
+          top: 235,
+          color: '#8c96a7',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 34,
+          fontWeight: 400,
+          letterSpacing: -0.4,
+        }}
+      >
+        {title}
+      </div>
+    </>
+  );
+};
+
+const Cursor: React.FC<{frame: number}> = ({frame}) => {
+  const point = cursorPosition(frame);
+  const pulse = clickPulse(frame);
+  const visible = clampInterpolate(frame, [0, 10], [0, 1], Easing.out(Easing.cubic));
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: point.x,
+        top: point.y,
+        width: 94,
+        height: 110,
+        transform: `scale(${pulse.scale})`,
+        transformOrigin: '6px 6px',
+        opacity: visible,
+        filter: 'drop-shadow(0 7px 8px rgba(29,39,56,0.22))',
+        zIndex: 50,
+      }}
+    >
+      {pulse.ripple >= 0 ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: -34 - pulse.ripple * 34,
+            top: -34 - pulse.ripple * 34,
+            width: 68 + pulse.ripple * 68,
+            height: 68 + pulse.ripple * 68,
+            borderRadius: '50%',
+            border: `5px solid rgba(47,120,237,${0.62 * (1 - pulse.ripple)})`,
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : null}
+      <svg width="94" height="110" viewBox="0 0 94 110" fill="none">
+        <path
+          d="M9 7L79 65L48 70L66 99L47 109L30 78L9 99V7Z"
+          fill="#172337"
+          stroke="#ffffff"
+          strokeWidth="7"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+};
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
-  const normalized = Math.min(1, frame / Math.max(1, durationInFrames - 1));
-  const travel = cameraProgress(normalized);
-
-  const planeY = interpolate(travel, [0, 1], [-203, -1170], clamp);
-  const planeScale = interpolate(
-    frame,
-    [0, 305],
-    [1.08, 0.95],
-    {...clamp, easing: Easing.out(Easing.cubic)},
-  );
-  const planeX = interpolate(travel, [0, 1], [-8, -25], clamp);
-  const transform = `translate3d(${planeX}px, ${planeY}px, 0) rotateX(2.4deg) rotateY(1.25deg) rotateZ(0.9deg) scale(${planeScale})`;
+  const {width, height} = useVideoConfig();
+  const scale = Math.min(width / 1920, height / 1080);
+  const folderIndex = currentFolderIndex(frame);
+  const position = selectionPosition(frame);
 
   return (
     <AbsoluteFill
       style={{
+        background: '#f3f5fa',
         overflow: 'hidden',
-        backgroundColor: '#F3F5F7',
-        perspective: 2700,
-        perspectiveOrigin: '52% 48%',
       }}
     >
-      <InboxPlane transform={transform} />
-      <InboxPlane transform={transform} blurred />
+      <div
+        style={{
+          position: 'absolute',
+          left: (width - 1920 * scale) / 2,
+          top: (height - 1080 * scale) / 2,
+          width: 1920,
+          height: 1080,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          overflow: 'hidden',
+          background: PANEL,
+          boxShadow: 'inset 0 0 90px rgba(40,57,90,0.035)',
+        }}
+      >
+        <svg
+          width="1920"
+          height="1080"
+          viewBox="0 0 1920 1080"
+          style={{position: 'absolute', inset: 0}}
+        >
+          <rect width="1920" height="1080" fill={PANEL} />
+          <path d="M0 0H958L1113 1080H0V0Z" fill={SHELL} />
+          <path d="M958 0L1113 1080" stroke="#dfe4ed" strokeWidth="3" />
+          <path d="M962 0L1117 1080" stroke="rgba(255,255,255,0.9)" strokeWidth="3" />
+        </svg>
 
-      <AbsoluteFill
-        style={{
-          pointerEvents: 'none',
-          background:
-            'radial-gradient(ellipse 72% 80% at 35% 54%, transparent 0%, transparent 48%, rgba(147,157,168,0.10) 78%, rgba(113,124,137,0.22) 115%)',
-          boxShadow:
-            'inset 0 0 110px rgba(98,108,120,0.10), inset -70px 0 100px rgba(132,141,151,0.08)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          pointerEvents: 'none',
-          opacity: 0.22,
-          background:
-            'linear-gradient(114deg, rgba(255,255,255,0.42) 0%, transparent 24%, transparent 72%, rgba(218,223,229,0.18) 100%)',
-        }}
-      />
+        <Sidebar position={position} />
+        <Toolbar folderIndex={folderIndex} />
+        <MessageViewport frame={frame} />
+
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background:
+              'linear-gradient(90deg, transparent 0%, transparent 82%, rgba(255,255,255,0.42) 100%), linear-gradient(180deg, rgba(255,255,255,0.10) 0%, transparent 18%, transparent 90%, rgba(245,247,251,0.20) 100%)',
+          }}
+        />
+        <Cursor frame={frame} />
+      </div>
     </AbsoluteFill>
   );
 };
