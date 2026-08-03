@@ -1,414 +1,706 @@
-import React from "react";
-import {AbsoluteFill, useCurrentFrame} from "remotion";
+import React, {useMemo} from 'react';
+import {
+  AbsoluteFill,
+  Easing,
+  interpolate,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 
-const DESIGN_WIDTH = 1920;
-const DESIGN_HEIGHT = 1080;
-const CYCLE_FRAMES = 300;
-
-const RAIL_START_X = 340;
-const RAIL_END_X = 1560;
-const HEAD_END_X = 1537;
-const RAIL_Y = 542;
-const ARROW_BASE_X = 1440;
-const ARROW_HALF_HEIGHT = 58;
-
-const smoothstep = (value: number): number => {
-  const clamped = Math.max(0, Math.min(1, value));
-  return clamped * clamped * (3 - 2 * clamped);
+const COLORS = {
+  obsidian: '#05030B',
+  deepPlum: '#12081F',
+  rail: '#21122F',
+  lavenderCode: '#E0C1FF',
+  mintCode: '#AEFFE9',
+  orchid: '#A855F7',
+  magenta: '#E84BCB',
+  mint: '#78FFD6',
+  champagne: '#FFD166',
+  champagneSoft: '#FFF1B8',
+  warmWhite: '#FFF7ED',
 };
 
-const PremiumStaticBackground: React.FC = () => {
+const STATUS_FONT = 'Arial, Helvetica, sans-serif';
+
+const HUD = {
+  x: 455,
+  y: 310,
+  width: 1010,
+  height: 463,
+  radius: 58,
+};
+
+const RAIL = {
+  x: 562,
+  y: 498,
+  width: 798,
+  height: 94,
+  inset: 7,
+};
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const smoothstep = (value: number) => {
+  const x = clamp01(value);
+  return x * x * (3 - 2 * x);
+};
+
+const triangularPulse = (frame: number, center: number, radius: number) =>
+  clamp01(1 - Math.abs(frame - center) / radius);
+
+const getGlitch = (frame: number) => {
+  const centers = [15, 43, 61, 76, 151, 231, 318, 421, 527, 586, 615];
+  return Math.max(
+    ...centers.map((center, index) =>
+      triangularPulse(frame, center, index % 3 === 0 ? 4 : 2.5),
+    ),
+  );
+};
+
+const CODE_LINES = [
+  'import telemetry',
+  'import runtime',
+  'from core.sync import handshake',
+  '',
+  '# Luminous Runtime Interface',
+  'def stream_status(packet, latency=0.04):',
+  '    for byte in packet:',
+  '        bus.write(byte)',
+  '        bus.flush()',
+  '        clock.wait(latency)',
+  '',
+  '# Integrity Handshake',
+  'def verify_signature(payload):',
+  '    token = matrix.encode(payload)',
+  '    checksum = digest(token)',
+  '    return checksum == expected',
+  '',
+  '# Memory Allocation',
+  'def allocate_shards(count=16):',
+  '    shards = [Node(i) for i in range(count)]',
+  '    routes = topology.resolve(shards)',
+  '    return routes',
+  '',
+  '# Secure Channel',
+  'def open_channel(endpoint, protocol="v4"):',
+  '    session = negotiate(endpoint)',
+  '    session.attach(protocol)',
+  '    return session',
+  '',
+  '# Main Sequence',
+  'def initialize():',
+  '    status.emit("Booting runtime...")',
+  '    status.emit("Mapping modules...")',
+  '    status.emit("Checking integrity...")',
+  '',
+  'while active:',
+  '    frame = queue.next()',
+  '    result = stream_status(frame)',
+  '    monitor.push(result)',
+  '    if result.ready:',
+  '        monitor.commit()',
+  '',
+  'for sector in mesh.sectors:',
+  '    sector.calibrate()',
+  '    sector.pulse(rate=0.08)',
+  '    sector.report()',
+  '',
+  'runtime.lock_state()',
+  'telemetry.flush()',
+  'handshake.confirm()',
+  'return SYSTEM_STABLE',
+];
+
+const CODE_LINE_HEIGHT = 35;
+const CODE_BLOCK_HEIGHT = CODE_LINES.length * CODE_LINE_HEIGHT;
+const CODE_SPEED = 128;
+
+type CodeColumnProps = {
+  left: number;
+  width: number;
+  frame: number;
+  fps: number;
+  columnIndex: number;
+};
+
+const CodeColumn: React.FC<CodeColumnProps> = ({
+  left,
+  width,
+  frame,
+  fps,
+  columnIndex,
+}) => {
+  const time = frame / fps;
+  const scroll = (time * CODE_SPEED) % CODE_BLOCK_HEIGHT;
+  const offsets = [-CODE_BLOCK_HEIGHT - scroll, -scroll, CODE_BLOCK_HEIGHT - scroll];
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+      }}
+    >
+      {offsets.map((top, blockIndex) => (
+        <div
+          key={`${columnIndex}-${blockIndex}`}
+          style={{
+            position: 'absolute',
+            left,
+            top,
+            width,
+            height: CODE_BLOCK_HEIGHT,
+          }}
+        >
+          {CODE_LINES.map((line, lineIndex) => {
+            const isComment = line.startsWith('#');
+            const isSignal =
+              line.includes('return') ||
+              line.includes('emit') ||
+              line.includes('confirm') ||
+              line.includes('commit');
+            const softPulse =
+              0.78 + 0.28 * Math.sin(frame * 0.054 + lineIndex * 1.17);
+            const color = isSignal
+              ? COLORS.mintCode
+              : isComment
+                ? COLORS.champagne
+                : COLORS.lavenderCode;
+            const opacity =
+              (isComment ? 0.88 : isSignal ? 0.94 : 0.86) * softPulse;
+
+            return (
+              <div
+                key={`${blockIndex}-${lineIndex}`}
+                style={{
+                  height: CODE_LINE_HEIGHT,
+                  lineHeight: `${CODE_LINE_HEIGHT}px`,
+                  color,
+                  opacity,
+                  whiteSpace: 'pre',
+                  overflow: 'hidden',
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  fontSize: 24,
+                  fontWeight: 600,
+                  letterSpacing: 0.08,
+                  textShadow: `0 0 4px ${color}DD, 0 0 11px ${color}88`,
+                  transform: `translateX(${Math.sin(
+                    frame * 0.012 + lineIndex * 0.91 + columnIndex,
+                  ) * 1.2}px)`,
+                }}
+              >
+                {line || ' '}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CodeSmears: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
+  const time = frame / fps;
+  const smears = useMemo(
+    () =>
+      Array.from({length: 24}, (_, index) => ({
+        column: index % 2,
+        baseY: (index * 197 + 61) % 1490,
+        leftInset: 18 + ((index * 73) % 170),
+        width: 190 + ((index * 89) % 360),
+        height: 5 + (index % 4) * 3,
+        speed: 0.91 + (index % 3) * 0.045,
+        phase: index * 0.83,
+        color: index % 5 === 0 ? COLORS.mint : COLORS.magenta,
+      })),
+    [],
+  );
+
+  return (
+    <AbsoluteFill style={{overflow: 'hidden', mixBlendMode: 'screen'}}>
+      {smears.map((smear, index) => {
+        const y =
+          ((smear.baseY - time * CODE_SPEED * smear.speed + 1560) % 1560) - 90;
+        const columnLeft = smear.column === 0 ? 0 : 1088;
+        const horizontalDrift = Math.sin(frame * 0.08 + smear.phase) * 42;
+        const visibility =
+          0.25 + 0.75 * Math.pow(Math.max(0, Math.sin(frame * 0.11 + smear.phase)), 4);
+
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: columnLeft + smear.leftInset + horizontalDrift,
+              top: y,
+              width: smear.width,
+              height: smear.height,
+              borderRadius: 999,
+              background: `linear-gradient(90deg, transparent, ${smear.color}, transparent)`,
+              opacity: 0.035 + visibility * 0.085,
+              filter: `blur(${8 + (index % 3) * 5}px)`,
+              boxShadow: `0 0 24px ${smear.color}66`,
+            }}
+          />
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+const Background: React.FC<{frame: number; fps: number}> = ({frame, fps}) => {
   return (
     <AbsoluteFill
       style={{
-        overflow: "hidden",
-        backgroundColor: "#09060D",
-        backgroundImage: [
-          "radial-gradient(ellipse 52% 25% at 50% 50%, rgba(141,74,105,0.25) 0%, rgba(84,34,67,0.13) 42%, rgba(13,8,17,0) 76%)",
-          "linear-gradient(112deg, #07050A 0%, #160A18 43%, #1B0D19 56%, #08050B 100%)",
-          "repeating-linear-gradient(118deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, rgba(0,0,0,0.018) 1px, rgba(0,0,0,0.018) 6px)",
-        ].join(", "),
+        overflow: 'hidden',
+        background:
+          'radial-gradient(circle at 50% 48%, rgba(117,45,142,0.22) 0%, rgba(62,19,86,0.10) 34%, rgba(5,3,11,0) 66%), linear-gradient(135deg, #05030B 0%, #0A0412 46%, #140720 100%)',
       }}
     >
+      <CodeColumn left={14} width={804} frame={frame} fps={fps} columnIndex={0} />
+      <CodeColumn left={1100} width={806} frame={frame} fps={fps} columnIndex={1} />
+      <CodeSmears frame={frame} fps={fps} />
       <AbsoluteFill
         style={{
           background:
-            "radial-gradient(ellipse 45% 9% at 50% 50.2%, rgba(250,184,92,0.105) 0%, rgba(190,109,60,0.035) 48%, transparent 78%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          boxShadow:
-            "inset 0 0 220px rgba(0,0,0,0.74), inset 0 0 70px rgba(0,0,0,0.42)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: "12%",
-          right: "12%",
-          top: "50.2%",
-          height: 1,
-          background:
-            "linear-gradient(90deg, transparent, rgba(255,214,146,0.035) 22%, rgba(255,232,191,0.075) 50%, rgba(255,214,146,0.035) 78%, transparent)",
+            'linear-gradient(90deg, rgba(5,3,11,0.08) 0%, rgba(5,3,11,0) 24%, rgba(5,3,11,0.42) 45%, rgba(5,3,11,0.42) 55%, rgba(5,3,11,0) 76%, rgba(5,3,11,0.08) 100%)',
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const ValueGraphic: React.FC = () => {
-  const frame = useCurrentFrame();
-  const cycleFrame = frame % CYCLE_FRAMES;
-  const phase = cycleFrame / (CYCLE_FRAMES - 1);
-  const headX = RAIL_START_X + (HEAD_END_X - RAIL_START_X) * phase;
-
-  // The high-energy trail is about one third of the frame at peak. A longer,
-  // much dimmer tail preserves the reference's slow luminance decay.
-  const innerTailX = Math.max(RAIL_START_X, headX - 690);
-  const outerTailX = Math.max(RAIL_START_X, headX - 1080);
-  const innerGradientEnd = Math.max(innerTailX + 1, headX);
-  const outerGradientEnd = Math.max(outerTailX + 1, headX);
-
-  // The reference arrow remains energized through the positional wrap: a long
-  // residual decay from the previous cycle overlaps the next approach.
-  const residualArrow = 0.86 * Math.exp(-cycleFrame / 138);
-  const approachArrow = smoothstep((phase - 0.8) / 0.2);
-  const arrowEnergy = Math.min(1, residualArrow + approachArrow * 0.88);
-
-  const arrowPath = `M ${ARROW_BASE_X} ${RAIL_Y - ARROW_HALF_HEIGHT} L ${RAIL_END_X} ${RAIL_Y} L ${ARROW_BASE_X} ${RAIL_Y + ARROW_HALF_HEIGHT}`;
+const HudFrame: React.FC<{frame: number}> = ({frame}) => {
+  const glitch = getGlitch(frame);
+  const bloomPulse = 0.91 + 0.09 * Math.sin(frame * 0.037);
+  const edgeFlash = Math.pow(Math.max(0, Math.sin(frame * 0.19 + 0.8)), 12);
 
   return (
-    <svg
-      width="100%"
-      height="100%"
-      viewBox={`0 0 ${DESIGN_WIDTH} ${DESIGN_HEIGHT}`}
-      preserveAspectRatio="xMidYMid meet"
-      style={{position: "absolute", inset: 0}}
-    >
-      <defs>
-        <linearGradient id="pearlText" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFDF7" />
-          <stop offset="0.48" stopColor="#F8EEDC" />
-          <stop offset="1" stopColor="#B99C74" />
-        </linearGradient>
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <svg width="1920" height="1080" viewBox="0 0 1920 1080">
+        <defs>
+          <linearGradient id="panel-fill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#1C0A28" stopOpacity="0.33" />
+            <stop offset="48%" stopColor="#08040F" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#24102E" stopOpacity="0.28" />
+          </linearGradient>
+          <linearGradient id="hud-stroke" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={COLORS.orchid} />
+            <stop offset="48%" stopColor={COLORS.magenta} />
+            <stop offset="76%" stopColor={COLORS.orchid} />
+            <stop offset="100%" stopColor={COLORS.mint} />
+          </linearGradient>
+          <filter id="blur-heavy" x="-30%" y="-45%" width="160%" height="190%">
+            <feGaussianBlur stdDeviation="20" />
+          </filter>
+          <filter id="blur-medium" x="-20%" y="-35%" width="140%" height="170%">
+            <feGaussianBlur stdDeviation="7" />
+          </filter>
+          <filter id="edge-blur" x="-30%" y="-300%" width="160%" height="700%">
+            <feGaussianBlur stdDeviation="9" />
+          </filter>
+          <clipPath id="hud-inner-clip">
+            <rect
+              x={HUD.x + 5}
+              y={HUD.y + 5}
+              width={HUD.width - 10}
+              height={HUD.height - 10}
+              rx={HUD.radius - 4}
+            />
+          </clipPath>
+        </defs>
 
-        <linearGradient
-          id="railMetal"
-          x1={RAIL_START_X}
-          y1={RAIL_Y}
-          x2={RAIL_END_X}
-          y2={RAIL_Y}
-          gradientUnits="userSpaceOnUse"
+        <rect
+          x={HUD.x}
+          y={HUD.y}
+          width={HUD.width}
+          height={HUD.height}
+          rx={HUD.radius}
+          fill="url(#panel-fill)"
+          stroke="none"
+        />
+
+        <g clipPath="url(#hud-inner-clip)" opacity="0.18">
+          {Array.from({length: 18}, (_, index) => (
+            <line
+              key={index}
+              x1={HUD.x + 8}
+              x2={HUD.x + HUD.width - 8}
+              y1={HUD.y + 13 + index * 26}
+              y2={HUD.y + 13 + index * 26}
+              stroke={index % 5 === 0 ? COLORS.mint : COLORS.orchid}
+              strokeWidth={index % 5 === 0 ? 1.25 : 0.65}
+              opacity={index % 5 === 0 ? 0.13 : 0.055}
+            />
+          ))}
+        </g>
+
+        <rect
+          x={HUD.x}
+          y={HUD.y}
+          width={HUD.width}
+          height={HUD.height}
+          rx={HUD.radius}
+          fill="none"
+          stroke="url(#hud-stroke)"
+          strokeWidth="12"
+          opacity={0.26 * bloomPulse}
+          filter="url(#blur-heavy)"
+        />
+        <rect
+          x={HUD.x}
+          y={HUD.y}
+          width={HUD.width}
+          height={HUD.height}
+          rx={HUD.radius}
+          fill="none"
+          stroke="url(#hud-stroke)"
+          strokeWidth="7"
+          opacity={0.72 * bloomPulse}
+          filter="url(#blur-medium)"
+        />
+        <rect
+          x={HUD.x}
+          y={HUD.y}
+          width={HUD.width}
+          height={HUD.height}
+          rx={HUD.radius}
+          fill="none"
+          stroke="url(#hud-stroke)"
+          strokeWidth="3.4"
+          opacity={0.95 * bloomPulse}
+        />
+
+        <g
+          strokeLinecap="round"
+          filter="url(#edge-blur)"
+          opacity={0.16 + edgeFlash * 0.25 + glitch * 0.12}
         >
-          <stop offset="0" stopColor="#54301E" />
-          <stop offset="0.24" stopColor="#85502F" />
-          <stop offset="0.52" stopColor="#A46D40" />
-          <stop offset="0.82" stopColor="#7A472B" />
-          <stop offset="1" stopColor="#4C2B1C" />
-        </linearGradient>
-
-        <linearGradient
-          id="outerTrail"
-          x1={outerTailX}
-          y1={RAIL_Y}
-          x2={outerGradientEnd}
-          y2={RAIL_Y}
-          gradientUnits="userSpaceOnUse"
+          <path d="M 456 310 H 250" stroke={COLORS.orchid} strokeWidth="7" />
+          <path d="M 1464 310 H 1690" stroke={COLORS.mint} strokeWidth="6" />
+          <path d="M 456 773 H 210" stroke={COLORS.magenta} strokeWidth="8" />
+          <path d="M 1464 773 H 1735" stroke={COLORS.orchid} strokeWidth="7" />
+        </g>
+        <g
+          strokeLinecap="round"
+          opacity={0.11 + edgeFlash * 0.17 + glitch * 0.08}
+          transform={`translate(${glitch * 22} 0)`}
         >
-          <stop offset="0" stopColor="#B64F31" stopOpacity="0" />
-          <stop offset="0.34" stopColor="#C96736" stopOpacity="0.05" />
-          <stop offset="0.7" stopColor="#E99446" stopOpacity="0.13" />
-          <stop offset="1" stopColor="#FFD88D" stopOpacity="0.34" />
-        </linearGradient>
+          <path d="M 456 310 H 318" stroke={COLORS.champagne} strokeWidth="2" />
+          <path d="M 1464 310 H 1642" stroke={COLORS.mint} strokeWidth="2" />
+          <path d="M 456 773 H 286" stroke={COLORS.magenta} strokeWidth="2" />
+          <path d="M 1464 773 H 1678" stroke={COLORS.champagne} strokeWidth="2" />
+        </g>
+      </svg>
+    </AbsoluteFill>
+  );
+};
 
-        <linearGradient
-          id="innerTrail"
-          x1={innerTailX}
-          y1={RAIL_Y}
-          x2={innerGradientEnd}
-          y2={RAIL_Y}
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0" stopColor="#B9552D" stopOpacity="0" />
-          <stop offset="0.18" stopColor="#C96D35" stopOpacity="0.08" />
-          <stop offset="0.5" stopColor="#E89542" stopOpacity="0.35" />
-          <stop offset="0.78" stopColor="#FFC967" stopOpacity="0.7" />
-          <stop offset="1" stopColor="#FFF7DE" stopOpacity="1" />
-        </linearGradient>
+const ProgressAssembly: React.FC<{
+  frame: number;
+  fps: number;
+  progress: number;
+}> = ({frame, fps, progress}) => {
+  const innerWidth = RAIL.width - RAIL.inset * 2;
+  const fillWidth = Math.max(4, innerWidth * progress);
+  const shimmerX = ((frame * 9.5) % (innerWidth + 220)) - 140;
+  const headX = Math.min(innerWidth - 2, fillWidth);
+  const completion = interpolate(progress, [0.985, 1], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.out(Easing.cubic),
+  });
+  const pulse = 0.88 + 0.12 * Math.sin((frame / fps) * Math.PI * 2 * 1.1);
 
-        <radialGradient id="ambientGold" cx="50%" cy="50%" r="50%">
-          <stop offset="0" stopColor="#FFD894" stopOpacity="0.22" />
-          <stop offset="0.36" stopColor="#D98236" stopOpacity="0.11" />
-          <stop offset="1" stopColor="#9A3F24" stopOpacity="0" />
-        </radialGradient>
-
-        <radialGradient id="headHalo" cx="50%" cy="50%" r="50%">
-          <stop offset="0" stopColor="#FFFDF4" stopOpacity="0.9" />
-          <stop offset="0.09" stopColor="#FFE9BA" stopOpacity="0.65" />
-          <stop offset="0.3" stopColor="#F5A74F" stopOpacity="0.24" />
-          <stop offset="1" stopColor="#B84A2C" stopOpacity="0" />
-        </radialGradient>
-
-        <filter
-          id="textShadow"
-          x="-30%"
-          y="-60%"
-          width="160%"
-          height="220%"
-          colorInterpolationFilters="sRGB"
-        >
-          <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="blur" />
-          <feFlood floodColor="#D18A45" floodOpacity="0.19" result="color" />
-          <feComposite in="color" in2="blur" operator="in" result="shadow" />
-          <feMerge>
-            <feMergeNode in="shadow" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-
-        <filter
-          id="softGoldGlow"
-          x="-30%"
-          y="-420%"
-          width="160%"
-          height="940%"
-          colorInterpolationFilters="sRGB"
-        >
-          <feGaussianBlur stdDeviation="12" result="blur" />
-          <feFlood floodColor="#E87935" floodOpacity="0.7" result="color" />
-          <feComposite in="color" in2="blur" operator="in" result="glow" />
-          <feMerge>
-            <feMergeNode in="glow" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-
-        <filter
-          id="hotGoldGlow"
-          x="-170%"
-          y="-380%"
-          width="440%"
-          height="860%"
-          colorInterpolationFilters="sRGB"
-        >
-          <feGaussianBlur stdDeviation="13" result="blurWide" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="3.4" result="blurTight" />
-          <feFlood floodColor="#FFAA45" floodOpacity="0.88" result="colorWide" />
-          <feFlood floodColor="#FFF4D4" floodOpacity="0.98" result="colorTight" />
-          <feComposite in="colorWide" in2="blurWide" operator="in" result="wide" />
-          <feComposite in="colorTight" in2="blurTight" operator="in" result="tight" />
-          <feMerge>
-            <feMergeNode in="wide" />
-            <feMergeNode in="tight" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      <ellipse
-        cx="950"
-        cy={RAIL_Y}
-        rx="735"
-        ry="125"
-        fill="url(#ambientGold)"
-        opacity="0.28"
-      />
-
-      <text
-        x="952"
-        y="466"
-        textAnchor="middle"
-        fill="url(#pearlText)"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="110"
-        fontWeight="900"
-        letterSpacing="1"
-        transform="translate(952 0) scale(0.64 1) translate(-952 0)"
-        filter="url(#textShadow)"
+  return (
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <div
+        style={{
+          position: 'absolute',
+          left: RAIL.x,
+          top: RAIL.y,
+          width: RAIL.width,
+          height: RAIL.height,
+          clipPath: 'polygon(2.6% 0%, 100% 0%, 97.4% 100%, 0% 100%)',
+          background: `linear-gradient(90deg, ${COLORS.orchid}, ${COLORS.magenta} 52%, ${COLORS.mint})`,
+          opacity: 0.94,
+          filter: `drop-shadow(0 0 7px ${COLORS.orchid}) drop-shadow(0 0 22px ${COLORS.magenta}88)`,
+        }}
       >
-        VALUE
-      </text>
+        <div
+          style={{
+            position: 'absolute',
+            left: RAIL.inset,
+            top: RAIL.inset,
+            width: innerWidth,
+            height: RAIL.height - RAIL.inset * 2,
+            clipPath: 'polygon(2% 0%, 100% 0%, 98% 100%, 0% 100%)',
+            background: `linear-gradient(180deg, #160B20 0%, ${COLORS.rail} 53%, #0B0610 100%)`,
+            boxShadow: 'inset 0 0 22px rgba(2,1,5,0.95)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: fillWidth,
+              height: '100%',
+              background: `linear-gradient(90deg, ${COLORS.champagne} 0%, ${COLORS.champagneSoft} 68%, ${COLORS.warmWhite} 100%)`,
+              boxShadow: `0 0 18px ${COLORS.champagne}, 0 0 42px ${COLORS.champagne}88`,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: shimmerX,
+                top: -28,
+                width: 116,
+                height: 140,
+                transform: 'skewX(-18deg)',
+                background:
+                  'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)',
+                filter: 'blur(8px)',
+                opacity: 0.72,
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                inset: '5px 4px auto 4px',
+                height: 3,
+                borderRadius: 99,
+                background: 'rgba(255,255,255,0.72)',
+                filter: 'blur(0.5px)',
+              }}
+            />
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              left: headX - 5,
+              top: 2,
+              width: 10,
+              height: RAIL.height - RAIL.inset * 2 - 4,
+              borderRadius: 99,
+              background: COLORS.mint,
+              boxShadow: `0 0 12px ${COLORS.mint}, 0 0 30px ${COLORS.mint}`,
+              opacity: progress <= 0.002 ? 0 : pulse,
+            }}
+          />
+        </div>
+      </div>
 
-      <text
-        x="234"
-        y="568"
-        textAnchor="middle"
-        fill="url(#pearlText)"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="70"
-        fontWeight="500"
-        letterSpacing="0.4"
-        transform="translate(234 0) scale(0.75 1) translate(-234 0)"
-        filter="url(#textShadow)"
+      <div
+        style={{
+          position: 'absolute',
+          left: RAIL.x + 13,
+          top: RAIL.y + 18,
+          width: RAIL.width - 28,
+          height: RAIL.height - 36,
+          borderRadius: 999,
+          boxShadow: `0 0 ${26 + completion * 30}px ${COLORS.champagne}`,
+          opacity: 0.04 + completion * 0.13,
+          transform: `scaleX(${0.98 + completion * 0.02})`,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const StatusTypography: React.FC<{
+  frame: number;
+  progressLabel: number;
+}> = ({frame, progressLabel}) => {
+  const titleReveal = interpolate(frame, [33, 90], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.out(Easing.cubic),
+  });
+  const glitch = getGlitch(frame);
+  const dotCount = Math.floor(((frame + 11) % 80) / 20);
+  const dots = '.'.repeat(dotCount);
+  const title = `Loading System${dots}`;
+  const titleBlur = (1 - titleReveal) * 15 + glitch * 1.7;
+  const titleShift = (1 - titleReveal) * 20;
+  const titleOpacity = titleReveal * (1 - glitch * 0.13);
+  const percentPulse = 1 + 0.018 * Math.sin(frame * 0.085);
+
+  const commonTitleStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    top: 385,
+    width: '100%',
+    height: 78,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    whiteSpace: 'pre',
+    fontFamily: STATUS_FONT,
+    fontSize: 58,
+    fontWeight: 520,
+    letterSpacing: 0.15 + (1 - titleReveal) * 4.5,
+    color: COLORS.warmWhite,
+    textShadow: `0 0 9px ${COLORS.champagne}AA, 0 0 25px ${COLORS.orchid}88`,
+  };
+
+  return (
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <div
+        style={{
+          ...commonTitleStyle,
+          opacity: titleOpacity,
+          filter: `blur(${titleBlur}px)`,
+          transform: `translateX(${titleShift}px)`,
+        }}
       >
-        −MIN
-      </text>
+        {title}
+      </div>
 
-      <text
-        x="1676"
-        y="568"
-        textAnchor="middle"
-        fill="url(#pearlText)"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="70"
-        fontWeight="500"
-        letterSpacing="0.4"
-        transform="translate(1676 0) scale(0.75 1) translate(-1676 0)"
-        filter="url(#textShadow)"
+      {glitch > 0.01 && (
+        <>
+          <div
+            style={{
+              ...commonTitleStyle,
+              opacity: titleReveal * glitch * 0.72,
+              color: COLORS.mint,
+              clipPath: 'inset(8% 0 57% 0)',
+              transform: `translateX(${glitch * 25}px)`,
+              filter: 'blur(0.8px)',
+              mixBlendMode: 'screen',
+            }}
+          >
+            {title}
+          </div>
+          <div
+            style={{
+              ...commonTitleStyle,
+              opacity: titleReveal * glitch * 0.64,
+              color: COLORS.magenta,
+              clipPath: 'inset(62% 0 13% 0)',
+              transform: `translateX(${-glitch * 18}px)`,
+              filter: 'blur(1px)',
+              mixBlendMode: 'screen',
+            }}
+          >
+            {title}
+          </div>
+        </>
+      )}
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 617,
+          width: '100%',
+          height: 82,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          fontFamily: STATUS_FONT,
+          fontSize: 67,
+          lineHeight: 1,
+          fontWeight: 500,
+          letterSpacing: -1.1,
+          color: COLORS.champagne,
+          textShadow: `0 0 10px ${COLORS.champagne}AA, 0 0 26px ${COLORS.orchid}88`,
+          opacity: 1 - glitch * 0.1,
+          transform: `translateX(${glitch * 2}px) scale(${percentPulse})`,
+          filter: `blur(${glitch * 0.7}px)`,
+        }}
       >
-        +MAX
-      </text>
+        {progressLabel}%
+      </div>
 
-      <line
-        x1={RAIL_START_X}
-        y1={RAIL_Y}
-        x2={RAIL_END_X}
-        y2={RAIL_Y}
-        stroke="#B26F3A"
-        strokeWidth="18"
-        strokeLinecap="round"
-        opacity="0.05"
-      />
-      <line
-        x1={RAIL_START_X}
-        y1={RAIL_Y}
-        x2={RAIL_END_X}
-        y2={RAIL_Y}
-        stroke="url(#railMetal)"
-        strokeWidth="3"
-        strokeLinecap="round"
-        opacity="0.72"
-      />
-      <line
-        x1={RAIL_START_X}
-        y1={RAIL_Y - 1}
-        x2={RAIL_END_X}
-        y2={RAIL_Y - 1}
-        stroke="#F3C487"
-        strokeWidth="1"
-        strokeLinecap="round"
-        opacity="0.2"
-      />
+      {glitch > 0.01 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 617,
+            width: '100%',
+            height: 82,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            fontFamily: STATUS_FONT,
+            fontSize: 67,
+            fontWeight: 500,
+            letterSpacing: -1.1,
+            color: COLORS.mint,
+            textShadow: `0 0 16px ${COLORS.mint}`,
+            opacity: glitch * 0.48,
+            clipPath: 'inset(45% 0 27% 0)',
+            transform: `translateX(${-glitch * 17}px)`,
+            mixBlendMode: 'screen',
+          }}
+        >
+          {progressLabel}%
+        </div>
+      )}
+    </AbsoluteFill>
+  );
+};
 
-      <path
-        d={arrowPath}
-        fill="none"
-        stroke="#9D673D"
-        strokeWidth="19"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={0.06 + arrowEnergy * 0.045}
+const FinishingPass: React.FC<{frame: number}> = ({frame}) => {
+  const scanOffset = (frame * 0.16) % 5;
+  return (
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <AbsoluteFill
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 5px)',
+          backgroundPosition: `0 ${scanOffset}px`,
+          opacity: 0.28,
+          mixBlendMode: 'soft-light',
+        }}
       />
-      <path
-        d={arrowPath}
-        fill="none"
-        stroke="url(#railMetal)"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={0.72 + arrowEnergy * 0.2}
-        filter="url(#softGoldGlow)"
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(ellipse at center, transparent 37%, rgba(3,1,7,0.23) 68%, rgba(2,1,5,0.78) 100%), linear-gradient(180deg, rgba(0,0,0,0.20), transparent 12%, transparent 88%, rgba(0,0,0,0.27))',
+        }}
       />
-      <path
-        d={arrowPath}
-        fill="none"
-        stroke="#FFF1D0"
-        strokeWidth="1.35"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={0.36 + arrowEnergy * 0.5}
-      />
-
-      <line
-        x1={outerTailX}
-        y1={RAIL_Y}
-        x2={headX}
-        y2={RAIL_Y}
-        stroke="url(#outerTrail)"
-        strokeWidth="34"
-        strokeLinecap="round"
-        filter="url(#softGoldGlow)"
-      />
-      <line
-        x1={innerTailX}
-        y1={RAIL_Y}
-        x2={headX}
-        y2={RAIL_Y}
-        stroke="url(#innerTrail)"
-        strokeWidth="11"
-        strokeLinecap="round"
-        opacity="0.72"
-        filter="url(#softGoldGlow)"
-      />
-      <line
-        x1={innerTailX}
-        y1={RAIL_Y}
-        x2={headX}
-        y2={RAIL_Y}
-        stroke="url(#innerTrail)"
-        strokeWidth="3.6"
-        strokeLinecap="round"
-        filter="url(#hotGoldGlow)"
-      />
-      <line
-        x1={innerTailX}
-        y1={RAIL_Y - 0.8}
-        x2={headX}
-        y2={RAIL_Y - 0.8}
-        stroke="#FFF9EA"
-        strokeWidth="1"
-        strokeLinecap="round"
-        opacity="0.72"
-      />
-
-      <ellipse
-        cx={headX}
-        cy={RAIL_Y}
-        rx="122"
-        ry="54"
-        fill="url(#headHalo)"
-        opacity="0.78"
-        style={{mixBlendMode: "screen"}}
-      />
-      <circle
-        cx={headX}
-        cy={RAIL_Y}
-        r="6.2"
-        fill="#FFF8E6"
-        filter="url(#hotGoldGlow)"
-      />
-      <circle cx={headX} cy={RAIL_Y} r="2.1" fill="#FFFFFF" />
-
-      <path
-        d={arrowPath}
-        fill="none"
-        stroke="#F4A84D"
-        strokeWidth="14"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={arrowEnergy * 0.14}
-        filter="url(#softGoldGlow)"
-      />
-      <path
-        d={arrowPath}
-        fill="none"
-        stroke="#FFF3D1"
-        strokeWidth="3.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={arrowEnergy * 0.78}
-        filter="url(#hotGoldGlow)"
-      />
-    </svg>
+    </AbsoluteFill>
   );
 };
 
 export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const elapsedSeconds = frame / fps;
+  const progress = smoothstep(elapsedSeconds / 9.99);
+  const earlyLabelBias = interpolate(
+    elapsedSeconds,
+    [1.25, 1.55, 1.85],
+    [0, 0.55, 0],
+    {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.quad),
+    },
+  );
+  const progressLabel = Math.round(progress * 100 + earlyLabelBias);
+
   return (
-    <AbsoluteFill>
-      <PremiumStaticBackground />
-      <ValueGraphic />
+    <AbsoluteFill
+      style={{
+        backgroundColor: COLORS.obsidian,
+        overflow: 'hidden',
+      }}
+    >
+      <Background frame={frame} fps={fps} />
+      <HudFrame frame={frame} />
+      <ProgressAssembly frame={frame} fps={fps} progress={progress} />
+      <StatusTypography frame={frame} progressLabel={progressLabel} />
+      <FinishingPass frame={frame} />
     </AbsoluteFill>
   );
 };
