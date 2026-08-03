@@ -215,8 +215,10 @@ const ProjectedLabel: React.FC<{
   cameraU: number;
   percentage: number;
 }> = ({cameraU, percentage}) => {
-  const content = `DOWNLOADING FILES ${percentage}%`;
-  const startU = 0.2;
+  const content = `UPLOADING FILES ${percentage}%`;
+  // Keep the shorter upload phrase on the same optical center as the
+  // original download label.
+  const startU = 0.225;
   const stepU = 0.025;
 
   return (
@@ -345,16 +347,16 @@ const ProgressInterface: React.FC<{
 };
 
 /**
- * Lucide-inspired download glyph rebuilt in the projected world plane.
+ * Lucide-inspired upload glyph rebuilt in the projected world plane.
  * Keeping the geometry local avoids the pasted-on look of a screen-space icon
  * while the open tray stays legible at the most oblique camera checkpoint.
  */
-const DownloadGlyph: React.FC<{cameraU: number}> = ({cameraU}) => {
-  const stem = planeLine(cameraU, [1.048, 0.17], [1.048, 0.57]);
+const UploadGlyph: React.FC<{cameraU: number}> = ({cameraU}) => {
+  const stem = planeLine(cameraU, [1.048, 0.17], [1.048, 0.63]);
   const arrow = pointsToString([
-    project(1.024, 0.43, cameraU),
-    project(1.048, 0.63, cameraU),
-    project(1.072, 0.43, cameraU),
+    project(1.024, 0.39, cameraU),
+    project(1.048, 0.17, cameraU),
+    project(1.072, 0.39, cameraU),
   ]);
   const tray = pointsToString([
     project(1.018, 0.67, cameraU),
@@ -531,7 +533,7 @@ export const Motion: React.FC = () => {
           progress={progress}
           percentage={percentage}
         />
-        {frame >= COMPLETE_FRAME ? <DownloadGlyph cameraU={cameraU} /> : null}
+        {frame >= COMPLETE_FRAME ? <UploadGlyph cameraU={cameraU} /> : null}
       </svg>
 
       <ScreenLighting />
