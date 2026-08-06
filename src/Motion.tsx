@@ -4,457 +4,324 @@ import {
   Easing,
   interpolate,
   useCurrentFrame,
-  useVideoConfig,
 } from 'remotion';
-
-/**
- * Internet icon source: Lucide Static v1.28.0
- * Asset pages: https://lucide.dev/icons/file-text
- *              https://lucide.dev/icons/clipboard-list
- *              https://lucide.dev/icons/file-chart-column-increasing
- *              https://lucide.dev/icons/file-check
- * License: ISC — https://lucide.dev/license
- *
- * ISC License
- * Copyright (c) 2026 Lucide Icons and Contributors
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES.
- */
-
-type IconVariant = 'file' | 'clipboard' | 'chart' | 'approved';
 
 const clamp = {
   extrapolateLeft: 'clamp' as const,
   extrapolateRight: 'clamp' as const,
 };
 
-const progress = (
+const phase = (
   frame: number,
   start: number,
   end: number,
   easing: (value: number) => number = Easing.linear,
 ) => interpolate(frame, [start, end], [0, 1], {...clamp, easing});
 
-const drawStyle = (
-  amount: number,
-  opacity = 1,
-): React.CSSProperties => ({
-  strokeDasharray: 1,
-  strokeDashoffset: 1 - amount,
-  opacity,
-});
-
-const PremiumBackground: React.FC<{completion: number}> = ({completion}) => {
-  const glow = interpolate(completion, [0, 1], [0.2, 0.82], clamp);
-
+const CobaltTruck: React.FC<{
+  opacity: number;
+  wheelRotation: number;
+}> = ({opacity, wheelRotation}) => {
   return (
-    <AbsoluteFill
+    <svg
+      aria-label="Cobalt delivery truck"
+      viewBox="0 0 300 132"
+      width="300"
+      height="141"
       style={{
-        overflow: 'hidden',
-        background:
-          'radial-gradient(circle at 50% 50%, #10243a 0%, #091526 34%, #060b17 66%, #03050b 100%)',
+        display: 'block',
+        opacity,
+        overflow: 'visible',
       }}
     >
-      <AbsoluteFill
-        style={{
-          opacity: 0.2,
-          backgroundImage:
-            'linear-gradient(rgba(119,198,220,0.11) 1px, transparent 1px), linear-gradient(90deg, rgba(119,198,220,0.08) 1px, transparent 1px)',
-          backgroundSize: '96px 96px',
-          maskImage:
-            'radial-gradient(ellipse 68% 54% at 50% 50%, black 0%, transparent 76%)',
-        }}
-      />
+      <defs>
+        <linearGradient id="cargoBlue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#3478f6" />
+          <stop offset="1" stopColor="#1d5ed6" />
+        </linearGradient>
+        <linearGradient id="cabBlue" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#266ce6" />
+          <stop offset="1" stopColor="#1649aa" />
+        </linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#d8f5ff" />
+          <stop offset="1" stopColor="#69c9f1" />
+        </linearGradient>
+      </defs>
 
-      <div
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          width: 1280,
-          height: 640,
-          transform: 'translate(-50%, -50%)',
-          background:
-            'radial-gradient(ellipse at center, rgba(10,229,180,0.19) 0%, rgba(14,173,182,0.09) 33%, rgba(4,9,20,0) 72%)',
-          opacity: glow,
-          filter: 'blur(24px)',
-        }}
+      <path
+        d="M14 15 Q14 7 22 7 H191 Q200 7 200 16 V89 H14 Z"
+        fill="url(#cargoBlue)"
+        stroke="#123a88"
+        strokeWidth="5"
+        strokeLinejoin="round"
       />
+      <path
+        d="M200 45 H237 Q245 45 250 51 L277 82 Q282 88 282 99 V103 Q282 110 275 110 H200 Z"
+        fill="url(#cabBlue)"
+        stroke="#123a88"
+        strokeWidth="5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M228 53 H240 Q245 53 249 58 L267 80 H219 V61 Q219 53 228 53 Z"
+        fill="url(#glass)"
+        stroke="#123a88"
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M203 84 H277"
+        fill="none"
+        stroke="#0d367e"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16 91 H276 Q286 91 286 101 V108 H8 V98 Q8 91 16 91 Z"
+        fill="#123a88"
+      />
+      <path
+        d="M32 25 V80 M54 25 V80"
+        fill="none"
+        stroke="#6fa1ff"
+        strokeWidth="3"
+        opacity="0.42"
+      />
+      <rect x="150" y="29" width="32" height="8" rx="4" fill="#91d9ff" opacity="0.82" />
+      <rect x="252" y="92" width="25" height="7" rx="3.5" fill="#43dcff" />
+      <rect x="7" y="99" width="13" height="7" rx="3.5" fill="#ffb547" />
 
+      <g transform={`rotate(${wheelRotation} 65 108)`}>
+        <circle cx="65" cy="108" r="22" fill="#ffffff" />
+        <circle cx="65" cy="108" r="18" fill="#0b1f46" />
+        <circle cx="65" cy="108" r="9" fill="#ffffff" />
+        <path
+          d="M65 90 V126 M47 108 H83"
+          fill="none"
+          stroke="#7aa6d8"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <circle cx="65" cy="108" r="4" fill="#7aa6d8" />
+      </g>
+      <g transform={`rotate(${wheelRotation} 241 108)`}>
+        <circle cx="241" cy="108" r="22" fill="#ffffff" />
+        <circle cx="241" cy="108" r="18" fill="#0b1f46" />
+        <circle cx="241" cy="108" r="9" fill="#ffffff" />
+        <path
+          d="M241 90 V126 M223 108 H259"
+          fill="none"
+          stroke="#7aa6d8"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <circle cx="241" cy="108" r="4" fill="#7aa6d8" />
+      </g>
+    </svg>
+  );
+};
+
+const StatusLabel: React.FC<{reveal: number}> = ({reveal}) => {
+  const headX = reveal * 308;
+  const trailOpacity = interpolate(reveal, [0, 0.12, 0.82, 1], [0, 0.24, 0.16, 0], clamp);
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: 310,
+        height: 54,
+      }}
+    >
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          background:
-            'linear-gradient(118deg, transparent 0 25%, rgba(55,218,215,0.025) 25% 25.2%, transparent 25.2% 74%, rgba(106,240,186,0.02) 74% 74.2%, transparent 74.2%)',
+          overflow: 'hidden',
+          clipPath: `inset(0 ${(1 - reveal) * 100}% 0 0)`,
         }}
-      />
-
-      <AbsoluteFill
-        style={{
-          boxShadow:
-            'inset 0 0 220px 80px rgba(0,0,0,0.7), inset 0 0 48px rgba(0,0,0,0.42)',
-        }}
-      />
-    </AbsoluteFill>
-  );
-};
-
-const LucidePrimitive: React.FC<{
-  variant: IconVariant;
-  outline: number;
-  detail: number;
-}> = ({variant, outline, detail}) => {
-  const baseProps = {
-    pathLength: 1,
-    style: drawStyle(outline),
-  };
-  const detailProps = {
-    pathLength: 1,
-    style: drawStyle(detail),
-  };
-
-  if (variant === 'clipboard') {
-    return (
-      <>
-        <rect
-          width="8"
-          height="4"
-          x="8"
-          y="2"
-          rx="1"
-          ry="1"
-          {...baseProps}
-        />
-        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" {...baseProps} />
-        <path d="M12 11h4" {...detailProps} />
-        <path d="M12 16h4" {...detailProps} />
-        <path d="M8 11h.01" {...detailProps} />
-        <path d="M8 16h.01" {...detailProps} />
-      </>
-    );
-  }
-
-  if (variant === 'chart') {
-    return (
-      <>
-        <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" {...baseProps} />
-        <path d="M14 2v5a1 1 0 0 0 1 1h5" {...baseProps} />
-        <path d="M8 18v-2" {...detailProps} />
-        <path d="M12 18v-4" {...detailProps} />
-        <path d="M16 18v-6" {...detailProps} />
-      </>
-    );
-  }
-
-  if (variant === 'approved') {
-    return (
-      <>
-        <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" {...baseProps} />
-        <path d="M14 2v5a1 1 0 0 0 1 1h5" {...baseProps} />
-        <path d="m9 15 2 2 4-4" {...detailProps} />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" {...baseProps} />
-      <path d="M14 2v5a1 1 0 0 0 1 1h5" {...baseProps} />
-      <path d="M10 9H8" {...detailProps} />
-      <path d="M16 13H8" {...detailProps} />
-      <path d="M16 17H8" {...detailProps} />
-    </>
-  );
-};
-
-const ApprovalBadge: React.FC<{
-  frame: number;
-  start: number;
-}> = ({frame, start}) => {
-  const scale = progress(
-    frame,
-    start,
-    start + 18,
-    Easing.bezier(0.18, 1.22, 0.34, 1),
-  );
-  const check = progress(
-    frame,
-    start + 12,
-    start + 31,
-    Easing.inOut(Easing.cubic),
-  );
-  const halo = progress(frame, start, start + 26, Easing.out(Easing.quad));
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: '50%',
-        top: -104,
-        width: 82,
-        height: 82,
-        transform: `translateX(-50%) scale(${scale})`,
-        transformOrigin: '50% 50%',
-        borderRadius: '50%',
-        background:
-          'linear-gradient(145deg, #52f1a4 0%, #13db86 45%, #05a96b 100%)',
-        boxShadow: `0 0 ${14 + halo * 26}px rgba(34,238,150,${0.22 + halo * 0.36}), inset 0 1px 1px rgba(255,255,255,0.45)`,
-        opacity: scale,
-      }}
-    >
-      <svg width="82" height="82" viewBox="0 0 68 68">
-        <path
-          d="M20 35 L29 44 L49 23"
-          fill="none"
-          stroke="#f4fff9"
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pathLength={1}
-          style={drawStyle(check)}
-        />
-      </svg>
-    </div>
-  );
-};
-
-const DocumentNode: React.FC<{
-  frame: number;
-  x: number;
-  start: number;
-  badgeStart: number;
-  variant: IconVariant;
-}> = ({frame, x, start, badgeStart, variant}) => {
-  const entrance = progress(
-    frame,
-    start,
-    start + 34,
-    Easing.out(Easing.cubic),
-  );
-  const outline = progress(
-    frame,
-    start + 3,
-    start + 58,
-    Easing.inOut(Easing.cubic),
-  );
-  const detail = progress(
-    frame,
-    start + 38,
-    start + 84,
-    Easing.inOut(Easing.cubic),
-  );
-  const stack = progress(frame, start + 10, start + 48, Easing.out(Easing.cubic));
-  const scale = interpolate(entrance, [0, 1], [0.7, 1], clamp);
-  const lift = interpolate(entrance, [0, 1], [18, 0], clamp);
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: '50%',
-        top: '50%',
-        width: 232,
-        height: 232,
-        marginLeft: -116,
-        marginTop: -116,
-        transform: `translate(${x}px, ${lift}px) scale(${scale})`,
-        opacity: entrance,
-        filter: 'drop-shadow(0 0 15px rgba(55,213,229,0.18))',
-      }}
-    >
-      <ApprovalBadge frame={frame} start={badgeStart} />
-
-      <svg
-        width="232"
-        height="232"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#69d5e8"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{overflow: 'visible'}}
       >
-        <path
-          d="M4.8 4.5H3.7a1.7 1.7 0 0 0-1.7 1.7v13.1A1.7 1.7 0 0 0 3.7 21h11.7"
-          pathLength={1}
-          style={drawStyle(stack, 0.52)}
-          transform="translate(-0.5 1.1)"
-        />
-        <g style={{filter: 'drop-shadow(0 0 1.2px rgba(78,228,240,0.72))'}}>
-          <LucidePrimitive variant={variant} outline={outline} detail={detail} />
-        </g>
-      </svg>
-    </div>
-  );
-};
-
-const CompletionCore: React.FC<{frame: number}> = ({frame}) => {
-  const ring = progress(frame, 102, 189, Easing.inOut(Easing.cubic));
-  const check = progress(frame, 171, 198, Easing.out(Easing.cubic));
-  const centerGlow = progress(frame, 154, 224, Easing.out(Easing.quad));
-  const ringLength = 0.82 * ring;
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: '50%',
-        top: '50%',
-        width: 396,
-        height: 396,
-        transform: 'translate(-50%, -50%)',
-      }}
-    >
+        <div
+          style={{
+          position: 'absolute',
+          left: '50%',
+          top: 0,
+          width: 500,
+          transform: 'translateX(-50%) scaleX(0.62)',
+          transformOrigin: '50% 50%',
+          whiteSpace: 'nowrap',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 50,
+          fontWeight: 800,
+          lineHeight: '54px',
+          letterSpacing: 1,
+          color: '#0c1525',
+          textAlign: 'center',
+        }}
+      >
+        ORDER SHIPPED
+        </div>
+      </div>
       <div
         style={{
           position: 'absolute',
-          inset: -110,
-          opacity: centerGlow,
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(91,255,151,0.44) 0%, rgba(28,220,150,0.19) 27%, rgba(21,191,177,0.07) 50%, transparent 72%)',
-          filter: 'blur(18px)',
+          left: Math.max(0, headX - 62),
+          top: 15,
+          width: 78,
+          height: 28,
+          opacity: trailOpacity,
+          filter: 'blur(9px)',
+          background: 'linear-gradient(90deg, transparent, rgba(12,21,37,0.54), transparent)',
         }}
       />
+    </div>
+  );
+};
 
+const ProgressCapsule: React.FC<{
+  outline: number;
+  fill: number;
+}> = ({outline, fill}) => {
+  const percent = Math.round(fill * 100);
+
+  return (
+    <>
       <svg
-        width="396"
-        height="396"
-        viewBox="0 0 360 360"
-        style={{overflow: 'visible'}}
+        width="700"
+        height="40"
+        viewBox="0 0 700 40"
+        style={{display: 'block', overflow: 'visible'}}
       >
         <defs>
-          <linearGradient id="ringPremium" x1="40" y1="290" x2="306" y2="55">
-            <stop offset="0" stopColor="#08b778" />
-            <stop offset="0.52" stopColor="#21ee8d" />
-            <stop offset="1" stopColor="#76ffb5" />
-          </linearGradient>
-          <linearGradient id="checkPremium" x1="95" y1="228" x2="280" y2="78">
-            <stop offset="0" stopColor="#16d9ce" />
-            <stop offset="0.55" stopColor="#42ece1" />
-            <stop offset="1" stopColor="#87fff2" />
-          </linearGradient>
-          <filter id="ringGlow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="checkGlow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="10" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
+          <clipPath id="progressInnerClip">
+            <rect x="6" y="6" width="688" height="28" rx="14" />
+          </clipPath>
         </defs>
-
-        <circle
-          cx="180"
-          cy="180"
-          r="128"
+        <rect
+          x="2"
+          y="2"
+          width="696"
+          height="36"
+          rx="18"
           fill="none"
-          stroke="rgba(87,224,209,0.08)"
-          strokeWidth="29"
-          opacity={ring * 0.5}
-        />
-        <circle
-          cx="180"
-          cy="180"
-          r="128"
-          fill="none"
-          stroke="url(#ringPremium)"
-          strokeWidth="29"
-          strokeLinecap="round"
+          stroke="#101827"
+          strokeWidth="2.8"
           pathLength={1}
-          strokeDasharray={`${ringLength} 1`}
-          transform="rotate(-12.5 180 180)"
-          filter="url(#ringGlow)"
-          opacity={progress(frame, 102, 108, Easing.out(Easing.quad))}
-        />
-
-        <path
-          d="M92 179 L151 232 L281 82"
-          fill="none"
-          stroke="url(#checkPremium)"
-          strokeWidth="32"
+          strokeDasharray={1}
+          strokeDashoffset={1 - outline}
           strokeLinecap="round"
           strokeLinejoin="round"
-          pathLength={1}
-          filter="url(#checkGlow)"
-          style={drawStyle(check)}
         />
-        <path
-          d="M92 179 L151 232 L281 82"
-          fill="none"
-          stroke="rgba(255,255,255,0.34)"
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pathLength={1}
-          style={drawStyle(check, check * 0.7)}
-          transform="translate(-1 -2)"
-        />
+        <g clipPath="url(#progressInnerClip)">
+          <rect
+            x="6"
+            y="6"
+            width={688 * fill}
+            height="28"
+            rx="14"
+            fill="#101827"
+          />
+        </g>
       </svg>
-    </div>
+      <div
+        style={{
+          position: 'absolute',
+          top: 60,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          opacity: outline >= 0.99 ? 1 : 0,
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: 45,
+          fontWeight: 800,
+          lineHeight: '50px',
+          letterSpacing: -0.3,
+          color: '#0c1525',
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {percent}%
+      </div>
+    </>
   );
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {width, height} = useVideoConfig();
-  const completion = progress(frame, 154, 224, Easing.out(Easing.quad));
-  const sceneScale = Math.min(width / 1920, height / 1080);
+
+  const truckEntry = phase(
+    frame,
+    0,
+    48,
+    Easing.out(Easing.cubic),
+  );
+  const truckExit = phase(
+    frame,
+    810,
+    870,
+    Easing.inOut(Easing.cubic),
+  );
+  const truckX = interpolate(truckEntry, [0, 1], [-1160, 0]) +
+    interpolate(truckExit, [0, 1], [0, 1250]);
+  const truckDistance = truckEntry * 1160 + truckExit * 1250;
+  const wheelRotation = (truckDistance / (Math.PI * 36)) * 360;
+  const labelReveal = phase(
+    frame,
+    45,
+    72,
+    Easing.inOut(Easing.cubic),
+  );
+  const outline = phase(
+    frame,
+    78,
+    117,
+    Easing.inOut(Easing.cubic),
+  );
+  const fill = phase(frame, 117, 810, Easing.linear);
 
   return (
-    <AbsoluteFill style={{backgroundColor: '#03050b'}}>
-      <PremiumBackground completion={completion} />
+    <AbsoluteFill
+      style={{
+        backgroundColor: '#ffffff',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: 810,
+          top: 334,
+          width: 300,
+          height: 141,
+          transform: `translateX(${truckX}px)`,
+        }}
+      >
+        <CobaltTruck opacity={1} wheelRotation={wheelRotation} />
+      </div>
 
       <div
         style={{
           position: 'absolute',
-          left: '50%',
-          top: '50%',
-          width: 1920,
-          height: 1080,
-          transform: `translate(-50%, -50%) scale(${sceneScale})`,
-          transformOrigin: '50% 50%',
+          left: 805,
+          top: 466,
+          width: 310,
+          height: 54,
         }}
       >
-        <DocumentNode
-          frame={frame}
-          x={-620}
-          start={84}
-          badgeStart={246}
-          variant="file"
-        />
-        <DocumentNode
-          frame={frame}
-          x={-350}
-          start={12}
-          badgeStart={162}
-          variant="clipboard"
-        />
-        <DocumentNode
-          frame={frame}
-          x={350}
-          start={16}
-          badgeStart={168}
-          variant="chart"
-        />
-        <DocumentNode
-          frame={frame}
-          x={620}
-          start={92}
-          badgeStart={252}
-          variant="approved"
-        />
-        <CompletionCore frame={frame} />
+        <StatusLabel reveal={labelReveal} />
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 610,
+          top: 629,
+          width: 700,
+          height: 100,
+        }}
+      >
+        <ProgressCapsule outline={outline} fill={fill} />
       </div>
     </AbsoluteFill>
   );
