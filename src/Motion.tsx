@@ -1,947 +1,640 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig} from 'remotion';
+import React, {useEffect, useState} from 'react';
+import {
+  AbsoluteFill,
+  continueRender,
+  delayRender,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 
-/**
- * MOTION 59 — "AMERICA · 1776"
- * ---------------------------------------------------------------------------
- * A Fourth-of-July / Independence Day title plate: the Declaration of
- * Independence drifting up a parchment in perspective, the Stars and Stripes
- * blended over it, a gold Caslon lockup in the lower third.
- *
- * WHAT WAS MEASURED, AND WHAT WAS INFERRED, FROM THE REFERENCE CLIP
- * ----------------------------------------------------------------
- * The reference is live-action stock footage (700x394, 29.97 fps, 14.014 s,
- * one continuous take, no graphics). Everything below marked [obs] came off
- * the frames; everything marked [int] is an inference stated as such.
- *
- * [obs] Composite: the flag is blended, not opaque — parchment text stays
- *       legible straight through the red stripes (frame t=6.40 s).
- * [obs] Flag's lower boundary is a wavy diagonal: y=270 at x=20 and y=87 at
- *       x=680 (t=7.01 s) -> slope -0.277, i.e. -15.5 deg. Scaled to 1920 that
- *       edge runs (55, 740) -> (1866, 238), which is FROT / HX / HY below.
- * [obs] Scroll rate, two independent methods that agree:
- *         - incremental phase correlation, 1-frame step, summed over the clip:
- *           dy = -414.8 px by t=12.01 s  ->  -31.5 px/s at 700 px wide;
- *         - counting text lines crossing a fixed screen row: FFT peak
- *           0.77 Hz at row 110, where the line pitch autocorrelates to 39 px
- *           ->  0.77 x 39 = 30.0 px/s.
- *       Scaled by 1920/700 = 2.743 that is 82 px/s, which is SCROLL below.
- * [obs] Line pitch 39 px at rows 40-110; the lower rows are too defocused to
- *       autocorrelate. 39 x 2.743 = 107 px, the sharp-band pitch here.
- * [obs] Line-crossing rate is 0.77 Hz at row 110 but 1.23 Hz at rows 150-190 —
- *       the pattern moves faster lower in the frame.
- * [obs] Focus, variance of Laplacian on a 4x4 grid: 37..179 (top quarter),
- *       168..367 (second), 137..180 (third), 2..6 (bottom quarter). Sharpest
- *       band = 25..50% of frame height; the bottom quarter is nearly gone.
- * [obs] Ink/paper contrast falls with height: 92 in the upper text band, 55 in
- *       the middle, 37 in the lower.
- * [obs] Palette: parchment #c3a07c..#d9b899, deep #a98c67, ink cluster
- *       #825437, red stripe #8e3326, white stripe #acabb2 (it reads as warm
- *       grey because the paper shows through), corners #7a583e (bottom-left)
- *       and #35261f (top-right).
- * [obs] The parchment is set with the period's long s — 'diſſolve',
- *       'relinquiſh', 'Legiſlative', 'Invaſions', 'Caſes', 'muſt' are all
- *       legible between t=3.5 s and t=14.0 s.
- * [int] Faster motion low in the frame + the focus falloff + the contrast
- *       falloff all point the same way: the page is a plane in perspective
- *       receding toward the top of frame, not a flat scroll. That is the
- *       projection built below.
- * [int] The reference's readable text advances through the Declaration far
- *       faster than 30 px/s can carry it (heading at t=0, first paragraph at
- *       t=3.5, grievance five at t=7.0, the conclusion at t=14.0), and
- *       long-range template tracking loses lock inside 0.3 s (conf 0.98 ->
- *       0.44). Both are signatures of cross-dissolving document layers at
- *       different scales rather than one rigid page. That muddle is NOT
- *       reproduced: this plate uses one coherent page at the measured rate,
- *       plus a single much fainter layer behind it for depth.
- * [int] Horizontal drift could not be established — near-horizontal parallel
- *       text lines make phase correlation ill-conditioned, and two regions
- *       disagreed in sign (+6.96 vs -10.46 px/s). Treated as zero.
- *
- * SOURCES
- * -------
- * Body text  Declaration of Independence, 1776, public domain. Fetched from
- *            raw.githubusercontent.com/treyhunner/treyhunner.github.com/
- *            master/declaration-of-independence.txt, then re-set in long-s
- *            orthography and pre-wrapped against the font's own metrics.
- * Flag       50-star / 13-stripe construction, from the artwork set already
- *            in this project.
- * Fonts      EB Garamond (body; it is the one of the three that carries
- *            U+017F, the long s) and Libre Caslon Display (lockup) — both
- *            SIL Open Font License 1.1, taken from google/fonts ofl/.
- *            Subset to the 63 characters actually used and embedded, so the
- *            file renders with no network and no external asset.
- */
+/* ============================================================================
+   LIVE CODE WALL — typing editor over a scrolling perspective code plane
+   1920x1080 · 60 fps · 15 s (900 frames) · perfect loop
+   ========================================================================== */
 
-const FONT_BODY =
-	'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' +
-	't67uiX9T/+An0BAAA=';
+/* ---------------------------------------------------------------- fonts -- */
 
-const FONT_DISP =
-	'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';
+const F_MONO_400 = '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';
+const F_MONO_700 = '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';
+const F_SANS_400 = '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';
+const F_SANS_700 = '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';
 
-const US_ART = "<path fill=\"#b22234\" d=\"M0 0h7410v3900H0z\"/><path stroke=\"#fff\" stroke-width=\"300\" d=\"M0 450h7410m0 600H0m0 600h7410m0 600H0m0 600h7410m0 600H0\"/><path fill=\"#3c3b6e\" d=\"M0 0h2964v2100H0z\"/><g fill=\"#fff\"><g id=\"us_svg_d\"><g id=\"us_svg_c\"><g id=\"us_svg_e\"><g id=\"us_svg_b\"><path id=\"us_svg_a\" d=\"m247 90 70.53 217.08-184.66-134.16h228.26L176.47 307.08z\"/><use xlink:href=\"#us_svg_a\" y=\"420\"/><use xlink:href=\"#us_svg_a\" y=\"840\"/><use xlink:href=\"#us_svg_a\" y=\"1260\"/></g><use xlink:href=\"#us_svg_a\" y=\"1680\"/></g><use xlink:href=\"#us_svg_b\" x=\"247\" y=\"210\"/></g><use xlink:href=\"#us_svg_c\" x=\"494\"/></g><use xlink:href=\"#us_svg_d\" x=\"988\"/><use xlink:href=\"#us_svg_c\" x=\"1976\"/><use xlink:href=\"#us_svg_e\" x=\"2470\"/></g>";
-const US_VB = '0 0 7410 3900';
+const FONT_CSS = `
+@font-face{font-family:'MxCode';font-style:normal;font-weight:400;font-display:block;
+src:url(data:font/woff2;base64,${F_MONO_400}) format('woff2');}
+@font-face{font-family:'MxCode';font-style:normal;font-weight:700;font-display:block;
+src:url(data:font/woff2;base64,${F_MONO_700}) format('woff2');}
+@font-face{font-family:'MxSans';font-style:normal;font-weight:400;font-display:block;
+src:url(data:font/woff2;base64,${F_SANS_400}) format('woff2');}
+@font-face{font-family:'MxSans';font-style:normal;font-weight:700;font-display:block;
+src:url(data:font/woff2;base64,${F_SANS_700}) format('woff2');}
+`;
 
-/* The Declaration of Independence, 1776 (public domain), re-set in the
-   period's long-s orthography, then pre-wrapped and pre-justified against
-   EB Garamond's own metrics: each entry is 'text|extraWordSpacing'. */
-const DOC_LINES: string[] = ["The unanimous Declaration of the thirteen united States of America,|3.3", "WHEN in the Courſe of human Events, it becomes neceſſary for one|3.44", "People to diſſolve the Political Bands which have connected them with|0.09", "another, and to aſſume among the Powers of the Earth, the ſeparate|7.13", "and equal Station to which the Laws of Nature and of Nature's God|4.61", "entitle them, a decent Reſpect to the Opinions of Mankind requires|6.64", "that they ſhould declare the cauſes which impel them to the|18.6", "Separation. WE hold theſe Truths to be ſelf-evident, that all Men are|4.88", "created equal, that they are endowed by their Creator with certain|11.17", "unalienable Rights, that among theſe are Life, Liberty, and the Purſuit|1.23", "of Happineſs — That to ſecure theſe Rights, Governments are|18.6", "inſtituted among Men, deriving their juſt Powers from the Conſent of|1.47", "the Governed, that whenever any form of Government becomes|18.43", "deſtructive of theſe Ends, it is the Right of the People to alter or to|7.55", "aboliſh it, and to inſtitute new Government, laying its Foundation on|2.72", "ſuch Principles, and organizing its Powers in ſuch form, as to them|8.85", "ſhall ſeem moſt likely to effect their Safety and Happineſs. Prudence,|5.22", "indeed, will dictate that Governments long eſtabliſhed ſhould not be|6.1", "changed for light and tranſient Cauſes; and accordingly all Experience|2.56", "hath ſhewn, that Mankind are more diſpoſed to ſuffer, while Evils are|3.42", "ſufferable, than to right themſelves by aboliſhing the forms to which|5.77", "they are accuſtomed. But when a long Train of Abuſes and|18.6", "Uſurpations, purſuing invariably the ſame Object, evinces a Deſign to|3.24", "reduce them under abſolute Deſpotiſm, it is their Right, it is their|11.54", "Duty, to throw off ſuch Government, and to provide new Guards for|2.41", "their future Security. Such has been the patient Sufferance of theſe|9.64", "Colonies; and ſuch is now the Neceſſity which conſtrains them to alter|0.56", "their former Syſtems of Government. The Hiſtory of the preſent King|1.63", "of Great-Britain is a Hiſtory of repeated Injuries and Uſurpations, all|5.04", "having in direct Object the Eſtabliſhment of an abſolute Tyranny over|1.33", "theſe States. To prove this, let Facts be ſubmitted to a candid World.|4.79", "He has refuſed his Aſſent to Laws, the moſt wholeſome and neceſſary|3.92", "for the public Good. He has forbidden his Governors to paſs Laws of|2.9", "immediate and preſſing Importance, unleſs ſuſpended in their|18.6", "Operation till his Aſſent ſhould be obtained; and when ſo ſuſpended,|4.5", "he has utterly neglected to attend to them. He has refuſed to paſs other|0.27", "Laws for the Accommodation of large Diſtricts of People, unleſs thoſe|1.22", "People would relinquiſh the Right of Repreſentation in the|18.6", "Legiſlature, a Right ineſtimable to them, and formidable to Tyrants|8.23", "only. He has called together Legiſlative Bodies at Places unuſual,|17.13", "uncomfortable, and diſtant from the Depoſitory of their public|18.6", "Records, for the ſole Purpoſe of fatiguing them into Compliance with|1.48", "his Meaſures. He has diſſolved Repreſentative Houſes repeatedly, for|6.43", "oppoſing with manly Firmneſs his Invaſions on the Rights of the|14.29", "People. He has refuſed for a long Time, after ſuch Diſſolutions, to|10.41", "cauſe others to be elected; whereby the Legiſlative Powers, incapable|6.63", "of Annihilation, have returned to the People at large for their exerciſe;|1.96", "the State remaining in the mean time expoſed to all the Dangers of|8.8", "Invaſion from without, and Convulſions within. He has endeavoured|2.83", "to prevent the Population of theſe States; for that Purpoſe obſtructing|1.62", "the Laws for Naturalization of foreigners; refuſing to paſs others to|8.97", "encourage their Migrations hither, and raiſing the Conditions of new|4.17", "Appropriations of Lands. He has obſtructed the Adminiſtration of|10.96", "Juſtice, by refuſing his aſſent to Laws for eſtabliſhing Judiciary Powers.|0.55", "He has made Judges dependent on his Will alone, for the Tenure of|6.33", "their Offices, and the Amount and Payment of their Salaries. He has|5.02", "erected a Multitude of new Offices, and ſent hither Swarms of|18.6", "Officers to harraſs our People, and eat out their Subſtance. He has|10.07", "kept among us, in Times of Peace, Standing Armies, without the|14.14", "conſent of our Legiſlatures. He has affected to render the Military|11.81", "independent of and ſuperior to the Civil Power. He has combined|10.45", "with others to ſubject us to a Juriſdiction foreign to our Conſtitution,|2.11", "and unacknowledged by our Laws; giving his Aſſent to their Acts of|6.18", "pretended Legiſlation: For quartering large Bodies of Armed Troops|6.6", "among us: For protecting them, by a mock Trial, from Puniſhment|8.12", "for any Murders which they ſhould commit on the Inhabitants of|11.7", "theſe States: For cutting off our Trade with all Parts of the World: For|1.35", "impoſing Taxes on us without our Conſent: For depriving us, in many|0.46", "Caſes, of the Benefits of Trial by Jury: For tranſporting us beyond Seas|0.24", "to be tried for pre-tended Offences: For aboliſhing the free Syſtem of|4.28", "Engliſh Laws in a neighbouring Province, eſtabliſhing therein an|18.6", "arbitrary Government and enlarging its Boundaries, ſo as to render it|4.94", "at once an Example and fit Inſtrument for introducing the ſame|16.2", "abſolute Rule into theſe Colonies: For taking away our Charters,|15.71", "aboliſhing our moſt valuable Laws, and altering fundamentally the|12.25", "forms of our Governments: For ſuſpending our own Legiſlatures, and|2.43", "declaring themſelves inveſted with Power to legiſlate for us in all Caſes|1.74", "whatſoever. He has abdicated Government here, by declaring us out|6.88", "of his Protection and waging War againſt us. He has plundered our|7.9", "Seas, ravaged our Coaſts, burnt our Towns, and deſtroyed the Lives of|1.09", "our People. He is, at this Time, tranſporting large Armies of foreign|6.52", "Mercenaries to compleat the Works of Death, Deſolation, and|18.6", "Tyranny already begun with circumſtances of Cruelty and Perfidy,|11.22", "ſcarcely paralleled in the moſt barbarous Ages, and totally unworthy|6.76", "of the Head of a civilized Nation. He has conſtrained our fellow|14.44", "Citizens taken Captive on the high Seas to bear Arms againſt their|10.4", "Country, to become the Executioners of their friends and Brethren, or|0.68", "to fall themſelves by their Hands. He has excited domeſtic|18.6", "Inſurrections amongſt us, and has endeavoured to bring on the|18.6", "Inhabitants of our Frontiers, the mercileſs Indian Savages, whoſe|18.0", "known Rule of Warfare, is an undiſtinguiſhed Deſtruction, of all|15.48", "Ages, Sexes and Conditions. In every ſtage of theſe Oppreſſions we|9.93", "have Petitioned for Redreſs in the moſt humble Terms: Our repeated|3.57", "Petitions have been anſwered only by repeated Injury. A Prince, whoſe|0.42", "Character is thus marked by every act which may define a Tyrant, is|5.93", "unfit to be the Ruler of a free People. Nor have we been wanting in|5.66", "Attentions to our Britiſh Brethren. We have warned them from Time|2.78", "to Time of Attempts by their Legiſlature to extend an unwarrantable|4.15", "juriſdiction over us. We have reminded them of the Circumſtances of|3.19", "our Emigration and Settlement here. We have appealed to their native|2.08", "juſtice and Magnanimity, and we have conjured them by the Ties of|5.96", "our common Kindred to diſavow theſe Uſurpations, which, would|11.44", "inevitably interrupt our Connections and Correſpondence. They too|4.7", "have been deaf to the Voice of Juſtice and of Conſanguinity. We muſt,|0.61", "therefore, acquieſce in the Neceſſity, which denounces our Separation,|0.47", "and hold them, as we hold the reſt of Mankind, Enemies in War, in|6.8", "Peace, Friends. We, therefore, the Repreſentatives of the UNITED|11.12", "STATES OF AMERICA, in General Congreſs, Aſſembled, appealing|2.7", "to the Supreme Judge of the World for the Rectitude of our|18.6", "Intentions, do, in the Name, and by Authority of the good People of|3.64", "theſe Colonies, ſolemnly Publiſh and Declare, That theſe United|18.27", "Colonies are, and of Right ought to be, FREE AND|18.6", "INDEPENDENT STATES, that they are abſolved from all|18.6", "Allegiance to the Britiſh Crown, and that all political Connection|13.08", "between them and the State of Great-Britain, is and ought to be totally|0.29", "diſſolved; and that as FREE AND INDEPENDENT STATES, they|5.93", "have full Power to levy War, conclude Peace, contract Alliances,|17.2", "eſtabliſh Commerce, and to do all other Acts and Things which|16.74", "INDEPENDENT STATES may of right do. And for the ſupport of|4.55", "this Declaration, with a firm Reliance on the Protection of divine|12.5", "Providence, we mutually pledge to each other our Lives, our fortunes,|1.81", "and our ſacred Honor.|0.0"];
-
-/* ------------------------------------------------------------------ setup */
-
-const TAU = Math.PI * 2;
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const smooth = (x: number) => x * x * (3 - 2 * x);
-const seg = (f: number, a: number, b: number) => smooth(clamp((f - a) / (b - a), 0, 1));
-const outCubic = (x: number) => 1 - Math.pow(1 - x, 3);
-const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-const hash = (n: number) => {
-	const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-	return s - Math.floor(s);
+let fontsPromise: Promise<unknown> | null = null;
+const ensureFonts = () => {
+  if (fontsPromise) return fontsPromise;
+  const st = document.createElement('style');
+  st.textContent = FONT_CSS;
+  document.head.appendChild(st);
+  fontsPromise = Promise.all([
+    document.fonts.load("400 24px 'MxCode'"),
+    document.fonts.load("700 24px 'MxCode'"),
+    document.fonts.load("400 24px 'MxSans'"),
+    document.fonts.load("700 24px 'MxSans'"),
+  ]).catch(() => null);
+  return fontsPromise;
 };
 
-const FACE = `
-@font-face{font-family:'DocSerif';src:url(data:font/woff2;base64,${FONT_BODY}) format('woff2');font-weight:400;font-style:normal;font-display:block}
-@font-face{font-family:'PlateDisplay';src:url(data:font/woff2;base64,${FONT_DISP}) format('woff2');font-weight:400;font-style:normal;font-display:block}`;
+const useEmbeddedFonts = () => {
+  const [handle] = useState(() => delayRender('fonts'));
+  useEffect(() => {
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        continueRender(handle);
+      }
+    };
+    const to = setTimeout(finish, 2800);
+    ensureFonts().then(finish, finish);
+    return () => clearTimeout(to);
+  }, [handle]);
+};
 
-if (typeof document !== 'undefined' && !document.getElementById('m59-faces')) {
-	const st = document.createElement('style');
-	st.id = 'm59-faces';
-	st.textContent = FACE;
-	document.head.appendChild(st);
+const CODE = "'MxCode', monospace";
+const SANS = "'MxSans', sans-serif";
+
+/* ----------------------------------------------------------------- math -- */
+
+const W = 1920;
+const H = 1080;
+const DUR = 15;
+
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const hash1 = (n: number) => {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+};
+
+/* --------------------------------------------------------------- palette -- */
+
+const K = {
+  bg0: '#05070F',
+  bg1: '#0B1226',
+  panel: 'rgba(13,20,42,0.62)',
+  panelBd: 'rgba(120,160,225,0.16)',
+  kw: '#C792EA',
+  str: '#C3E88D',
+  num: '#F78C6C',
+  fn: '#82AAFF',
+  type: '#FFCB6B',
+  com: '#4C5C80',
+  plain: '#B9C6E4',
+  punc: '#7C8FB6',
+  caret: '#7AE2FF',
+  dim: '#5A6C90',
+  txt: '#E9F0FA',
+  mint: '#3DDC97',
+};
+
+/* -------------------------------------------------------------- tokenizer */
+
+type Tok = {t: string; c: string};
+
+const KEYWORDS = new Set([
+  'const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'import',
+  'export', 'from', 'async', 'await', 'class', 'new', 'type', 'interface', 'extends',
+  'public', 'private', 'static', 'void', 'null', 'true', 'false', 'this', 'of', 'in',
+  'try', 'catch', 'throw', 'def', 'self', 'struct', 'impl', 'fn', 'pub', 'match',
+  'yield', 'with', 'as', 'not', 'and', 'or', 'uniform', 'vec3', 'vec4', 'float',
+]);
+
+const tokenize = (line: string): Tok[] => {
+  const out: Tok[] = [];
+  const ci = line.indexOf('//');
+  const hi = line.indexOf('# ');
+  let body = line;
+  let tail: Tok | null = null;
+  if (ci >= 0) {
+    body = line.slice(0, ci);
+    tail = {t: line.slice(ci), c: K.com};
+  } else if (hi >= 0 && line.trim().startsWith('#')) {
+    body = '';
+    tail = {t: line, c: K.com};
+  }
+  const re = /(["'`][^"'`]*["'`]?)|([A-Za-z_$][A-Za-z0-9_$]*)|(\d+\.?\d*)|(\s+)|([^\sA-Za-z0-9_$])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const s = m[0];
+    let c = K.plain;
+    if (m[1]) c = K.str;
+    else if (m[2]) {
+      if (KEYWORDS.has(s)) c = K.kw;
+      else if (/^[A-Z]/.test(s)) c = K.type;
+      else if (body[re.lastIndex] === '(') c = K.fn;
+      else c = K.plain;
+    } else if (m[3]) c = K.num;
+    else if (m[4]) c = K.plain;
+    else c = K.punc;
+    out.push({t: s, c});
+  }
+  if (tail) out.push(tail);
+  return out;
+};
+
+/** emit tokens limited to `n` visible characters */
+const sliceToks = (toks: Tok[], n: number) => {
+  if (n >= 1e6) return toks;
+  const out: Tok[] = [];
+  let left = n;
+  for (const tk of toks) {
+    if (left <= 0) break;
+    if (tk.t.length <= left) {
+      out.push(tk);
+      left -= tk.t.length;
+    } else {
+      out.push({t: tk.t.slice(0, left), c: tk.c});
+      left = 0;
+    }
+  }
+  return out;
+};
+
+/* ------------------------------------------------------------- the code -- */
+
+const HERO_SRC = `export const buildFrame = async (ctx: Context) => {
+  const { device, queue, target } = ctx
+  const pass = device.beginRenderPass({
+    label: 'main-forward',
+    colorAttachments: [target.view],
+    depthStencil: target.depth,
+  })
+  // cull anything outside the view frustum
+  const visible = scene.cull(ctx.camera.frustum)
+  visible.sort((a, b) => a.depth - b.depth)
+  for (const mesh of visible) {
+    const mat = registry.material(mesh.materialId)
+    if (!mat.ready) await mat.compile(device)
+    pass.setPipeline(mat.pipeline)
+    pass.setBindGroup(0, mesh.uniforms)
+    pass.drawIndexed(mesh.indexCount, 1, 0, 0)
+  }
+  pass.end()
+  queue.submit([device.finish()])
+  // resolve post stack: bloom -> tonemap -> grain
+  const hdr = await post.bloom(target.color, 0.62)
+  const ldr = post.tonemap(hdr, { exposure: 1.18 })
+  post.grain(ldr, { amount: 0.04, seed: ctx.frame })
+  metrics.record('gpu.ms', ctx.timer.elapsed())
+  metrics.record('draw.calls', visible.length)
+  return { ok: true, frame: ctx.frame + 1 }
 }
 
-/* Both faces are inlined above, so the only thing that can still be pending is
-   the decode. Release synchronously the moment the check passes; keep the
-   promise and a hard timer as the two fallbacks. */
-const usePlateFonts = () => {
-	const [handle] = useState(() => delayRender('m59 fonts'));
-	const done = useRef(false);
-	useEffect(() => {
-		const fin = () => {
-			if (!done.current) {
-				done.current = true;
-				continueRender(handle);
-			}
-		};
-		const d: any = typeof document === 'undefined' ? null : document;
-		const ready =
-			d && d.fonts && d.fonts.check
-				? d.fonts.check("400 40px 'DocSerif'") && d.fonts.check("400 40px 'PlateDisplay'")
-				: false;
-		if (ready) {
-			fin();
-			return;
-		}
-		if (d && d.fonts && d.fonts.load) {
-			Promise.all([d.fonts.load("400 40px 'DocSerif'"), d.fonts.load("400 40px 'PlateDisplay'")])
-				.then(fin)
-				.catch(fin);
-		} else {
-			fin();
-		}
-		const id = setTimeout(fin, 700);
-		return () => {
-			clearTimeout(id);
-			fin();
-		};
-	}, [handle]);
-};
+export function schedule(loop: Loop, hz: number) {
+  const step = 1000 / hz
+  let acc = 0
+  return (dt: number) => {
+    acc += dt
+    while (acc >= step) { loop.tick(step); acc -= step }
+  }
+}`.split('\n');
 
-/* ------------------------------------------------- the page in perspective */
+const SIDE_A = `interface Pipeline {
+  id: string
+  stages: Stage[]
+  cache: Map<string, Module>
+}
 
-/* For any plane seen through a pinhole, the on-screen pitch of an evenly ruled
-   page is exactly quadratic in screen y: pitch(y) = PK * (y - HORIZON)^2, with
-   HORIZON the line the page converges to. Both constants are pinned by
-   measurement — the sharp-band pitch is 107 px (39 px at 700 wide x 2.743),
-   and the pitch ratio between the bottom of frame and the sharp band is the
-   1.9x the reference's blur gradient implies. */
-const HORIZON = -1186; // px, i.e. 1186 px above the top edge
-const PK = 4.254e-5;
-const P_PAGE = 127.7; // plate units per line of the page
+async function compile(src: Source) {
+  const ast = parse(src.text)
+  const ir = lower(ast, { target: 'spirv' })
+  const opt = optimize(ir, level = 3)
+  return emit(opt)
+}
 
-/* q is distance up the page in line units. It is the natural coordinate here:
-   screen y and the plate-to-pixel scale are both closed-form in q, so any
-   frame can be drawn without carrying state from the frame before it. */
-const yOfQ = (q: number) => 1 / (PK * q) + HORIZON;
-const qOfY = (y: number) => 1 / (PK * (y - HORIZON));
-const kOfQ = (q: number) => 1 / (PK * q * q) / P_PAGE;
+const registry = new Registry()
+registry.on('load', (m) => {
+  cache.set(m.key, m)
+  bus.emit('module:ready', m.key)
+})
 
-const Q_LO = 9.4; // just below the bottom edge
-const Q_HI = 26.4; // just above the top edge
-const Q0 = 17.5; // page position at frame 0
-const SCROLL = 0.766 / 60; // lines per frame = 82 px/s in the sharp band
+export default registry`.split('\n');
 
-const EM = 62; // body em, plate units
-const MEASURE = 2380; // plate units per line; deliberately bleeds past both edges
-const CX = 968;
-const ROLL = -3.2; // deg; the reference's baselines rise slightly to the right
+const SIDE_B = `def train(model, loader, epochs=24):
+    opt = AdamW(model.parameters(), lr=3e-4)
+    sched = CosineSchedule(opt, epochs)
+    for epoch in range(epochs):
+        model.train()
+        for batch in loader:
+            loss = model.step(batch)
+            loss.backward()
+            opt.step()
+            opt.zero_grad()
+        sched.step()
+        log.info('epoch %d loss %.4f', epoch, loss)
+    return model
 
-/* focus and ink, both read off the reference's own falloff */
-const FOCUS_Y = 430;
-const blurAt = (y: number) =>
-	y > FOCUS_Y
-		? Math.pow((y - FOCUS_Y) / 660, 1.7) * 11.5
-		: Math.pow((FOCUS_Y - y) / 430, 1.6) * 2.6;
-const inkAt = (y: number) =>
-	y > 330
-		? 0.4 + 0.58 * Math.exp(-Math.pow((y - 330) / 210, 1.5))
-		: 0.98 - 0.3 * Math.pow((330 - y) / 330, 1.3);
+# checkpoint every run
+save(model, 'artifacts/model.safetensors')`.split('\n');
 
-const PAPER = '#c6a37e';
-const INK = '#4c2d17';
-
-/* ------------------------------------------------------------ cloth model */
-
-/* Same two-harmonic surface used across this series: a z-depth ripple
-   projected back onto x as a shear, plus a y-flap. Amplitudes are scaled up
-   from the small-flag version because this cloth is 2640 px on the hoist. */
-const FW = 2640;
-const FH = 1060;
-const NB = 24; // bands
-const BWU = FW / NB; // band width in cloth units
-/* Abutting bands leave a hairline in Chromium however carefully they are
-   clipped — antialiased edges never sum back to one. So each band is drawn 3 px
-   wider on BOTH sides and carries a mask that ramps 0->1 over those 3 px. Two
-   neighbours' ramps are complementary linears, so they sum to exactly 1 across
-   the join: a cross-fade, not a butt joint. One mask definition serves all 24,
-   because a userSpaceOnUse mask resolves in the referencing band's own space. */
-const LAP = 3;
-const A1 = 74;
-const A2 = 25;
-const B1 = 92;
-const B2 = 33;
-const KW1 = 1.2;
-const KW2 = 2.25;
-const SHEAR = 0.34;
-const DROOP = 26;
-const envF = (s: number) => Math.pow(s, 0.82);
-const zD = (s: number, p1: number, p2: number) =>
-	envF(s) * (A1 * Math.sin(KW1 * TAU * s - p1) + A2 * Math.sin(KW2 * TAU * s - p2 + 1.05));
-const yF = (s: number, p1: number, p2: number) =>
-	envF(s) * (B1 * Math.sin(KW1 * TAU * s - p1 + 0.72) + B2 * Math.sin(KW2 * TAU * s - p2 + 2.4)) +
-	DROOP * s * s;
-
-/* [obs] the flag's lower edge runs (55,740) -> (1866,238) at 1920x1080 */
-const HX = 55;
-const HY = 740;
-const FROT = -15.5;
-
-/* ------------------------------------------------------------- the lockup */
-
-type Beat = {a: number; b: number; big: string[]; small: string; size: number; track: number};
-const BEATS: Beat[] = [
-	{a: 96, b: 352, big: ['1776'], small: 'IN CONGRESS, JULY 4', size: 196, track: 0.06},
-	{a: 352, b: 610, big: ['INDEPENDENCE DAY'], small: 'THE FOURTH OF JULY', size: 104, track: 0.1},
-	{a: 610, b: 900, big: ['LAND OF THE FREE', 'HOME OF THE BRAVE'], small: '', size: 82, track: 0.14},
+const TERM_SRC = [
+  '$ pnpm build --target=release',
+  '  .. resolving   1284 modules',
+  '  .. transform   src/renderer/*.ts',
+  '  OK typecheck   0 errors  0 warnings',
+  '  .. bundling    esm + cjs',
+  '  OK minify      412 kB -> 138 kB',
+  '  OK sourcemap   written',
+  '  .. running     248 unit tests',
+  '  OK tests       248 passed  0 failed',
+  '  OK build       done in 4.82s',
+  '',
 ];
-const RULE_L = 468;
-const RULE_R = 1452;
-const RULE_TOP = 590;
-const RULE_BOT = 846;
 
-const GOLD = (p: number) => {
-	const c = p * 148 - 24;
-	return `linear-gradient(102deg,#a5732c 0%,#c9973f ${c - 32}%,#f0d698 ${c - 10}%,#fff6e0 ${c}%,#f0d698 ${
-		c + 10
-	}%,#c9973f ${c + 32}%,#a5732c 100%)`;
+const HERO_TOK = HERO_SRC.map(tokenize);
+const A_TOK = SIDE_A.map(tokenize);
+const B_TOK = SIDE_B.map(tokenize);
+
+/* far-layer "code bars": each line becomes a few coloured blocks */
+type Bar = {x: number; w: number; c: string};
+const barsFor = (seed: number, n: number): Bar[][] => {
+  const cols = [K.kw, K.fn, K.plain, K.str, K.type, K.num, K.punc, K.plain, K.plain];
+  const out: Bar[][] = [];
+  for (let i = 0; i < n; i++) {
+    const indent = Math.floor(hash1(seed + i * 1.7) * 4) * 18;
+    let x = indent;
+    const row: Bar[] = [];
+    const segs = 2 + Math.floor(hash1(seed + i * 3.1 + 5) * 4);
+    for (let j = 0; j < segs; j++) {
+      const w = 26 + hash1(seed + i * 5.3 + j * 2.9) * 120;
+      row.push({x, w, c: cols[Math.floor(hash1(seed + i * 7.1 + j * 4.3) * cols.length)]});
+      x += w + 12 + hash1(seed + i * 2.3 + j) * 14;
+      if (x > 520) break;
+    }
+    out.push(row);
+  }
+  return out;
 };
-/* the words are a graphic laid on the plate, not something photographed on it:
-   a tight dark rim plus a cast shadow is what keeps them off the parchment */
-const TITLE_SHADOW =
-	'drop-shadow(0 0 2px rgba(38,18,3,0.95)) drop-shadow(0 2px 4px rgba(38,18,3,0.7)) drop-shadow(0 8px 20px rgba(30,14,2,0.55))';
 
-/* --------------------------------------------------------------- the plate */
+const FAR_PANELS = [
+  {x: -220, y: -160, w: 560, n: 46, seed: 3.1, scroll: 3},
+  {x: 470, y: -420, w: 560, n: 46, seed: 11.7, scroll: 2},
+  {x: 1180, y: -260, w: 560, n: 46, seed: 21.3, scroll: 3},
+  {x: 1830, y: -520, w: 560, n: 46, seed: 31.9, scroll: 2},
+  {x: 700, y: 520, w: 560, n: 46, seed: 41.5, scroll: 4},
+].map((p) => ({...p, bars: barsFor(p.seed, p.n)}));
+
+const FAR_LH = 22;
+
+/* --------------------------------------------------------------- layout -- */
+
+const HERO = {x: 108, y: 196, w: 906, h: 704, fs: 21, lh: 30, pad: 26};
+const PA = {x: 1104, y: 104, w: 646, h: 430, fs: 15, lh: 22};
+const TERM = {x: 1104, y: 584, w: 646, h: 316};
+
+const LINE_TIME = DUR / HERO_SRC.length; // exact loop: one pass per clip
+
+/* --------------------------------------------------------------- effects */
+
+const GRAIN = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' seed='37'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23n)' opacity='0.5'/></svg>`,
+)}")`;
+
+const PLANE = 'perspective(1700px) rotateX(7deg) rotateZ(-4.5deg) rotateY(-11deg)';
+
+/* ============================================================== component */
 
 export const Motion: React.FC = () => {
-	usePlateFonts();
-	const frame = useCurrentFrame();
-	const {durationInFrames} = useVideoConfig();
-	const f = frame;
-	const T = f / 60;
+  useEmbeddedFonts();
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const t = (frame / fps) % DUR;
+  const u = t / DUR;
 
-	/* --- page position ---------------------------------------------------- */
-	const A = Q0 + SCROLL * f;
-	const nLo = Math.ceil(A - Q_HI);
-	const nHi = Math.floor(A - Q_LO);
+  /* ---- hero typing ----------------------------------------------------- */
+  const headF = t / LINE_TIME; // fractional line index
+  const head = Math.floor(headF);
+  const inLine = headF - head;
+  const heroScroll = headF * HERO.lh; // content slides up by one line per beat
 
-	/* --- camera: a very slight settle inward, nothing that fights the page -- */
-	const camZ = 1.0 + 0.026 * outCubic(clamp(f / 780, 0, 1));
-	const camY = -10 * outCubic(clamp(f / 780, 0, 1));
+  const VIS_ABOVE = 18;
+  const VIS_BELOW = 6;
 
-	/* --- cloth phases ----------------------------------------------------- */
-	const p1 = TAU * 0.235 * T;
-	const p2 = TAU * 0.362 * T;
+  const heroLines = [];
+  for (let k = -VIS_ABOVE; k <= VIS_BELOW; k++) {
+    const idx = head + k;
+    const src = ((idx % HERO_SRC.length) + HERO_SRC.length) % HERO_SRC.length;
+    const y = HERO.pad + 34 + (idx + VIS_ABOVE) * HERO.lh - heroScroll;
+    if (y < 4 || y > HERO.h - 10) continue;
+    const len = HERO_SRC[src].length;
+    const chars = k < 0 ? 1e6 : k === 0 ? Math.round(clamp(inLine / 0.72, 0, 1) * len) : 0;
+    heroLines.push({idx, src, y, chars, cur: k === 0});
+  }
 
-	const lines: React.ReactNode[] = [];
-	for (let n = Math.max(0, nLo); n <= Math.min(DOC_LINES.length - 1, nHi); n++) {
-		const q = A - n;
-		if (q <= 0) continue;
-		const y = yOfQ(q);
-		const k = kOfQ(q);
-		const raw = DOC_LINES[n];
-		const bar = raw.lastIndexOf('|');
-		const text = raw.slice(0, bar);
-		const extra = Number(raw.slice(bar + 1));
-		const bl = blurAt(y);
-		const al = inkAt(y);
-		lines.push(
-			<div
-				key={n}
-				style={{
-					position: 'absolute',
-					left: CX,
-					top: 0,
-					width: 0,
-					height: 0,
-					transform: `translateY(${y}px) scale(${k})`,
-					transformOrigin: '0 0',
-				}}
-			>
-				<div
-					style={{
-						position: 'absolute',
-						left: -MEASURE / 2,
-						top: -EM * 0.66,
-						width: MEASURE,
-						fontFamily: 'DocSerif, serif',
-						fontSize: EM,
-						lineHeight: 1,
-						whiteSpace: 'nowrap',
-						wordSpacing: `${extra}px`,
-						color: INK,
-						opacity: al * 0.88,
-						filter: bl > 0.06 ? `blur(${bl / k}px)` : undefined,
-					}}
-				>
-					{text}
-				</div>
-			</div>,
-		);
-	}
+  const caretLine = heroLines.find((l) => l.cur);
+  const caretX = caretLine
+    ? 66 + Math.min(caretLine.chars, HERO_SRC[caretLine.src].length) * HERO.fs * 0.6
+    : 66;
+  const blink = Math.sin(2 * Math.PI * u * 21) > -0.25 ? 1 : 0.15;
 
-	/* a second, much larger and fainter setting of the same page sitting well
-	   behind the first. The reference gets this depth by accident, from its
-	   dissolving layers; here it is one deliberate layer. */
-	const backLines: React.ReactNode[] = [];
-	const AB = Q0 * 0.62 + SCROLL * 0.44 * f;
-	for (let n = 0; n < 34; n++) {
-		const q = AB - n * 0.62;
-		if (q < Q_LO * 0.9 || q > Q_HI) continue;
-		const y = yOfQ(q);
-		const k = kOfQ(q) * 1.72;
-		const raw = DOC_LINES[(n + 41) % DOC_LINES.length];
-		const bar = raw.lastIndexOf('|');
-		backLines.push(
-			<div
-				key={n}
-				style={{
-					position: 'absolute',
-					left: CX - 120,
-					top: 0,
-					width: 0,
-					height: 0,
-					transform: `translateY(${y}px) scale(${k})`,
-					transformOrigin: '0 0',
-				}}
-			>
-				<div
-					style={{
-						position: 'absolute',
-						left: -MEASURE / 2,
-						top: -EM * 0.66,
-						width: MEASURE,
-						fontFamily: 'DocSerif, serif',
-						fontSize: EM,
-						lineHeight: 1,
-						whiteSpace: 'nowrap',
-						color: INK,
-						opacity: 0.15 * inkAt(y),
-						filter: `blur(${(blurAt(y) + 5.5) / k}px)`,
-					}}
-				>
-					{raw.slice(0, bar)}
-				</div>
-			</div>,
-		);
-	}
+  /* ---- side panels: continuous upward scroll, integer cycles per loop --- */
+  const scrollA = u * 2 * A_TOK.length * PA.lh;
 
-	/* --- cloth bands ------------------------------------------------------ */
-	/* the surface normal a flat projection can actually give us: the slope of
-	   the depth ripple, sampled at both edges of the band so the shading is a
-	   gradient across it rather than a step */
-	const norm = (s: number) => {
-		const h = 0.004;
-		return clamp(((zD(s + h, p1, p2) - zD(s - h, p1, p2)) / (2 * h) / FW) * 1.15, -1, 1);
-	};
-	const shade = (v: number) =>
-		v > 0 ? `rgba(255,248,232,${(v * 0.5).toFixed(3)})` : `rgba(22,12,5,${(-v * 0.66).toFixed(3)})`;
+  /* ---- terminal: appends a line every 1.25 s, 12 lines per loop -------- */
+  const termHead = Math.floor(u * 22); // 2 full log cycles per loop
+  const termLines = Array.from({length: 9}, (_, i) => {
+    const idx = termHead - 8 + i;
+    return {idx, s: TERM_SRC[((idx % TERM_SRC.length) + TERM_SRC.length) % TERM_SRC.length]};
+  });
 
-	const bands: React.ReactNode[] = [];
-	const shGrads: React.ReactNode[] = [];
-	for (let i = 0; i < NB; i++) {
-		const s0 = i / NB;
-		const s1 = (i + 1) / NB;
-		const X0 = s0 * FW + SHEAR * zD(s0, p1, p2);
-		const X1 = s1 * FW + SHEAR * zD(s1, p1, p2);
-		const Y0 = yF(s0, p1, p2);
-		const Y1 = yF(s1, p1, p2);
-		const w = X1 - X0;
-		const sx = w / BWU;
-		const ang = (Math.atan2(Y1 - Y0, w) * 180) / Math.PI;
-		shGrads.push(
-			<linearGradient
-				key={i}
-				id={`m59sh${i}`}
-				gradientUnits="userSpaceOnUse"
-				x1={0}
-				y1={0}
-				x2={BWU}
-				y2={0}
-			>
-				<stop offset="0" stopColor={shade(norm(s0))} />
-				<stop offset="1" stopColor={shade(norm(s1))} />
-			</linearGradient>,
-		);
-		/* skewY, not rotate. rotate() pivots the band on its top corner, so two
-		   neighbours whose fold angles differ by half a degree splay ~9 px apart
-		   by the bottom of a 1060 px cloth and the page shows through the gap.
-		   skewY leaves every vertical line vertical, so band i's right edge and
-		   band i+1's left edge coincide at every height by construction. */
-		bands.push(
-			<g key={i} transform={`translate(${X0} ${Y0}) skewY(${ang}) scale(${sx} 1)`} mask="url(#m59seam)">
-				<use href="#m59flag" x={-s0 * FW} y={0} width={FW} height={FH} />
-				<rect x={-LAP} y={-14} width={BWU + LAP * 2} height={FH + 28} fill={`url(#m59sh${i})`} />
-			</g>,
-		);
-	}
+  const breath = 0.5 + 0.5 * Math.sin(2 * Math.PI * u * 4);
+  const scanY = ((u * 2) % 1) * (H + 300) - 150;
+  const prog = (u * 3) % 1; // compile bar, 3 cycles per loop
 
-	/* --- lockup ----------------------------------------------------------- */
-	const ruleP = seg(f, 62, 176);
-	const sweep = clamp((f - 210) / 130, 0, 1) * 0.34 + clamp((f - 470) / 130, 0, 1) * 0.33 + clamp((f - 726) / 130, 0, 1) * 0.33;
+  /* ---- renderers -------------------------------------------------------- */
+  const codeLine = (toks: Tok[], x: number, y: number, fs: number, chars = 1e6, op = 1) => {
+    const cut = sliceToks(toks, chars);
+    if (!cut.length) return null;
+    return (
+      <text x={x} y={y} fontFamily={CODE} fontSize={fs} opacity={op} xmlSpace="preserve">
+        {cut.map((tk, i) => (
+          <tspan key={i} fill={tk.c}>
+            {tk.t}
+          </tspan>
+        ))}
+      </text>
+    );
+  };
 
-	const beatNodes = BEATS.map((B, bi) => {
-		const inP = seg(f, B.a, B.a + 62);
-		const outP = bi === BEATS.length - 1 ? 0 : seg(f, B.b - 46, B.b + 12);
-		const vis = inP * (1 - outP);
-		if (vis <= 0.004) return null;
-		const lift = mix(30, 0, outCubic(inP)) + outP * 26;
-		const bl = mix(13, 0, outCubic(inP)) + outP * 11;
-		const rows = B.big.length;
-		return (
-			<div
-				key={bi}
-				style={{
-					position: 'absolute',
-					left: 0,
-					top: 0,
-					width: 1920,
-					height: 1080,
-					opacity: vis,
-				}}
-			>
-				{B.small ? (
-					<div
-						style={{
-							position: 'absolute',
-							left: 0,
-							top: RULE_TOP + 44,
-							width: 1920,
-							textAlign: 'center',
-							fontFamily: 'PlateDisplay, serif',
-							fontSize: 31,
-							letterSpacing: '0.42em',
-							textIndent: '0.42em',
-							color: '#f0d9ab',
-							opacity: 0.95,
-							transform: `translateY(${lift * 0.5}px)`,
-							filter: `blur(${bl * 0.4}px) drop-shadow(0 1px 3px rgba(34,16,3,0.9))`,
-						}}
-					>
-						{B.small}
-					</div>
-				) : null}
-				{B.big.map((row, ri) => {
-					const rowIn = seg(f, B.a + ri * 13, B.a + ri * 13 + 62);
-					const rl = mix(34, 0, outCubic(rowIn)) + outP * 26;
-					const rb = mix(15, 0, outCubic(rowIn)) + outP * 11;
-					const top =
-						rows === 1
-							? B.small
-								? RULE_TOP + 92
-								: RULE_TOP + 58
-							: RULE_TOP + 52 + ri * (B.size * 1.24);
-					return (
-						<div
-							key={ri}
-							style={{
-								position: 'absolute',
-								left: 0,
-								top,
-								width: 1920,
-								textAlign: 'center',
-								fontFamily: 'PlateDisplay, serif',
-								fontSize: B.size,
-								lineHeight: 1.06,
-								letterSpacing: `${B.track}em`,
-								textIndent: `${B.track}em`,
-								transform: `translateY(${rl}px)`,
-								filter: `blur(${rb}px) ${TITLE_SHADOW}`,
-							}}
-						>
-							<span
-								style={{
-									backgroundImage: GOLD(sweep),
-									WebkitBackgroundClip: 'text',
-									backgroundClip: 'text',
-									color: 'transparent',
-								}}
-							>
-								{row}
-							</span>
-						</div>
-					);
-				})}
-			</div>
-		);
-	});
+  const sidePanel = (
+    p: typeof PA,
+    toks: Tok[][],
+    scroll: number,
+    label: string,
+    accent: string,
+    cid: string,
+  ) => {
+    const rows = Math.ceil(p.h / p.lh) + 2;
+    const first = Math.floor(scroll / p.lh);
+    return (
+      <g>
+        <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={14} fill={K.panel} stroke={K.panelBd} strokeWidth={1} />
+        <rect x={p.x} y={p.y} width={p.w} height={34} rx={14} fill="rgba(120,160,225,0.07)" />
+        <rect x={p.x} y={p.y + 20} width={p.w} height={14} fill="rgba(120,160,225,0.07)" />
+        <circle cx={p.x + 20} cy={p.y + 17} r={4.4} fill="#FF6B6B" opacity={0.8} />
+        <circle cx={p.x + 36} cy={p.y + 17} r={4.4} fill="#FFC46B" opacity={0.8} />
+        <circle cx={p.x + 52} cy={p.y + 17} r={4.4} fill={accent} opacity={0.85} />
+        <text x={p.x + 72} y={p.y + 22} fontFamily={CODE} fontSize={14} fill={K.dim}>
+          {label}
+        </text>
+        <g clipPath={`url(#${cid})`}>
+          {Array.from({length: rows}, (_, r) => {
+            const idx = first + r;
+            const src = ((idx % toks.length) + toks.length) % toks.length;
+            const y = p.y + 52 + idx * p.lh - scroll;
+            if (y < p.y + 40 || y > p.y + p.h - 4) return null;
+            return (
+              <g key={r}>
+                <text x={p.x + 18} y={y} fontFamily={CODE} fontSize={p.fs} fill="rgba(120,150,205,0.32)">
+                  {String(src + 1).padStart(2, '0')}
+                </text>
+                {codeLine(toks[src], p.x + 52, y, p.fs)}
+              </g>
+            );
+          })}
+        </g>
+      </g>
+    );
+  };
 
-	/* thirteen stars, drawn rather than typed — no OFL face here carries one */
-	const stars: React.ReactNode[] = [];
-	for (let i = 0; i < 13; i++) {
-		const sp = seg(f, 122 + i * 7, 122 + i * 7 + 46);
-		const x = 960 + (i - 6) * 44;
-		const pts: string[] = [];
-		for (let k = 0; k < 10; k++) {
-			const r = (k % 2 === 0 ? 14.6 : 6.2) * (0.4 + 0.6 * sp);
-			const a = -Math.PI / 2 + (k * Math.PI) / 5;
-			pts.push(`${(x + r * Math.cos(a)).toFixed(2)},${(RULE_TOP + r * Math.sin(a)).toFixed(2)}`);
-		}
-		stars.push(
-			<polygon
-				key={i}
-				points={pts.join(' ')}
-				fill="#e0b45e"
-				opacity={sp * 0.96}
-				transform={`rotate(${(1 - sp) * 110} ${x} ${RULE_TOP})`}
-			/>,
-		);
-	}
+  /* ====================================================================== */
+  return (
+    <AbsoluteFill style={{backgroundColor: K.bg0}}>
+      <AbsoluteFill style={{background: 'radial-gradient(120% 100% at 22% 6%, #16224A 0%, #0A1024 46%, #05070F 100%)'}} />
 
-	/* --- dust ------------------------------------------------------------- */
-	const motes: React.ReactNode[] = [];
-	for (let i = 0; i < 54; i++) {
-		const dz = 0.28 + hash(i * 3.1) * 0.72;
-		const x = ((hash(i) * 2200 - 120 + T * (7 + dz * 26)) % 2160) - 120;
-		const y = ((hash(i + 91) * 1240 - 80 - T * (11 + dz * 20)) % 1220 + 1220) % 1220 - 90;
-		const r = 1.1 + dz * 3.4;
-		const tw = 0.4 + 0.6 * Math.abs(Math.sin(T * (0.6 + hash(i + 7) * 1.4) + i));
-		motes.push(
-			<circle
-				key={i}
-				cx={x}
-				cy={y}
-				r={r}
-				fill="#ffeec6"
-				opacity={0.1 + dz * 0.3 * tw}
-				style={{filter: `blur(${(1 - dz) * 3.6 + 0.6}px)`}}
-			/>,
-		);
-	}
+      {/* ---------------- FAR: blurred code bars ---------------- */}
+      <AbsoluteFill style={{transform: `${PLANE} scale(1.5)`, filter: 'blur(4px)', opacity: 0.3}}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+          {FAR_PANELS.map((p, pi) => {
+            const total = p.n * FAR_LH;
+            const off = ((u * p.scroll) % 1) * total;
+            return (
+              <g key={pi}>
+                {p.bars.map((row, ri) =>
+                  row.map((b, bi) => {
+                    let y = p.y + ri * FAR_LH - off;
+                    if (y < p.y - FAR_LH) y += total;
+                    if (y > p.y + total) y -= total;
+                    if (y < -60 || y > H + 60) return null;
+                    return (
+                      <rect
+                        key={`${ri}-${bi}`}
+                        x={p.x + b.x}
+                        y={y}
+                        width={b.w}
+                        height={8}
+                        rx={3}
+                        fill={b.c}
+                        opacity={0.55}
+                      />
+                    );
+                  }),
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </AbsoluteFill>
 
-	/* --- grain: a static noise field walked a few pixels each frame -------- */
-	const gx = (hash(f) - 0.5) * 60;
-	const gy = (hash(f + 500) - 0.5) * 60;
+      {/* ---------------- MID + NEAR: panels on the plane ---------------- */}
+      <AbsoluteFill style={{transform: `${PLANE} scale(1.04)`}}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+          <defs>
+            <clipPath id="cpA">
+              <rect x={PA.x} y={PA.y + 36} width={PA.w} height={PA.h - 40} rx={10} />
+            </clipPath>
+            <clipPath id="cpTerm">
+              <rect x={TERM.x} y={TERM.y + 34} width={TERM.w} height={TERM.h - 38} />
+            </clipPath>
+            <clipPath id="cpHero">
+              <rect x={HERO.x + 1} y={HERO.y + 46} width={HERO.w - 2} height={HERO.h - 52} />
+            </clipPath>
+            <linearGradient id="heroBg" x1="0" y1="0" x2="0.6" y2="1">
+              <stop offset="0%" stopColor="rgba(19,29,58,0.9)" />
+              <stop offset="100%" stopColor="rgba(9,14,31,0.92)" />
+            </linearGradient>
+          </defs>
 
-	return (
-		<AbsoluteFill style={{background: '#25190f', overflow: 'hidden'}}>
-			<AbsoluteFill
-				style={{transform: `translateY(${camY}px) scale(${camZ})`, transformOrigin: '50% 46%'}}
-			>
-				{/* ------------------------------------------------ paper ground */}
-				<AbsoluteFill style={{background: PAPER}} />
-				<AbsoluteFill
-					style={{
-						background:
-							'radial-gradient(128% 92% at 62% 78%, #e2c096 0%, #cda880 34%, #ad8a63 66%, #83603f 100%)',
-					}}
-				/>
-				<svg
-					width={1920}
-					height={1080}
-					viewBox="0 0 1920 1080"
-					style={{position: 'absolute', left: 0, top: 0}}
-				>
-					<defs>
-						<filter id="m59fibre" x="0" y="0" width="100%" height="100%">
-							<feTurbulence type="fractalNoise" baseFrequency="0.9 0.014" numOctaves={2} seed={7} />
-							<feColorMatrix type="saturate" values="0" />
-						</filter>
-						<filter id="m59stain" x="-10%" y="-10%" width="120%" height="120%">
-							<feTurbulence type="fractalNoise" baseFrequency="0.0035" numOctaves={4} seed={21} />
-							<feColorMatrix type="saturate" values="0" />
-							<feComponentTransfer>
-								<feFuncA type="table" tableValues="0 0 0.15 0.55 0.9" />
-							</feComponentTransfer>
-						</filter>
-						<filter id="m59grain" x="0" y="0" width="100%" height="100%">
-							<feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves={2} seed={3} />
-							<feColorMatrix type="saturate" values="0" />
-						</filter>
-					</defs>
-					<rect width={1920} height={1080} filter="url(#m59fibre)" opacity={0.16} style={{mixBlendMode: 'overlay'}} />
-					<rect
-						x={-80}
-						y={-80}
-						width={2080}
-						height={1240}
-						filter="url(#m59stain)"
-						opacity={0.3}
-						style={{mixBlendMode: 'multiply'}}
-					/>
-				</svg>
+          {/* ---- pipeline.ts ---- */}
+          <g opacity={0.92}>{sidePanel(PA, A_TOK, scrollA, 'lib/pipeline.ts', '#3DDC97', 'cpA')}</g>
 
-				{/* -------------------------------------------- the page itself */}
-				<AbsoluteFill style={{transform: `rotate(${ROLL}deg)`, transformOrigin: '50% 50%'}}>
-					{backLines}
-					{lines}
-				</AbsoluteFill>
+          {/* ---- terminal ---- */}
+          <g opacity={0.95}>
+            <rect x={TERM.x} y={TERM.y} width={TERM.w} height={TERM.h} rx={14} fill="rgba(7,12,26,0.86)" stroke={K.panelBd} strokeWidth={1} />
+            <rect x={TERM.x} y={TERM.y} width={TERM.w} height={32} rx={14} fill="rgba(120,160,225,0.07)" />
+            <rect x={TERM.x} y={TERM.y + 18} width={TERM.w} height={14} fill="rgba(120,160,225,0.07)" />
+            <circle cx={TERM.x + 20} cy={TERM.y + 16} r={4.4} fill="#FF6B6B" opacity={0.8} />
+            <circle cx={TERM.x + 36} cy={TERM.y + 16} r={4.4} fill="#FFC46B" opacity={0.8} />
+            <circle cx={TERM.x + 52} cy={TERM.y + 16} r={4.4} fill="#7AE2FF" opacity={0.85} />
+            <text x={TERM.x + 72} y={TERM.y + 21} fontFamily={CODE} fontSize={14} fill={K.dim} letterSpacing={1.6}>
+              TERMINAL — build
+            </text>
+            <g clipPath="url(#cpTerm)">
+              {termLines.map((l, i) => {
+                const y = TERM.y + 62 + i * 27;
+                const isCmd = l.s.startsWith('$');
+                const ok = l.s.indexOf('OK') >= 0;
+                const last = i === termLines.length - 1;
+                return (
+                  <text
+                    key={l.idx}
+                    x={TERM.x + 22}
+                    y={y}
+                    fontFamily={CODE}
+                    fontSize={15}
+                    fill={isCmd ? K.caret : ok ? K.mint : K.dim}
+                    opacity={last ? 1 : 0.34 + 0.07 * i}
+                    xmlSpace="preserve"
+                  >
+                    {l.s}
+                  </text>
+                );
+              })}
+              <rect
+                x={TERM.x + 22}
+                y={TERM.y + 62 + (termLines.length - 1) * 27 - 12}
+                width={9}
+                height={15}
+                fill={K.caret}
+                opacity={blink * 0.9}
+              />
+            </g>
+          </g>
 
-				{/* ----------------------------------------------------- the flag */}
-				<svg
-					width={1920}
-					height={1080}
-					viewBox="0 0 1920 1080"
-					style={{position: 'absolute', left: 0, top: 0}}
-				>
-					<defs>
-						<symbol
-							id="m59flag"
-							viewBox={US_VB}
-							preserveAspectRatio="none"
-							dangerouslySetInnerHTML={{__html: US_ART}}
-						/>
-						{shGrads}
-						{/* Only the TRAILING edge ramps. Two complementary ramps look right
-						    but are wrong: source-over of alpha a and alpha 1-a composites to
-						    (1-a) + a^2, which is 0.75 at the midpoint — that shortfall is
-						    exactly the pale bar that shows up between bands. Ramping only
-						    the band underneath, and leaving the band drawn on top of it
-						    fully opaque through the overlap, composites to 1 everywhere. */}
-						<linearGradient
-							id="m59seamGrad"
-							gradientUnits="userSpaceOnUse"
-							x1={-LAP}
-							y1={0}
-							x2={BWU + LAP}
-							y2={0}
-						>
-							<stop offset="0" stopColor="#fff" stopOpacity="1" />
-							<stop offset={(BWU + LAP * 0.4) / (BWU + 2 * LAP)} stopColor="#fff" stopOpacity="1" />
-							<stop offset="1" stopColor="#fff" stopOpacity="0" />
-						</linearGradient>
-						<mask
-							id="m59seam"
-							maskUnits="userSpaceOnUse"
-							x={-LAP - 1}
-							y={-14}
-							width={BWU + 2 * LAP + 2}
-							height={FH + 28}
-						>
-							<rect x={-LAP} y={-14} width={BWU + 2 * LAP} height={FH + 28} fill="url(#m59seamGrad)" />
-						</mask>
-						{/* the hem: the cloth's free edge is nearer the lens than the page
-						    behind it, so it goes soft before the page does */}
-						<linearGradient id="m59hem" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2={FH + 60}>
-							<stop offset="0" stopColor="#fff" stopOpacity="1" />
-							<stop offset={(FH - 46) / (FH + 60)} stopColor="#fff" stopOpacity="1" />
-							<stop offset={(FH + 26) / (FH + 60)} stopColor="#fff" stopOpacity="0" />
-							<stop offset="1" stopColor="#fff" stopOpacity="0" />
-						</linearGradient>
-						<mask id="m59hemMask" maskUnits="userSpaceOnUse" x={-60} y={-60} width={FW + 120} height={FH + 140}>
-							<rect x={-60} y={-60} width={FW + 120} height={FH + 140} fill="url(#m59hem)" />
-						</mask>
-					</defs>
-					<g
-						opacity={0.65}
-						style={{filter: 'blur(3.4px) saturate(0.66)'}}
-						transform={`translate(${HX} ${HY}) rotate(${FROT}) translate(0 ${-FH})`}
-					>
-						<g mask="url(#m59hemMask)">{bands}</g>
-					</g>
-				</svg>
+          {/* ---- hero editor ---- */}
+          <rect x={HERO.x} y={HERO.y} width={HERO.w} height={HERO.h} rx={18} fill="url(#heroBg)" stroke="rgba(130,170,255,0.24)" strokeWidth={1.4} />
+          <rect x={HERO.x} y={HERO.y} width={HERO.w} height={44} rx={18} fill="rgba(130,170,255,0.09)" />
+          <rect x={HERO.x} y={HERO.y + 26} width={HERO.w} height={18} fill="rgba(130,170,255,0.09)" />
+          <circle cx={HERO.x + 26} cy={HERO.y + 22} r={5.6} fill="#FF6B6B" />
+          <circle cx={HERO.x + 46} cy={HERO.y + 22} r={5.6} fill="#FFC46B" />
+          <circle cx={HERO.x + 66} cy={HERO.y + 22} r={5.6} fill="#3DDC97" />
+          <text x={HERO.x + 92} y={HERO.y + 28} fontFamily={CODE} fontSize={16} fill={K.dim}>
+            src/renderer/frame.ts
+          </text>
+          <text x={HERO.x + HERO.w - 22} y={HERO.y + 28} textAnchor="end" fontFamily={CODE} fontSize={15} fill={K.dim}>
+            {`ln ${((head % HERO_SRC.length) + 1).toString().padStart(2, '0')} · utf-8 · ts`}
+          </text>
+          <rect x={HERO.x + 1} y={HERO.y + 44} width={54} height={HERO.h - 46} fill="rgba(120,160,225,0.05)" />
 
-				{/* [obs] the reference crushes the hoist end into shadow — the canton
-				    samples #251e1b at every timestamp while the fly end swings
-				    #483931..#9f8a7e with the fold */}
-				<AbsoluteFill
-					style={{
-						background:
-							'linear-gradient(96deg, rgba(20,11,5,0.5) 0%, rgba(20,11,5,0.26) 15%, rgba(20,11,5,0.06) 31%, rgba(20,11,5,0) 46%)',
-					}}
-				/>
+          <g clipPath="url(#cpHero)">
+            {heroLines.map((l) => (
+              <g key={l.idx}>
+                {l.cur && (
+                  <rect x={HERO.x + 55} y={HERO.y + l.y - HERO.fs + 3} width={HERO.w - 60} height={HERO.lh - 4} fill="rgba(130,170,255,0.075)" />
+                )}
+                <text
+                  x={HERO.x + 40}
+                  y={HERO.y + l.y}
+                  textAnchor="end"
+                  fontFamily={CODE}
+                  fontSize={15}
+                  fill={l.cur ? '#8FB7FF' : 'rgba(120,150,205,0.34)'}
+                >
+                  {String(l.src + 1).padStart(2, '0')}
+                </text>
+                {codeLine(HERO_TOK[l.src], HERO.x + 68, HERO.y + l.y, HERO.fs, l.chars)}
+              </g>
+            ))}
+            {caretLine && (
+              <rect
+                x={HERO.x + caretX}
+                y={HERO.y + caretLine.y - HERO.fs + 4}
+                width={2.6}
+                height={HERO.fs + 4}
+                fill={K.caret}
+                opacity={blink}
+              />
+            )}
+          </g>
+        </svg>
+      </AbsoluteFill>
 
-				{/* ------------------------------------------------------- light */}
-				<AbsoluteFill
-					style={{
-						background:
-							'radial-gradient(46% 40% at 63% 76%, rgba(255,231,180,0.5) 0%, rgba(255,222,160,0.18) 44%, rgba(255,214,150,0) 72%)',
-						mixBlendMode: 'screen',
-						opacity: 0.62 + 0.06 * Math.sin(T * 0.5),
-					}}
-				/>
-			</AbsoluteFill>
+      {/* ---------------- bloom ---------------- */}
+      <AbsoluteFill style={{filter: 'blur(15px)', mixBlendMode: 'screen', opacity: 0.24, pointerEvents: 'none'}}>
+        <AbsoluteFill style={{transform: `${PLANE} scale(1.04)`}}>
+          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+            <g clipPath="url(#cpHero)">
+              {heroLines.map((l) => (
+                <g key={l.idx}>{codeLine(HERO_TOK[l.src], HERO.x + 68, HERO.y + l.y, HERO.fs, l.chars, 0.9)}</g>
+              ))}
+            </g>
+            <g clipPath="url(#cpA)">
+              <rect x={PA.x} y={PA.y} width={PA.w} height={PA.h} fill="none" />
+            </g>
+          </svg>
+        </AbsoluteFill>
+      </AbsoluteFill>
 
-			{/* -------------------------------------------------------- lockup */}
-			{/* gold on lit parchment needs somewhere to sit. Rather than a flat
-			    scrim, the plate is pushed out of focus and down in value behind
-			    the words only — the same language the page itself is using. */}
-			<AbsoluteFill
-				style={{
-					backdropFilter: 'blur(11px) brightness(0.74) saturate(0.88)',
-					WebkitBackdropFilter: 'blur(11px) brightness(0.74) saturate(0.88)',
-					maskImage:
-						'radial-gradient(64% 40% at 50% 66.5%, #000 0%, rgba(0,0,0,0.86) 34%, rgba(0,0,0,0.5) 58%, rgba(0,0,0,0.17) 78%, rgba(0,0,0,0) 100%)',
-					WebkitMaskImage:
-						'radial-gradient(64% 40% at 50% 66.5%, #000 0%, rgba(0,0,0,0.86) 34%, rgba(0,0,0,0.5) 58%, rgba(0,0,0,0.17) 78%, rgba(0,0,0,0) 100%)',
-					opacity: seg(f, 56, 196),
-				} as React.CSSProperties}
-			/>
-			<AbsoluteFill
-				style={{
-					background:
-						'radial-gradient(58% 34% at 50% 66.5%, rgba(46,24,7,0.34) 0%, rgba(46,24,7,0.19) 46%, rgba(46,24,7,0.06) 74%, rgba(46,24,7,0) 100%)',
-					opacity: seg(f, 56, 196),
-				}}
-			/>
-			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
-				<g opacity={0.9}>
-					<rect
-						x={960 - (960 - RULE_L) * ruleP}
-						y={RULE_TOP - 0.9}
-						width={(RULE_R - RULE_L) * ruleP}
-						height={1.8}
-						fill="#b98f42"
-					/>
-					<rect
-						x={960 - (960 - RULE_L) * seg(f, 78, 192)}
-						y={RULE_BOT - 0.9}
-						width={(RULE_R - RULE_L) * seg(f, 78, 192)}
-						height={1.8}
-						fill="#b98f42"
-					/>
-					{stars}
-				</g>
-			</svg>
-			{beatNodes}
+      {/* ---------------- screen-space HUD ---------------- */}
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{position: 'absolute'}}>
+        {/* top bar */}
+        <rect x={0} y={0} width={W} height={64} fill="rgba(6,10,22,0.55)" />
+        <line x1={0} y1={64} x2={W} y2={64} stroke="rgba(130,170,255,0.14)" strokeWidth={1} />
+        <circle cx={44} cy={32} r={6} fill={K.mint} opacity={0.5 + 0.5 * breath} />
+        <text x={62} y={38} fontFamily={CODE} fontSize={17} fill={K.txt} letterSpacing={1.4}>
+          main
+        </text>
+        <text x={128} y={38} fontFamily={CODE} fontSize={17} fill={K.dim} letterSpacing={1.4}>
+          · renderer/frame.ts · watching 1284 modules
+        </text>
+        <text x={W - 44} y={38} textAnchor="end" fontFamily={CODE} fontSize={17} fill={K.mint} letterSpacing={1.6}>
+          BUILD PASSING
+        </text>
+        <rect x={W - 214} y={20} width={24} height={24} rx={6} fill="rgba(61,220,151,0.14)" stroke="rgba(61,220,151,0.4)" strokeWidth={1} />
+        <path d={`M${W - 208} 32L${W - 203} 37L${W - 196} 26`} stroke={K.mint} strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-			{/* --------------------------------------------------------- finish */}
-			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
-				<g>{motes}</g>
-			</svg>
-			<AbsoluteFill
-				style={{
-					background:
-						'radial-gradient(74% 68% at 56% 58%, rgba(0,0,0,0) 42%, rgba(28,14,4,0.34) 76%, rgba(18,8,2,0.72) 100%)',
-				}}
-			/>
-			<AbsoluteFill
-				style={{
-					background:
-						'linear-gradient(180deg, rgba(22,11,3,0.5) 0%, rgba(22,11,3,0.2) 20%, rgba(22,11,3,0) 42%), linear-gradient(112deg, rgba(24,12,4,0.34) 0%, rgba(24,12,4,0.07) 22%, rgba(24,12,4,0) 40%)',
-				}}
-			/>
-			<AbsoluteFill style={{background: 'rgba(158,96,32,0.1)', mixBlendMode: 'overlay'}} />
-			<svg
-				width={1920}
-				height={1080}
-				viewBox="0 0 1920 1080"
-				style={{position: 'absolute', left: 0, top: 0, mixBlendMode: 'overlay', opacity: 0.11}}
-			>
-				<rect x={-60} y={-60} width={2040} height={1200} filter="url(#m59grain)" transform={`translate(${gx} ${gy})`} />
-			</svg>
-			<AbsoluteFill
-				style={{
-					background: '#100801',
-					opacity: 1 - seg(f, 0, 34) + seg(f, durationInFrames - 44, durationInFrames),
-				}}
-			/>
-		</AbsoluteFill>
-	);
+        {/* bottom bar */}
+        <rect x={0} y={H - 58} width={W} height={58} fill="rgba(6,10,22,0.55)" />
+        <line x1={0} y1={H - 58} x2={W} y2={H - 58} stroke="rgba(130,170,255,0.14)" strokeWidth={1} />
+        {[
+          {l: 'LINES', v: '18,442'},
+          {l: 'MODULES', v: '1,284'},
+          {l: 'WARNINGS', v: '0'},
+          {l: 'GPU', v: '4.8 ms'},
+        ].map((s, i) => (
+          <g key={s.l}>
+            <text x={48 + i * 220} y={H - 22} fontFamily={CODE} fontSize={14} fill={K.dim} letterSpacing={2.4}>
+              {s.l}
+            </text>
+            <text x={48 + i * 220 + 108} y={H - 22} fontFamily={CODE} fontSize={17} fill={K.txt}>
+              {s.v}
+            </text>
+          </g>
+        ))}
+        <text x={W - 44} y={H - 22} textAnchor="end" fontFamily={CODE} fontSize={15} fill={K.dim} letterSpacing={2}>
+          {`${(prog * 100).toFixed(0).padStart(3, ' ')}%  COMPILING`}
+        </text>
+        <rect x={W - 470} y={H - 32} width={220} height={5} rx={2.5} fill="rgba(130,170,255,0.14)" />
+        <rect x={W - 470} y={H - 32} width={220 * prog} height={5} rx={2.5} fill={K.caret} opacity={0.85} />
+      </svg>
+
+      {/* scanline + grain + vignette */}
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(180deg, rgba(122,226,255,0) 0%, rgba(122,226,255,0.045) 50%, rgba(122,226,255,0) 100%)`,
+          height: 300,
+          top: scanY,
+          pointerEvents: 'none',
+        }}
+      />
+      <AbsoluteFill style={{backgroundImage: GRAIN, backgroundRepeat: 'repeat', opacity: 0.055, mixBlendMode: 'overlay', pointerEvents: 'none'}} />
+      <AbsoluteFill
+        style={{background: 'radial-gradient(78% 78% at 48% 46%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.72) 100%)', pointerEvents: 'none'}}
+      />
+    </AbsoluteFill>
+  );
 };
