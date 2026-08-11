@@ -1,792 +1,804 @@
-/*
- * Atom icon geometry: Lucide Icons, `atom`, lucide-static v1.31.0.
- * Source: https://lucide.dev/icons/atom
- *
- * ISC License
- * Copyright (c) 2026 Lucide Icons and Contributors
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
- * SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
- * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
+import React, {useLayoutEffect, useRef} from "react";
+import {AbsoluteFill, useCurrentFrame, useVideoConfig} from "remotion";
 
-import React from 'react';
-import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
-
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const CX = WIDTH / 2;
-const CY = HEIGHT / 2;
+const DESIGN_WIDTH = 1920;
+const DESIGN_HEIGHT = 1080;
+const FPS = 60;
+const DURATION_SECONDS = 15;
+const REFERENCE_EMISSION_END = 6.58;
+const ACTIVE_SOURCE_END = DURATION_SECONDS;
+const PARTICLES_PER_SECOND = 5000 / REFERENCE_EMISSION_END;
 const TAU = Math.PI * 2;
+const CENTER_X = DESIGN_WIDTH / 2;
+const CENTER_Y = 535;
+const PARTICLE_COUNT = Math.ceil(PARTICLES_PER_SECOND * DURATION_SECONDS);
 
-const COLORS = {
-  background: '#03040B',
-  backgroundWarm: '#16070F',
-  backgroundCool: '#07121A',
-  guide: '#C7D9D6',
-  gold: '#FFC85A',
-  goldHot: '#FFF3CD',
-  coral: '#FF507D',
-  coralHot: '#FFE0E9',
-  aqua: '#45E8D3',
-  aquaHot: '#DDFFFA',
-  white: '#FFFFFF',
+type Point = {
+  x: number;
+  y: number;
 };
 
-const clamp = (value: number, min = 0, max = 1) =>
-  Math.max(min, Math.min(max, value));
+type LateEnvelope = {
+  xOffset: number;
+  xScale: number;
+  yOffset: number;
+  yScale: number;
+  left: number;
+  right: number;
+  top: number;
+};
+
+type ParticleKind = "dust" | "orb" | "glint" | "star";
+
+type Particle = {
+  persistent: boolean;
+  birth: number;
+  lifetime: number;
+  x: number;
+  y: number;
+  tangentX: number;
+  tangentY: number;
+  radialX: number;
+  radialY: number;
+  scatterTangent: number;
+  scatterRadial: number;
+  tangentSpeed: number;
+  radialSpeed: number;
+  windX: number;
+  downSpeed: number;
+  residualFall: number;
+  delayedFall: number;
+  gravity: number;
+  flutter: number;
+  flutterRate: number;
+  phase: number;
+  flickerRate: number;
+  size: number;
+  baseAlpha: number;
+  rotation: number;
+  spin: number;
+  color: number;
+  kind: ParticleKind;
+  depth: number;
+};
+
+const COLORS = [
+  "rgb(255, 250, 220)",
+  "rgb(255, 234, 160)",
+  "rgb(255, 207, 92)",
+  "rgb(244, 170, 54)",
+  "rgb(211, 126, 33)",
+] as const;
+
+const RADIUS_TIMES = [
+  0, 0.2, 0.4, 0.8, 1.0, 1.4, 1.6, 1.8, 2.0, 2.6, 3.2, 3.8,
+  4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.4, 5.8, 6.0, 6.2, 6.4, 6.6,
+] as const;
+
+const RADIUS_VALUES = [
+  25, 58, 117, 115, 141, 162, 172, 206, 241, 246, 269, 265, 289, 325,
+  362, 390, 397, 396, 389, 395, 390, 376, 370, 376,
+] as const;
+
+const clamp = (value: number, minimum = 0, maximum = 1) =>
+  Math.max(minimum, Math.min(maximum, value));
+
+const lerp = (from: number, to: number, amount: number) =>
+  from + (to - from) * amount;
+
+const smoothstep = (value: number) => {
+  const progress = clamp(value);
+  return progress * progress * (3 - 2 * progress);
+};
+
+const smootherstep = (value: number) => {
+  const progress = clamp(value);
+  return progress * progress * progress * (progress * (progress * 6 - 15) + 10);
+};
+
+const endpointVisibilityAt = (displayTime: number) =>
+  clamp((DURATION_SECONDS - displayTime) * FPS);
+
+const particleTimelineAt = (displayTime: number) =>
+  clamp(displayTime, 0, DURATION_SECONDS);
+
+const interpolateKeyframes = (
+  time: number,
+  times: readonly number[],
+  values: readonly number[],
+) => {
+  if (time <= times[0]) {
+    return values[0];
+  }
+  for (let index = 1; index < times.length; index += 1) {
+    if (time <= times[index]) {
+      const progress = smoothstep(
+        (time - times[index - 1]) / (times[index] - times[index - 1]),
+      );
+      return lerp(values[index - 1], values[index], progress);
+    }
+  }
+  return values[values.length - 1];
+};
+
+const lateEnvelopeAt = (time: number): LateEnvelope => {
+  const times = [8.2, 8.5, 9.0, 9.5, 10] as const;
+  return {
+    xOffset: interpolateKeyframes(time, times, [0, -48, -20, 0, 0]),
+    xScale: interpolateKeyframes(time, times, [1, 1, 1.1, 1, 1]),
+    yOffset: interpolateKeyframes(time, times, [0, -65, 67, 0, 0]),
+    yScale: interpolateKeyframes(time, times, [1, 1.09, 1.05, 1, 1]),
+    left: interpolateKeyframes(time, times, [-80, 120, -80, 90, 500]),
+    right: interpolateKeyframes(time, times, [2000, 845, 930, 920, 820]),
+    top: interpolateKeyframes(time, times, [-80, -30, 150, 430, 450]),
+  };
+};
 
 const fract = (value: number) => value - Math.floor(value);
 
-const seeded = (index: number, salt = 0) =>
-  fract(Math.sin(index * 127.1 + salt * 311.7) * 43758.5453123);
+const hash = (index: number, salt: number) =>
+  fract(Math.sin(index * 127.1 + salt * 311.7 + 17.17) * 43758.5453123);
 
-type OrbitSpec = {
-  id: 'gold' | 'coral' | 'aqua';
-  color: string;
-  hot: string;
-  rx: number;
-  ry: number;
-  rotation: number;
-  period: number;
-  phase: number;
-  direction: 1 | -1;
-  depthPhase: number;
-  trailCount: number;
-  trailSpacing: number;
-  electronRadius: number;
-  dashSpeed: number;
-  secondaryOffset: number;
+const signedHash = (index: number, salt: number) => hash(index, salt) * 2 - 1;
+
+const radiusAt = (time: number) => {
+  const target = clamp(time, RADIUS_TIMES[0], RADIUS_TIMES[RADIUS_TIMES.length - 1]);
+  for (let index = 1; index < RADIUS_TIMES.length; index += 1) {
+    if (target <= RADIUS_TIMES[index]) {
+      const startTime = RADIUS_TIMES[index - 1];
+      const endTime = RADIUS_TIMES[index];
+      const progress = smoothstep((target - startTime) / (endTime - startTime));
+      return lerp(RADIUS_VALUES[index - 1], RADIUS_VALUES[index], progress);
+    }
+  }
+  return RADIUS_VALUES[RADIUS_VALUES.length - 1];
 };
 
-type OrbitPoint = {
-  x: number;
-  y: number;
-  z: number;
+const angleAt = (time: number) => {
+  const target = Math.max(0, time);
+  const openingCorrection = -63 * Math.exp(-target / 0.18);
+  const middleCorrection =
+    -8 *
+    smoothstep((target - 0.9) / 0.5) *
+    (1 - smoothstep((target - 4.6) / 0.75));
+  const endingCorrection = smoothstep((target - 5.65) / 0.95) * 4.5;
+  const degrees =
+    -44.87 -
+    484.02 * Math.sqrt(target) +
+    openingCorrection +
+    middleCorrection +
+    endingCorrection;
+  return (degrees * Math.PI) / 180;
 };
 
-type DepthSide = 'back' | 'front';
-
-const ORBITS: OrbitSpec[] = [
-  {
-    id: 'gold',
-    color: COLORS.gold,
-    hot: COLORS.goldHot,
-    rx: 760,
-    ry: 390,
-    rotation: 32,
-    period: 30,
-    phase: 0.02,
-    direction: 1,
-    depthPhase: 0.25,
-    trailCount: 76,
-    trailSpacing: 0.034,
-    electronRadius: 11,
-    dashSpeed: 0.5,
-    secondaryOffset: Math.PI * 1.08,
-  },
-  {
-    id: 'coral',
-    color: COLORS.coral,
-    hot: COLORS.coralHot,
-    rx: 690,
-    ry: 280,
-    rotation: -70,
-    period: 23.5,
-    phase: 0.78,
-    direction: 1,
-    depthPhase: -0.5,
-    trailCount: 64,
-    trailSpacing: 0.04,
-    electronRadius: 9.5,
-    dashSpeed: 0.66,
-    secondaryOffset: Math.PI * 0.92,
-  },
-  {
-    id: 'aqua',
-    color: COLORS.aqua,
-    hot: COLORS.aquaHot,
-    rx: 560,
-    ry: 175,
-    rotation: 10,
-    period: 15.2,
-    phase: 0.18,
-    direction: 1,
-    depthPhase: 0.9,
-    trailCount: 58,
-    trailSpacing: 0.048,
-    electronRadius: 10,
-    dashSpeed: 0.84,
-    secondaryOffset: Math.PI * 1.03,
-  },
-];
-
-const orbitAngle = (spec: OrbitSpec, frame: number, fps: number, offset = 0) =>
-  spec.phase +
-  offset +
-  spec.direction * (frame / fps) * (TAU / spec.period);
-
-const pointOnOrbit = (spec: OrbitSpec, angle: number): OrbitPoint => {
-  const localX = Math.cos(angle) * spec.rx;
-  const localY = Math.sin(angle) * spec.ry;
-  const rotation = (spec.rotation * Math.PI) / 180;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-
+const emitterAt = (time: number): Point => {
+  const angle = angleAt(time);
+  const radius = radiusAt(time);
   return {
-    x: CX + localX * cos - localY * sin,
-    y: CY + localX * sin + localY * cos,
-    z: Math.sin(angle + spec.depthPhase),
+    x: CENTER_X + Math.cos(angle) * radius,
+    y: CENTER_Y + Math.sin(angle) * radius,
   };
 };
 
-const isOnSide = (z: number, side: DepthSide) =>
-  side === 'front' ? z >= 0 : z < 0;
-
-const StaticBackground: React.FC = () => (
-  <AbsoluteFill
-    style={{
-      overflow: 'hidden',
-      backgroundColor: COLORS.background,
-      backgroundImage: [
-        'radial-gradient(circle at 50% 50%, rgba(34,42,49,0.52) 0%, rgba(9,11,19,0.76) 36%, rgba(3,4,11,0.98) 74%)',
-        'radial-gradient(circle at 18% 20%, rgba(255,80,125,0.085) 0%, rgba(255,80,125,0) 32%)',
-        'radial-gradient(circle at 84% 78%, rgba(255,200,90,0.075) 0%, rgba(255,200,90,0) 30%)',
-        'linear-gradient(122deg, rgba(69,232,211,0.025), rgba(22,7,15,0.08) 56%, rgba(0,0,0,0.2))',
-      ].join(', '),
-    }}
-  >
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.11,
-        backgroundImage:
-          'repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 4px)',
-        mixBlendMode: 'soft-light',
-      }}
-    />
-  </AbsoluteFill>
-);
-
-const SvgDefs: React.FC = () => (
-  <defs>
-    <filter id="atom-soft-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="13" />
-    </filter>
-    <filter id="atom-wide-glow" x="-150%" y="-150%" width="400%" height="400%">
-      <feGaussianBlur stdDeviation="30" />
-    </filter>
-    <filter id="atom-line-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-    <filter id="atom-hot-glow" x="-150%" y="-150%" width="400%" height="400%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur1" />
-      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur2" />
-      <feMerge>
-        <feMergeNode in="blur1" />
-        <feMergeNode in="blur2" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-    <radialGradient id="atom-core-glass" cx="36%" cy="30%" r="72%">
-      <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.38" />
-      <stop offset="25%" stopColor="#FFE0E9" stopOpacity="0.19" />
-      <stop offset="58%" stopColor="#45E8D3" stopOpacity="0.08" />
-      <stop offset="100%" stopColor="#050610" stopOpacity="0.92" />
-    </radialGradient>
-    <radialGradient id="atom-core-energy" cx="45%" cy="42%" r="65%">
-      <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.98" />
-      <stop offset="20%" stopColor="#FFF3CD" stopOpacity="0.86" />
-      <stop offset="55%" stopColor="#FF507D" stopOpacity="0.38" />
-      <stop offset="100%" stopColor="#FF507D" stopOpacity="0" />
-    </radialGradient>
-    <linearGradient id="atom-mark-gradient" x1="0" y1="0" x2="24" y2="24">
-      <stop offset="0%" stopColor="#FFF3CD" />
-      <stop offset="48%" stopColor="#FFFFFF" />
-      <stop offset="100%" stopColor="#45E8D3" />
-    </linearGradient>
-  </defs>
-);
-
-const PolarGuides: React.FC = () => {
-  const rings = [112, 168, 228, 302, 386, 480, 574];
-  const ticks = Array.from({length: 48});
-
-  return (
-    <g aria-hidden="true">
-      <circle
-        cx={CX}
-        cy={CY}
-        r={545}
-        fill="none"
-        stroke={COLORS.aqua}
-        strokeOpacity={0.12}
-        strokeWidth={1.5}
-      />
-      {rings.map((radius, index) => (
-        <circle
-          key={radius}
-          cx={CX}
-          cy={CY}
-          r={radius}
-          fill="none"
-          stroke={index % 2 === 0 ? COLORS.aqua : COLORS.guide}
-          strokeOpacity={index < 3 ? 0.09 : 0.045}
-          strokeWidth={index < 2 ? 1.2 : 1}
-          strokeDasharray={index % 3 === 0 ? '2 9' : undefined}
-        />
-      ))}
-      <line
-        x1={110}
-        y1={CY}
-        x2={WIDTH - 110}
-        y2={CY}
-        stroke={COLORS.guide}
-        strokeOpacity={0.032}
-        strokeWidth={1}
-      />
-      <line
-        x1={CX}
-        y1={48}
-        x2={CX}
-        y2={HEIGHT - 48}
-        stroke={COLORS.guide}
-        strokeOpacity={0.032}
-        strokeWidth={1}
-      />
-      {ticks.map((_, index) => {
-        const angle = (index / ticks.length) * TAU;
-        const inner = 510 + (index % 4 === 0 ? -8 : 0);
-        const outer = inner + (index % 4 === 0 ? 18 : 9);
-        return (
-          <line
-            key={index}
-            x1={CX + Math.cos(angle) * inner}
-            y1={CY + Math.sin(angle) * inner}
-            x2={CX + Math.cos(angle) * outer}
-            y2={CY + Math.sin(angle) * outer}
-            stroke={COLORS.guide}
-            strokeOpacity={index % 4 === 0 ? 0.11 : 0.045}
-            strokeWidth={index % 4 === 0 ? 1.4 : 1}
-          />
-        );
-      })}
-    </g>
-  );
-};
-
-const OrbitBase: React.FC<{
-  spec: OrbitSpec;
-  frame: number;
-}> = ({spec, frame}) => {
-  const transform = `rotate(${spec.rotation} ${CX} ${CY})`;
-  const dashOffset = -frame * spec.dashSpeed;
-
-  return (
-    <g aria-hidden="true">
-      <ellipse
-        cx={CX}
-        cy={CY}
-        rx={spec.rx}
-        ry={spec.ry}
-        transform={transform}
-        fill="none"
-        stroke={spec.color}
-        strokeOpacity={0.055}
-        strokeWidth={1.2}
-      />
-      <ellipse
-        cx={CX}
-        cy={CY}
-        rx={spec.rx}
-        ry={spec.ry}
-        transform={transform}
-        fill="none"
-        stroke={spec.color}
-        strokeOpacity={0.36}
-        strokeWidth={2.75}
-        strokeDasharray={spec.id === 'gold' ? '3 17 1 24' : spec.id === 'coral' ? '2 20 7 28' : '10 18 2 15'}
-        strokeDashoffset={dashOffset}
-        strokeLinecap="round"
-      />
-      <ellipse
-        cx={CX}
-        cy={CY}
-        rx={spec.rx}
-        ry={spec.ry}
-        transform={transform}
-        fill="none"
-        stroke={spec.color}
-        strokeOpacity={0.115}
-        strokeWidth={9.5}
-        strokeDasharray={spec.id === 'aqua' ? '54 210' : '38 280'}
-        strokeDashoffset={dashOffset * 0.72}
-        strokeLinecap="round"
-        filter="url(#atom-soft-glow)"
-      />
-    </g>
-  );
-};
-
-const MovingElectron: React.FC<{
-  spec: OrbitSpec;
-  frame: number;
-  fps: number;
-  side: DepthSide;
-  offset?: number;
-  size?: number;
-  trailScale?: number;
-  soft?: boolean;
-}> = ({
-  spec,
-  frame,
-  fps,
-  side,
-  offset = 0,
-  size = 1,
-  trailScale = 1,
-  soft = false,
-}) => {
-  const headAngle = orbitAngle(spec, frame, fps, offset);
-  const trailCount = Math.max(10, Math.round(spec.trailCount * trailScale));
-  const trail = Array.from({length: trailCount});
-  const head = pointOnOrbit(spec, headAngle);
-  const headFrontness = clamp((head.z + 1) / 2);
-  const headDepthScale = 0.72 + headFrontness * 0.46;
-  const headRadius = spec.electronRadius * size * headDepthScale;
-
-  return (
-    <g aria-hidden="true">
-      {trail.map((_, index) => {
-        const progress = index / Math.max(1, trailCount - 1);
-        const angle =
-          headAngle -
-          spec.direction * index * spec.trailSpacing * (0.92 + trailScale * 0.08);
-        const point = pointOnOrbit(spec, angle);
-        if (!isOnSide(point.z, side)) {
-          return null;
-        }
-
-        const nextAngle =
-          headAngle -
-          spec.direction *
-            (index + 1) *
-            spec.trailSpacing *
-            (0.92 + trailScale * 0.08);
-        const nextPoint = pointOnOrbit(spec, nextAngle);
-
-        const frontness = clamp((point.z + 1) / 2);
-        const falloff = Math.pow(1 - progress, 1.55);
-        const rhythm = 0.62 + 0.38 * Math.sin(index * 2.14 + spec.phase * 8) ** 2;
-        const radius =
-          spec.electronRadius *
-          size *
-          (0.12 + falloff * 0.42) *
-          (0.68 + frontness * 0.35) *
-          rhythm;
-        const opacity =
-          falloff *
-          (0.16 + frontness * 0.78) *
-          (index % 7 === 0 ? 1 : 0.76);
-
-        const segmentVisible =
-          index < trailCount - 1 &&
-          isOnSide(nextPoint.z, side) &&
-          index % 10 !== 7 &&
-          index % 10 !== 8;
-        const segmentWidth = Math.max(
-          1,
-          spec.electronRadius *
-            size *
-            (0.16 + falloff * 0.58) *
-            (0.7 + frontness * 0.4),
-        );
-
-        return (
-          <g key={index}>
-            {segmentVisible ? (
-              <line
-                x1={point.x}
-                y1={point.y}
-                x2={nextPoint.x}
-                y2={nextPoint.y}
-                stroke={index < 5 ? spec.hot : spec.color}
-                strokeOpacity={opacity * 0.96}
-                strokeWidth={segmentWidth * 1.12}
-                strokeLinecap="round"
-                filter={index < 18 ? 'url(#atom-line-glow)' : undefined}
-              />
-            ) : null}
-            {index % 3 !== 1 || index < 8 ? (
-              <circle
-                cx={point.x}
-                cy={point.y}
-                r={Math.max(0.55, radius * 0.78)}
-                fill={index < 4 ? spec.hot : spec.color}
-                fillOpacity={opacity}
-                filter={index < 10 ? 'url(#atom-line-glow)' : undefined}
-              />
-            ) : null}
-          </g>
-        );
-      })}
-
-      {isOnSide(head.z, side) ? (
-        <g>
-          <circle
-            cx={head.x}
-            cy={head.y}
-            r={headRadius * (soft ? 5.6 : 4.2)}
-            fill={spec.color}
-            fillOpacity={soft ? 0.17 : 0.12 + headFrontness * 0.08}
-            filter="url(#atom-wide-glow)"
-          />
-          <circle
-            cx={head.x}
-            cy={head.y}
-            r={headRadius * (soft ? 2.35 : 1.65)}
-            fill={spec.color}
-            fillOpacity={soft ? 0.2 : 0.88}
-            filter={soft ? 'url(#atom-wide-glow)' : 'url(#atom-hot-glow)'}
-          />
-          {!soft ? (
-            <>
-              <circle
-                cx={head.x}
-                cy={head.y}
-                r={headRadius}
-                fill={spec.hot}
-                fillOpacity={0.96}
-                filter="url(#atom-line-glow)"
-              />
-              <circle
-                cx={head.x - headRadius * 0.18}
-                cy={head.y - headRadius * 0.2}
-                r={headRadius * 0.43}
-                fill={COLORS.white}
-                fillOpacity={0.98}
-              />
-            </>
-          ) : null}
-        </g>
-      ) : null}
-    </g>
-  );
-};
-
-const OrbitMotion: React.FC<{
-  spec: OrbitSpec;
-  frame: number;
-  fps: number;
-  side: DepthSide;
-}> = ({spec, frame, fps, side}) => (
-  <g>
-    <MovingElectron spec={spec} frame={frame} fps={fps} side={side} />
-    <MovingElectron
-      spec={spec}
-      frame={frame}
-      fps={fps}
-      side={side}
-      offset={spec.secondaryOffset}
-      size={0.46}
-      trailScale={0.34}
-    />
-    {spec.id === 'aqua' ? (
-      <MovingElectron
-        spec={spec}
-        frame={frame}
-        fps={fps}
-        side={side}
-        offset={Math.PI * 1.58}
-        size={1.62}
-        trailScale={0.22}
-        soft
-      />
-    ) : null}
-  </g>
-);
-
-type MoteSpec = {
-  color: string;
-  radius: number;
-  rx: number;
-  ry: number;
-  rotation: number;
-  period: number;
-  phase: number;
-  blur: boolean;
-};
-
-const MOTE_SPECS: MoteSpec[] = Array.from({length: 16}, (_, index) => {
-  const palette = [COLORS.gold, COLORS.coral, COLORS.aqua];
-  const large = index < 3;
+const directionAt = (time: number) => {
+  const before = emitterAt(Math.max(0, time - 0.012));
+  const after = emitterAt(Math.min(ACTIVE_SOURCE_END, time + 0.012));
+  const distance = Math.hypot(after.x - before.x, after.y - before.y) || 1;
   return {
-    color: palette[index % palette.length],
-    radius: large ? 21 + seeded(index, 3) * 18 : 2 + seeded(index, 4) * 4,
-    rx: 310 + seeded(index, 5) * 390,
-    ry: 160 + seeded(index, 6) * 250,
-    rotation: -78 + seeded(index, 7) * 156,
-    period: 18 + seeded(index, 8) * 25,
-    phase: seeded(index, 9) * TAU,
-    blur: large,
-  };
-});
-
-const pointOnMoteOrbit = (mote: MoteSpec, angle: number): OrbitPoint => {
-  const localX = Math.cos(angle) * mote.rx;
-  const localY = Math.sin(angle) * mote.ry;
-  const rotation = (mote.rotation * Math.PI) / 180;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return {
-    x: CX + localX * cos - localY * sin,
-    y: CY + localX * sin + localY * cos,
-    z: Math.sin(angle + mote.phase * 0.17),
+    x: (after.x - before.x) / distance,
+    y: (after.y - before.y) / distance,
   };
 };
 
-const AtomMotes: React.FC<{
-  frame: number;
-  fps: number;
-  side: DepthSide;
-}> = ({frame, fps, side}) => (
-  <g aria-hidden="true">
-    {MOTE_SPECS.map((mote, index) => {
-      const angle = mote.phase + (frame / fps) * (TAU / mote.period);
-      const point = pointOnMoteOrbit(mote, angle);
-      if (!isOnSide(point.z, side)) {
-        return null;
+const makeParticle = (index: number): Particle => {
+  const birth = clamp(
+    (index + 0.12 + hash(index, 1) * 0.76) / PARTICLES_PER_SECOND,
+    0,
+    DURATION_SECONDS,
+  );
+  const origin = emitterAt(birth);
+  const tangent = directionAt(birth);
+  const radialDistance = Math.hypot(origin.x - CENTER_X, origin.y - CENTER_Y) || 1;
+  const radialX = (origin.x - CENTER_X) / radialDistance;
+  const radialY = (origin.y - CENTER_Y) / radialDistance;
+  const depth = hash(index, 2);
+  const kindChance = hash(index, 3);
+  const kind: ParticleKind =
+    kindChance < 0.76
+      ? "dust"
+      : kindChance < 0.86
+        ? "orb"
+        : kindChance < 0.95
+          ? "glint"
+          : "star";
+  const isWideSpark = hash(index, 4) > 0.82;
+  const isPersistent =
+    birth > 5.35 &&
+    birth <= REFERENCE_EMISSION_END &&
+    hash(index, 24) > 0.5;
+  const fallMode = hash(index, 26);
+  const kindSize =
+    kind === "dust"
+      ? lerp(1.35, 4.8, Math.pow(hash(index, 5), 1.65))
+      : kind === "orb"
+        ? lerp(2.6, 7.4, hash(index, 5))
+        : kind === "glint"
+          ? lerp(5.0, 14.0, hash(index, 5))
+          : lerp(10.0, 30.0, hash(index, 5));
+  const lateLifetimeBoost =
+    isPersistent ? smoothstep((birth - 5.25) / 1.05) * 0.48 : 0;
+  const earlyLifetimeBoost =
+    (1 - smoothstep((birth - 1.0) / 1.4)) * 0.32;
+  const persistenceBoost = isPersistent ? lerp(1.2, 2.0, hash(index, 25)) : 0;
+  const lifetimeBase =
+    lerp(2.66, 3.46, hash(index, 6)) +
+    lateLifetimeBoost +
+    earlyLifetimeBoost +
+    persistenceBoost;
+
+  return {
+    persistent: isPersistent,
+    birth,
+    lifetime: lifetimeBase + (kind === "star" ? 0.22 : 0),
+    x: origin.x,
+    y: origin.y,
+    tangentX: tangent.x,
+    tangentY: tangent.y,
+    radialX,
+    radialY,
+    scatterTangent: signedHash(index, 7) * lerp(4, 34, depth),
+    scatterRadial: signedHash(index, 8) * lerp(5, 42, depth),
+    tangentSpeed:
+      signedHash(index, 9) * lerp(3, 22, hash(index, 10)) *
+      (isWideSpark ? 1.8 : 1) *
+      (isPersistent ? (fallMode < 0.4 ? 0.35 : 0.22) : 1),
+    radialSpeed:
+      lerp(9, 38, hash(index, 11)) * lerp(0.58, 1.22, depth) *
+      (isWideSpark ? 3.4 : 1) *
+      (radialX < -0.15 ? 1.72 : radialX > 0.15 ? 0.96 : 1.12) *
+      (isPersistent
+        ? fallMode < 0.4
+          ? isWideSpark
+            ? 0.4
+            : 0.9
+          : isWideSpark
+            ? 0.2
+            : 0.55
+        : 1),
+    windX:
+      isPersistent
+        ? fallMode < 0.4
+          ? -8 + signedHash(index, 12) * 2
+          : 10 + signedHash(index, 12) * 3
+        : signedHash(index, 12) * (isWideSpark ? 25 : 8),
+    downSpeed: isPersistent
+      ? fallMode < 0.4
+        ? lerp(5, 18, hash(index, 23))
+        : lerp(55, 88, hash(index, 23))
+      : lerp(18, isWideSpark ? 54 : 44, hash(index, 23)),
+    residualFall: isPersistent ? (fallMode < 0.4 ? 10 : 78) : 35,
+    delayedFall: isPersistent && fallMode < 0.4 ? 120 : 0,
+    gravity:
+      lerp(7, 27, hash(index, 13)) *
+      lerp(0.45, 1.2, depth) *
+      (isPersistent ? (fallMode < 0.4 ? 0.45 : 1.65) : 1.15),
+    flutter: lerp(0.8, 6.5, hash(index, 14)) * (isWideSpark ? 1.6 : 1),
+    flutterRate: lerp(0.7, 2.2, hash(index, 15)),
+    phase: hash(index, 16) * TAU,
+    flickerRate: lerp(1.4, 5.1, hash(index, 17)),
+    size: kindSize * lerp(0.72, 1.18, depth),
+    baseAlpha:
+      (kind === "dust" ? lerp(0.44, 0.9, hash(index, 18)) : lerp(0.58, 0.98, hash(index, 18))) *
+      lerp(0.72, 1, depth) *
+      (isPersistent ? 0.85 : 1),
+    rotation: hash(index, 19) * TAU,
+    spin: signedHash(index, 20) * lerp(0.05, 0.42, hash(index, 21)),
+    color:
+      hash(index, 22) < 0.12
+        ? 0
+        : hash(index, 22) < 0.35
+          ? 1
+          : hash(index, 22) < 0.69
+            ? 2
+            : hash(index, 22) < 0.91
+              ? 3
+              : 4,
+    kind,
+    depth,
+  };
+};
+
+const PARTICLES = Array.from({length: PARTICLE_COUNT}, (_, index) =>
+  makeParticle(index),
+).sort((a, b) => a.depth - b.depth);
+
+const particleState = (
+  particle: Particle,
+  motionTime: number,
+  displayTime: number,
+  lateEnvelope: LateEnvelope,
+) => {
+  const age = motionTime - particle.birth;
+  if (age < 0 || age > particle.lifetime) {
+    return null;
+  }
+  const visualAge = displayTime - particle.birth;
+
+  const birthFade = smootherstep(age / 0.12);
+  const deathWindow = lerp(0.58, 0.98, particle.depth);
+  const deathFade = smootherstep((particle.lifetime - age) / deathWindow);
+  const oldTrailCull =
+    particle.birth < 5.35
+      ? 1 - 0.96 * smootherstep((motionTime - 7.05) / 1.15)
+      : 1;
+  const persistentFade = particle.persistent
+    ? 1 -
+      0.25 * smootherstep((motionTime - 8.65) / 0.35) -
+      0.3 * smootherstep((motionTime - 9.05) / 0.45) -
+      0.05 * smootherstep((motionTime - 9.55) / 0.4)
+    : 1;
+  const wave =
+    0.78 +
+    0.22 *
+      Math.sin((displayTime * particle.flickerRate + particle.phase) * TAU);
+  const heroGlint =
+    particle.kind === "star"
+      ? 0.64 +
+        0.36 *
+          Math.pow(
+            Math.max(
+              0,
+              Math.sin((displayTime * 0.82 + particle.phase) * TAU),
+            ),
+            2,
+          )
+      : 1;
+  const flutterOffset =
+    (Math.sin(age * particle.flutterRate * TAU + particle.phase) -
+      Math.sin(particle.phase)) *
+    particle.flutter;
+  const tangentTravel = particle.scatterTangent + particle.tangentSpeed * age;
+  const radialTravel = particle.scatterRadial + particle.radialSpeed * age;
+  const residualAge =
+    particle.birth <= REFERENCE_EMISSION_END
+      ? Math.max(0, motionTime - 6.55)
+      : 0;
+  const delayedResidualAge = Math.max(0, residualAge - 1.9);
+  const delayedFall =
+    particle.delayedFall > 0
+      ? particle.delayedFall * Math.min(delayedResidualAge, 0.55) +
+        255 * smootherstep((motionTime - 9.05) / 0.35)
+      : 0;
+  const baseX =
+    particle.x +
+    particle.tangentX * tangentTravel +
+    particle.radialX * radialTravel +
+    particle.windX * Math.pow(age, 1.18) -
+    particle.radialY * flutterOffset +
+    lateEnvelope.xOffset;
+  const x = CENTER_X + (baseX - CENTER_X) * lateEnvelope.xScale;
+  const baseY =
+    particle.y +
+    particle.tangentY * tangentTravel +
+    particle.radialY * radialTravel +
+    particle.radialX * flutterOffset +
+    particle.downSpeed * age +
+    particle.residualFall * residualAge +
+    delayedFall +
+    particle.gravity * age * age * 0.5 +
+    lateEnvelope.yOffset;
+  const y = CENTER_Y + (baseY - CENTER_Y) * lateEnvelope.yScale;
+  const edgeFade = 50;
+  const lateSpatialFade =
+    smootherstep((x - lateEnvelope.left) / edgeFade) *
+    smootherstep((lateEnvelope.right - x) / edgeFade) *
+    smootherstep((y - lateEnvelope.top) / edgeFade);
+  const terminalLift = particle.persistent
+    ? 1 + 0.15 * smootherstep((motionTime - 9.7) / 0.3)
+    : 1;
+  const alpha = clamp(
+    particle.baseAlpha *
+      birthFade *
+      deathFade *
+      oldTrailCull *
+      persistentFade *
+      lateSpatialFade *
+      terminalLift *
+      wave *
+      heroGlint *
+      endpointVisibilityAt(displayTime),
+  );
+  const scale =
+    0.82 +
+    0.18 * smoothstep(age / 0.22) +
+    (particle.kind === "star"
+      ? 0.1 * Math.sin(visualAge * 1.7 + particle.phase)
+      : 0);
+
+  return {x, y, alpha, scale, age: visualAge};
+};
+
+const drawFourPointStar = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  rotation: number,
+) => {
+  const inner = radius * 0.16;
+  context.save();
+  context.translate(x, y);
+  context.rotate(rotation);
+  context.beginPath();
+  context.moveTo(0, -radius);
+  context.lineTo(inner, -inner);
+  context.lineTo(radius * 0.72, 0);
+  context.lineTo(inner, inner);
+  context.lineTo(0, radius);
+  context.lineTo(-inner, inner);
+  context.lineTo(-radius * 0.72, 0);
+  context.lineTo(-inner, -inner);
+  context.closePath();
+  context.fill();
+  context.restore();
+};
+
+const drawSixPointStar = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  rotation: number,
+) => {
+  context.save();
+  context.translate(x, y);
+  context.rotate(rotation);
+  context.beginPath();
+  for (let index = 0; index < 12; index += 1) {
+    const pointRadius = index % 2 === 0 ? radius : radius * 0.34;
+    const angle = -Math.PI / 2 + (index / 12) * TAU;
+    const pointX = Math.cos(angle) * pointRadius;
+    const pointY = Math.sin(angle) * pointRadius;
+    if (index === 0) {
+      context.moveTo(pointX, pointY);
+    } else {
+      context.lineTo(pointX, pointY);
+    }
+  }
+  context.closePath();
+  context.fill();
+  context.restore();
+};
+
+const drawBackground = (context: CanvasRenderingContext2D) => {
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+  const base = context.createLinearGradient(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+  base.addColorStop(0, "rgb(8, 11, 19)");
+  base.addColorStop(0.48, "rgb(5, 7, 12)");
+  base.addColorStop(1, "rgb(2, 3, 7)");
+  context.fillStyle = base;
+  context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+  const navySheen = context.createRadialGradient(
+    1370,
+    210,
+    0,
+    1370,
+    210,
+    980,
+  );
+  navySheen.addColorStop(0, "rgba(28, 39, 61, 0.26)");
+  navySheen.addColorStop(0.48, "rgba(11, 17, 29, 0.10)");
+  navySheen.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.fillStyle = navySheen;
+  context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+  const warmCenter = context.createRadialGradient(
+    CENTER_X,
+    CENTER_Y,
+    0,
+    CENTER_X,
+    CENTER_Y,
+    760,
+  );
+  warmCenter.addColorStop(0, "rgba(75, 49, 20, 0.075)");
+  warmCenter.addColorStop(0.46, "rgba(38, 25, 12, 0.032)");
+  warmCenter.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.fillStyle = warmCenter;
+  context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+  const vignette = context.createRadialGradient(
+    CENTER_X,
+    CENTER_Y * 0.96,
+    280,
+    CENTER_X,
+    CENTER_Y * 0.96,
+    1130,
+  );
+  vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
+  vignette.addColorStop(0.66, "rgba(0, 0, 0, 0.12)");
+  vignette.addColorStop(1, "rgba(0, 0, 0, 0.72)");
+  context.fillStyle = vignette;
+  context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+};
+
+const drawSubjectAura = (
+  context: CanvasRenderingContext2D,
+  time: number,
+) => {
+  const build = smoothstep(time / 1.5);
+  const alpha = build * endpointVisibilityAt(time) * 0.055;
+  if (alpha <= 0.001) {
+    return;
+  }
+  const aura = context.createRadialGradient(
+    CENTER_X,
+    CENTER_Y,
+    80,
+    CENTER_X,
+    CENTER_Y,
+    650,
+  );
+  aura.addColorStop(0, `rgba(255, 193, 74, ${alpha})`);
+  aura.addColorStop(0.5, `rgba(205, 126, 35, ${alpha * 0.38})`);
+  aura.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.globalCompositeOperation = "screen";
+  context.fillStyle = aura;
+  context.fillRect(250, 0, 1420, DESIGN_HEIGHT);
+};
+
+const drawParticleField = (
+  context: CanvasRenderingContext2D,
+  motionTime: number,
+  displayTime: number,
+) => {
+  context.globalCompositeOperation = "screen";
+  const lateEnvelope = lateEnvelopeAt(Math.min(motionTime, 8.2));
+
+  for (const particle of PARTICLES) {
+    const state = particleState(
+      particle,
+      motionTime,
+      displayTime,
+      lateEnvelope,
+    );
+    if (!state || state.alpha < 0.012) {
+      continue;
+    }
+    if (
+      state.x < -40 ||
+      state.x > DESIGN_WIDTH + 40 ||
+      state.y < -40 ||
+      state.y > DESIGN_HEIGHT + 40
+    ) {
+      continue;
+    }
+
+    const radius = particle.size * state.scale;
+    context.globalAlpha = state.alpha;
+    context.fillStyle = COLORS[particle.color];
+    if (particle.kind === "dust") {
+      if (radius < 1.45) {
+        context.fillRect(state.x - radius, state.y - radius, radius * 2, radius * 2);
+      } else {
+        context.beginPath();
+        context.arc(state.x, state.y, radius, 0, TAU);
+        context.fill();
       }
-      const frontness = clamp((point.z + 1) / 2);
-      const size = mote.radius * (0.65 + frontness * 0.85);
-      const opacity = mote.blur
-        ? 0.07 + frontness * 0.16
-        : 0.18 + frontness * 0.48;
-      return (
-        <circle
-          key={index}
-          cx={point.x}
-          cy={point.y}
-          r={size}
-          fill={mote.color}
-          fillOpacity={opacity}
-          filter={mote.blur ? 'url(#atom-wide-glow)' : 'url(#atom-line-glow)'}
-        />
-      );
-    })}
-  </g>
-);
+      continue;
+    }
 
-const EnergyStreaks: React.FC<{
-  frame: number;
-  fps: number;
-}> = ({frame, fps}) => {
-  const seconds = frame / fps;
-  return (
-    <g aria-hidden="true">
-      {Array.from({length: 38}, (_, index) => {
-        const baseAngle = seeded(index, 12) * TAU;
-        const angularSpeed = (seeded(index, 13) - 0.5) * 0.016;
-        const angle = baseAngle + seconds * angularSpeed;
-        const baseRadius = 88 + seeded(index, 14) * 360;
-        const speed = 2.2 + seeded(index, 15) * 4.8;
-        const radius = baseRadius + seconds * speed;
-        const length = 12 + seeded(index, 16) * 48;
-        const palette = [COLORS.gold, COLORS.coral, COLORS.aqua];
-        const color = palette[index % palette.length];
-        const opacity =
-          (0.11 + seeded(index, 17) * 0.22) *
-          (0.62 + 0.38 * Math.sin(seconds * 0.8 + index * 1.31) ** 2);
-        const tangent = angle + Math.PI / 2;
-        const x = CX + Math.cos(angle) * radius;
-        const y = CY + Math.sin(angle) * radius * 0.72;
-        return (
-          <line
-            key={index}
-            x1={x - Math.cos(tangent) * length * 0.42}
-            y1={y - Math.sin(tangent) * length * 0.42}
-            x2={x + Math.cos(tangent) * length * 0.58}
-            y2={y + Math.sin(tangent) * length * 0.58}
-            stroke={color}
-            strokeOpacity={opacity}
-            strokeWidth={0.8 + seeded(index, 18) * 1.4}
-            strokeLinecap="round"
-          />
-        );
-      })}
-    </g>
-  );
+    if (particle.kind === "orb") {
+      context.beginPath();
+      context.arc(state.x, state.y, radius, 0, TAU);
+      context.fill();
+      context.globalAlpha = state.alpha * 0.72;
+      context.fillStyle = "rgb(255, 252, 230)";
+      context.beginPath();
+      context.arc(
+        state.x - radius * 0.2,
+        state.y - radius * 0.2,
+        Math.max(0.7, radius * 0.36),
+        0,
+        TAU,
+      );
+      context.fill();
+      continue;
+    }
+
+    const rotation = particle.rotation + particle.spin * state.age;
+    if (particle.kind === "glint") {
+      drawFourPointStar(context, state.x, state.y, radius, rotation);
+    } else {
+      drawSixPointStar(context, state.x, state.y, radius, rotation);
+      context.globalAlpha = state.alpha * 0.9;
+      context.fillStyle = "rgb(255, 252, 226)";
+      context.beginPath();
+      context.arc(state.x, state.y, Math.max(1.2, radius * 0.17), 0, TAU);
+      context.fill();
+    }
+  }
+  context.globalAlpha = 1;
 };
 
-const Nucleus: React.FC<{
-  frame: number;
-  fps: number;
-}> = ({frame, fps}) => {
-  const seconds = frame / fps;
-  const pulse = 1 + Math.sin(seconds * TAU / 3.6) * 0.018;
-  const rotation = seconds * 7.5;
-  const dashOffset = -frame * 0.32;
+const drawCometHead = (
+  context: CanvasRenderingContext2D,
+  motionTime: number,
+  displayTime: number,
+) => {
+  const fade = endpointVisibilityAt(displayTime);
+  if (fade <= 0.001) {
+    return;
+  }
+  const head = emitterAt(motionTime);
+  const direction = directionAt(motionTime);
+  const tailLength = lerp(76, 126, smoothstep(motionTime / 4.6));
+  const tailX = head.x - direction.x * tailLength;
+  const tailY = head.y - direction.y * tailLength;
 
-  return (
-    <g
-      transform={`translate(${CX} ${CY}) scale(${pulse}) translate(${-CX} ${-CY})`}
-      aria-hidden="true"
-    >
-      <circle
-        cx={CX}
-        cy={CY}
-        r={138}
-        fill={COLORS.coral}
-        fillOpacity={0.055}
-        filter="url(#atom-wide-glow)"
-      />
-      <circle
-        cx={CX}
-        cy={CY}
-        r={104}
-        fill="none"
-        stroke={COLORS.gold}
-        strokeOpacity={0.16}
-        strokeWidth={1.2}
-        strokeDasharray="2 10 22 16"
-        strokeDashoffset={dashOffset}
-      />
-      <circle
-        cx={CX}
-        cy={CY}
-        r={87}
-        fill="none"
-        stroke={COLORS.aqua}
-        strokeOpacity={0.24}
-        strokeWidth={1.4}
-        strokeDasharray="36 18 3 12"
-        strokeDashoffset={-dashOffset * 1.24}
-      />
-      <g transform={`rotate(${rotation} ${CX} ${CY})`}>
-        {Array.from({length: 12}, (_, index) => {
-          const angle = (index / 12) * TAU;
-          const inner = 70;
-          const outer = index % 3 === 0 ? 96 : 86;
-          return (
-            <line
-              key={index}
-              x1={CX + Math.cos(angle) * inner}
-              y1={CY + Math.sin(angle) * inner}
-              x2={CX + Math.cos(angle) * outer}
-              y2={CY + Math.sin(angle) * outer}
-              stroke={index % 2 === 0 ? COLORS.gold : COLORS.aqua}
-              strokeOpacity={0.32}
-              strokeWidth={index % 3 === 0 ? 2 : 1.2}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </g>
-      <circle
-        cx={CX}
-        cy={CY}
-        r={66}
-        fill="url(#atom-core-glass)"
-        stroke={COLORS.white}
-        strokeOpacity={0.17}
-        strokeWidth={1.3}
-      />
-      <circle
-        cx={CX}
-        cy={CY}
-        r={48}
-        fill="url(#atom-core-energy)"
-        fillOpacity={0.42}
-        filter="url(#atom-soft-glow)"
-      />
-
-      <svg
-        x={CX - 48}
-        y={CY - 48}
-        width={96}
-        height={96}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="url(#atom-mark-gradient)"
-        strokeWidth={1.28}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        filter="url(#atom-hot-glow)"
-      >
-        <circle cx="12" cy="12" r="1" fill={COLORS.white} stroke="none" />
-        <path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z" />
-        <path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z" />
-      </svg>
-      <circle
-        cx={CX}
-        cy={CY}
-        r={5.4}
-        fill={COLORS.white}
-        filter="url(#atom-hot-glow)"
-      />
-    </g>
+  context.globalCompositeOperation = "lighter";
+  const wakeGlow = context.createLinearGradient(tailX, tailY, head.x, head.y);
+  wakeGlow.addColorStop(0, "rgba(201, 117, 29, 0)");
+  wakeGlow.addColorStop(0.46, `rgba(255, 186, 58, ${0.09 * fade})`);
+  wakeGlow.addColorStop(1, `rgba(255, 248, 209, ${0.54 * fade})`);
+  context.strokeStyle = wakeGlow;
+  context.lineCap = "round";
+  context.lineWidth = 17;
+  context.beginPath();
+  context.moveTo(tailX, tailY);
+  context.quadraticCurveTo(
+    lerp(tailX, head.x, 0.62) - direction.y * 5,
+    lerp(tailY, head.y, 0.62) + direction.x * 5,
+    head.x,
+    head.y,
   );
+  context.stroke();
+
+  context.globalAlpha = fade;
+  const wakeCore = context.createLinearGradient(tailX, tailY, head.x, head.y);
+  wakeCore.addColorStop(0, "rgba(255, 177, 43, 0)");
+  wakeCore.addColorStop(0.68, "rgba(255, 215, 104, 0.26)");
+  wakeCore.addColorStop(1, "rgba(255, 255, 238, 0.98)");
+  context.strokeStyle = wakeCore;
+  context.lineWidth = 3.2;
+  context.beginPath();
+  context.moveTo(tailX, tailY);
+  context.lineTo(head.x, head.y);
+  context.stroke();
+
+  const halo = context.createRadialGradient(
+    head.x,
+    head.y,
+    0,
+    head.x,
+    head.y,
+    74,
+  );
+  halo.addColorStop(0, `rgba(255, 255, 237, ${0.86 * fade})`);
+  halo.addColorStop(0.1, `rgba(255, 233, 160, ${0.5 * fade})`);
+  halo.addColorStop(0.35, `rgba(255, 182, 58, ${0.16 * fade})`);
+  halo.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.fillStyle = halo;
+  context.beginPath();
+  context.arc(head.x, head.y, 74, 0, TAU);
+  context.fill();
+
+  const horizontalFlare = context.createLinearGradient(
+    head.x - 72,
+    head.y,
+    head.x + 72,
+    head.y,
+  );
+  horizontalFlare.addColorStop(0, "rgba(255, 208, 90, 0)");
+  horizontalFlare.addColorStop(0.45, `rgba(255, 226, 147, ${0.2 * fade})`);
+  horizontalFlare.addColorStop(0.5, `rgba(255, 255, 240, ${0.94 * fade})`);
+  horizontalFlare.addColorStop(0.55, `rgba(255, 226, 147, ${0.2 * fade})`);
+  horizontalFlare.addColorStop(1, "rgba(255, 208, 90, 0)");
+  context.strokeStyle = horizontalFlare;
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(head.x - 72, head.y);
+  context.lineTo(head.x + 72, head.y);
+  context.stroke();
+
+  const verticalFlare = context.createLinearGradient(
+    head.x,
+    head.y - 42,
+    head.x,
+    head.y + 42,
+  );
+  verticalFlare.addColorStop(0, "rgba(255, 222, 128, 0)");
+  verticalFlare.addColorStop(0.5, `rgba(255, 255, 237, ${0.66 * fade})`);
+  verticalFlare.addColorStop(1, "rgba(255, 222, 128, 0)");
+  context.strokeStyle = verticalFlare;
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.moveTo(head.x, head.y - 42);
+  context.lineTo(head.x, head.y + 42);
+  context.stroke();
+
+  context.globalAlpha = fade;
+  context.fillStyle = "rgb(255, 255, 239)";
+  context.beginPath();
+  context.arc(head.x, head.y, 8.5, 0, TAU);
+  context.fill();
+  context.globalAlpha = 1;
+};
+
+const drawFinishingVignette = (context: CanvasRenderingContext2D) => {
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+  const edge = context.createRadialGradient(
+    CENTER_X,
+    CENTER_Y,
+    470,
+    CENTER_X,
+    CENTER_Y,
+    1180,
+  );
+  edge.addColorStop(0, "rgba(0, 0, 0, 0)");
+  edge.addColorStop(0.76, "rgba(0, 0, 0, 0.08)");
+  edge.addColorStop(1, "rgba(0, 0, 0, 0.46)");
+  context.fillStyle = edge;
+  context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+  const topSheen = context.createLinearGradient(0, 0, 0, 190);
+  topSheen.addColorStop(0, "rgba(91, 108, 142, 0.045)");
+  topSheen.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.fillStyle = topSheen;
+  context.fillRect(0, 0, DESIGN_WIDTH, 190);
+};
+
+const renderScene = (
+  context: CanvasRenderingContext2D,
+  frame: number,
+  canvasWidth: number,
+  canvasHeight: number,
+) => {
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvasWidth, canvasHeight);
+  const scaleX = canvasWidth / DESIGN_WIDTH;
+  const scaleY = canvasHeight / DESIGN_HEIGHT;
+  context.save();
+  context.scale(scaleX, scaleY);
+
+  const displayTime = frame / FPS;
+  const particleTime = particleTimelineAt(displayTime);
+  drawBackground(context);
+  drawSubjectAura(context, displayTime);
+  drawParticleField(context, particleTime, displayTime);
+  drawCometHead(context, particleTime, displayTime);
+  drawFinishingVignette(context);
+
+  context.restore();
 };
 
 export const Motion: React.FC = () => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
+  const {width, height} = useVideoConfig();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const context = canvas.getContext("2d", {alpha: false});
+    if (!context) {
+      return;
+    }
+    renderScene(context, frame, width, height);
+  }, [frame, width, height]);
 
   return (
-    <AbsoluteFill style={{backgroundColor: COLORS.background, overflow: 'hidden'}}>
-      <StaticBackground />
-      <svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        preserveAspectRatio="xMidYMid slice"
-        style={{position: 'absolute', inset: 0}}
-      >
-        <SvgDefs />
-        <PolarGuides />
-        <EnergyStreaks frame={frame} fps={fps} />
-
-        {ORBITS.map((spec) => (
-          <OrbitBase key={spec.id} spec={spec} frame={frame} />
-        ))}
-
-        <AtomMotes frame={frame} fps={fps} side="back" />
-        {ORBITS.map((spec) => (
-          <OrbitMotion
-            key={`back-${spec.id}`}
-            spec={spec}
-            frame={frame}
-            fps={fps}
-            side="back"
-          />
-        ))}
-
-        <Nucleus frame={frame} fps={fps} />
-
-        {ORBITS.map((spec) => (
-          <OrbitMotion
-            key={`front-${spec.id}`}
-            spec={spec}
-            frame={frame}
-            fps={fps}
-            side="front"
-          />
-        ))}
-        <AtomMotes frame={frame} fps={fps} side="front" />
-      </svg>
+    <AbsoluteFill style={{backgroundColor: "rgb(2, 3, 7)"}}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        style={{width: "100%", height: "100%", display: "block"}}
+      />
     </AbsoluteFill>
   );
 };
