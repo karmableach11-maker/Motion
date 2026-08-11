@@ -1,688 +1,933 @@
-import React from 'react';
+import React from "react";
 import {
   AbsoluteFill,
   Easing,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
-} from 'remotion';
+} from "remotion";
 
-const DESIGN_WIDTH = 1920;
-const DESIGN_HEIGHT = 1080;
-const FINAL_MOTION_FRAME = 630;
+const TAU = Math.PI * 2;
 
-const COLORS = {
-  background: '#02040C',
-  backgroundBlue: '#07142A',
-  silver: '#F7FAFF',
-  silverLow: '#B8C9DE',
-  cyan: '#39DDFB',
-  cyanLow: '#168DB7',
-  violet: '#8A67FF',
-  blue: '#4B8FFF',
-  warm: '#F1C36B',
-  muted: '#7189A8',
+type Point = {
+  x: number;
+  y: number;
 };
 
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+type IconKind =
+  | "target"
+  | "optimize"
+  | "performance"
+  | "research"
+  | "analysis"
+  | "strategy";
 
-const reveal = (
-  frame: number,
-  start: number,
-  end: number,
-  easing: (value: number) => number = Easing.out(Easing.cubic),
-) =>
-  interpolate(frame, [start, end], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing,
-  });
-
-const lerp = (from: number, to: number, progress: number) =>
-  from + (to - from) * progress;
-
-const triangular = (frame: number, start: number, peak: number, end: number) =>
-  interpolate(frame, [start, peak, end], [0, 1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-
-type Accent = 'silver' | 'cyan' | 'violet' | 'blue' | 'muted';
-
-const accentColor: Record<Accent, string> = {
-  silver: '#F2F7FF',
-  cyan: '#42E4FA',
-  violet: '#9A7CFF',
-  blue: '#639CFF',
-  muted: '#7F93AE',
+type ModuleConfig = {
+  id: IconKind;
+  label: string;
+  value: string;
+  accent: string;
+  pale: string;
+  center: Point;
+  control: Point;
+  destination: Point;
+  startFrame: number;
+  focusFrame: number;
+  angle: number;
+  phase: number;
 };
 
-const accentGlow: Record<Accent, string> = {
-  silver: 'rgba(216,235,255,0.62)',
-  cyan: 'rgba(57,221,251,0.62)',
-  violet: 'rgba(138,103,255,0.56)',
-  blue: 'rgba(75,143,255,0.52)',
-  muted: 'rgba(100,134,172,0.30)',
+type Speck = {
+  x: number;
+  y: number;
+  radius: number;
+  opacity: number;
 };
 
-const PremiumBackground: React.FC<{frame: number}> = ({frame}) => {
-  const atmosphere = reveal(frame, 0, 160, Easing.out(Easing.quad));
-  const depth = reveal(frame, 80, 520, Easing.inOut(Easing.cubic));
+type DraftMark = {
+  x: number;
+  y: number;
+  length: number;
+  angle: number;
+  opacity: number;
+};
+
+const GRAPHITE = "#1D2933";
+const MUTED = "#66737A";
+const PAPER = "#F3EFE4";
+const PAPER_LIGHT = "#FFFDF7";
+const GRID = "#9AB8C1";
+const TEAL = "#13AFA5";
+const TEAL_DARK = "#087D79";
+const TEAL_PALE = "#D9F4EF";
+const SUCCESS = "#55BA78";
+const CYAN = "#48B8D0";
+const BLUE = "#4D83D1";
+const CORAL = "#EF6A63";
+const AMBER = "#E8AD38";
+const VIOLET = "#8B73C9";
+
+const clamp = (value: number, min = 0, max = 1) =>
+  Math.max(min, Math.min(max, value));
+
+const fract = (value: number) => value - Math.floor(value);
+
+const hash = (index: number, salt: number) =>
+  fract(Math.sin(index * 127.1 + salt * 311.7) * 43758.5453123);
+
+const smoothstep = (edge0: number, edge1: number, value: number) => {
+  const t = clamp((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+};
+
+const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp(value), 3);
+
+const focusPulse = (frame: number, center: number, width = 82) => {
+  const distance = Math.abs(frame - center) / width;
+  return Math.exp(-distance * distance * 2.25);
+};
+
+const quadraticPoint = (
+  start: Point,
+  control: Point,
+  end: Point,
+  amount: number,
+): Point => {
+  const inverse = 1 - amount;
+  return {
+    x:
+      inverse * inverse * start.x +
+      2 * inverse * amount * control.x +
+      amount * amount * end.x,
+    y:
+      inverse * inverse * start.y +
+      2 * inverse * amount * control.y +
+      amount * amount * end.y,
+  };
+};
+
+const paperSpecks: Speck[] = Array.from({length: 160}, (_, index) => ({
+  x: hash(index, 1) * 1920,
+  y: hash(index, 2) * 1080,
+  radius: 0.35 + hash(index, 3) * 1.15,
+  opacity: 0.025 + hash(index, 4) * 0.055,
+}));
+
+const draftMarks: DraftMark[] = Array.from({length: 30}, (_, index) => ({
+  x: 70 + hash(index, 8) * 1780,
+  y: 60 + hash(index, 9) * 960,
+  length: 10 + hash(index, 10) * 30,
+  angle: -18 + hash(index, 11) * 36,
+  opacity: 0.06 + hash(index, 12) * 0.08,
+}));
+
+const modules: ModuleConfig[] = [
+  {
+    id: "target",
+    label: "TARGET",
+    value: "87% GOAL",
+    accent: CORAL,
+    pale: "#FBE2DF",
+    center: {x: 278, y: 526},
+    control: {x: 408, y: 500},
+    destination: {x: 516, y: 525},
+    startFrame: 112,
+    focusFrame: 275,
+    angle: -1.8,
+    phase: 0.12,
+  },
+  {
+    id: "optimize",
+    label: "OPTIMIZE",
+    value: "+24% FLOW",
+    accent: TEAL,
+    pale: TEAL_PALE,
+    center: {x: 500, y: 208},
+    control: {x: 606, y: 320},
+    destination: {x: 628, y: 408},
+    startFrame: 164,
+    focusFrame: 350,
+    angle: 1.4,
+    phase: 0.27,
+  },
+  {
+    id: "performance",
+    label: "PERFORMANCE",
+    value: "+18.6%",
+    accent: SUCCESS,
+    pale: "#E1F4E6",
+    center: {x: 947, y: 183},
+    control: {x: 900, y: 315},
+    destination: {x: 868, y: 408},
+    startFrame: 216,
+    focusFrame: 650,
+    angle: -1.1,
+    phase: 0.42,
+  },
+  {
+    id: "research",
+    label: "RESEARCH",
+    value: "36 SIGNALS",
+    accent: CYAN,
+    pale: "#DFF3F7",
+    center: {x: 1198, y: 445},
+    control: {x: 1088, y: 474},
+    destination: {x: 1004, y: 505},
+    startFrame: 268,
+    focusFrame: 425,
+    angle: 1.7,
+    phase: 0.58,
+  },
+  {
+    id: "strategy",
+    label: "STRATEGY",
+    value: "6 ACTIONS",
+    accent: AMBER,
+    pale: "#FAEBCB",
+    center: {x: 1115, y: 790},
+    control: {x: 1020, y: 720},
+    destination: {x: 933, y: 665},
+    startFrame: 320,
+    focusFrame: 575,
+    angle: -1.5,
+    phase: 0.73,
+  },
+  {
+    id: "analysis",
+    label: "ANALYSIS",
+    value: "8 INSIGHTS",
+    accent: VIOLET,
+    pale: "#ECE6F8",
+    center: {x: 635, y: 853},
+    control: {x: 680, y: 750},
+    destination: {x: 700, y: 674},
+    startFrame: 372,
+    focusFrame: 500,
+    angle: 1.2,
+    phase: 0.88,
+  },
+];
+
+const Icon: React.FC<{
+  kind: IconKind;
+  accent: string;
+  frame: number;
+  progress: number;
+  focus: number;
+}> = ({kind, accent, frame, progress, focus}) => {
+  const lineProgress = easeOutCubic(progress);
+  const idle = Math.sin(frame * 0.045) * 1.4;
+
+  if (kind === "target") {
+    const lock = 0.68 + focus * 0.32;
+    return (
+      <g transform={`translate(74 0) scale(${lock})`}>
+        {[28, 19, 10].map((radius, index) => (
+          <circle
+            key={radius}
+            cx={0}
+            cy={0}
+            r={radius}
+            fill={index === 2 ? accent : "none"}
+            stroke={accent}
+            strokeWidth={index === 0 ? 3 : 2.4}
+            opacity={0.92 - index * 0.08}
+          />
+        ))}
+        <path
+          d="M 19 -19 L 35 -35 M 27 -35 L 35 -35 L 35 -27"
+          fill="none"
+          stroke={GRAPHITE}
+          strokeWidth={3.4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx={0} cy={0} r={3.8 + focus * 2} fill={PAPER_LIGHT} />
+      </g>
+    );
+  }
+
+  if (kind === "performance") {
+    const heights = [21, 34, 48, 64];
+    return (
+      <g transform="translate(42 34)">
+        <path
+          d="M 0 0 V -76 M 0 0 H 94"
+          fill="none"
+          stroke={GRAPHITE}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          opacity={0.72}
+        />
+        {heights.map((height, index) => {
+          const bar = smoothstep(index * 0.11, 0.5 + index * 0.09, lineProgress);
+          const dynamicHeight = height * bar * (0.96 + focus * 0.08);
+          return (
+            <rect
+              key={height}
+              x={11 + index * 20}
+              y={-dynamicHeight}
+              width={13}
+              height={dynamicHeight}
+              rx={3}
+              fill={accent}
+              opacity={0.72 + index * 0.07}
+            />
+          );
+        })}
+        <path
+          d="M 10 -18 C 33 -31 45 -29 59 -48 C 70 -61 79 -57 91 -72"
+          fill="none"
+          stroke={GRAPHITE}
+          strokeWidth={3}
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={1 - lineProgress}
+        />
+      </g>
+    );
+  }
+
+  if (kind === "research") {
+    const scan = -20 + 40 * (0.5 + 0.5 * Math.sin(frame * 0.055));
+    return (
+      <g transform={`translate(70 ${idle * 0.45})`}>
+        <circle
+          cx={-7}
+          cy={-7}
+          r={27}
+          fill="none"
+          stroke={accent}
+          strokeWidth={6}
+        />
+        <path
+          d="M 12 13 L 39 40"
+          fill="none"
+          stroke={GRAPHITE}
+          strokeWidth={8}
+          strokeLinecap="round"
+        />
+        <path
+          d={`M ${scan - 7} -25 V 11`}
+          fill="none"
+          stroke={PAPER_LIGHT}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          opacity={0.72 + focus * 0.2}
+        />
+        <circle cx={-16} cy={-13} r={5} fill={PAPER_LIGHT} opacity={0.75} />
+      </g>
+    );
+  }
+
+  if (kind === "optimize") {
+    const rotation = frame * 0.48 + focus * 22;
+    return (
+      <g transform={`translate(72 0) rotate(${rotation})`}>
+        {Array.from({length: 8}, (_, index) => {
+          const angle = (index / 8) * TAU;
+          return (
+            <rect
+              key={index}
+              x={-5}
+              y={-39}
+              width={10}
+              height={17}
+              rx={2}
+              fill={accent}
+              transform={`rotate(${(angle * 180) / Math.PI})`}
+            />
+          );
+        })}
+        <circle cx={0} cy={0} r={27} fill={accent} opacity={0.92} />
+        <circle cx={0} cy={0} r={11} fill={PAPER_LIGHT} stroke={GRAPHITE} strokeWidth={3} />
+        <path
+          d="M -4 0 L -1 4 L 7 -6"
+          fill="none"
+          stroke={GRAPHITE}
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
+  if (kind === "analysis") {
+    const rotation = -20 + lineProgress * 38 + idle;
+    return (
+      <g transform={`translate(72 0) rotate(${rotation})`}>
+        <circle cx={0} cy={0} r={34} fill={PAPER_LIGHT} stroke={GRAPHITE} strokeWidth={2.5} />
+        <circle
+          cx={0}
+          cy={0}
+          r={22}
+          fill="none"
+          stroke={accent}
+          strokeWidth={17}
+          strokeDasharray="50 88"
+          transform="rotate(-90)"
+        />
+        <circle
+          cx={0}
+          cy={0}
+          r={22}
+          fill="none"
+          stroke={TEAL}
+          strokeWidth={17}
+          strokeDasharray="30 108"
+          strokeDashoffset={-52}
+          transform="rotate(-90)"
+        />
+        <circle cx={0} cy={0} r={10} fill={PAPER_LIGHT} />
+        <path d="M 0 0 L 0 -34 A 34 34 0 0 1 30 -16 Z" fill={AMBER} opacity={0.9} />
+      </g>
+    );
+  }
 
   return (
-    <AbsoluteFill
-      style={{
-        background:
-          'radial-gradient(ellipse 68% 72% at 50% 49%, rgba(36,50,113,0.82) 0%, rgba(12,25,62,0.66) 33%, rgba(3,8,25,0.92) 68%, #02040C 100%)',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.30 + atmosphere * 0.36,
-          background:
-            'radial-gradient(circle at 25% 47%, rgba(48,95,255,0.21), transparent 34%), radial-gradient(circle at 75% 50%, rgba(115,55,255,0.18), transparent 31%), radial-gradient(circle at 51% 60%, rgba(30,204,255,0.10), transparent 40%)',
-        }}
+    <g transform="translate(72 0)">
+      <path
+        d="M -38 27 C -20 10 -13 -28 7 -23 C 25 -18 18 8 40 -8"
+        fill="none"
+        stroke={GRAPHITE}
+        strokeWidth={4}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={1 - lineProgress}
       />
-
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.11 + depth * 0.10,
-          backgroundImage:
-            'linear-gradient(rgba(112,170,255,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(112,170,255,0.035) 1px, transparent 1px)',
-          backgroundSize: '96px 96px',
-          maskImage:
-            'radial-gradient(ellipse 70% 66% at 50% 50%, black 0%, rgba(0,0,0,0.52) 54%, transparent 100%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse 70% 66% at 50% 50%, black 0%, rgba(0,0,0,0.52) 54%, transparent 100%)',
-        }}
+      {[
+        {x: -38, y: 27},
+        {x: 7, y: -23},
+        {x: 40, y: -8},
+      ].map((point, index) => (
+        <g key={index} transform={`translate(${point.x} ${point.y})`}>
+          <circle r={10 + focus * 2} fill={PAPER_LIGHT} stroke={accent} strokeWidth={4} />
+          <circle r={3.5} fill={accent} />
+        </g>
+      ))}
+      <path
+        d="M 31 -14 L 42 -9 L 35 1"
+        fill="none"
+        stroke={GRAPHITE}
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 190,
-          right: 190,
-          top: 540,
-          height: 1,
-          opacity: 0.18 + atmosphere * 0.22,
-          background:
-            'linear-gradient(90deg, transparent, rgba(75,143,255,0.45) 22%, rgba(232,247,255,0.58) 50%, rgba(138,103,255,0.44) 78%, transparent)',
-          boxShadow: '0 0 28px rgba(76,157,255,0.25)',
-        }}
-      />
-
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background:
-            'radial-gradient(ellipse 110% 95% at 50% 50%, transparent 42%, rgba(0,1,8,0.34) 70%, rgba(0,1,7,0.82) 100%)',
-        }}
-      />
-    </AbsoluteFill>
+    </g>
   );
 };
 
-type BeamSpec = {
-  x: number;
-  width: number;
-  color: string;
-  opacity: number;
-  start: number;
-  drift: number;
-  blur: number;
-};
+const MetricModule: React.FC<{
+  config: ModuleConfig;
+  frame: number;
+}> = ({config, frame}) => {
+  const raw = clamp((frame - config.startFrame) / 44);
+  const enter = easeOutCubic(raw);
+  const overshoot = Math.sin(raw * Math.PI) * (1 - raw) * 0.045;
+  const opacity = smoothstep(config.startFrame, config.startFrame + 20, frame);
+  const focus = focusPulse(frame, config.focusFrame);
+  const hover = Math.sin(frame * 0.032 + config.phase * TAU) * 2.2;
+  const scale = Math.max(0.001, enter + overshoot) * (1 + focus * 0.035);
+  const travelX = (1 - enter) * (760 - config.center.x) * 0.18;
+  const travelY = (1 - enter) * (540 - config.center.y) * 0.18;
+  const rotation = config.angle * enter + Math.sin(frame * 0.018 + config.phase * TAU) * 0.18;
+  const iconProgress = clamp((frame - config.startFrame - 14) / 58);
 
-const BEAMS: BeamSpec[] = [
-  {x: 250, width: 24, color: '77,132,255', opacity: 0.30, start: 18, drift: 16, blur: 18},
-  {x: 475, width: 10, color: '72,221,255', opacity: 0.20, start: 54, drift: -10, blur: 12},
-  {x: 720, width: 34, color: '132,76,255', opacity: 0.31, start: 92, drift: 22, blur: 24},
-  {x: 958, width: 58, color: '109,87,255', opacity: 0.29, start: 28, drift: -8, blur: 34},
-  {x: 1195, width: 28, color: '40,215,255', opacity: 0.23, start: 112, drift: 12, blur: 22},
-  {x: 1435, width: 16, color: '153,76,255', opacity: 0.25, start: 70, drift: -18, blur: 16},
-  {x: 1680, width: 8, color: '241,195,107', opacity: 0.23, start: 138, drift: 8, blur: 10},
-];
-
-const LightColumns: React.FC<{frame: number}> = ({frame}) => (
-  <AbsoluteFill style={{mixBlendMode: 'screen', pointerEvents: 'none'}}>
-    {BEAMS.map((beam, index) => {
-      const entrance = reveal(frame, beam.start, beam.start + 100, Easing.out(Easing.quad));
-      const settle = reveal(frame, beam.start + 80, 600, Easing.inOut(Easing.cubic));
-      const x = beam.x + beam.drift * settle;
-      return (
-        <React.Fragment key={`${beam.x}-${index}`}>
-          <div
-            style={{
-              position: 'absolute',
-              left: x - beam.width / 2,
-              top: -100,
-              width: beam.width,
-              height: 1280,
-              opacity: beam.opacity * (0.12 + entrance * 0.88),
-              filter: `blur(${beam.blur}px)`,
-              background: `linear-gradient(180deg, transparent 2%, rgba(${beam.color},0.10) 18%, rgba(${beam.color},0.86) 48%, rgba(${beam.color},0.14) 78%, transparent 98%)`,
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: x,
-              top: 130,
-              width: 1,
-              height: 820,
-              opacity: beam.opacity * (0.10 + entrance * 0.90) * 0.72,
-              background: `linear-gradient(180deg, transparent, rgba(${beam.color},0.88), transparent)`,
-              boxShadow: `0 0 16px rgba(${beam.color},0.54)`,
-            }}
-          />
-        </React.Fragment>
-      );
-    })}
-  </AbsoluteFill>
-);
-
-type ParticleSpec = {
-  x: number;
-  y: number;
-  size: number;
-  opacity: number;
-  dx: number;
-  dy: number;
-  start: number;
-  color: string;
-};
-
-const PARTICLES: ParticleSpec[] = [
-  {x: 116, y: 226, size: 2, opacity: 0.45, dx: 18, dy: -8, start: 30, color: COLORS.cyan},
-  {x: 205, y: 742, size: 3, opacity: 0.38, dx: 12, dy: -16, start: 112, color: COLORS.blue},
-  {x: 315, y: 124, size: 2, opacity: 0.42, dx: -10, dy: 11, start: 74, color: COLORS.violet},
-  {x: 402, y: 930, size: 2, opacity: 0.30, dx: 16, dy: -12, start: 164, color: COLORS.cyan},
-  {x: 524, y: 185, size: 4, opacity: 0.27, dx: 11, dy: 7, start: 202, color: COLORS.blue},
-  {x: 612, y: 864, size: 2, opacity: 0.48, dx: -8, dy: -13, start: 96, color: COLORS.cyan},
-  {x: 706, y: 116, size: 2, opacity: 0.32, dx: 14, dy: 9, start: 244, color: COLORS.violet},
-  {x: 798, y: 926, size: 3, opacity: 0.25, dx: -12, dy: -8, start: 270, color: COLORS.blue},
-  {x: 892, y: 170, size: 2, opacity: 0.42, dx: 7, dy: 13, start: 136, color: COLORS.cyan},
-  {x: 1034, y: 932, size: 3, opacity: 0.30, dx: 9, dy: -16, start: 210, color: COLORS.violet},
-  {x: 1120, y: 130, size: 2, opacity: 0.40, dx: -11, dy: 10, start: 54, color: COLORS.cyan},
-  {x: 1230, y: 900, size: 2, opacity: 0.36, dx: 12, dy: -10, start: 296, color: COLORS.blue},
-  {x: 1322, y: 178, size: 4, opacity: 0.26, dx: -15, dy: 8, start: 188, color: COLORS.violet},
-  {x: 1425, y: 936, size: 2, opacity: 0.43, dx: 10, dy: -14, start: 118, color: COLORS.cyan},
-  {x: 1518, y: 126, size: 2, opacity: 0.36, dx: -9, dy: 12, start: 338, color: COLORS.blue},
-  {x: 1612, y: 840, size: 3, opacity: 0.34, dx: 14, dy: -11, start: 224, color: COLORS.violet},
-  {x: 1724, y: 212, size: 2, opacity: 0.40, dx: -13, dy: 8, start: 148, color: COLORS.cyan},
-  {x: 1810, y: 726, size: 2, opacity: 0.32, dx: -16, dy: -6, start: 318, color: COLORS.blue},
-];
-
-const AtmosphereParticles: React.FC<{frame: number}> = ({frame}) => {
-  const travel = reveal(frame, 0, 610, Easing.linear);
   return (
-    <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'screen'}}>
-      {PARTICLES.map((particle, index) => {
-        const visible = reveal(frame, particle.start, particle.start + 70, Easing.out(Easing.quad));
+    <g
+      opacity={opacity}
+      transform={`translate(${config.center.x + travelX} ${
+        config.center.y + travelY + hover
+      }) rotate(${rotation}) scale(${scale})`}
+    >
+      <path
+        d="M -136 -64 H 105 L 136 -35 V 64 H -136 Z"
+        fill="#D6D1C5"
+        opacity={0.44}
+        transform={`translate(${7 + focus * 3} ${10 + focus * 4})`}
+      />
+      <path
+        d="M -136 -64 H 105 L 136 -35 V 64 H -136 Z"
+        fill={PAPER_LIGHT}
+        stroke={focus > 0.04 ? config.accent : "#C8C7C0"}
+        strokeWidth={2 + focus * 1.8}
+        filter="url(#smallShadow)"
+      />
+      <path d="M 105 -64 L 136 -35 H 105 Z" fill={config.pale} stroke="#C8C7C0" strokeWidth={1.4} />
+      <rect x={-136} y={-64} width={11} height={128} fill={config.accent} />
+      <rect x={-111} y={-36} width={76} height={6} rx={3} fill={config.accent} opacity={0.25} />
+      <text
+        x={-111}
+        y={-9}
+        fill={GRAPHITE}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={config.label === "PERFORMANCE" ? 19 : 24}
+        fontWeight={800}
+        letterSpacing={config.label === "PERFORMANCE" ? 0.8 : 1.2}
+      >
+        {config.label}
+      </text>
+      <text
+        x={-111}
+        y={25}
+        fill={config.accent}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={18}
+        fontWeight={700}
+        letterSpacing={1.5}
+      >
+        {config.value}
+      </text>
+      <circle cx={-106} cy={45} r={4} fill={config.accent} opacity={0.78 + focus * 0.22} />
+      <path d="M -95 45 H -42" stroke={GRAPHITE} strokeWidth={2} strokeLinecap="round" opacity={0.2} />
+      <Icon
+        kind={config.id}
+        accent={config.accent}
+        frame={frame}
+        progress={iconProgress}
+        focus={focus}
+      />
+    </g>
+  );
+};
+
+const Connector: React.FC<{
+  config: ModuleConfig;
+  frame: number;
+  index: number;
+  quiet: number;
+}> = ({config, frame, index, quiet}) => {
+  const revealStart = config.startFrame + 16;
+  const reveal = Easing.inOut(Easing.cubic)(clamp((frame - revealStart) / 54));
+  const focus = focusPulse(frame, config.focusFrame);
+  const d = `M ${config.center.x} ${config.center.y} Q ${config.control.x} ${config.control.y} ${config.destination.x} ${config.destination.y}`;
+  const packetGate = smoothstep(revealStart + 36, revealStart + 72, frame) * quiet;
+
+  return (
+    <g opacity={smoothstep(revealStart - 2, revealStart + 18, frame)}>
+      <path
+        d={d}
+        fill="none"
+        stroke={GRAPHITE}
+        strokeWidth={7}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={1 - reveal}
+        opacity={0.09}
+      />
+      <path
+        d={d}
+        fill="none"
+        stroke={config.accent}
+        strokeWidth={2.8 + focus * 1.8}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray="0.035 0.026"
+        strokeDashoffset={1 - reveal - frame * 0.0012}
+        opacity={0.46 + focus * 0.42}
+      />
+      {[0, 0.43].map((phase, packetIndex) => {
+        const amount = fract((frame - revealStart) / (146 + index * 5) + phase);
+        const point = quadraticPoint(config.center, config.control, config.destination, amount);
+        const envelope = Math.sin(amount * Math.PI);
+        const radius = 4.5 + focus * 2.8 + packetIndex * 1.1;
         return (
-          <div
-            key={`${particle.x}-${particle.y}-${index}`}
-            style={{
-              position: 'absolute',
-              left: particle.x + particle.dx * travel,
-              top: particle.y + particle.dy * travel,
-              width: particle.size,
-              height: particle.size,
-              borderRadius: '50%',
-              opacity: particle.opacity * visible,
-              background: particle.color,
-              boxShadow: `0 0 ${particle.size * 5}px ${particle.color}`,
-            }}
-          />
+          <g key={phase} opacity={packetGate * envelope * (0.72 + focus * 0.28)}>
+            <circle cx={point.x} cy={point.y} r={radius * 2.7} fill={config.accent} opacity={0.1} />
+            <circle cx={point.x} cy={point.y} r={radius} fill={config.accent} />
+            <circle cx={point.x - 1.4} cy={point.y - 1.4} r={radius * 0.34} fill={PAPER_LIGHT} opacity={0.9} />
+          </g>
         );
       })}
-    </AbsoluteFill>
+    </g>
   );
 };
 
-type GlintSpec = {
-  x: number;
-  y: number;
-  size: number;
-  dx: number;
-  start: number;
-  duration: number;
-  opacity: number;
-  color: string;
-};
-
-const GLINTS: GlintSpec[] = [
-  {x: -120, y: 48, size: 2, dx: 1420, start: 0, duration: 410, opacity: 0.44, color: COLORS.cyan},
-  {x: 170, y: 68, size: 3, dx: 1320, start: 56, duration: 420, opacity: 0.34, color: COLORS.blue},
-  {x: 610, y: 38, size: 2, dx: 1220, start: 136, duration: 400, opacity: 0.40, color: COLORS.violet},
-  {x: 1060, y: 58, size: 2, dx: 980, start: 224, duration: 395, opacity: 0.38, color: COLORS.cyan},
-  {x: -190, y: 1028, size: 3, dx: 1510, start: 78, duration: 430, opacity: 0.36, color: COLORS.violet},
-  {x: 280, y: 1042, size: 2, dx: 1390, start: 150, duration: 420, opacity: 0.42, color: COLORS.cyan},
-  {x: 780, y: 1022, size: 2, dx: 1180, start: 220, duration: 400, opacity: 0.34, color: COLORS.blue},
-  {x: 42, y: 310, size: 2, dx: 1650, start: 104, duration: 430, opacity: 0.30, color: COLORS.cyan},
-  {x: 76, y: 760, size: 3, dx: 1580, start: 186, duration: 420, opacity: 0.28, color: COLORS.violet},
-];
-
-const MovingGlints: React.FC<{frame: number}> = ({frame}) => (
-  <AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'screen'}}>
-    {GLINTS.map((glint, index) => {
-      const end = Math.min(glint.start + glint.duration, FINAL_MOTION_FRAME);
-      const progress = reveal(frame, glint.start, end, Easing.linear);
-      const enter = reveal(frame, glint.start, glint.start + 22, Easing.out(Easing.quad));
-      const exitStart = Math.max(glint.start + 300, end - 62);
-      const exit = reveal(frame, exitStart, end, Easing.in(Easing.quad));
-      const opacity = glint.opacity * enter * (1 - exit);
-      const x = glint.x + glint.dx * progress;
-
-      return (
-        <div
-          key={`${glint.x}-${glint.y}-${index}`}
-          style={{
-            position: 'absolute',
-            left: x,
-            top: glint.y,
-            width: 22 + glint.size * 4,
-            height: glint.size,
-            opacity,
-            borderRadius: 999,
-            background: `linear-gradient(90deg, transparent, ${glint.color}, #FFFFFF)`,
-            boxShadow: `0 0 ${glint.size * 7}px ${glint.color}`,
-            transform: 'translate(-100%, -50%)',
-          }}
-        />
-      );
-    })}
-  </AbsoluteFill>
-);
-
-const LensFlare: React.FC<{
+const KpiHub: React.FC<{
   frame: number;
-  x: number;
-  y: number;
-  start: number;
-  color: string;
-  scale?: number;
-}> = ({frame, x, y, start, color, scale = 1}) => {
-  const show = reveal(frame, start, start + 90, Easing.out(Easing.quad));
-  const settle = reveal(frame, start + 90, 610, Easing.inOut(Easing.cubic));
-  const intensity = show * (1 - settle * 0.18);
+  scoreProgress: number;
+}> = ({frame, scoreProgress}) => {
+  const hubRaw = clamp((frame - 42) / 70);
+  const hubEnter = easeOutCubic(hubRaw);
+  const hubOvershoot = Math.sin(hubRaw * Math.PI) * (1 - hubRaw) * 0.035;
+  const hubScale = Math.max(0.001, hubEnter + hubOvershoot);
+  const hubOpacity = smoothstep(34, 62, frame);
+  const score = 42 + scoreProgress * 50;
+  const circumference = TAU * 69;
+  const gaugeAmount = 0.42 + scoreProgress * 0.5;
+  const successPulse = focusPulse(frame, 742, 72);
+  const lift = -4 - successPulse * 5 + Math.sin(frame * 0.025) * 1.1;
+  const shine = interpolate(frame, [110, 760], [-360, 360], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x,
-        top: y,
-        width: 1,
-        height: 1,
-        opacity: intensity,
-        mixBlendMode: 'screen',
-        pointerEvents: 'none',
-      }}
+    <g
+      opacity={hubOpacity}
+      transform={`translate(760 ${540 + lift}) scale(${hubScale})`}
     >
-      <div
-        style={{
-          position: 'absolute',
-          left: -220 * scale,
-          top: -1,
-          width: 440 * scale,
-          height: 2,
-          background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
-          filter: 'blur(1px)',
-        }}
+      <rect
+        x={-253}
+        y={-141}
+        width={520}
+        height={300}
+        rx={42}
+        fill="#C9C2B5"
+        opacity={0.42}
+        transform="translate(10 14)"
       />
-      <div
-        style={{
-          position: 'absolute',
-          left: -1,
-          top: -150 * scale,
-          width: 2,
-          height: 300 * scale,
-          background: `linear-gradient(180deg, transparent, ${color}, transparent)`,
-          filter: 'blur(1px)',
-        }}
+      <rect
+        x={-260}
+        y={-150}
+        width={520}
+        height={300}
+        rx={42}
+        fill={PAPER_LIGHT}
+        stroke={TEAL_DARK}
+        strokeWidth={4}
+        filter="url(#hubShadow)"
       />
-      <div
-        style={{
-          position: 'absolute',
-          left: -6 * scale,
-          top: -6 * scale,
-          width: 12 * scale,
-          height: 12 * scale,
-          borderRadius: '50%',
-          background: '#FFFFFF',
-          boxShadow: `0 0 ${18 * scale}px ${8 * scale}px ${color}, 0 0 ${70 * scale}px ${20 * scale}px ${color}`,
-        }}
+      <path
+        d="M -258 -77 C -190 -142 -100 -163 -1 -146 C 92 -130 164 -80 258 -98 V -148 H -258 Z"
+        fill={TEAL_PALE}
+        opacity={0.7}
       />
-      <div
-        style={{
-          position: 'absolute',
-          left: 78 * scale,
-          top: -10 * scale,
-          width: 20 * scale,
-          height: 20 * scale,
-          borderRadius: '50%',
-          border: `1px solid ${color}`,
-          opacity: 0.20,
-        }}
-      />
-    </div>
-  );
-};
-
-type WordSpec = {
-  text: string;
-  x: number;
-  y: number;
-  size: number;
-  weight: number;
-  rotation?: number;
-  accent: Accent;
-  start: number;
-  duration?: number;
-  fromX: number;
-  fromY: number;
-  opacity?: number;
-  tracking?: number;
-};
-
-const WORDS: WordSpec[] = [
-  {text: 'METRICS', x: 880, y: 336, size: 76, weight: 760, accent: 'cyan', start: 38, fromX: 360, fromY: -44, tracking: 0.4},
-  {text: 'MEASURE', x: 520, y: 672, size: 46, weight: 650, accent: 'cyan', start: 52, fromX: -330, fromY: 20},
-  {text: 'PROCESS', x: 900, y: 688, size: 70, weight: 720, accent: 'silver', start: 66, fromX: 370, fromY: 26},
-  {text: 'BUSINESS', x: 462, y: 397, size: 55, weight: 690, accent: 'cyan', start: 84, fromX: -360, fromY: -18},
-  {text: 'DATA', x: 1350, y: 674, size: 67, weight: 760, accent: 'cyan', start: 98, fromX: 380, fromY: 0},
-  {text: 'GROWTH', x: 630, y: 235, size: 48, weight: 690, rotation: -90, accent: 'silver', start: 112, fromX: 0, fromY: -300},
-  {text: 'STRATEGY', x: 1270, y: 354, size: 57, weight: 700, accent: 'silver', start: 126, fromX: 310, fromY: -22},
-  {text: 'RESULTS', x: 1690, y: 455, size: 47, weight: 720, rotation: 90, accent: 'cyan', start: 140, fromX: 0, fromY: -310},
-  {text: 'KPI', x: 705, y: 420, size: 48, weight: 760, accent: 'blue', start: 154, fromX: -300, fromY: 0},
-  {text: 'ANALYTICS', x: 650, y: 798, size: 48, weight: 700, accent: 'cyan', start: 168, fromX: -350, fromY: 36},
-  {text: 'TECHNOLOGY', x: 985, y: 803, size: 46, weight: 660, accent: 'silver', start: 182, fromX: 360, fromY: 34},
-  {text: 'SUCCESS', x: 1208, y: 750, size: 44, weight: 720, rotation: 90, accent: 'silver', start: 196, fromX: 0, fromY: 330},
-  {text: 'INNOVATION', x: 960, y: 230, size: 42, weight: 700, accent: 'cyan', start: 210, fromX: 35, fromY: -320},
-  {text: 'PRODUCTIVITY', x: 1275, y: 260, size: 29, weight: 620, accent: 'muted', start: 224, fromX: 300, fromY: -50, tracking: 1.3},
-  {text: 'INSIGHT', x: 450, y: 340, size: 32, weight: 690, accent: 'silver', start: 238, fromX: -310, fromY: 0, tracking: 1.0},
-  {text: 'VALUE', x: 1530, y: 674, size: 34, weight: 620, accent: 'muted', start: 252, fromX: 300, fromY: 10, tracking: 1.0},
-  {text: 'ROI', x: 340, y: 670, size: 34, weight: 760, accent: 'blue', start: 266, fromX: -290, fromY: 0, tracking: 1.2},
-  {text: 'QUALITY', x: 330, y: 287, size: 29, weight: 650, accent: 'silver', start: 278, fromX: -270, fromY: -80, tracking: 1.0},
-  {text: 'OPTIMIZE', x: 277, y: 535, size: 39, weight: 700, rotation: -90, accent: 'cyan', start: 290, fromX: 0, fromY: 330},
-  {text: 'REVENUE', x: 1460, y: 798, size: 41, weight: 700, accent: 'cyan', start: 314, fromX: 340, fromY: 40},
-  {text: 'FORECAST', x: 520, y: 888, size: 32, weight: 650, accent: 'silver', start: 326, fromX: -320, fromY: 60, tracking: 1.0},
-  {text: 'SCALE', x: 1082, y: 896, size: 38, weight: 720, accent: 'blue', start: 338, fromX: 0, fromY: 280, tracking: 1.0},
-  {text: 'MARKET', x: 1515, y: 282, size: 29, weight: 660, accent: 'cyan', start: 350, fromX: 300, fromY: -58, tracking: 1.1},
-  {text: 'DECISIONS', x: 810, y: 897, size: 27, weight: 620, accent: 'muted', start: 362, fromX: -250, fromY: 70, tracking: 1.2},
-  {text: 'EFFICIENCY', x: 1370, y: 893, size: 29, weight: 640, accent: 'silver', start: 374, fromX: 260, fromY: 68, tracking: 1.1},
-  {text: 'CUSTOMER', x: 1638, y: 230, size: 25, weight: 620, accent: 'muted', start: 384, duration: 48, fromX: 270, fromY: -40, tracking: 1.4},
-  {text: 'LEADERSHIP', x: 1392, y: 198, size: 25, weight: 640, accent: 'silver', start: 394, duration: 46, fromX: 40, fromY: -250, tracking: 1.2},
-  {text: 'OUTCOME', x: 1610, y: 855, size: 28, weight: 680, accent: 'cyan', start: 404, duration: 44, fromX: 270, fromY: 60, tracking: 1.2},
-  {text: 'TEAM', x: 300, y: 338, size: 26, weight: 680, accent: 'muted', start: 414, duration: 41.5, fromX: -250, fromY: -40, tracking: 1.4},
-];
-
-const WordItem: React.FC<{word: WordSpec; frame: number}> = ({word, frame}) => {
-  const duration = word.duration ?? 54;
-  const progress = reveal(frame, word.start, word.start + duration, Easing.out(Easing.cubic));
-  const trail = triangular(frame, word.start, word.start + duration * 0.42, word.start + duration);
-  const x = word.x + word.fromX * (1 - progress);
-  const y = word.y + word.fromY * (1 - progress);
-  const rotation = word.rotation ?? 0;
-  const opacity = (word.opacity ?? 1) * progress;
-  const blur = lerp(15, 0, progress);
-  const scale = lerp(0.955, 1, progress);
-  const echoDistance = Math.max(18, Math.min(64, Math.abs(word.fromX) * 0.14 + Math.abs(word.fromY) * 0.08));
-
-  const textStyle: React.CSSProperties = {
-    fontFamily: 'Arial, Helvetica, sans-serif',
-    fontSize: word.size,
-    fontWeight: word.weight,
-    letterSpacing: word.tracking ?? 0,
-    lineHeight: 0.92,
-    whiteSpace: 'nowrap',
-    color: accentColor[word.accent],
-  };
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x,
-        top: y,
-        transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`,
-        transformOrigin: 'center',
-        opacity,
-        filter: blur > 0.05 ? `blur(${blur}px)` : 'none',
-        zIndex: word.accent === 'silver' ? 4 : 3,
-      }}
-    >
-      {trail > 0.01 ? (
-        <>
-          <div
-            style={{
-              ...textStyle,
-              position: 'absolute',
-              left: word.fromX === 0 ? 0 : -Math.sign(word.fromX) * echoDistance,
-              top: word.fromY === 0 ? 0 : -Math.sign(word.fromY) * echoDistance * 0.65,
-              opacity: trail * 0.18,
-              filter: 'blur(7px)',
-            }}
-          >
-            {word.text}
-          </div>
-          <div
-            style={{
-              ...textStyle,
-              position: 'absolute',
-              left: word.fromX === 0 ? 0 : -Math.sign(word.fromX) * echoDistance * 0.48,
-              top: word.fromY === 0 ? 0 : -Math.sign(word.fromY) * echoDistance * 0.31,
-              opacity: trail * 0.26,
-              filter: 'blur(3px)',
-            }}
-          >
-            {word.text}
-          </div>
-        </>
-      ) : null}
-      <div
-        style={{
-          ...textStyle,
-          position: 'relative',
-          textShadow: `0 0 9px ${accentGlow[word.accent]}`,
-        }}
+      <path d="M 198 -150 H 218 L 260 -108 V -88 Z" fill="#A8DDD5" opacity={0.8} />
+      <path d="M 218 -150 L 260 -108 H 218 Z" fill={PAPER_LIGHT} stroke={TEAL_DARK} strokeWidth={2} />
+      <text
+        x={-205}
+        y={-91}
+        fill={TEAL_DARK}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={20}
+        fontWeight={800}
+        letterSpacing={4.4}
       >
-        {word.text}
-      </div>
-    </div>
-  );
-};
-
-const CentralAnchor: React.FC<{frame: number}> = ({frame}) => {
-  const entrance = reveal(frame, 6, 36, Easing.out(Easing.cubic));
-  const cloudScale = reveal(frame, 36, 455.5, Easing.inOut(Easing.cubic));
-  const trail = triangular(frame, 6, 20, 42);
-  const titleScale = lerp(0.84, 1, cloudScale);
-  const x = 960 - 760 * (1 - entrance);
-  const blur = lerp(19, 0, entrance);
-  const bloom = reveal(frame, 72, 456, Easing.out(Easing.quad));
-
-  const textStyle: React.CSSProperties = {
-    fontFamily: 'Arial, Helvetica, sans-serif',
-    fontSize: 160,
-    fontWeight: 790,
-    letterSpacing: -3.5,
-    lineHeight: 0.88,
-    whiteSpace: 'nowrap',
-    color: COLORS.silver,
-    WebkitTextStroke: '0.6px rgba(255,255,255,0.35)',
-  };
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x,
-        top: 540,
-        transform: `translate(-50%, -50%) scale(${titleScale})`,
-        transformOrigin: 'center',
-        opacity: entrance,
-        filter: blur > 0.05 ? `blur(${blur}px)` : 'none',
-        zIndex: 10,
-      }}
-    >
-      <div
-        style={{
-          ...textStyle,
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          opacity: 0.18 + bloom * 0.20,
-          filter: 'blur(22px)',
-          color: '#D9F2FF',
-          WebkitTextStroke: 0,
-          textShadow: '0 0 50px rgba(69,171,255,0.72)',
-        }}
+        KEY PERFORMANCE
+      </text>
+      <text
+        x={-210}
+        y={20}
+        fill={GRAPHITE}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={118}
+        fontWeight={900}
+        letterSpacing={-3}
       >
-        PERFORMANCE
-      </div>
-      {trail > 0.01 ? (
-        <>
-          <div style={{...textStyle, position: 'absolute', left: -92, top: 0, opacity: trail * 0.18, filter: 'blur(8px)'}}>
-            PERFORMANCE
-          </div>
-          <div style={{...textStyle, position: 'absolute', left: -44, top: 0, opacity: trail * 0.25, filter: 'blur(3px)'}}>
-            PERFORMANCE
-          </div>
-        </>
-      ) : null}
-      <div
-        style={{
-          ...textStyle,
-          position: 'relative',
-          textShadow:
-            '0 0 8px rgba(255,255,255,0.64), 0 0 24px rgba(71,179,255,0.32)',
-        }}
+        KPI
+      </text>
+      <text
+        x={-205}
+        y={64}
+        fill={MUTED}
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize={18}
+        fontWeight={700}
+        letterSpacing={2.3}
       >
-        PERFORMANCE
-      </div>
-    </div>
+        SIGNAL TO GROWTH
+      </text>
+      <g transform="translate(126 -5)">
+        <circle cx={0} cy={0} r={84} fill={TEAL_PALE} opacity={0.6} />
+        <circle cx={0} cy={0} r={69} fill="none" stroke="#C7D8D5" strokeWidth={14} />
+        <circle
+          cx={0}
+          cy={0}
+          r={69}
+          fill="none"
+          stroke={TEAL}
+          strokeWidth={14}
+          strokeLinecap="round"
+          strokeDasharray={`${circumference * gaugeAmount} ${circumference}`}
+          transform="rotate(-90)"
+        />
+        <circle cx={0} cy={-69} r={6} fill={TEAL_DARK} />
+        <text
+          x={0}
+          y={7}
+          textAnchor="middle"
+          fill={GRAPHITE}
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize={46}
+          fontWeight={900}
+        >
+          {Math.round(score)}
+        </text>
+        <text
+          x={0}
+          y={34}
+          textAnchor="middle"
+          fill={TEAL_DARK}
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize={14}
+          fontWeight={800}
+          letterSpacing={2.5}
+        >
+          SCORE
+        </text>
+      </g>
+      <g transform="translate(-202 104)">
+        {[0.34, 0.48, 0.61, 0.77, 0.92].map((height, index) => {
+          const local = smoothstep(0.08 + index * 0.1, 0.58 + index * 0.06, scoreProgress);
+          return (
+            <rect
+              key={height}
+              x={index * 33}
+              y={-height * 40 * local}
+              width={20}
+              height={height * 40 * local}
+              rx={5}
+              fill={index > 2 ? SUCCESS : TEAL}
+              opacity={0.6 + index * 0.08}
+            />
+          );
+        })}
+        <path d="M 0 7 H 155" stroke={GRAPHITE} strokeWidth={2} opacity={0.22} />
+      </g>
+      <g transform="translate(2 112)">
+        <circle cx={0} cy={0} r={6} fill={SUCCESS} />
+        <text
+          x={16}
+          y={6}
+          fill={MUTED}
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize={15}
+          fontWeight={700}
+          letterSpacing={1.1}
+        >
+          LIVE METRICS
+        </text>
+      </g>
+      <clipPath id="hubClip">
+        <rect x={-258} y={-148} width={516} height={296} rx={40} />
+      </clipPath>
+      <g clipPath="url(#hubClip)" opacity={0.13}>
+        <rect
+          x={shine - 42}
+          y={-230}
+          width={84}
+          height={460}
+          fill="url(#paperShine)"
+          transform="rotate(16)"
+        />
+      </g>
+      <g opacity={successPulse} transform={`translate(221 -121) scale(${0.65 + successPulse * 0.35})`}>
+        <circle r={34} fill={SUCCESS} />
+        <circle r={42 + successPulse * 20} fill="none" stroke={SUCCESS} strokeWidth={3} opacity={1 - successPulse * 0.35} />
+        <path
+          d="M -14 0 L -4 11 L 16 -13"
+          fill="none"
+          stroke={PAPER_LIGHT}
+          strokeWidth={8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    </g>
   );
 };
 
-const FinishingSweep: React.FC<{frame: number}> = ({frame}) => {
-  const intensity = triangular(frame, 474, 540, 622);
-  const travel = reveal(frame, 474, 622, Easing.inOut(Easing.cubic));
-  const x = lerp(-280, 2200, travel);
+const CopySpaceGuides: React.FC<{frame: number}> = ({frame}) => {
+  const reveal = smoothstep(40, 180, frame);
+  const pulse = 0.5 + 0.5 * Math.sin(frame * 0.018);
   return (
-    <>
-      <div
-        style={{
-          position: 'absolute',
-          left: x,
-          top: 80,
-          width: 82,
-          height: 920,
-          opacity: intensity * 0.18,
-          transform: 'skewX(-8deg)',
-          filter: 'blur(24px)',
-          background:
-            'linear-gradient(90deg, transparent, rgba(194,244,255,0.88), rgba(98,185,255,0.55), transparent)',
-          mixBlendMode: 'screen',
-          pointerEvents: 'none',
-          zIndex: 20,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: x + 35,
-          top: 535,
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          opacity: intensity,
-          background: '#FFFFFF',
-          boxShadow:
-            '0 0 14px 5px rgba(255,255,255,0.92), 0 0 52px 18px rgba(62,212,255,0.65)',
-          mixBlendMode: 'screen',
-          zIndex: 21,
-        }}
-      />
-    </>
-  );
-};
-
-const InnerComposition: React.FC = () => {
-  const rawFrame = useCurrentFrame();
-  const frame = Math.min(rawFrame, FINAL_MOTION_FRAME);
-
-  return (
-    <AbsoluteFill style={{backgroundColor: COLORS.background, overflow: 'hidden'}}>
-      <PremiumBackground frame={frame} />
-      <LightColumns frame={frame} />
-      <AtmosphereParticles frame={frame} />
-      <MovingGlints frame={frame} />
-
-      <LensFlare frame={frame} x={176} y={540} start={20} color="rgba(80,156,255,0.82)" scale={0.86} />
-      <LensFlare frame={frame} x={1748} y={540} start={126} color="rgba(134,91,255,0.80)" scale={0.88} />
-      <LensFlare frame={frame} x={960} y={540} start={56} color="rgba(80,218,255,0.68)" scale={0.62} />
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 170,
-          top: 118,
-          width: 1580,
-          height: 820,
-          borderRadius: '50%',
-          opacity: 0.12 + reveal(frame, 120, 500) * 0.15,
-          background:
-            'radial-gradient(ellipse at center, rgba(44,123,255,0.15), rgba(92,51,214,0.07) 48%, transparent 72%)',
-          filter: 'blur(36px)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      {WORDS.map((word) => (
-        <WordItem key={word.text} word={word} frame={frame} />
-      ))}
-      <CentralAnchor frame={frame} />
-      <FinishingSweep frame={frame} />
-
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          zIndex: 30,
-          boxShadow:
-            'inset 0 0 190px rgba(0,0,0,0.62), inset 0 0 38px rgba(4,10,28,0.55)',
-        }}
-      />
-    </AbsoluteFill>
+    <g opacity={0.22 * reveal}>
+      <path d="M 1480 180 H 1760" stroke={TEAL_DARK} strokeWidth={2} strokeDasharray="8 16" />
+      <path d="M 1480 900 H 1760" stroke={TEAL_DARK} strokeWidth={2} strokeDasharray="8 16" />
+      <circle cx={1480} cy={180} r={5 + pulse * 2} fill={TEAL} />
+      <circle cx={1760} cy={900} r={5 + (1 - pulse) * 2} fill={AMBER} />
+      <path d="M 1510 204 H 1570" stroke={GRAPHITE} strokeWidth={3} opacity={0.24} />
+      <path d="M 1510 218 H 1640" stroke={GRAPHITE} strokeWidth={3} opacity={0.12} />
+      <path d="M 1690 862 H 1760" stroke={GRAPHITE} strokeWidth={3} opacity={0.16} />
+    </g>
   );
 };
 
 export const Motion: React.FC = () => {
-  const {width, height} = useVideoConfig();
-  const scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+  const frame = useCurrentFrame();
+  const {fps, durationInFrames} = useVideoConfig();
+  const phase = frame / durationInFrames;
+  const seconds = frame / fps;
 
+  const cameraSettle = Easing.out(Easing.cubic)(clamp(frame / 132));
+  const cameraScale = interpolate(cameraSettle, [0, 1], [1.062, 1]);
+  const cameraX = interpolate(cameraSettle, [0, 1], [34, 0]) + Math.sin(phase * TAU) * 2.6;
+  const cameraY = interpolate(cameraSettle, [0, 1], [-28, 0]) + Math.cos(phase * TAU) * 1.8;
+  const cameraRoll = interpolate(cameraSettle, [0, 1], [-0.9, 0]) + Math.sin(phase * TAU) * 0.08;
+
+  const scoreProgress = Easing.inOut(Easing.cubic)(clamp((frame - 235) / 500));
+  const successPulse = focusPulse(frame, 742, 92);
+  const finalQuiet = interpolate(frame, [760, 828], [1, 0.32], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const networkOpacity = smoothstep(72, 164, frame);
+  const pageSettle = easeOutCubic(clamp(frame / 88));
   return (
-    <AbsoluteFill style={{backgroundColor: COLORS.background, overflow: 'hidden'}}>
-      <div
+    <AbsoluteFill
+      style={{
+        backgroundColor: PAPER,
+        overflow: "hidden",
+        fontFamily: "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <AbsoluteFill
         style={{
-          position: 'absolute',
-          width: DESIGN_WIDTH,
-          height: DESIGN_HEIGHT,
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          transformOrigin: 'center',
+          backgroundImage: [
+            `linear-gradient(rgba(79, 126, 143, 0.12) 1px, transparent 1px)`,
+            `linear-gradient(90deg, rgba(79, 126, 143, 0.12) 1px, transparent 1px)`,
+            `linear-gradient(rgba(79, 126, 143, 0.055) 1px, transparent 1px)`,
+            `linear-gradient(90deg, rgba(79, 126, 143, 0.055) 1px, transparent 1px)`,
+          ].join(","),
+          backgroundSize: "190px 190px, 190px 190px, 38px 38px, 38px 38px",
+          backgroundPosition: `${cameraX * 0.15}px ${cameraY * 0.15}px`,
+          opacity: 0.9,
         }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            "radial-gradient(circle at 40% 48%, rgba(255,255,255,0.82) 0%, rgba(255,253,247,0.34) 37%, rgba(218,210,194,0.18) 72%, rgba(153,140,120,0.12) 100%)",
+        }}
+      />
+      <svg
+        viewBox="0 0 1920 1080"
+        width="100%"
+        height="100%"
+        style={{position: "absolute", inset: 0}}
       >
-        <InnerComposition />
-      </div>
+        <defs>
+          <filter id="smallShadow" x="-30%" y="-40%" width="170%" height="190%">
+            <feDropShadow dx="0" dy="8" stdDeviation="7" floodColor="#5D5547" floodOpacity="0.18" />
+          </filter>
+          <filter id="hubShadow" x="-30%" y="-40%" width="170%" height="190%">
+            <feDropShadow dx="0" dy="15" stdDeviation="14" floodColor="#524B40" floodOpacity="0.22" />
+          </filter>
+          <linearGradient id="paperShine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+            <stop offset="0.5" stopColor="#FFFFFF" stopOpacity="1" />
+            <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+          </linearGradient>
+          <radialGradient id="successWash">
+            <stop offset="0" stopColor={SUCCESS} stopOpacity="0.2" />
+            <stop offset="0.65" stopColor={SUCCESS} stopOpacity="0.04" />
+            <stop offset="1" stopColor={SUCCESS} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        <g opacity={0.75 * pageSettle}>
+          {paperSpecks.map((speck, index) => (
+            <circle
+              key={index}
+              cx={speck.x + cameraX * 0.06}
+              cy={speck.y + cameraY * 0.06}
+              r={speck.radius}
+              fill={GRAPHITE}
+              opacity={speck.opacity}
+            />
+          ))}
+          {draftMarks.map((mark, index) => (
+            <path
+              key={index}
+              d={`M ${mark.x - mark.length / 2} ${mark.y} H ${mark.x + mark.length / 2}`}
+              stroke={index % 4 === 0 ? TEAL_DARK : GRAPHITE}
+              strokeWidth={1.4}
+              strokeLinecap="round"
+              opacity={mark.opacity}
+              transform={`rotate(${mark.angle} ${mark.x} ${mark.y})`}
+            />
+          ))}
+        </g>
+
+        <g opacity={smoothstep(0, 95, frame)}>
+          <path d="M 72 112 H 212 M 72 112 V 204" stroke={GRAPHITE} strokeWidth={3} opacity={0.16} />
+          <path d="M 1848 968 H 1708 M 1848 968 V 876" stroke={GRAPHITE} strokeWidth={3} opacity={0.16} />
+          <circle cx={72} cy={112} r={7} fill={TEAL} opacity={0.72} />
+          <circle cx={1848} cy={968} r={7} fill={AMBER} opacity={0.72} />
+          <text
+            x={88}
+            y={91}
+            fill={MUTED}
+            fontSize={16}
+            fontWeight={800}
+            letterSpacing={3.4}
+          >
+            BUSINESS INTELLIGENCE
+          </text>
+        </g>
+
+        <g
+          transform={`translate(960 540) translate(${cameraX} ${cameraY}) rotate(${cameraRoll}) scale(${cameraScale}) translate(-960 -540)`}
+        >
+          <ellipse
+            cx={760}
+            cy={540}
+            rx={442}
+            ry={326}
+            fill="none"
+            stroke={TEAL_DARK}
+            strokeWidth={2}
+            strokeDasharray="4 16"
+            opacity={0.1 * networkOpacity}
+            transform={`rotate(${seconds * 0.6} 760 540)`}
+          />
+          <ellipse
+            cx={760}
+            cy={540}
+            rx={350 + successPulse * 44}
+            ry={242 + successPulse * 30}
+            fill="none"
+            stroke={SUCCESS}
+            strokeWidth={3}
+            opacity={successPulse * 0.26}
+          />
+
+          {modules.map((config, index) => (
+            <Connector
+              key={config.id}
+              config={config}
+              frame={frame}
+              index={index}
+              quiet={finalQuiet}
+            />
+          ))}
+
+          {modules.map((config) => (
+            <MetricModule key={config.id} config={config} frame={frame} />
+          ))}
+
+          <KpiHub frame={frame} scoreProgress={scoreProgress} />
+        </g>
+
+        <circle cx={760} cy={540} r={620} fill="url(#successWash)" opacity={successPulse * 0.52} />
+        <CopySpaceGuides frame={frame} />
+
+        <g opacity={smoothstep(650, 755, frame)}>
+          <path d="M 1510 790 H 1778" stroke={GRAPHITE} strokeWidth={2} opacity={0.08} />
+          <text
+            x={1510}
+            y={826}
+            fill={TEAL_DARK}
+            fontSize={15}
+            fontWeight={800}
+            letterSpacing={3}
+            opacity={0.32}
+          >
+            MEASURE • IMPROVE • GROW
+          </text>
+        </g>
+      </svg>
+      <AbsoluteFill
+        style={{
+          boxShadow: "inset 0 0 140px rgba(82, 73, 57, 0.13)",
+          pointerEvents: "none",
+        }}
+      />
     </AbsoluteFill>
   );
 };
