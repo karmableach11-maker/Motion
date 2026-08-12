@@ -1,861 +1,537 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig} from 'remotion';
+import React, {useEffect, useState} from 'react';
+import {
+	AbsoluteFill,
+	continueRender,
+	delayRender,
+	useCurrentFrame,
+	useVideoConfig,
+} from 'remotion';
 
-/**
- * MOTION 61 — "CHALKBOARD FLY-THROUGH · CHEMISTRY"
- * ---------------------------------------------------------------------------
- * A forward dolly through a deep field of hand-written chemistry on a green
- * classroom board. Companion piece to the mathematics plate: identical camera,
- * identical board, twenty-four different cards.
+/* ------------------------------------------------------------------ *
+ *  CODE APPROACH — panels fly out of the light and past the lens
+ *  1920x1080 | 60fps | 15s | perfect loop
  *
- * WHAT WAS MEASURED, AND WHAT WAS INFERRED
- * ----------------------------------------
- * The camera is not invented. It was fitted to a reference fly-through
- * (700x394, 60 fps, 720 frames, 12.000 s, one continuous take) and every
- * constant below is carried over unchanged from that fit. [obs] marks what
- * came off the frames; [int] marks an inference.
+ *  Every panel is a real 3D object at depth z, projected with
+ *  k = FOC / z. The camera pushes forward at constant speed, so panels
+ *  emerge tiny at the burst core, swell as they come, and sail out
+ *  through the edges of the frame — the growth, the parallax and the
+ *  order they overtake each other all fall out of the projection.
  *
- * [obs] The move is a pure forward dolly. Fitting a radial flow field to every
- *       tracked patch (dx = k*x + c1, dy = k*y + c2, one shared k) put the
- *       focus of expansion at (355.8, 199.9) averaged over twelve samples
- *       across the clip, against a frame centre of (350, 197) — dead centre,
- *       within 6 px. Residual rms 4.24 px.
- * [obs] No roll. Log-polar rotation per 6-frame step stayed within ±0.038 deg,
- *       which is the noise floor of the method.
- * [obs] The rate is constant, not eased: refitting every 60 frames gave
- *       scale/s of 1.2925, 1.2662, 1.2995, 1.3209, 1.2380, 1.2819, 1.2842,
- *       1.2908, 1.2836, 1.3338, 1.2675, 1.2657 — mean 1.284, no trend.
- * [obs] There IS parallax, and it is large. Sorting tracked patches by their
- *       own contrast (faint = far) and refitting each third separately gave
- *       1.128 / 1.351 / 1.638 per second. A flat 2D zoom cannot do that.
- *       Under a constant-velocity dolly an element's expansion rate is v/z,
- *       so those three numbers pin the depth ratio at ln1.638/ln1.128 = 4.1
- *       and the velocity at 0.494 z-units/s.
- * [obs] Faintness is the depth cue and the only one — no blur, no colour
- *       shift. The nearest, largest formulas are as sharp as the small ones,
- *       so there is no depth of field here either.
- * [obs] Ink covered 1.7% of the reference frame below luminance 110 and 10.8%
- *       below 225: a deep, populous haze of faint distant writing with only a
- *       few bold pieces near the lens. That ratio is what sets the pool size
- *       and the depth-dimming curve below.
- * [obs] Stroke half-width from a distance transform: 0.95 px median, 1.37 px
- *       at p90, at 700 wide — roughly 2 px far against 5-6 px near, a 2.7x
- *       spread across a 4.9x size range. Pen weight therefore grows
- *       sub-linearly with the element, which is why stroke width is
- *       pre-divided by s^0.38 before the transform scales it.
- * [obs] It does not loop: phaseCorrelate(frame 0, frame 719) responded at
- *       0.446 and the two differed by 20.08 mean abs against 18.95 for two
- *       adjacent frames. So the reference is open-ended, and so is this.
- * [int] The board, the chalk, the dust and the eraser smears are a design
- *       choice, not a measurement — the reference is a white sheet.
+ *  They keep typing the whole way in: typing progress is driven by the
+ *  panel's own depth travel, not by a clock, so a panel that is still
+ *  approaching is still writing. Depth of field follows the real lens
+ *  law (blur from |1/z - 1/zFocus|), which is why the ones closest to
+ *  the lens go soft rather than merely large.
  *
- * VERIFICATION OF THE MATHEMATICS PLATE THIS INHERITS FROM
- * -------------------------------------------------------
- * Re-running the reference's own measurements on the finished render gave
- * scale/s = 1.3137 (sd 0.045) against the reference's 1.284 (sd 0.026), a
- * focus of expansion 3.6 px right and 28.6 px above frame centre — inside the
- * reference's own ±68 px scatter — and parallax thirds of 1.107 / 1.246 /
- * 1.536 against 1.128 / 1.351 / 1.638.
- *
- * SOURCES
- * -------
- * Font   Patrick Hand, SIL Open Font License 1.1, from google/fonts ofl/.
- *        Chosen over Caveat and Architect's Daughter because it is the only
- *        one of the three that carries π, ², ³, ± and × — and because its
- *        upright print hand is the closest match to the reference's writing.
- *        Subset to the characters actually used and embedded, so the file
- *        renders with no network and no external asset.
- * Art    Every formula, structure and vessel is drawn here from scratch.
- *        Reaction arrows, the equilibrium pair, the delta and the radical
- *        hooks are paths rather than glyphs — no handwriting face carries
- *        them, and a drawn one matches the chalk better in any case.
- */
+ *  Each panel makes exactly two passes per loop and alternates between
+ *  two snippets, so at t = 15 s every panel is back at its own start
+ *  depth showing the same code it started with.
+ * ------------------------------------------------------------------ */
 
-const FONT_HAND =
-	'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';
-
-/* ------------------------------------------------------------------ setup */
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const smooth = (x: number) => x * x * (3 - 2 * x);
-const seg = (f: number, a: number, b: number) => smooth(clamp((f - a) / (b - a), 0, 1));
-const hash = (n: number) => {
-	const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-	return s - Math.floor(s);
+const FONT = 'JBMonoCode';
+const F4 = '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';
+const F7 = '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';
+let fontRequested = false;
+const ensureFont = () => {
+	if (fontRequested || typeof document === 'undefined') return;
+	fontRequested = true;
+	const el = document.createElement('style');
+	const face = (w: number, b: string) =>
+		"@font-face{font-family:'" + FONT + "';font-style:normal;font-weight:" + w +
+		';font-display:block;src:url(data:font/woff2;base64,' + b + ") format('woff2');}";
+	el.textContent = face(400, F4) + face(700, F7);
+	document.head.appendChild(el);
 };
 
-const FACE = `@font-face{font-family:'ChalkHand';src:url(data:font/woff2;base64,${FONT_HAND}) format('woff2');font-weight:400;font-style:normal;font-display:block}`;
-if (typeof document !== 'undefined' && !document.getElementById('m61-face')) {
-	const st = document.createElement('style');
-	st.id = 'm61-face';
-	st.textContent = FACE;
-	document.head.appendChild(st);
-}
+const W = 1920;
+const H = 1080;
+const TAU = Math.PI * 2;
+const HY = 612; /* horizon */
+const CXR = 884; /* burst core */
 
-const useChalkFont = () => {
-	const [handle] = useState(() => delayRender('m61 font'));
-	const done = useRef(false);
-	useEffect(() => {
-		const fin = () => {
-			if (!done.current) {
-				done.current = true;
-				continueRender(handle);
-			}
-		};
-		const d: any = typeof document === 'undefined' ? null : document;
-		if (d && d.fonts && d.fonts.check && d.fonts.check("400 40px 'ChalkHand'")) {
-			fin();
-			return;
-		}
-		if (d && d.fonts && d.fonts.load) d.fonts.load("400 40px 'ChalkHand'").then(fin).catch(fin);
-		else fin();
-		const id = setTimeout(fin, 700);
-		return () => {
-			clearTimeout(id);
-			fin();
-		};
-	}, [handle]);
+/* palette */
+const COL = ['#9CC0E2', '#5CB0F0', '#63D6BE', '#B79BEE', '#3D5F84', '#BCE0FF'];
+const RAY = '#3E8FE0';
+
+let _s = 0x6d2f81b3 >>> 0;
+const rr = () => {
+	_s = (Math.imul(_s, 1664525) + 1013904223) >>> 0;
+	return _s / 4294967296;
 };
 
-/* --------------------------------------------------------- the depth field */
+/* ================= code corpus ================= */
+const SNIP: string[][] = [
+	[
+		'export const buildPipeline = (cfg) => {',
+		'  const stages = cfg.stages ?? [];',
+		'  const out = [];',
+		'  for (const s of stages) {',
+		'    if (!s.enabled) continue;',
+		'    out.push(compile(s, cfg.target));',
+		'  }',
+		'  return freeze(out);',
+		'};',
+	],
+	[
+		'async function resolveGraph(root) {',
+		'  const seen = new Set();',
+		'  const queue = [root];',
+		'  while (queue.length) {',
+		'    const node = queue.shift();',
+		'    if (seen.has(node.id)) continue;',
+		'    seen.add(node.id);',
+		'    queue.push(...node.edges);',
+		'  }',
+		'  return seen.size;',
+		'}',
+	],
+	[
+		'# normalise the incoming batch',
+		'def normalise(batch, eps=1e-6):',
+		'    mu = batch.mean(axis=0)',
+		'    sd = batch.std(axis=0) + eps',
+		'    return (batch - mu) / sd',
+		'',
+		'class Encoder:',
+		'    def __init__(self, dim=512):',
+		'        self.dim = dim',
+		'        self.layers = []',
+	],
+	[
+		'type Result<T> = {',
+		'  ok: boolean;',
+		'  value: T | null;',
+		'  error: string;',
+		'};',
+		'',
+		'export function unwrap(r) {',
+		'  if (!r.ok) throw new Error(r.error);',
+		'  return r.value;',
+		'}',
+	],
+	[
+		'const server = createServer({',
+		'  port: 8443,',
+		'  tls: true,',
+		'  routes: registry.all(),',
+		'});',
+		'',
+		'server.on("request", (req, res) => {',
+		'  const t0 = now();',
+		'  handle(req).then(() => log(now() - t0));',
+		'});',
+	],
+	[
+		'SELECT node_id, region, latency_ms',
+		'  FROM cluster_metrics',
+		' WHERE window > now() - 300',
+		'   AND status = "healthy"',
+		' ORDER BY latency_ms ASC',
+		' LIMIT 64;',
+		'',
+		'-- 1284 rows scanned in 12 ms',
+	],
+	[
+		'void kernel_step(float* buf, int n) {',
+		'  for (int i = 0; i < n; i++) {',
+		'    float v = buf[i] * 0.5f;',
+		'    buf[i] = clamp(v, -1.0f, 1.0f);',
+		'  }',
+		'}',
+		'',
+		'// checksum 0x4A7F verified',
+	],
+	[
+		'import { pack, verify } from "./crypto";',
+		'',
+		'export const sign = (payload, key) => {',
+		'  const blob = pack(payload);',
+		'  const mac = hmac(blob, key, "sha512");',
+		'  return { blob, mac, ts: now() };',
+		'};',
+	],
+];
 
-/* [obs] the three contrast thirds of the reference expand at 1.128 / 1.351 /
-   1.638 per second. Under a constant-velocity dolly an element's expansion
-   rate is v/z, so those three numbers fix the whole camera: a depth range of
-   about 4.1:1 travelled at v = 0.494 z-units per second. Check:
-     z=4.25 -> e^(0.494/4.25) = 1.123      (faint third, measured 1.128)
-     z=2.06 -> e^(0.494/2.06) = 1.271      (whole frame,  measured 1.284)
-     z=1.00 -> e^(0.494/1.00) = 1.639      (bold third,   measured 1.638)   */
-/* The depth RATIO is fixed by the parallax measurement — ln(1.638)/ln(1.128) =
-   4.1 between the bold and faint thirds. Where that window sits along z is not,
-   and it is what sets the overall rate: rendering a first pass at z = 4.5..0.92
-   measured 1.15/s against the reference's 1.284/s, because the visible
-   population of a frustum skews far (an element only stays in frame while its
-   spawn radius times Z_FAR/z is inside it, so the far ones are over-represented
-   by (z/Z_FAR)^2). The visibility-weighted mean depth there was 3.40; the
-   reference's global rate implies 1.98. So the whole window slides in by
-   1.98/3.40 = 0.5815, ratio untouched. */
-const Z_FAR = 2.617;
-const Z_CUT = 0.535;
-const VEL = 0.494 / 60; // z-units per frame
-const T_CYCLE = (Z_FAR - Z_CUT) / VEL; // 252.8 frames for one traverse
-const SBASE = 0.5525; // z-units -> px, shared by size and position so the field stays rigid
-const CX = 960;
-const CY = 540;
-/* Of a pool this size only ~41% are inside the frustum at any moment — objects
-   enter across the whole far plane and the ones off-axis have spread past the
-   frame edge long before they reach the near plane. The pool has to be this
-   large for the frame to carry the ~90 the reference does — and because the
-   biggest elements are the rare ones that entered near the axis and survived
-   the whole traverse, a bigger pool is the only way to get more of them. */
-const N_EL = 720;
-/* [obs] stroke half-width in the reference is 0.95 px median / 1.37 px at p90
-   at 700 wide, i.e. roughly 2 px far and 5-6 px near at 1920 — a 2.7x spread
-   across a 4.9x size range. Pen weight therefore grows sub-linearly with the
-   element, so the width is pre-divided by s^0.38 before the transform scales
-   it, landing on s^0.62. */
-const SW = 5.95;
-
-const CHALK = '#f4f8f0';
-
-/* ---------------------------------------------------------- drawing helpers */
-
-/* nothing here is allowed to be machine-straight: every line gets a midpoint
-   nudge, seeded off its own index so the wobble is the same on every frame */
-const wob = (seed: number, i: number, amp: number) => (hash(seed * 31.7 + i * 7.3) - 0.5) * amp;
-const ln = (x1: number, y1: number, x2: number, y2: number, s: number, amp = 2.6) =>
-	`M${x1} ${y1}Q${(x1 + x2) / 2 + wob(s, 1, amp)} ${(y1 + y2) / 2 + wob(s, 2, amp)} ${x2} ${y2}`;
-const poly = (pts: number[][], s: number, close = false, amp = 2.6) => {
-	let d = '';
-	for (let i = 0; i < pts.length - 1; i++) d += ln(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], s + i, amp);
-	if (close) d += ln(pts[pts.length - 1][0], pts[pts.length - 1][1], pts[0][0], pts[0][1], s + 99, amp);
-	return d;
-};
-
-type TP = {x?: number; y?: number; s?: number; a?: 'start' | 'middle' | 'end'; i?: boolean};
-const Tx: React.FC<TP & {children: React.ReactNode}> = ({x = 0, y = 0, s = 40, a = 'middle', i, children}) => (
-	<text
-		x={x}
-		y={y}
-		fontFamily="ChalkHand, sans-serif"
-		fontSize={s}
-		textAnchor={a}
-		fill={CHALK}
-		stroke="none"
-		fontStyle={i ? 'italic' : undefined}
-	>
-		{children}
-	</text>
-);
-
-/* --------------------------------------------------- chemistry helpers */
-
-/* Subscripts and superscripts — the thing every chemical formula needs and no
-   handwriting face provides. '_' marks the next character as a subscript, '^'
-   as a superscript. Each tspan carries only the DELTA of the baseline shift,
-   so a run returns to the line by itself and consecutive subscripts (the 12 in
-   C₆H₁₂O₆) cost nothing. */
-const Fm: React.FC<{t: string; s: number; x?: number; y?: number; a?: 'start' | 'middle' | 'end'}> = ({
-	t,
-	s,
-	x = 0,
-	y = 0,
-	a = 'middle',
-}) => {
-	const segs: {t: string; k: number}[] = [];
-	let buf = '';
-	for (let i = 0; i < t.length; i++) {
-		const c = t[i];
-		if ((c === '_' || c === '^') && i + 1 < t.length) {
-			if (buf) {
-				segs.push({t: buf, k: 0});
-				buf = '';
-			}
-			segs.push({t: t[i + 1], k: c === '_' ? 1 : -1});
-			i++;
-		} else buf += c;
+const KW = new Set([
+	'const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while',
+	'import', 'export', 'from', 'async', 'await', 'class', 'new', 'this', 'null',
+	'true', 'false', 'def', 'self', 'try', 'catch', 'throw', 'type', 'void',
+	'int', 'float', 'continue', 'of', 'in', 'SELECT', 'FROM', 'WHERE', 'AND',
+	'ORDER', 'BY', 'ASC', 'LIMIT', 'boolean', 'string', 'number',
+]);
+type Tok = [string, number];
+const tokenise = (line: string): Tok[] => {
+	const out: Tok[] = [];
+	const re = /(\/\/[^]*$|#[^]*$|--[^]*$|"[^"]*"|'[^']*'|\d+(?:\.\d+)?[a-z]*|[A-Za-z_$][\w$]*|\s+|[^\s\w])/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(line)) !== null) {
+		const s = m[0];
+		let c = 0;
+		if (s[0] === '/' || s[0] === '#' || s.slice(0, 2) === '--') c = 4;
+		else if (s[0] === '"' || s[0] === "'") c = 2;
+		else if (s[0] >= '0' && s[0] <= '9') c = 3;
+		else if (KW.has(s)) c = 1;
+		else if (s[0] >= 'A' && s[0] <= 'Z') c = 5;
+		out.push([s, c]);
+		if (m.index === re.lastIndex) re.lastIndex++;
 	}
-	if (buf) segs.push({t: buf, k: 0});
-	let prev = 0;
-	return (
-		<text
-			x={x}
-			y={y}
-			fontFamily="ChalkHand, sans-serif"
-			fontSize={s}
-			textAnchor={a}
-			fill={CHALK}
-			stroke="none"
-		>
-			{segs.map((g, i) => {
-				const shift = g.k === 1 ? s * 0.26 : g.k === -1 ? -s * 0.38 : 0;
-				const dy = shift - prev;
-				prev = shift;
-				return (
-					<tspan key={i} fontSize={g.k ? s * 0.64 : s} dy={dy}>
-						{g.t}
-					</tspan>
-				);
-			})}
-		</text>
-	);
+	return out;
+};
+const TOKS = SNIP.map((s) => s.map(tokenise));
+const LENS = SNIP.map((s) => s.map((l) => l.length));
+const TOTAL = LENS.map((ls) => ls.reduce((a, b) => a + b + 1, 0));
+const MAXL = SNIP.map((s) => s.reduce((m, l) => Math.max(m, l.length), 0));
+
+
+/* ================= 3D panel field ================= */
+const FOC = 900;
+const ZN = 1.5;
+const ZF = 21;
+const SPZ = ZF - ZN;
+const PASSES = 2;
+const VEL = (SPZ * PASSES) / 15; /* exactly two traversals per loop */
+const ZFOC = 6.6; /* focal plane */
+
+type P = {
+	x: number;
+	y: number;
+	z0: number;
+	fs: number;
+	kind: number; /* 0 code, 1 hex, 2 abstract bars */
+	sa: number;
+	sb: number;
+	seed: number;
+	rows: number;
+	wpx: number;
 };
 
-/* A reaction is laid out around its arrow rather than around its own centre:
-   the left half is end-anchored and the right half start-anchored, so neither
-   side needs its width measured. */
-const Arrow: React.FC<{x: number; y: number; w: number; s: number}> = ({x, y, w, s}) => (
-	<>
-		<path d={ln(x, y, x + w - 12, y, s, 1.6)} fill="none" />
-		<path d={`M${x + w} ${y}L${x + w - 17} ${y - 8}L${x + w - 17} ${y + 8}z`} fill={CHALK} stroke="none" />
-	</>
-);
-const Equil: React.FC<{x: number; y: number; w: number; s: number}> = ({x, y, w, s}) => (
-	<>
-		<path d={ln(x, y - 6, x + w, y - 6, s, 1.4)} fill="none" />
-		<path d={`M${x + w + 3} ${y - 6}L${x + w - 11} ${y - 12}L${x + w - 11} ${y - 6}z`} fill={CHALK} stroke="none" />
-		<path d={ln(x + w, y + 7, x, y + 7, s + 1, 1.4)} fill="none" />
-		<path d={`M${x - 3} ${y + 7}L${x + 11} ${y + 13}L${x + 11} ${y + 7}z`} fill={CHALK} stroke="none" />
-	</>
-);
+const NP = 54;
+const PANELS: P[] = Array.from({length: NP}, (_, i) => {
+	/* keep a clear tube around the axis so nothing ploughs straight
+	   through the middle of frame; panels always drift out to an edge */
+	let ax = 0;
+	let ay = 0;
+	for (let k = 0; k < 30; k++) {
+		ax = (rr() * 2 - 1) * 22;
+		ay = (rr() * 2 - 1) * 12.6;
+		if (Math.hypot(ax * 0.62, ay) > 1.6) break;
+	}
+	const u = rr();
+	return {
+		x: ax,
+		y: ay,
+		/* low-discrepancy depth phases keep the stream evenly spaced */
+		z0: ((i * 0.6180339887) % 1) * SPZ,
+		fs: 0.19 + rr() * 0.115,
+		kind: u < 0.68 ? 0 : u < 0.84 ? 1 : 2,
+		sa: Math.floor(rr() * SNIP.length),
+		sb: Math.floor(rr() * SNIP.length),
+		seed: Math.floor(rr() * 9973),
+		rows: 3 + Math.floor(rr() * 7),
+		wpx: 60 + rr() * 130,
+	};
+});
 
-const hex = (r: number, cx = 0, cy = 0, rot = 0) =>
-	Array.from({length: 6}, (_, i) => {
-		const a = rot + (i * Math.PI) / 3;
-		return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-	});
-
-/* the inner stroke of a double bond: inset along the edge, then pushed toward
-   the ring centre by the normal */
-const inner = (p: number[], q: number[], cx: number, cy: number, d: number) => {
-	const ax = p[0] + (q[0] - p[0]) * 0.18;
-	const ay = p[1] + (q[1] - p[1]) * 0.18;
-	const bx = p[0] + (q[0] - p[0]) * 0.82;
-	const by = p[1] + (q[1] - p[1]) * 0.82;
-	const mx = (p[0] + q[0]) / 2 - cx;
-	const my = (p[1] + q[1]) / 2 - cy;
-	const L = Math.hypot(mx, my) || 1;
-	return `M${ax - (mx / L) * d} ${ay - (my / L) * d}L${bx - (mx / L) * d} ${by - (my / L) * d}`;
+const HEXD = '0123456789ABCDEF';
+const hexRow = (seed: number, n: number) => {
+	let s = '';
+	let v = (seed * 2654435761) >>> 0;
+	for (let i = 0; i < n; i++) {
+		v = (Math.imul(v, 1664525) + 1013904223) >>> 0;
+		s +=
+			HEXD[(v >>> 4) & 15] + HEXD[(v >>> 8) & 15] + HEXD[(v >>> 12) & 15] +
+			HEXD[(v >>> 16) & 15] + (i < n - 1 ? '  ' : '');
+	}
+	return s;
 };
 
-/* a fraction: rule, numerator, denominator */
-const Frac: React.FC<{x: number; y: number; w: number; s: number; children: React.ReactNode}> = ({
-	x,
-	y,
-	w,
-	s,
-	children,
-}) => (
-	<>
-		<path d={ln(x - w / 2, y, x + w / 2, y, s, 2.2)} fill="none" />
-		{children}
-	</>
-);
+/* ================= ray fan ================= */
+const NRAY = 168;
+const RAYS = Array.from({length: NRAY}, (_, i) => {
+	const f = i / (NRAY - 1);
+	const a = (4 + 172 * (f + (rr() - 0.5) * 0.012)) * (Math.PI / 180);
+	return {a, len: 420 + rr() * 1180, w: 0.5 + Math.pow(rr(), 2.4) * 2.6, r0: 12 + rr() * 46};
+});
+const NDOT = 260;
+const DOTS = Array.from({length: NDOT}, () => {
+	const a = (4 + 172 * rr()) * (Math.PI / 180);
+	const sp = 26 + rr() * 96;
+	return {a, sp, span: sp * 15, d0: rr() * sp * 15, r: 0.8 + rr() * 2.2};
+});
 
-const Delta: React.FC<{x: number; y: number; h: number; s: number}> = ({x, y, h, s}) => (
-	<path
-		d={poly([[x, y - h], [x - h * 0.62, y + h * 0.44], [x + h * 0.62, y + h * 0.44]], s, true, 1.2)}
-		fill="none"
-	/>
-);
-
-/* -------------------------------------------------------------- the cards */
-
-/* Twenty-four pieces of blackboard, each drawn once into <defs> and then
-   instanced by <use>. Instancing is what makes 720 of them affordable: the
-   geometry is built one time and the browser only has to place a transform,
-   and stroke width scales with that transform exactly as it does in the
-   reference, where the big formulas are drawn with heavier lines. */
-const Cards: React.FC = () => (
-	<>
-		<g id="k0">
-			<Fm t="H_2O" s={54} />
-		</g>
-		<g id="k1">
-			<Fm t="CO_2" s={48} />
-		</g>
-		<g id="k2">
-			<Fm t="2H_2 + O_2" s={34} x={-36} a="end" />
-			<Arrow x={-30} y={-10} w={58} s={201} />
-			<Fm t="2H_2O" s={34} x={34} a="start" />
-		</g>
-		<g id="k3">
-			<Fm t="CH_4 + 2O_2" s={30} x={-36} a="end" />
-			<Arrow x={-30} y={-9} w={56} s={205} />
-			<Fm t="CO_2 + 2H_2O" s={30} x={32} a="start" />
-		</g>
-		<g id="k4">
-			<Fm t="N_2 + 3H_2" s={32} x={-38} a="end" />
-			<Equil x={-32} y={-10} w={62} s={209} />
-			<Fm t="2NH_3" s={32} x={36} a="start" />
-		</g>
-		<g id="k5">
-			<Fm t="C_6H_1_2O_6" s={44} />
-		</g>
-		<g id="k6">
-			<Fm t="PV = nRT" s={44} />
-		</g>
-		<g id="k7">
-			<Fm t="pH = -log[H^+]" s={34} />
-		</g>
-		<g id="k8">
-			<Fm t="n =" s={38} x={-74} a="end" />
-			<Frac x={-24} y={0} w={54} s={213}>
-				<Fm t="m" s={32} x={-24} y={-12} />
-				<Fm t="M" s={32} x={-24} y={30} />
-			</Frac>
-		</g>
-		<g id="k9">
-			<Fm t="1s^2 2s^2 2p^6" s={34} />
-		</g>
-		<g id="k10">
-			<Fm t="NaCl" s={32} x={-34} a="end" />
-			<Arrow x={-28} y={-10} w={54} s={217} />
-			<Fm t="Na^+ + Cl^-" s={32} x={32} a="start" />
-		</g>
-		<g id="k11">
-			<Delta x={-88} y={-8} h={17} s={221} />
-			<Fm t="H = -286 kJ" s={34} x={-72} a="start" />
-		</g>
-		<g id="k12">
-			{/* benzene, delocalised ring */}
-			<path d={poly(hex(46), 231, true)} fill="none" />
-			<circle cx={0} cy={0} r={28} fill="none" />
-		</g>
-		<g id="k13">
-			{/* the same ring drawn Kekule, alternating double bonds */}
-			<path d={poly(hex(46), 241, true)} fill="none" />
-			{[0, 2, 4].map((i) => {
-				const p = hex(46);
-				return <path key={i} d={inner(p[i], p[(i + 1) % 6], 0, 0, 9)} fill="none" />;
-			})}
-		</g>
-		<g id="k14">
-			{/* phenol: a ring with a hydroxyl */}
-			<path d={poly(hex(40), 251, true)} fill="none" />
-			{[1, 3, 5].map((i) => {
-				const p = hex(40);
-				return <path key={i} d={inner(p[i], p[(i + 1) % 6], 0, 0, 8)} fill="none" />;
-			})}
-			<path d={ln(20, -34.6, 46, -56, 255, 1.4)} fill="none" />
-			<Fm t="OH" s={24} x={66} y={-52} a="start" />
-		</g>
-		<g id="k15">
-			{/* naphthalene: two rings fused on a shared vertical edge */}
-			<path d={poly(hex(40, -34.6, 0, Math.PI / 6), 261, true)} fill="none" />
-			<path d={poly(hex(40, 34.6, 0, Math.PI / 6), 265, true)} fill="none" />
-		</g>
-		<g id="k16">
-			{/* methane: two bonds in plane, one wedge forward, one hashed back */}
-			<path d={ln(-13, -3, -50, -22, 271, 1.4)} fill="none" />
-			<path d={ln(13, -3, 50, -22, 272, 1.4)} fill="none" />
-			<path d="M-4 -12L4 -12L1 -44L-1 -44z" fill={CHALK} stroke="none" />
-			<path d="M-3 20h6M-4.5 30h9M-6 40h12" fill="none" />
-			<circle cx={0} cy={0} r={14} fill="none" />
-			<Fm t="C" s={20} x={0} y={7} />
-			<circle cx={-56} cy={-25} r={10} fill="none" />
-			<circle cx={56} cy={-25} r={10} fill="none" />
-			<circle cx={0} cy={-52} r={10} fill="none" />
-			<circle cx={0} cy={50} r={10} fill="none" />
-		</g>
-		<g id="k17">
-			{/* water: the bent molecule and its angle */}
-			<path d={ln(-12, -8, -40, 22, 281, 1.4)} fill="none" />
-			<path d={ln(12, -8, 40, 22, 282, 1.4)} fill="none" />
-			<circle cx={0} cy={-18} r={16} fill="none" />
-			<Fm t="O" s={22} x={0} y={-10} />
-			<circle cx={-48} cy={30} r={11} fill="none" />
-			<Fm t="H" s={17} x={-48} y={36} />
-			<circle cx={48} cy={30} r={11} fill="none" />
-			<Fm t="H" s={17} x={48} y={36} />
-			<path d="M-19 6a26 26 0 0 0 38 0" fill="none" />
-			<Fm t="105°" s={16} x={0} y={30} />
-		</g>
-		<g id="k18">
-			{/* Bohr model: nucleus and two shells */}
-			<ellipse cx={0} cy={0} rx={58} ry={22} fill="none" transform="rotate(28)" />
-			<ellipse cx={0} cy={0} rx={58} ry={22} fill="none" transform="rotate(-28)" />
-			<circle cx={0} cy={0} r={12} fill={CHALK} stroke="none" />
-			<circle cx={49} cy={28} r={5} fill={CHALK} stroke="none" />
-			<circle cx={-49} cy={28} r={5} fill={CHALK} stroke="none" />
-			<circle cx={-14} cy={-30} r={5} fill={CHALK} stroke="none" />
-		</g>
-		<g id="k19">
-			{/* Erlenmeyer flask */}
-			<path d={ln(-13, -58, -13, -24, 291, 1.2)} fill="none" />
-			<path d={ln(13, -58, 13, -24, 292, 1.2)} fill="none" />
-			<path d={ln(-13, -58, 13, -58, 293, 1.2)} fill="none" />
-			<path d={ln(-13, -24, -50, 44, 294, 1.8)} fill="none" />
-			<path d={ln(13, -24, 50, 44, 295, 1.8)} fill="none" />
-			<path d={ln(-50, 44, 50, 44, 296, 1.6)} fill="none" />
-			<g clipPath="url(#m61flask)">
-				<rect x={-52} y={8} width={104} height={40} fill="url(#m61hatch)" stroke="none" />
-			</g>
-			<path d={ln(-30, 10, 30, 10, 297, 2.2)} fill="none" />
-			<circle cx={-12} cy={26} r={4} fill="none" />
-			<circle cx={8} cy={34} r={3} fill="none" />
-		</g>
-		<g id="k20">
-			{/* graduated beaker */}
-			<path d={poly([[-38, -40], [-38, 46], [38, 46], [38, -40]], 301, false, 1.6)} fill="none" />
-			<path d={ln(-38, -40, -47, -36, 305, 1.0)} fill="none" />
-			<g clipPath="url(#m61beaker)">
-				<rect x={-40} y={6} width={80} height={44} fill="url(#m61hatch)" stroke="none" />
-			</g>
-			<path d={ln(-38, 6, 38, 6, 306, 2.2)} fill="none" />
-			<path d="M22 -22h16M22 -6h16M22 10h16" fill="none" />
-		</g>
-		<g id="k21">
-			{/* test tube */}
-			<path d={`M-15 -54L-15 26A15 15 0 0 0 15 26L15 -54`} fill="none" />
-			<path d={ln(-15, -54, 15, -54, 311, 1.2)} fill="none" />
-			<g clipPath="url(#m61tube)">
-				<rect x={-16} y={-6} width={32} height={52} fill="url(#m61hatch)" stroke="none" />
-			</g>
-			<path d={ln(-15, -6, 15, -6, 312, 1.8)} fill="none" />
-			<circle cx={-5} cy={8} r={3.4} fill="none" />
-			<circle cx={6} cy={18} r={2.6} fill="none" />
-		</g>
-		<g id="k22">
-			{/* one cell out of the periodic table */}
-			<path d={poly([[-38, -42], [38, -42], [38, 42], [-38, 42]], 321, true, 1.4)} fill="none" />
-			<Fm t="6" s={17} x={-29} y={-21} a="start" />
-			<Fm t="C" s={44} x={0} y={12} />
-			<Fm t="12.01" s={13} x={0} y={33} />
-		</g>
-		<g id="k24">
-			<Fm t="H_2SO_4" s={42} />
-		</g>
-		<g id="k25">
-			<Fm t="2Na + Cl_2" s={30} x={-36} a="end" />
-			<Arrow x={-30} y={-9} w={56} s={341} />
-			<Fm t="2NaCl" s={30} x={32} a="start" />
-		</g>
-		<g id="k26">
-			<Delta x={-112} y={-8} h={16} s={351} />
-			<Fm t="G =" s={32} x={-98} a="start" />
-			<Delta x={-30} y={-8} h={16} s={352} />
-			<Fm t="H - T" s={32} x={-16} a="start" />
-			<Delta x={68} y={-8} h={16} s={353} />
-			<Fm t="S" s={32} x={82} a="start" />
-		</g>
-		<g id="k27">
-			{/* titration curve with its equivalence point */}
-			<path d={ln(-62, 46, 74, 46, 361, 1.6)} fill="none" />
-			<path d={ln(-56, -50, -56, 56, 362, 1.6)} fill="none" />
-			<path d="M-48 38Q-6 32 4 -6Q12 -42 62 -46" fill="none" />
-			<path d="M4 -6m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0" fill="none" />
-			<path d="M-56 -6L-2 -6" fill="none" strokeDasharray="5 6" />
-			<Fm t="pH" s={18} x={-72} y={-44} a="start" />
-		</g>
-		<g id="k23">
-			{/* orbital box diagram: paired and unpaired spins */}
-			<path d={ln(-52, 26, -14, 26, 331, 1.2)} fill="none" />
-			<path d={ln(-6, 26, 32, 26, 332, 1.2)} fill="none" />
-			<path d={ln(-52, -18, -14, -18, 333, 1.2)} fill="none" />
-			<path d="M-38 20v-18l-4 5m4 -5l4 5" fill="none" />
-			<path d="M-24 8v18l-4 -5m4 5l4 -5" fill="none" />
-			<path d="M8 20v-18l-4 5m4 -5l4 5" fill="none" />
-			<path d="M-38 -24v-18l-4 5m4 -5l4 5" fill="none" />
-			<Fm t="2p" s={18} x={44} y={32} a="start" />
-			<Fm t="3s" s={18} x={44} y={-12} a="start" />
-		</g>
-	</>
-);
-const N_CARD = 28;
-
-
-/* --------------------------------------------------------------- the plate */
+const wrap = (v: number, s: number) => ((v % s) + s) % s;
 
 export const Motion: React.FC = () => {
-	useChalkFont();
 	const frame = useCurrentFrame();
 	const {durationInFrames} = useVideoConfig();
-	const f = frame;
-	const T = f / 60;
+	const u = frame / durationInFrames;
+	const t = u * 15;
 
-	/* [obs] the reference's focus of expansion sits on the frame centre, but
-	   its twelve fits scatter over ±20 px, so the operator was not locked off.
-	   A drift of that size, far below the expansion itself, keeps the move from
-	   reading as a mechanical zoom. */
-	const fx = CX + 26 * Math.sin(T * 0.29) + 12 * Math.sin(T * 0.71 + 1.4);
-	const fy = CY + 20 * Math.sin(T * 0.34 + 2.1) + 9 * Math.sin(T * 0.83);
+	const [fh] = useState(() => delayRender('code-font'));
+	useEffect(() => {
+		let done = false;
+		const fin = () => {
+			if (done) return;
+			done = true;
+			continueRender(fh);
+		};
+		ensureFont();
+		const id = setTimeout(fin, 2500);
+		Promise.all([
+			document.fonts.load('400 16px ' + FONT),
+			document.fonts.load('700 16px ' + FONT),
+		])
+			.then(fin)
+			.catch(fin);
+		return () => clearTimeout(id);
+	}, [fh]);
 
-	const items: React.ReactNode[] = [];
-	for (let i = 0; i < N_EL; i++) {
-		const u = ((hash(i * 1.7) + f / T_CYCLE) % 1 + 1) % 1;
-		const z = Z_FAR - u * (Z_FAR - Z_CUT);
-		const k = SBASE / z;
-
-		/* world position, stored as where the element would land on screen at the
-		   moment it enters at the back — that keeps the spawn spread even */
-		/* a mild pull toward the axis: elements that enter off-centre are gone
-		   within a fraction of their traverse, so a flat spread starves the
-		   frame of the large near elements the reference clearly has */
-		const bx = hash(i * 3.1 + 11) * 2 - 1;
-		const by = hash(i * 5.3 + 29) * 2 - 1;
-		const sx0 = Math.sign(bx) * Math.pow(Math.abs(bx), 1.28) * 1020;
-		const sy0 = Math.sign(by) * Math.pow(Math.abs(by), 1.28) * 600;
-		const X = (sx0 * Z_FAR) / SBASE;
-		const Y = (sy0 * Z_FAR) / SBASE;
-		const px = fx + X * k;
-		const py = fy + Y * k;
-
-		const m = 0.76 + hash(i * 7.9 + 3) * 0.6; // per-instance size spread
-		const s = k * m;
-		const reach = 240 * s + 220;
-		if (px < -reach || px > 1920 + reach || py < -reach || py > 1080 + reach) continue;
-
-		/* [obs] faintness is the depth cue and the only one: the reference's ink
-		   sits at 10.8% coverage below luminance 225 but only 1.7% below 110, so
-		   the field is mostly distant, low-contrast writing with a few bold
-		   pieces near the lens. */
-		const depth = clamp(0.24 + 0.76 * Math.pow((Z_FAR - z) / (Z_FAR - Z_CUT), 0.85), 0, 1);
-		const fade = smooth(clamp(u / 0.09, 0, 1)) * smooth(clamp((1 - u) / 0.2, 0, 1));
-		const op = depth * fade;
-		if (op < 0.012) continue;
-
-		const card = Math.floor(hash(i * 11.3 + 7) * N_CARD) % N_CARD;
-		const rot = (hash(i * 13.7 + 5) - 0.5) * 5;
-		items.push(
-			<use
-				key={i}
-				href={`#k${card}`}
-				transform={`translate(${px.toFixed(2)} ${py.toFixed(2)}) rotate(${rot.toFixed(2)}) scale(${s.toFixed(4)})`}
-				opacity={op.toFixed(3)}
-				strokeWidth={(SW * Math.pow(s, -0.38)).toFixed(3)}
-			/>,
-		);
+	/* ---------- ray fan ---------- */
+	const rayPaths = ['', '', ''];
+	for (let i = 0; i < NRAY; i++) {
+		const R = RAYS[i];
+		const ca = Math.cos(R.a);
+		const sa = Math.sin(R.a);
+		const bi = R.w < 1 ? 0 : R.w < 1.9 ? 1 : 2;
+		rayPaths[bi] +=
+			'M' + (CXR + ca * R.r0).toFixed(1) + ' ' + (HY + sa * R.r0).toFixed(1) +
+			'L' + (CXR + ca * R.len).toFixed(1) + ' ' + (HY + sa * R.len).toFixed(1);
+	}
+	let dotPath = '';
+	let dotPath2 = '';
+	for (let i = 0; i < NDOT; i++) {
+		const D = DOTS[i];
+		const d = wrap(D.d0 + D.sp * t, D.span) + 30;
+		if (d > 1500) continue;
+		const s =
+			'M' + (CXR + Math.cos(D.a) * d).toFixed(1) + ' ' +
+			(HY + Math.sin(D.a) * d).toFixed(1) + 'h.01';
+		if (D.r > 1.8) dotPath2 += s;
+		else dotPath += s;
 	}
 
-	/* eraser smears: the board was wiped, and the wipe is what makes a painted
-	   rectangle read as a real board. They drift a little so the board is not
-	   a frozen backdrop behind a moving field. */
-	const smears: React.ReactNode[] = [];
-	for (let i = 0; i < 12; i++) {
-		const a = hash(i * 2.3) * Math.PI;
-		smears.push(
-			<ellipse
-				key={i}
-				cx={200 + hash(i * 4.1) * 1520 + Math.sin(T * 0.11 + i) * 14}
-				cy={90 + hash(i * 6.7) * 930 + Math.cos(T * 0.09 + i) * 10}
-				rx={190 + hash(i * 8.9) * 300}
-				ry={38 + hash(i * 3.3) * 54}
-				transform={`rotate(${((a * 180) / Math.PI - 90) * 0.16} 960 540)`}
-				fill="#9dbfa8"
-				opacity={0.022 + hash(i * 9.1) * 0.03}
-			/>,
-		);
-	}
-
-	const gx = (hash(f) - 0.5) * 90;
-	const gy = (hash(f + 700) - 0.5) * 90;
+	/* ---------- project the panel field ---------- */
+	const vis = PANELS.map((p, pi) => {
+		const trav = p.z0 + VEL * t;
+		const pass = Math.floor(trav / SPZ);
+		const pp = trav / SPZ - pass; /* 0 at the far plane, 1 at the lens */
+		const z = ZF - pp * SPZ;
+		const k = FOC / z;
+		return {p, pi, pass, pp, z, k, X: CXR + p.x * k, Y: HY + p.y * k, fs: p.fs * k};
+	})
+		.filter((v) => {
+			if (v.fs < 2.2) return false;
+			const wEst = v.fs * 0.62 * 40;
+			const hEst = v.fs * 1.5 * 11;
+			return v.X > -wEst - 200 && v.X < W + 200 && v.Y > -hEst - 200 && v.Y < H + 200;
+		})
+		.sort((a, b) => b.z - a.z);
 
 	return (
-		<AbsoluteFill style={{background: '#16302a', overflow: 'hidden'}}>
-			{/* ------------------------------------------------------- the board */}
+		<AbsoluteFill style={{backgroundColor: '#01030A', fontFamily: FONT}}>
 			<AbsoluteFill
 				style={{
 					background:
-						'radial-gradient(118% 96% at 47% 42%, #2f5847 0%, #274839 38%, #1d3a2e 68%, #132720 100%)',
+						'radial-gradient(64% 46% at 46% 57%, rgba(22,64,124,0.5) 0%, rgba(10,30,64,0.22) 40%, rgba(2,8,20,0) 76%)',
 				}}
 			/>
-			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
-				<defs>
-					<filter id="m61slate" x="0" y="0" width="100%" height="100%">
-						<feTurbulence type="fractalNoise" baseFrequency="0.62 0.9" numOctaves={3} seed={9} />
-						<feColorMatrix type="saturate" values="0" />
-					</filter>
-					<filter id="m61blotch" x="-8%" y="-8%" width="116%" height="116%">
-						<feTurbulence type="fractalNoise" baseFrequency="0.0042" numOctaves={4} seed={17} />
-						<feColorMatrix type="saturate" values="0" />
-						<feComponentTransfer>
-							<feFuncA type="table" tableValues="0 0 0.1 0.4 0.85" />
-						</feComponentTransfer>
-					</filter>
-					<filter id="m61grain" x="0" y="0" width="100%" height="100%">
-						<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={2} seed={4} />
-						<feColorMatrix type="saturate" values="0" />
-					</filter>
-				</defs>
-				<rect width={1920} height={1080} filter="url(#m61slate)" opacity={0.15} style={{mixBlendMode: 'overlay'}} />
-				<rect
-					x={-70}
-					y={-70}
-					width={2060}
-					height={1220}
-					filter="url(#m61blotch)"
-					opacity={0.2}
-					style={{mixBlendMode: 'soft-light'}}
-				/>
-				<g style={{filter: 'blur(26px)'}}>{smears}</g>
-			</svg>
 
-			{/* ------------------------------------------------------- the field */}
-			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
+			<svg width={W} height={H} style={{position: 'absolute', left: 0, top: 0}}>
 				<defs>
-					<clipPath id="m61flask">
-						<path d="M-13 -24L-50 44L50 44L13 -24z" />
-					</clipPath>
-					<clipPath id="m61beaker">
-						<rect x={-38} y={-40} width={76} height={86} />
-					</clipPath>
-					<clipPath id="m61tube">
-						<path d="M-15 -54L-15 26A15 15 0 0 0 15 26L15 -54z" />
-					</clipPath>
-					<pattern id="m61hatch" width={9} height={9} patternUnits="userSpaceOnUse" patternTransform="rotate(40)">
-						<line x1={0} y1={0} x2={0} y2={9} stroke={CHALK} strokeWidth={1.6} />
-					</pattern>
-					{/* chalk is not a clean vector: displacing the whole writing layer
-					    through a noise field roughens every edge at once, which is far
-					    cheaper than roughening 176 elements individually */}
-					<filter id="m61chalk" x="-3%" y="-3%" width="106%" height="106%">
-						<feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves={3} seed={23} result="n" />
-						<feDisplacementMap
-							in="SourceGraphic"
-							in2="n"
-							scale={2.9}
-							xChannelSelector="R"
-							yChannelSelector="G"
-						/>
-					</filter>
-					<Cards />
+					<radialGradient id="rayG" gradientUnits="userSpaceOnUse" cx={CXR} cy={HY} r={980}>
+						<stop offset="0%" stopColor="#EAF7FF" stopOpacity="0.95" />
+						<stop offset="9%" stopColor="#B6E0FF" stopOpacity="0.8" />
+						<stop offset="34%" stopColor={RAY} stopOpacity="0.42" />
+						<stop offset="72%" stopColor="#1E4F92" stopOpacity="0.12" />
+						<stop offset="100%" stopColor="#0B2246" stopOpacity="0" />
+					</radialGradient>
+					<radialGradient id="coreG" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
+						<stop offset="16%" stopColor="#CDEBFF" stopOpacity="0.6" />
+						<stop offset="52%" stopColor="#4E9BE4" stopOpacity="0.18" />
+						<stop offset="100%" stopColor="#1B4E90" stopOpacity="0" />
+					</radialGradient>
+					<linearGradient id="lineG" x1="0" y1="0" x2="1" y2="0">
+						<stop offset="0%" stopColor="#8FC8F5" stopOpacity="0" />
+						<stop offset="46%" stopColor="#EAF7FF" stopOpacity="1" />
+						<stop offset="100%" stopColor="#8FC8F5" stopOpacity="0" />
+					</linearGradient>
+					<radialGradient id="bandG" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0%" stopColor="#DCF1FF" stopOpacity="0.75" />
+						<stop offset="34%" stopColor="#5AA8EC" stopOpacity="0.3" />
+						<stop offset="100%" stopColor="#123A70" stopOpacity="0" />
+					</radialGradient>
 				</defs>
-				{/* the dust halo: the same field, blown out and blurred, sitting under
-				    the strokes — chalk always leaves a bloom on a dark board */}
-				<g
-					stroke={CHALK}
-					fill="none"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					opacity={0.4}
-					style={{filter: 'blur(4.5px)'}}
-				>
-					{items}
+
+				<g style={{filter: 'blur(12px)'}} opacity={0.34}>
+					<path d={rayPaths[2]} stroke="url(#rayG)" strokeWidth={7} fill="none" />
 				</g>
-				<g
-					stroke={CHALK}
-					fill="none"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					filter="url(#m61chalk)"
-				>
-					{items}
+				<path d={rayPaths[0]} stroke="url(#rayG)" strokeWidth={0.75} fill="none" opacity={0.42} />
+				<path d={rayPaths[1]} stroke="url(#rayG)" strokeWidth={1.3} fill="none" opacity={0.52} />
+				<path d={rayPaths[2]} stroke="url(#rayG)" strokeWidth={2.1} fill="none" opacity={0.62} />
+
+				{dotPath ? <path d={dotPath} stroke="#BFE4FF" strokeWidth={2} strokeLinecap="round" fill="none" opacity={0.5} /> : null}
+				{dotPath2 ? <path d={dotPath2} stroke="#EAF7FF" strokeWidth={3.4} strokeLinecap="round" fill="none" opacity={0.72} /> : null}
+
+				<ellipse cx={CXR} cy={HY} rx={880} ry={70} fill="url(#bandG)" opacity={0.62 + 0.08 * Math.sin(TAU * u * 2)} />
+				<ellipse cx={CXR} cy={HY} rx={300} ry={190} fill="url(#coreG)" opacity={0.8} />
+				<ellipse cx={CXR} cy={HY} rx={132} ry={74} fill="url(#coreG)" opacity={0.9} />
+				<g style={{filter: 'blur(3px)'}}>
+					<rect x={CXR - 430} y={HY - 1.2} width={860} height={2.4} fill="url(#lineG)" opacity={0.5} />
 				</g>
 			</svg>
 
-			{/* -------------------------------------------------------- finish */}
+			{/* ================= flying code panels ================= */}
+			{vis.map((v) => {
+				const p = v.p;
+				/* real lens law: circle of confusion grows with |1/z - 1/zFocus| */
+				const bl = Math.min(16, Math.abs(1 / v.z - 1 / ZFOC) * 26);
+				const fadeIn = Math.min(1, v.pp / 0.09);
+				const fadeOut = Math.min(1, (1 - v.pp) / 0.17);
+				const alpha = Math.min(fadeIn, fadeOut) * Math.min(1, 0.44 + v.fs / 12);
+				if (alpha < 0.02) return null;
+
+				/* still typing while it flies in */
+				const prog = Math.min(1, Math.max(0, v.pp * 1.75));
+				const base: React.CSSProperties = {
+					position: 'absolute',
+					left: v.X,
+					top: v.Y,
+					opacity: alpha,
+					filter: bl > 0.35 ? 'blur(' + bl.toFixed(1) + 'px)' : undefined,
+					transformOrigin: '0 0',
+					willChange: 'transform',
+				};
+
+				if (p.kind === 2 || v.fs < 4.2) {
+					const rows: React.ReactNode[] = [];
+					const shown = prog * p.rows;
+					for (let r = 0; r < p.rows; r++) {
+						const fr = Math.min(1, Math.max(0, shown - r));
+						if (fr <= 0) break;
+						rows.push(
+							<div
+								key={r}
+								style={{
+									width: v.fs * 0.62 * (14 + ((r * 37) % 24)) * fr,
+									height: Math.max(1, v.fs * 0.46),
+									marginBottom: Math.max(1.2, v.fs * 0.62),
+									background:
+										'linear-gradient(90deg, rgba(160,206,248,0.9), rgba(110,170,225,0.34))',
+								}}
+							/>
+						);
+					}
+					return <div key={'p' + v.pi} style={base}>{rows}</div>;
+				}
+
+				if (p.kind === 1) {
+					const nGroup = 4 + (v.pi % 5);
+					const full = hexRow(p.seed + v.pass * 17, nGroup);
+					const shown = full.slice(0, Math.round(full.length * prog));
+					return (
+						<div
+							key={'p' + v.pi}
+							style={{
+								...base,
+								fontSize: v.fs,
+								letterSpacing: v.fs * 0.05,
+								color: COL[0],
+								whiteSpace: 'pre',
+								textShadow: '0 0 ' + (v.fs * 0.9).toFixed(1) + 'px rgba(90,170,240,0.6)',
+							}}
+						>
+							{shown}
+							{prog < 1 ? <span style={{color: COL[5]}}>▌</span> : null}
+						</div>
+					);
+				}
+
+				/* alternating pair keeps the two-pass loop closed */
+				const si = v.pass % 2 === 0 ? p.sa : p.sb;
+				const lines = TOKS[si];
+				const lens = LENS[si];
+				let left = Math.round(TOTAL[si] * prog);
+				const body: React.ReactNode[] = [];
+				for (let li = 0; li < lines.length; li++) {
+					if (left <= 0) break;
+					const take = Math.min(left, lens[li]);
+					const spans: React.ReactNode[] = [];
+					let used = 0;
+					for (let ti = 0; ti < lines[li].length; ti++) {
+						const tk = lines[li][ti];
+						if (used >= take) break;
+						const cut = Math.min(tk[0].length, take - used);
+						spans.push(
+							<span key={ti} style={{color: COL[tk[1]], fontWeight: tk[1] === 1 ? 700 : 400}}>
+								{tk[0].slice(0, cut)}
+							</span>
+						);
+						used += cut;
+					}
+					const atHead = take < lens[li] || left <= lens[li] + 1;
+					body.push(
+						<div key={li} style={{height: v.fs * 1.5, whiteSpace: 'pre'}}>
+							{spans}
+							{atHead && prog < 1 ? <span style={{color: COL[5]}}>▌</span> : null}
+						</div>
+					);
+					left -= lens[li] + 1;
+				}
+				/* the window frame is there from the moment the panel appears —
+				   the code types into it, the way an editor pane behaves */
+				const bw = MAXL[si] * v.fs * 0.6 + v.fs * 2.2;
+				const bh = lines.length * v.fs * 1.5 + v.fs * 1.9;
+				return (
+					<div
+						key={'p' + v.pi}
+						style={{
+							...base,
+							width: bw,
+							height: bh,
+							padding: v.fs * 0.95 + 'px ' + v.fs * 1.1 + 'px',
+							boxSizing: 'border-box',
+							fontSize: v.fs,
+							lineHeight: 1.5,
+							letterSpacing: v.fs * 0.012,
+							textShadow: '0 0 ' + (v.fs * 0.9).toFixed(1) + 'px rgba(80,160,235,0.6)',
+							border: '1px solid rgba(112,178,238,0.3)',
+							borderLeft: '2px solid rgba(150,205,250,0.5)',
+							background:
+								'linear-gradient(135deg, rgba(18,52,94,0.34) 0%, rgba(8,24,50,0.2) 60%, rgba(4,12,28,0.1) 100%)',
+							boxShadow: 'inset 0 1px 0 rgba(170,215,255,0.1)',
+						}}
+					>
+						{body}
+					</div>
+				);
+			})}
+
+			{/* ================= grade ================= */}
 			<AbsoluteFill
 				style={{
 					background:
-						'radial-gradient(78% 72% at 50% 48%, rgba(0,0,0,0) 50%, rgba(4,14,10,0.26) 80%, rgba(2,9,6,0.6) 100%)',
+						'linear-gradient(180deg, rgba(1,3,10,0.86) 0%, rgba(1,3,10,0) 14%, rgba(1,3,10,0) 80%, rgba(1,3,10,0.9) 100%)',
+					pointerEvents: 'none',
 				}}
 			/>
-			<svg
-				width={1920}
-				height={1080}
-				viewBox="0 0 1920 1080"
-				style={{position: 'absolute', left: 0, top: 0, mixBlendMode: 'overlay', opacity: 0.1}}
-			>
-				<rect
-					x={-70}
-					y={-70}
-					width={2060}
-					height={1220}
-					filter="url(#m61grain)"
-					transform={`translate(${gx} ${gy})`}
-				/>
-			</svg>
 			<AbsoluteFill
 				style={{
-					background: '#0a1712',
-					opacity: 1 - seg(f, 0, 34) + seg(f, durationInFrames - 40, durationInFrames),
+					background:
+						'radial-gradient(80% 84% at 46% 54%, rgba(0,0,0,0) 36%, rgba(1,3,10,0.5) 74%, rgba(0,1,5,0.94) 100%)',
+					pointerEvents: 'none',
 				}}
 			/>
+			<AbsoluteFill style={{opacity: 0.045, mixBlendMode: 'overlay', pointerEvents: 'none'}}>
+				<svg width={W} height={H}>
+					<filter id="grain40">
+						<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={(frame % 12) + 1} />
+					</filter>
+					<rect width={W} height={H} filter="url(#grain40)" />
+				</svg>
+			</AbsoluteFill>
 		</AbsoluteFill>
 	);
 };
+
+export default Motion;
