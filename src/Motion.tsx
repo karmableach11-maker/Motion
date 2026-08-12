@@ -2,216 +2,221 @@ import React, {useEffect, useRef, useState} from 'react';
 import {AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig} from 'remotion';
 
 /**
- * MOTION 60 — "CHALKBOARD FLY-THROUGH"
+ * MOTION 61 — "CHALKBOARD FLY-THROUGH · CHEMISTRY"
  * ---------------------------------------------------------------------------
- * A forward dolly through a deep field of hand-written mathematics, re-staged
- * from a white sheet onto a green classroom chalkboard.
+ * A forward dolly through a deep field of hand-written chemistry on a green
+ * classroom board. Companion piece to the mathematics plate: identical camera,
+ * identical board, twenty-four different cards.
  *
- * WHAT WAS MEASURED, AND WHAT WAS INFERRED, FROM THE REFERENCE CLIP
- * ----------------------------------------------------------------
- * Reference: 700x394, 60 fps, 720 frames, 12.000 s, one continuous take.
- * [obs] marks what came off the frames; [int] marks an inference.
+ * WHAT WAS MEASURED, AND WHAT WAS INFERRED
+ * ----------------------------------------
+ * The camera is not invented. It was fitted to a reference fly-through
+ * (700x394, 60 fps, 720 frames, 12.000 s, one continuous take) and every
+ * constant below is carried over unchanged from that fit. [obs] marks what
+ * came off the frames; [int] marks an inference.
  *
  * [obs] The move is a pure forward dolly. Fitting a radial flow field to every
- *       tracked patch (dx = k*x + c1, dy = k*y + c2, one shared k) gives a
+ *       tracked patch (dx = k*x + c1, dy = k*y + c2, one shared k) put the
  *       focus of expansion at (355.8, 199.9) averaged over twelve samples
  *       across the clip, against a frame centre of (350, 197) — dead centre,
  *       within 6 px. Residual rms 4.24 px.
- * [obs] No roll. Log-polar rotation per 6-frame step stays within ±0.038 deg
- *       across the whole clip, which is the noise floor of the method.
- * [obs] The rate is constant, not eased. Refitting every 60 frames gives
+ * [obs] No roll. Log-polar rotation per 6-frame step stayed within ±0.038 deg,
+ *       which is the noise floor of the method.
+ * [obs] The rate is constant, not eased: refitting every 60 frames gave
  *       scale/s of 1.2925, 1.2662, 1.2995, 1.3209, 1.2380, 1.2819, 1.2842,
  *       1.2908, 1.2836, 1.3338, 1.2675, 1.2657 — mean 1.284, no trend.
  * [obs] There IS parallax, and it is large. Sorting tracked patches by their
- *       own contrast (faint = far) and refitting each third separately:
- *         faint third   scale/s = 1.128
- *         middle third  scale/s = 1.351
- *         bold third    scale/s = 1.638
- *       A flat 2D zoom cannot do that. Under a constant-velocity dolly the
- *       expansion rate of an element is v/z, so those three numbers pin both
- *       the depth range (z_far / z_near = ln1.638 / ln1.128 = 4.1) and the
- *       velocity. This file uses v = 0.494 z-units/s over z = 4.25 -> 0.42,
- *       which reproduces all three thirds: 1.123 / 1.271 / 1.639.
+ *       own contrast (faint = far) and refitting each third separately gave
+ *       1.128 / 1.351 / 1.638 per second. A flat 2D zoom cannot do that.
+ *       Under a constant-velocity dolly an element's expansion rate is v/z,
+ *       so those three numbers pin the depth ratio at ln1.638/ln1.128 = 4.1
+ *       and the velocity at 0.494 z-units/s.
  * [obs] Faintness is the depth cue and the only one — no blur, no colour
  *       shift. The nearest, largest formulas are as sharp as the small ones,
- *       so there is no depth of field to model.
- * [obs] Ink is neutral (mean BGR 70,70,70) on a neutral ground (243,243,243);
- *       ink covers 1.7% of the frame below luminance 110 and 10.8% below 225,
- *       i.e. the field is mostly made of faint, distant writing.
+ *       so there is no depth of field here either.
+ * [obs] Ink covered 1.7% of the reference frame below luminance 110 and 10.8%
+ *       below 225: a deep, populous haze of faint distant writing with only a
+ *       few bold pieces near the lens. That ratio is what sets the pool size
+ *       and the depth-dimming curve below.
  * [obs] Stroke half-width from a distance transform: 0.95 px median, 1.37 px
- *       at p90, at 700 wide. Strokes scale with their element — the large
- *       formulas are drawn with visibly heavier lines than the small ones —
- *       so nothing here uses a fixed stroke weight.
- * [obs] It does not loop. phaseCorrelate(frame 0, frame 719) responds at
- *       0.446 and the two differ by 20.08 mean abs, against 18.95 for two
- *       adjacent frames. So the clip is open-ended, and so is this one.
- * [obs] Content is school mathematics: quadratic formula, f(x)=ax²+bx+c,
- *       E=mc², a three-equation linear system in a brace, Y=cos x − sin x,
- *       sin(−a)=−sin a, three-circle Venn diagrams with hatched intersections,
- *       wireframe cubes with dashed hidden edges, cones with h and r,
- *       pyramids, cylinders.
- * [int] Everything above is reproduced; only the staging changes. The board,
- *       the chalk, the dust and the eraser smears are a design choice, not a
- *       measurement — the reference is a white sheet.
+ *       at p90, at 700 wide — roughly 2 px far against 5-6 px near, a 2.7x
+ *       spread across a 4.9x size range. Pen weight therefore grows
+ *       sub-linearly with the element, which is why stroke width is
+ *       pre-divided by s^0.38 before the transform scales it.
+ * [obs] It does not loop: phaseCorrelate(frame 0, frame 719) responded at
+ *       0.446 and the two differed by 20.08 mean abs against 18.95 for two
+ *       adjacent frames. So the reference is open-ended, and so is this.
+ * [int] The board, the chalk, the dust and the eraser smears are a design
+ *       choice, not a measurement — the reference is a white sheet.
+ *
+ * VERIFICATION OF THE MATHEMATICS PLATE THIS INHERITS FROM
+ * -------------------------------------------------------
+ * Re-running the reference's own measurements on the finished render gave
+ * scale/s = 1.3137 (sd 0.045) against the reference's 1.284 (sd 0.026), a
+ * focus of expansion 3.6 px right and 28.6 px above frame centre — inside the
+ * reference's own ±68 px scatter — and parallax thirds of 1.107 / 1.246 /
+ * 1.536 against 1.128 / 1.351 / 1.638.
  *
  * SOURCES
  * -------
  * Font   Patrick Hand, SIL Open Font License 1.1, from google/fonts ofl/.
  *        Chosen over Caveat and Architect's Daughter because it is the only
- *        one of the three that carries π, ∫, ², ³, ± and × — and because its
+ *        one of the three that carries π, ², ³, ± and × — and because its
  *        upright print hand is the closest match to the reference's writing.
  *        Subset to the characters actually used and embedded, so the file
  *        renders with no network and no external asset.
- * Art    Every formula and diagram is drawn here from scratch; nothing is
- *        traced from the reference.
+ * Art    Every formula, structure and vessel is drawn here from scratch.
+ *        Reaction arrows, the equilibrium pair, the delta and the radical
+ *        hooks are paths rather than glyphs — no handwriting face carries
+ *        them, and a drawn one matches the chalk better in any case.
  */
 
 const FONT_HAND =
-	'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';
-
+	'd09GMgABAAAAAC6cABEAAAAAWEAAAC4+AAEAxAAAAAAAAAAAAAAAAAAAAAAAAAAAGhwbIBx6BmAAgRwIOAmTEREICoGLWPpiATYCJAOCdAuBPA' +
+	'AEIAWEaAcgDIEQG+pNFdNtnnI7QJRIuxSiCDYOoCD2huD/TwmcDBFwT1vdnSjvtkoI77LSoN0qhDA2qlMvtWvUKv2ZuRexhuM42EdZq8Inlk7c' +
+	'3s4C8QqbQOSx8ZNP6pVK79PzYluHSkXc5CJChHz3+L76ROBnj9DYJ7k8//xYv1/7zCCqodDIYtLckml6IaJSidDE/w9JLBRL7/6vmvtfllxaEo' +
+	'opTTydlEP6qd1EZ7JC91Hto00M+430YWSYWdnqOsMAbbOjSjiyjmgJERRRUEAEE4wMNuerq2y3ffTWLl2Fy/hKP/4vV1opy6W3t+ah2DMmYkll' +
+	'TwfYkHfPtSq+/X9Vq0E9EKdZPQbGgoFFGGzLSjCNgg+FENIZqHpW5bl9fH57Qnt4bWczXgN+dArY9f9E7WWwUKayOYgfxAnaaT6Canfz8yGaro' +
+	'a/QdOUaE/JaGoG/aPtf0hFLZbmhItYFrEvi+W7sEGzz2pKijpdNVnU4t9pzszuPkm2KLFiB9mHVJIPPgsquwRq/09nVfp/2UuEQeTuxSTfJJGr' +
+	'qstSlT1uSY3ygF0elGfBsLNueUgtD3mRUjrkyJIHPXO0ABTe3cuBM07v5Rck4aUXpNkl+eX3mMOBkk1HucQEaO+eKyts7YxiR8XpyT0+t41p/b' +
+	'n9SgR3QUIShuN6EQEGo4sWBrWlsdLriwUDXSYEW7AoPRfA4oDGjtPOsewQK+l7u+tahhMPVUXaczaY2+fQ/oYqAGtbCk46KuK5i+BSA4gSVzqj' +
+	'BFyteDjqQJHatVNPlQqGvxAXRF5nMRSo21UIsPz7QtnFHLqkI15u3PGiNi4vyARcxDO1SODfMKA7MnZ2Z8nPtUJNt8TCjjcagsTKgvfviakoEE' +
+	'qSnFq8RCXK9Bt01KfudI7P1MrEaBdV0krgxqqMw/8stl88NOqB++6646YbtrS3nbhHegDmxVup4ExL6FMfc6n93/u+SwW3VuL73/zJtANCdrMA' +
+	'kibi52+4+QT9m8+dN+9KK7l9WypTj10m20duj1ND1vQThr8N8MTyTi4T4We7Ziofe0nKVl5ISZEpQjZhczynruwAN4AZK3PKuw0w0orgup8I4d' +
+	'trRKhIqKLzPoFdICDz5jWpYhJFqBsyZNZLP7VXkR+/g6vLQpc7bd53/WHqLPFsfa/bpSuCh8zm/pyI/MMBGPgcZRQGlk1AOalnOgnAbSAkMetk' +
+	'zRhsRnk5mXzUmQzOasx11kpRffVYqQ5ckuNW5CXqAmcItDG/7KQtpipEA84rgYTeDRKJ3zTICr6KiRTFu5iagRpI/zlMPvq9LKon81mlM0EGtt' +
+	'uMto67GuEo3aJ4bT8XkC896LaOzrbz79TpCxdUIfcnZj4MB/tI6hLgYTrWZIdpO1iZCPS+PgnBZ7iO5aMMX0msN7/A8o4GLPvNbmZqZb9Gisby' +
+	'PtNJ7fZaAS7aMuiBwwER696vpAqiOe7OUJIpZ1/s/xQFQgbHsVBsIRzvnLuZAtDUMZ4sEZCE34CJAYSYQIkFjNjAiQMZcSEnHhTE/0qUy19vyQ' +
+	'ErLLGmAA0xoCUmbIgFHbFhjzjQExcG4oEgfnWsHFI7FGI0KVN0WjJZLcloIpuD888QMIR2aBuYJ2lNcv6A1s+ZyoO28w7Op8BQ1jNZMW/ds09y' +
+	'UTfyjtapWtJLVqsdncH8fg7gYL80VL/h5Y9bfmtz1eLZBwEitVpLZAbw5TcUWKDmahtYJFVAPza2L1FlUN1Ws3mAGjyJG+XjiVqzXt3IzfLnqe' +
+	'KwiHj20oPAMgEVXMO1rgH9mofTsqiktmzrMlYm1PjScBXJnujmU3t9p/vF5HnpBt+cv5jiDK/FXkVZ2bZ6+p7ppJvMfLnqw3yeGIHvJ5AV7d5l' +
+	'mSdwVm84D5RM44/r55wR+1WYvjKfk1k7aWCZKHMNfaF7hI9snLJUOspBOn+Od+aTZ50Cq2VZWkwKAzPWzt2n1irEKlrMVaBxaNXVeh0gKDCRdg' +
+	'X3u0ateQfrfKwQdbT0NL8x4BY2YxN+bCSNiSvVcJIbTyqYuK3KyG5WRQ/4m2Rq6tB39bBTm5pq8MzD+wO2Ruz32LaKpn7xHWLZOQ/uEiuuSNn2' +
+	'8YOV7U0d3DcYT3FvYKARI8c0hykuzLl19mnRvqfjCLoH1wYNTZbO2c9tbc75Bk76xEge5C6KJYeT3vaUdShDPMqfnTnOAJPEvLg+kOy1qVfepA' +
+	'oo2ixk89hqLV3B7wyqFVOj1aJ6UZwRjS8bL9U1NAC0G94iCCcHI+CzLBJpU9FJHArgHgzQI5E+YBwJKEB4MMCIRMaADpJQgPRggBmJzAETSUEB' +
+	'yoMBViSyBownDQVoDwbYkazoCVZvOfy0UXtqRA2TQypAA3ORW8GS5rCmudo2aGAvigccaQFnWsCVFnAfIOFJS3jTEr60TPrpIXQ33BCy7AlrNf' +
+	'3Ddw4baaoMv4CByxD/AlDMsP8QYcoTofCtl7DzjMhSIYzaEHVLEV85JGx/LRnG2fu/zXEELJZIYrMkURQcSCSzo7UyLZOoZlFITBBHYJFJIj6R' +
+	'BRIFHJJRYZRT+FqBVksm80EOR4DV8HUCh1Ls43O5RJDEZ5H4WJ0ApySABI6eZ5QRiOwoIV4glSiESilfZTESsRIiV4xTSSRusstGNHuif+DOTU' +
+	'c6bcgE4owxpuPMrDrmyG5sVFxS0MIV8JY38cOYuRt5hnFb/OksMTOg8PLP0Mqw0EZiuLMw8cyrm5XHJpdtKbmaoYgKJLT+u3TuNqBlCdt7JPRM' +
+	'bYk6xpXKWp6wMe3YVaLRR31SBEHBEr0fwWiawTSfX2hs95Q8YzEHWiKybRvtS84ZapqmC7XhujizxDETyazKcTnq+HRWsAt54I/vIUNjhDd4n8' +
+	'JsSaivOYWW5Ql2VTauQks8YJGNTbJ+6UG48pnoQxQ70RI7a697dYVComaJXS9QEU57ulx/CVmuSSy++Dns97VYbbzlisizB0tEeOuVjZbQW4MA' +
+	'qcdVt9lFuD15zjamOU9JIl7FZaEYCrHI5Uechl/Dyl5B9c5ZXVjHa6/wiXYKsjK1JX5O3lxoR5U3Ejq2j/9Zpq7gileEU5+39gQ7cwOrfOw29P' +
+	'mFMr9nozl6mNfO2BP8liVsxi57j1NeFeFf47l4pZzahl6vsfj/+c19N2eE734Ja29/+l+fe16su+Pwkea1eNS9J+HgawpUHubkUTY+0PrgS/m9' +
+	'w0nyBpQS2mpT0EIkLig6vSJIBFB5epdJIPlk2sS1NL/ZR81HMJ4b4VcHgRbTDBslt435TlOtyKUkSNzWe/9diEnq9XtM0kVWJQqxL+g9DJPGrk' +
+	'5Um81bym3ylN9YPr0iV/vQEsk7ZlVLe4GIvsdbrjriMLY1OFknAg2xilMo/gQzLkj+s59TmBeaeYP9ljC76jhFKWJ19VZ6hJD9Lj6ZZizxmsJ0' +
+	'3y/4RXUdHD4JzR1RGvwe3Sq/Sh9TkNy9heyGjXy6lBQO6pNmVyCS2hIsH43n5+9y5yIszfGrkMlyt4qmJ7SE9mSWbIYg1cBtdyqUgse7HomDeJ' +
+	'8f8yDm8hSbAjMOtPRnWtbnDE1fE/B96j8EjwzQ54LSIxy6g/Hui5aI8rjk0fejUlPQNFOpxkt5sAXXLfuchteaA8X0TzzmXyxlGrJJ7+E6k1U4' +
+	'TQuRr9tIGqdAwcpWwONurgEZbWVFZCP5MZ2P7V817clY/fk/R1iNj3EpU3efo7rDu5SN0VDHkBhnYnyyOGNbVo1hIdvXIh3l5kbiI7wBWh98O/' +
+	'0nnpIUehjLivjaKKlekXahQ54+pJAIdOkH7FI/Dg/Z7VpCW3clbBzmLmdi/eLs20wrhS/uzLvAhv4v2uSCYW0IgkQiKAWn9Vzt/ZhVtSYmRKL9' +
+	'3BGV7hfTvsc9alSh3zqgHZVkXHDK3FV7mhiUdZrpk71hppSLmX6TwlYlKQTd8y8lgn9r6BvmXdV4FfNX8lFy6OuEdLQ5/4FBtYE0r5nPaPIGfK' +
+	'Vcs847LSKc05xTjF+whPeagiO5ubRUZMwXLagUl3K7UgTvA89rz50wQsPiYeJIKNB7Z8c1xWTnJnjPLRHVq8/ilxZ2oHd5qdbCfP51lehgJdl4' +
+	'zIfGbn2ypwJb5fAF/B/TioRCuZAqTz8rQXue+fNnY1oS7jllIzvDRJIJT3yttXe+JCJMu8plhhkbq7wtC6OO34AfMC3lcEFKX7Yhcd8rnU9k2n' +
+	'J+g4InSqdOeS6fGXPzxFyfnO/tFWGY7DUsjLYwtKFQLCgZLhwWdaFSr8ZOzQak47NecV9LpKPiTGDHq1RdLyVhlD6DpyzbAQgs06kkl3aoJfk7' +
+	'HQ/m6VSwpyvoqq4cn952/BjWc79IfAp0qZz9dr6Ly7YZ1V3FvgqTOCzvcdTHmq1feL8YumFXD6FBTJH6HK+RrlExbdrR1b/QoqdWaR2FVWSUSf' +
+	'7Ah1KYuFtrmuYtCZ1lCtj4puOCOP95uqoR3lW3E+FzF+PudQp9inw2rnojJozBZ7xN4TlrdCobDeaIt0RsPuoJTOfGQtexbiZVaTilVbVqcDV1' +
+	'lsYya7zOqVA1I/cLRiu5/+5ATw92Ybb/MVriz3V8xnvSnT4nstK62YepA4pIvqnrPjKBJa6gbXrCr2/CWoaunCODa0FyC/s2ivH7Y23EnqGsy2' +
+	'MptjKY0eMq6rnjXS/Qds/FZNm4yShwn8LnOMJv8rjehp+6nf6ymXHRG9rYVSQzREocLOZyfpelZrxIPOlF3g6915cx4vuXnnbKrBosppUbmXkP' +
+	'bGQ0pu6uv+ee+7MkrUXySQo78v8lw/XTg5lTWriQER7asjGDKelLxNnRdlBINTqHSQxyEBMra3CXJGf93dlFkvRHnKfkb1Cv0JnzFGa3P5ZazA' +
+	'F03DxuUBfai8JpDWaKxEflR8evwgiLXeGb5W/uJ7l408YiYUcX334rLCYme5Je9IQNI13KJW6RRAvqM2v7ZpHWTNqokB/oDZo2e8WBeJbCBlKV' +
+	'EwaZYu1Aw1V+Tb0i4zJt3h3eEdf11OdWdgsmrTCKe2WyPA+5SLdypQoxHzLa81OeYVmYy8Xxl58n2ZoY6wrDnzpT6pYU3ndrwY5ikUzSKZdlqk' +
+	'yfkFrEktJFtSDfYVjEYHEoehPdvDmD91TcWF7QYjk4ZyH5vM7MbzcaWffOvE1hmeevz6k1uZn42mvLti847HSoy6NevPIPTgFaW6njdD8/vLEB' +
+	'pbqGJjrCrAOW2Ja3ccU17jSWSwKfGOraz7vToHkPmOnIJ0rMxsvkx8ALBHv7YlV+1p2/S8P6Fbvhc5oKXHG5OjdnZBKXvLlF2FMQuKcL88LkbW' +
+	'2JnwXtA2vooJe2gVhTjF/7y4LiH1zQ+hwnFcm9vAKvxRtX1KBBYFGqDiM++PtLRKUvC9YQVYDs5/IGbxFOfVm+SFz8cyTgYsuVlWe83Oeq3aQw' +
+	'M+CftarJMKiZM1i+zjl6c3pT5aZc4zMTt72YHN4SsyKT1PdFhO/UjHUPZklZI88qNNsujc29uNg7K92/kH2C4XvDmV/Utl62xPe/LkvQ4gzGr2' +
+	'HUkZ0wPSJ5wUY1R4i/J4WjfDMAlYy7tpRDvrGobmM6nMY6tldXTfXGzujD4QMR71soLKsCCYPunKYVDqSP/8iOgILjk2RYTRe/pvdD9SqmHJyS' +
+	'NwpeaOnHuOi5PBR2dwuFhYWXMtHDcMgT2Ppkzf+VRMZr0AVjM7FTR8JTdYHVlqFUOqxhYOYTd8Nn2ns64Qbwjt4QqIzxOvoax7mi/Wmdt6hpxZ' +
+	'rs1KRpybyaim5Pdl9RVr83Mc3nTuTlcHRVu8iy9Q2lC7lmMWZ5pgDygHUY4NBxjP2RqdzXsnkHexlYPPkhOxlfO1+7b39uCZPwFXSxsDDlMEvx' +
+	'i3FVarVxiSBCQLSukwdJkUW6/fsLirm4i/LG8vLkY6yLdCzMW2dmDcBWTDzNpAwge9AUwIhAthtFUL10loRHOQSG8xpi5yV7qveQJRBB/cwnXH' +
+	'U6BIuC5L3M2CUimlsGNjKFk3v/d9WvWqbxB+HXSLVr9ZplrnX3eMR/Waaeb96YI2g6jyJ0zIyu68lxWDOrL7BKPsm9eqZEZgyApSto4Q0zBcpv' +
+	'TLkLSj2z6xwGk5UAp8P/nQhvFyRlNPnFcvGrFRtrITBMQhOTZLClMDy+RsFLYhX0T+hKKLFkvWLQtNvJNLRrhkDZtG9eYW2wxZ3+/L/aCvDkjC' +
+	'rMMxlJmuAw3Ut1SO8xu+o56gbnwvLABG7W+SZlY2HTxDU9fgPOpjjSDdUOGj3xT46fyAJlWahEt5n/X9rYqHX62DLGIW5IxYtFcwtYh4JUAs35' +
+	'kp4qOhr3HEK1w/Q6OFzutGVPOLgw3cfaAuXHVXZMW9aerKJN7aehP890ZEbP6uN6cG5Wyp2Nx/zXnjv0866HwFzuEmXH30nNtzxrCwrulpw7Aa' +
+	'RSndXwnG8Wvui1MSr4hCkX0xm3fj7nrebb493BUB0mnnmGyg+uw06tQx22kyBNFYA7x5vHKFyyXEq0ytGa0VwxGe0uA6gYUZnySGcbtLrK6yqp' +
+	'cs/v3zQdn7H53Nu03u7inT/82Db0K30uvadrXe0f2VfqSdVCBKIcg9qGQqJdaqO+C0g1pEJSY04ohAX+lK6DfU19xfuTjF66YUlWrLfDnd9cvP' +
+	'37zsxCgD0xXE97hXRldjHRVd9mdU3bStYykRpW9GOpCXusBiETag6y46I592T4ud2R9OUcL/+jlfc2du3s6BhgreSZF2/vshvuLflrmQth/RrB' +
+	'ZpNwQ18jYlIQ0Bek11scCBaH/OdQOTD6W5J9reDZ1p+yrK6YkOTH2WD/TWdNytJk/ixB4c+rG9LP9IcyY0f4MBt8KYfH9SRudZQgyGKoc/xu1s' +
+	'TIJzPJOotI+MzsEfibVkjd2lx9OzntMAMF9rYRZDE863HHGdhk+B5YVmqeqFCzvmxGMskYdBW97f7r5Spv69TiM69gXfA/c2tZJfo0bay0d60N' +
+	'R7h9cUlWOXG9b1yZkGhBbvdkLUjJ5ggkWEZZdGvHpH/cPnp5vclI5MZOydNVCCG/rLgqvH9r7aF3vN3UhZ/bkVsyX/LFC5U3XiA3HV6iW1+msP' +
+	'Gw+mLDF4do68d3N8plWvLUuecGLMhxwdiCu9IDiJqOghnd01BrCziaHHQ2103LwwwmulbFWi5LuvbDKUsQ++JVr+G/MskHaP9bTqE7En3Oa7Pa' +
+	'YQFl1EfWnKM/IbaYalIRn10iQESD8hQCZfGWGYBHNMVATHjKOnXrWmCVsTxaaFBEeSF2fvea3qKMGS0JPj2n8gvDNKkT7nnf9dc8IW3epvmLfx' +
+	'JG/Hx+Ye8X0336mW055XumTcwgTqXAgvPNCSUMoay6HTmNaGQLENifOsKE6YRF5Kt6JnHBXJSNfh3k8450z1D5gB74qwWYKiEa5AtwNctRWU7j' +
+	'9zN+E5FwdNIiRCo59BqztKSyhPyGyvQTewK03dcTisbxrSn+rgxqeyXzKo09SK5BfFkUqh4XW/K3iOIiijvXJ6aFw462wTUtYkOr1FpYu3Vw3L' +
+	'HoPA7KFS2girlzgQzsFuIGulFKYMaJgObgyhf0RbhoKU9FlW04XwfLJAuBNUU1cusUR4GAK35mQ/SQOR2BuW/4u4ASDprBkwBFp/hgh2gxgDiS' +
+	'1FL4YYZ0C9v//t3hFeK11FnorXDmeMGzo3lrLGcH4faW5szFKWEvOKiUUrJkUQ1FRH8O0dZ5NNT/6HPCxnytxLTaR6zI62lqqk1FVjRN0W0OTk' +
+	'4IJRVOC80UT1zSTPNyy7yvC72ZnL7E9sTeTHsdur4iJSuD7iqfnJ3lhvK3D+XLP0eegzVImd/GOtkwZBT/bIGh1h5fY9u6ZKn8uGesJ/2U8TvL' +
+	'FV9CPS6ImlCaMD91tqcZ2eSc2BFnSmuYWecohv0wIsoyNm3Rh6pRWegTmcXP5KuVP8n/vGH5y7u+IScutVQblqWdqB3P/kfeAJ82DT6WnswrDC' +
+	'jyZR5fOFje4XeXuuYsV5NWykdyP4rkxKC+TTTsbMoL63sE8ENbcSvcxVop+aWgQpcVNslMiuwF3KJQ7uT0hC0bMjQaHh7zeG7/6U0Bj9/q8/IE' +
+	'OwvJRYHVU/JN2tnLUcN0szoYRiDzCoiIctGvR6kCMSp9R7ErdJxCE8zL+2aN9DAlvzU9vzwvxbU94U5VUl1zgcRtqZsRTTrUMUxmZpD2G9o1ub' +
+	'syA4okXZUEFqCzYNNKSUHGdAVVNaFg2LMq8pnoO8XJ6LbaN5om0MsoYRWl/JZMJLEXyHun5zuERVnHoKTEtYxBVC0pd5GSlBbl10u2I9VfPlKV' +
+	'rppVNj0lbd9RJtPA+hUGuVsZD+lXqcwBroe7dtC93lrKAYcSj+j8+M0jaK+MfZC1DFVuHF79QiqgTJowe2Vc6qwbMldQcFm+uWZbQnlDX+kKko' +
+	'gYxcwODCz/Mm+OP3cS/7Ls/HDjxuTM/jljHUM/wbmwwR9Eqzn6+lN9FXvivKOgqU/S32+OSUtfCX4Kz2J2Qh8LEkwvVyHg4CMqKd1SXNo00k9X' +
+	'MvZSq7lHZc5nrk3jOSNSEWF0W3MzaS1tGpxBbk3On+dFHl88xWpNhrAWl/8UOXM2QlRd2wkeXpJtP/+3GwBDMPyHeUQjM8C3ViaMNETlwXON1F' +
+	'1mSp5MnyKZ0gX3NwPGxX9YdkH3wS3XOZUWYZBh/ApI60CCOTiPRllkTbiuC2JxMC8gjnrKsSBYU5oqrqYvuN9X3J+nGjyRXRxncxcuz2bIV8kn' +
+	'v92p3KYysxwrNTirqKppyumBmac78KfPX3WomA2onGsoqrJ11Q4LS+dra4ttfKNupGFe4eJzcufrPDZms5n7f1mcLpLKsosH26LpN4C3l14nHy' +
+	'UijrUJ9ULNFkewtGN78kKf8IiaTIjE1orv/P1bryFQYMpLCbZ/fMVa4SzJyHVhj9rxuX+vBRPDmVTsvyTuk08yhdICVQfHszOjt9Cj2Ltx+nyv' +
+	'JvL1uepwgV+AjmChJmGZ0Dck0AxN5gIs0qUq+h8gT1xM2gMvK36aT+AeshPhW1/NsnhUce1dYdfMpp6Je99ubYDlxOMvxeTnZhfEtGgFjDpho5' +
+	'bl/4D07y21hafEBNv/+zhucQrmvS4WhHikH5HoQ8yYGYxPaXx8BXwRhWOOCOs4JUL8ZMYLKl+IPsBE1AUNIUVDL/UnuVzxA8dogWkIwDvaXZCD' +
+	'JSZ6xCDD2iwnJQbbuxX/t9Lio8tjVKSPRkmj8ySZRXq3Tcm4JQM1603SDPyM4HtCoWWuLlpLdR5O8gVc9bXCigwqT1JGnrmO9hJkpQ+JRWSYGx' +
+	'k6U1xeZRdie4Lie85nJ3Sl+7zy/QqGFuJhnx+rJ1ToDgZDIOQQexI9Mxe8M+QgR8/XlgPc9AusDfQR+XRXYpYmaErdoXLvZszoN8aIuRL4wNNx' +
+	'8rdREodpCeU3kFkKv9Ie4KfJE1Cf5zcGhfgVtFUkcSBeYPXlDPC4TQVtMrYYE4nKbUQpzJb8GHRpI/0Og9N5+5q/dM6J8lkbKubmtWldBk9Wjs' +
+	'ZaYEp3ZCk8mn7Ndt0pYOZZ4OMSvg9yoc+LUPLN4yxd0fV5y85HIkPaL0Ljz0vnLux7vEHhifVUc+AIxAZLLCpD7GqxHA67pnTUDn514ukZqhso' +
+	'kGOuRNn6zWMkyabPtOqU1e7i/GQnG9nkzYvbuQSop5IorDCGRKdlzsBIVGBcwIlyh03mkIYxTMvztkRiF4a9HXVKCbiMttkDxc+3/zCO+TYunO' +
+	'8ZyJdIlUp8Ci9FY79bRi78NBydeJ0CUi4D/zUwxtcRhBDivpWAx9WUn3C+3J4zOhttKvrF5AmQ2ab8aiXvrZKDyhgUbKbyQg4KYVED4wBNpEml' +
+	's3awGFu1DbRerz9VYnrHCS3FNL9qvBN1nYBTN9OSr1wW9LiuQWCdqKZ/DCncJx3aUX8+DRUyHxYF8XUTAGkidgd4kv09cX3Mon6J/5rmodgHcs' +
+	'N+1Kqom1GCLttMVWOJhPajsmjzfbjwP+PK4zmL6KMbDkO5gvDEsQXOuoxmUR+Zk9UudN+1F72ReynKeRuAonniXerM2sukKQTBnjhV91xFcUzy' +
+	'6eY5i/rolD7N6RtJR6RZfz9KiUq2QqOTFxKj1Vr4kyPylF2Nqc57nPYwkxx8k4rHaYSeS4EfVqPQ/D8+9hmzbWdbOSWlPzAYcDjEi1rwSzvX1Q' +
+	'7xKgTx+WU64WwrOoFJK2OOZpaxqMkSvY0gJUJEt18autS/+X4rmdtuOGbt5mqBaB2H3ajL/O25dFQacpIeQ/hncfpsH8wSJ0HRyvixzKsPhbrc' +
+	'UoeYU0Qx+Gxpvyww9A9bnmYz/DHamEAgPSlId3Jqo8QezQbrFxA9HzST5GhzkEeJqmuZfLlJLinyMolDV/ByBX28+6woPttdc+OnzWShQ11e+o' +
+	'QjlcmoSptmveV46fhY0RpJ3OzZBIWE9GJ3SffDBYrosR+0m7H/FghyvJ1+mNu+V6ixa/B7c0IF35RHxGSIv3HEmwyrLLexIS7Fnnxww8lzzQgC' +
+	'6BLWnnMR275hhlogSiMEbktSrCPrMm3J2B9jUHNle+RxYBNRqJqjiaZYUhUNKVDsMfHwXF69Cb4XhoA3LwYAbo46XY+yL+OkAf6Xk4Sy/l2kGc' +
+	'JxR0ik+c7arWhu+KqaV/T/2cK5UntguWD91kxz8MDb09n8+3f8an8T/N+/4NO5jYSnW7GG9dFPTL/duo9X7Jg0Ogx2eh626/8IyOiHy4aTSM5L' +
+	'Gffd3eV8VU50A/nWpzzuKvdHs7cLrT3ZV+n4btA3jtC5pcSp5/2NfSEMF/4v6/HbpHZeHp4e5/yXQI5+QAbm0nUQz/gLg3Ds5tPK2HkWbRkAYP' +
+	'ZYo4t93aOT6QwDt/0Xdy3Fo/hztYoKkDu1nGx+1fxaA2pj6YzXtf+zuNYSgGUj3NYOnh+1wTynYebVMvLy7r6p1Tjt14zPDbbe4azJVeb2t1L1' +
+	'tXW9aKQi3O3/rMgTYrQGwOLHdj8pN7Fz2UhdJcolZ/Ff6G0EW+x+/9EKBCyFrUko8lT8hDsHT7JckecYCoEKb01Lg4QHff0MbT8D6fjNraCUMj' +
+	'HWebA969oygewhwM8hMQDiwwkZG7NmQAGfDwAHCH5Y8+55rQ5eMztIuaWlSX0efzWZE6JTRq0BmhVmlb01DW2GgSQtzXgAxzg+U5wIt3udGUvE' +
+	'vHzUGbauwfHcx3hMA41qa0xg+GTvuVfIkACQI+/Mdo44jPgf8vfLZGzM3/5GiYukGrqVRSnoDFuIhmlEMkrZlfnu9Kyjqtyi0W68K0YbW1ePFP' +
+	'uY+6KAgogRqVzRnxFKaAfpf1n25uasD4F4pqsqpA1nZ/cOuGNIpL/AiKuLtskYQeCe33Oapf6YMDV5ZQLTOFi+n/QPHvKfD8LGhIb+lkbY4KTX' +
+	'6XB81FRFTklQuOGWt16z1EFBIwgXo59cAAEu/ARZPpsLPtG9tcIqI7o5evnAyxHb6AY3Q3Mc7aIAdaBbvY2kFMORL6co/IfZ1qmI+JwG623a15' +
+	'oh+MuR9i8LQXiG3fm8GjRwBhcCzGGu1Fmui25UoDXSWRPL3tNbVgRlJnVmUYj2ID4XumWz7E9HgPYvu2qeVxhc8hpXL8qRbuA/bJDlpo4lQBlE' +
+	'bnvh31ubwoiOtfxnuruUA5hjvmu3sw4uoduUdIfWHISPiKGCDStfzSYStn/ZpYmAnl9kwWS24PmFjBAl8H3LOlHC3IBmAbRNMQtm4QmOvYb2Ar' +
+	'GhQi8QTiqEvNOMhm/1X81IZLMDI9aYZJ+P50eZPnzl+VtrNq8FBM3KSBCKi1moSFRYHb1gEDTgEIebmEPirkG4PDSipvlPISadTA5wA33jOa0b' +
+	'iPOzRrUq4xj5Ofa4R5grv0kpW8JwH5kbadfwMI9/UCq7sOOt2hXaG753d7ftu7Lwc8w5d5vlt7/k9x/dAafRbWQy2ow5n2HerYIQPuViRyea3B' +
+	'5Mgv800gRie05QUhVZCuxz/9yxjs5dM8OMNAlTkdPIWjFnNkuQqx/RJmrlLC+t2axvqVdLc8CQOzDc+i00foYQrnLtPvySBZYYXNuZSfF+39mq' +
+	'hdbxGJVqYDYrrKfuZnqoRrS2FHetmqruZt0a7tIdk5CJcgW/b+H9lXTrEiLvz7UOh1nq3pJmBs5OyyJjOK2nkwIXuvCa5SphsontXQEqxBgJuI' +
+	'Wv7VitBMK1Iw2FKVVpkt03G6XcLB1QafEziJurAbuMIqHBcZ/3fbQh32sCgnNo2KbMejuTEXmpSy6QoNXrRDLZOZWGj8uCUkl4+dal4jUeHq7h' +
+	'AXQLyS7p7aQPscPo9vU68UHK3tmaX5OpDDWFnidImW4nAG+lNwcptFHCmjCkjR5dTIlWYYb8dRgLjPHkVvQ8sBDYO97kzQnoe6skzK0DHIshlf' +
+	'Q1ajd/bkZzcyBmONcK33DceG/n/mg/hBUN5I2DFQiIoTWtWbwXApSLMwL4eTEJAI2OMru7s/QS9XooB45/SRhwvNs0jdI8ZQrortoobjBtZFHw' +
+	'1NqV61GOKp+dl9vEK8ZtS5eEAJkdFTEbpSV2kR6g1kuoWScYdtBBtxbSd6FofUQiymVq3B3+rBSTTEZXQqolpoytUh/IT8YlO66adpN7yX3Iv7' +
+	'oDYscLhLN2GanrXenoFLrtYdMQZe3KvvscmGOMAtMG42y3wFR7zckBZddmqMvGo4POHKmhrBV2ZmWkiBzU5ul0H/cc0D86ZNSLFife8Mbhk3kM' +
+	'NsnlufCOUMBW6xzYwjzQb7y16Hl9r84QAUS/7JSRmymrABXUZ0/DE7i9uMJo5V0gmky0mKSEGtIbvar9diwr1ojKDIE2UIRGK4qZRtTSyVT/L/' +
+	'dzeiNKRtedYY6H96aK2plVwc4dYGJ6haxgKo0hKIs+owqD0h0nZMWNpliQ5ipMUIYHlLi8EX2ZR1O84qvwWM8/q5Dr4BS35psKAx5jusrUaCWs' +
+	'umhMO4ak3/ERp3GJS17a233XwJqPjUhP4dWpjtrvqDbL/hyacEi10FkwPIjkEVPkND4iedyMbXRoQluCryt57nLSLLNMtde6H62b1gcaZpa9lP' +
+	'3WcGRWBPc81J5jZuL1q6uL48OtapsiSyq8C581uOrMCsKwHOrnZRFi3jWtPlwPfUI58DQByaHOVGR0LItUO1gCJTvMu3haZNjhth2omHcE29DR' +
+	'kFGFV/JXrpYvi1gZIoJcRFku0Twp4GnPVpFl9cVKCu/iCBO1igXHc6oriOPDStYy5wRFBXa4Uxq/rGOLREbjghtu1gPUBJUNF7H0CW3tNFLZrx' +
+	'8iS1zJOMQrtIlnLHpBnK3529/WHoDDrWSV4gZbVXcvZG8+i9xfd6CIz1a9ciqHqVf080rwEjWSQEtcV+b3WGSDf5bLQHUPmAa0nnSxuRhyctyI' +
+	'VuQ8rcpJlp7QP+gYLBRNwtmgvRJ68ivNGnw6rVNet/Vk7Afsb3vhUiOx/wSocd4A02GmZHvLZhvcMN6OaM+2fN3saUFT3q09ZA1cuHhner9/Vq' +
+	'OSG+JMBqwG0PBYXIhBxHloGaMMWmyhJBwTFjHJgCvkMWY9IjPKUWHfwaLB4fCgKgWIv2G2y2QBTTetn0dgI2PhI1/vPRQgc8xbB62vdZ621Nso' +
+	'UwQSQj22x+K2plx2B8OqOxM07pWoyOg9Nylzt+DlhmUMGEtVLYdT6G1OoJWXO55bdA/Vs2DLKbG8/krLWynqMmPWlEI3pdVjcqV/FV+RK5Iffa' +
+	'4jsMjQcYdZcXG7ESiryNUtBkDeTlf4Z6tJjmKrbeF2wALacntKlGo4j+ZOO2iSzDfzP6NCO9DDCQ8S3jNXsclmQQcbAYez003DyMpFY8GF48cv' +
+	'5TMHWdpgBwrWJ8oIu1HcM0Tb2w3sWnVq4crZnFcCgdcizlG3XuzaRCikqrtwqOlpDv4Vhx+inpYZJ4pJiTCPQWREaM/NqJWCMIz1+twkuA95BR' +
+	'+d5EIMnnk5S6z0ODwoYyqVhhXHOnaTwFVKEgc0ikpwkYO4xHAUw+h0JL6jAKnqriW61w5duxyXAzLOeBPvAMhQhM+5GOCUQvSb/zLm03RkyNzh' +
+	'vxSmiHBWofSGUSmW2SqXG/Y4PIstLVdZNXNZ7oA2iehm8RQHPLCSdmUIBJZ0VxPGQFrkIzvSDkcHKd5JkQOBwzts8vdZQB/f2H+ogkbDe39ggz' +
+	'dY8c3myQXf8dJeHk2TTaDYBIPe3PCyNAAWz3qDG2CQ7Lc8PvbFI0n66wGmBUBY4LdjsS/yS2YEmO83wtXZp0P5FuvTw51BlSpylipu4sN04sOQ' +
+	'iItz0XeNn+ORP6J2w5xBWmm1E3tMPoxrQhI/p+7dI/zDeznFmxN7NmtlUQ39GqDxOwRE1iz/G5ttpnWeYcppNFcTbrzxvl5WMGXpu6sK0Yrhqw' +
+	'u74kMPcHXZL8NylQEDdyL7hKLsXRB2xmW98LquJnkmg5YrYnmli6CwJVyk//jKRvRpfySL+aSVxWsWh4xxSxfLoP0EzoCNDd7+V3L/RhKNH7FH' +
+	'QnPt4sjMrd/VmpIYOXcsXkwEVO1dlKpF3uiWLgxYca3BYeKu6ZXSkWNB0kFFToctAk5ylO2dhXOECuofGSvWR4Jygxt79up3ECB8pzUg3up14F' +
+	'tCaW9Xuw8n2XtXTDCyl1j8ONKk+K3LySQbKrOsXiWTAWnop+XUU2pWkeG++XQZDe/ydTNJE14pp214Np3eC9YYb9905i/a3bcvnz+9f6sfb6+v' +
+	'LpiUBP2iN7gQhT89fX5mpGxCeiJovdWABDcPGkHKPEu/kWUFra5XgYL4uZXuzTHB3U90Ui0epuXD8PHhoestnBVrG8U2X4fn8mLO3sT8R9In38' +
+	'JJeg1j8jKS4kRrDshyN9s/CAnlQj4ymexOqjrbCMTQLhTRXM28L4cdrs3YOFXdw32P99EnehQP7PYuo8ts8lHtXV9BfPzm6u3127PTZd7ui76p' +
+	'c47icDzjs7hZri7pRUdDa+eCEdAbM0PHUIHf92s/7e6VsdoUY3ynN/beXSX7rqk5DYrXUQ/58A11l2BA/L0JnHhSkSb8gyV0/gbwZf7+d9zvoY' +
+	'eu/vu0d7izuksF6I8pLySgO7IC6HwzwXSqCL/8573TC4A/AXWF1na6ZEpIK0eegFxgyHIyt9myiy7HidKCm5t4OU6VXrLsIs0iUH4AZoguHQTe' +
+	'cGQ+biVoy2KavMHOGMtLRpMHZPmCOr3tvzyhy00276WnG1QES4ngVZil6NSlo8lT5lrElLPkuUiam2A1F1RmzmokqCKCfIGeMaYkmjMquszGyX' +
+	'qqTMfOTJwsRE8DRr5my3ZqT5i9b+uyiTZ412s3VU5zZxlx9lNnhDBTGDKFLYUw6cHPYrSMYJc/uwvVHidKmD1+Om9mV34A8grb6PtgmDHvJFQj' +
+	'cxnFFIlID0YBIK9FwR7Q5TBerlQMi3anPhywxNx+HkPA7gA87jrgPHTezPOY0rfzAvv2b82p54mAv8shE3g/U3To1KdbkwaNIsRUaqiJmRmZmI' +
+	'llqxIBw4AtVsF8VYM6PSurrliRQXV7sNoMX79JK5dO2zvvPSgDtbc6DvpXtasVwvoG47SqAsv0sYxfvz4LhzxBBTI5fIhDLz2o/LhWj9nqsG0r' +
+	'9ulnCxOjYaXVGChF1NgVxx9nDWyoHOWWWtRRrfql1Yqz1cyorO+zdpapFRcwxUZ2NGJHjROxGlOhXW413nMtTgyD6Ja+1GrYxPRDs14rMTuC3S' +
+	'Ur4xFT0cyPagJHFbPB3lmpBmPJQ6pQNfd7ol4sF+HlptqZvdrlbwyvI+oq4tf0I4YYXgpUywTqB+caSfeyyjtbhPc+daxfYjjOM5UH7X+5xI9g' +
+	'annIMLRDHl7wTFsa+PBCc7i82Hsc2RoGozrA9wct9fsWJWbhfw57K3VJ//H/DPiXKmAEAA==';
 
 /* ------------------------------------------------------------------ setup */
 
@@ -224,15 +229,15 @@ const hash = (n: number) => {
 };
 
 const FACE = `@font-face{font-family:'ChalkHand';src:url(data:font/woff2;base64,${FONT_HAND}) format('woff2');font-weight:400;font-style:normal;font-display:block}`;
-if (typeof document !== 'undefined' && !document.getElementById('m60-face')) {
+if (typeof document !== 'undefined' && !document.getElementById('m61-face')) {
 	const st = document.createElement('style');
-	st.id = 'm60-face';
+	st.id = 'm61-face';
 	st.textContent = FACE;
 	document.head.appendChild(st);
 }
 
 const useChalkFont = () => {
-	const [handle] = useState(() => delayRender('m60 font'));
+	const [handle] = useState(() => delayRender('m61 font'));
 	const done = useRef(false);
 	useEffect(() => {
 		const fin = () => {
@@ -327,17 +332,95 @@ const Tx: React.FC<TP & {children: React.ReactNode}> = ({x = 0, y = 0, s = 40, a
 	</text>
 );
 
-/* a hand-drawn radical: the hook, then an overbar sized to its radicand */
-const Radical: React.FC<{x: number; y: number; w: number; h?: number; s: number}> = ({x, y, w, h = 34, s}) => (
-	<path
-		d={
-			`M${x} ${y - h * 0.42}L${x + 5} ${y - h * 0.3}L${x + 11} ${y + 2}` +
-			`Q${x + 13.4 + wob(s, 1, 1.4)} ${y - h * 0.45 + wob(s, 2, 1.4)} ${x + 17} ${y - h}` +
-			`Q${x + 17 + w * 0.5} ${y - h + 0.4 + wob(s + 3, 1, 1.4)} ${x + 17 + w} ${y - h + 1.5}`
-		}
-		fill="none"
-	/>
+/* --------------------------------------------------- chemistry helpers */
+
+/* Subscripts and superscripts — the thing every chemical formula needs and no
+   handwriting face provides. '_' marks the next character as a subscript, '^'
+   as a superscript. Each tspan carries only the DELTA of the baseline shift,
+   so a run returns to the line by itself and consecutive subscripts (the 12 in
+   C₆H₁₂O₆) cost nothing. */
+const Fm: React.FC<{t: string; s: number; x?: number; y?: number; a?: 'start' | 'middle' | 'end'}> = ({
+	t,
+	s,
+	x = 0,
+	y = 0,
+	a = 'middle',
+}) => {
+	const segs: {t: string; k: number}[] = [];
+	let buf = '';
+	for (let i = 0; i < t.length; i++) {
+		const c = t[i];
+		if ((c === '_' || c === '^') && i + 1 < t.length) {
+			if (buf) {
+				segs.push({t: buf, k: 0});
+				buf = '';
+			}
+			segs.push({t: t[i + 1], k: c === '_' ? 1 : -1});
+			i++;
+		} else buf += c;
+	}
+	if (buf) segs.push({t: buf, k: 0});
+	let prev = 0;
+	return (
+		<text
+			x={x}
+			y={y}
+			fontFamily="ChalkHand, sans-serif"
+			fontSize={s}
+			textAnchor={a}
+			fill={CHALK}
+			stroke="none"
+		>
+			{segs.map((g, i) => {
+				const shift = g.k === 1 ? s * 0.26 : g.k === -1 ? -s * 0.38 : 0;
+				const dy = shift - prev;
+				prev = shift;
+				return (
+					<tspan key={i} fontSize={g.k ? s * 0.64 : s} dy={dy}>
+						{g.t}
+					</tspan>
+				);
+			})}
+		</text>
+	);
+};
+
+/* A reaction is laid out around its arrow rather than around its own centre:
+   the left half is end-anchored and the right half start-anchored, so neither
+   side needs its width measured. */
+const Arrow: React.FC<{x: number; y: number; w: number; s: number}> = ({x, y, w, s}) => (
+	<>
+		<path d={ln(x, y, x + w - 12, y, s, 1.6)} fill="none" />
+		<path d={`M${x + w} ${y}L${x + w - 17} ${y - 8}L${x + w - 17} ${y + 8}z`} fill={CHALK} stroke="none" />
+	</>
 );
+const Equil: React.FC<{x: number; y: number; w: number; s: number}> = ({x, y, w, s}) => (
+	<>
+		<path d={ln(x, y - 6, x + w, y - 6, s, 1.4)} fill="none" />
+		<path d={`M${x + w + 3} ${y - 6}L${x + w - 11} ${y - 12}L${x + w - 11} ${y - 6}z`} fill={CHALK} stroke="none" />
+		<path d={ln(x + w, y + 7, x, y + 7, s + 1, 1.4)} fill="none" />
+		<path d={`M${x - 3} ${y + 7}L${x + 11} ${y + 13}L${x + 11} ${y + 7}z`} fill={CHALK} stroke="none" />
+	</>
+);
+
+const hex = (r: number, cx = 0, cy = 0, rot = 0) =>
+	Array.from({length: 6}, (_, i) => {
+		const a = rot + (i * Math.PI) / 3;
+		return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+	});
+
+/* the inner stroke of a double bond: inset along the edge, then pushed toward
+   the ring centre by the normal */
+const inner = (p: number[], q: number[], cx: number, cy: number, d: number) => {
+	const ax = p[0] + (q[0] - p[0]) * 0.18;
+	const ay = p[1] + (q[1] - p[1]) * 0.18;
+	const bx = p[0] + (q[0] - p[0]) * 0.82;
+	const by = p[1] + (q[1] - p[1]) * 0.82;
+	const mx = (p[0] + q[0]) / 2 - cx;
+	const my = (p[1] + q[1]) / 2 - cy;
+	const L = Math.hypot(mx, my) || 1;
+	return `M${ax - (mx / L) * d} ${ay - (my / L) * d}L${bx - (mx / L) * d} ${by - (my / L) * d}`;
+};
 
 /* a fraction: rule, numerator, denominator */
 const Frac: React.FC<{x: number; y: number; w: number; s: number; children: React.ReactNode}> = ({
@@ -353,229 +436,218 @@ const Frac: React.FC<{x: number; y: number; w: number; s: number; children: Reac
 	</>
 );
 
+const Delta: React.FC<{x: number; y: number; h: number; s: number}> = ({x, y, h, s}) => (
+	<path
+		d={poly([[x, y - h], [x - h * 0.62, y + h * 0.44], [x + h * 0.62, y + h * 0.44]], s, true, 1.2)}
+		fill="none"
+	/>
+);
+
 /* -------------------------------------------------------------- the cards */
 
 /* Twenty-four pieces of blackboard, each drawn once into <defs> and then
-   instanced by <use>. Instancing is what makes 176 of them affordable: the
+   instanced by <use>. Instancing is what makes 720 of them affordable: the
    geometry is built one time and the browser only has to place a transform,
    and stroke width scales with that transform exactly as it does in the
    reference, where the big formulas are drawn with heavier lines. */
 const Cards: React.FC = () => (
 	<>
 		<g id="k0">
-			<Tx s={46}>E = mc²</Tx>
+			<Fm t="H_2O" s={54} />
 		</g>
 		<g id="k1">
-			<Tx s={40}>f(x) = ax² + bx + c</Tx>
+			<Fm t="CO_2" s={48} />
 		</g>
 		<g id="k2">
-			<Tx s={42}>a² + b² = c²</Tx>
+			<Fm t="2H_2 + O_2" s={34} x={-36} a="end" />
+			<Arrow x={-30} y={-10} w={58} s={201} />
+			<Fm t="2H_2O" s={34} x={34} a="start" />
 		</g>
 		<g id="k3">
-			{/* the quadratic formula, the reference's most repeated element */}
-			<Tx x={-146} y={12} s={40} a="start">
-				x =
-			</Tx>
-			<Frac x={26} y={0} w={196} s={11}>
-				<Tx x={-58} y={-14} s={34} a="start">
-					-b ±
-				</Tx>
-				<Radical x={18} y={-14} w={92} h={30} s={12} />
-				<Tx x={26} y={-16} s={32} a="start">
-					b²-4ac
-				</Tx>
-				<Tx x={26} y={38} s={34}>
-					2a
-				</Tx>
-			</Frac>
+			<Fm t="CH_4 + 2O_2" s={30} x={-36} a="end" />
+			<Arrow x={-30} y={-9} w={56} s={205} />
+			<Fm t="CO_2 + 2H_2O" s={30} x={32} a="start" />
 		</g>
 		<g id="k4">
-			{/* a three-equation linear system inside a hand-drawn brace */}
-			<path d="M-104 -44q-11 3 -11 16v18q0 10 -9 12 9 2 9 12v18q0 13 11 16" fill="none" />
-			<Tx x={-92} y={-30} s={28} a="start">
-				x + 3y + 2z = 1
-			</Tx>
-			<Tx x={-92} y={6} s={28} a="start">
-				2x + 6y + 5z = 38
-			</Tx>
-			<Tx x={-92} y={42} s={28} a="start">
-				x + 2y + 10z = 2
-			</Tx>
+			<Fm t="N_2 + 3H_2" s={32} x={-38} a="end" />
+			<Equil x={-32} y={-10} w={62} s={209} />
+			<Fm t="2NH_3" s={32} x={36} a="start" />
 		</g>
 		<g id="k5">
-			<Tx s={38}>y = cos x - sin x</Tx>
+			<Fm t="C_6H_1_2O_6" s={44} />
 		</g>
 		<g id="k6">
-			<Tx s={38}>sin(-a) = -sin a</Tx>
+			<Fm t="PV = nRT" s={44} />
 		</g>
 		<g id="k7">
-			<Tx s={40}>x + y = a²b</Tx>
+			<Fm t="pH = -log[H^+]" s={34} />
 		</g>
 		<g id="k8">
-			<Tx x={-120} y={14} s={52} a="start">
-				∫
-			</Tx>
-			<Tx x={-92} y={12} s={36} a="start">
-				f(x) dx = F(x) + C
-			</Tx>
+			<Fm t="n =" s={38} x={-74} a="end" />
+			<Frac x={-24} y={0} w={54} s={213}>
+				<Fm t="m" s={32} x={-24} y={-12} />
+				<Fm t="M" s={32} x={-24} y={30} />
+			</Frac>
 		</g>
 		<g id="k9">
-			<Tx s={40}>V = πr²h</Tx>
+			<Fm t="1s^2 2s^2 2p^6" s={34} />
 		</g>
 		<g id="k10">
-			<Tx s={44}>F = ma</Tx>
+			<Fm t="NaCl" s={32} x={-34} a="end" />
+			<Arrow x={-28} y={-10} w={54} s={217} />
+			<Fm t="Na^+ + Cl^-" s={32} x={32} a="start" />
 		</g>
 		<g id="k11">
-			<Tx s={40}>C = 2πr</Tx>
+			<Delta x={-88} y={-8} h={17} s={221} />
+			<Fm t="H = -286 kJ" s={34} x={-72} a="start" />
 		</g>
 		<g id="k12">
-			<Tx s={34}>log(ab) = log a + log b</Tx>
+			{/* benzene, delocalised ring */}
+			<path d={poly(hex(46), 231, true)} fill="none" />
+			<circle cx={0} cy={0} r={28} fill="none" />
 		</g>
 		<g id="k13">
-			{/* a 2x2 matrix in hand-drawn brackets */}
-			<path d={`M-46 -34h-12v68h12`} fill="none" />
-			<path d={`M46 -34h12v68h-12`} fill="none" />
-			<Tx x={-24} y={-4} s={34}>
-				a
-			</Tx>
-			<Tx x={24} y={-4} s={34}>
-				b
-			</Tx>
-			<Tx x={-24} y={30} s={34}>
-				c
-			</Tx>
-			<Tx x={24} y={30} s={34}>
-				d
-			</Tx>
+			{/* the same ring drawn Kekule, alternating double bonds */}
+			<path d={poly(hex(46), 241, true)} fill="none" />
+			{[0, 2, 4].map((i) => {
+				const p = hex(46);
+				return <path key={i} d={inner(p[i], p[(i + 1) % 6], 0, 0, 9)} fill="none" />;
+			})}
 		</g>
 		<g id="k14">
-			<Frac x={-72} y={0} w={62} s={21}>
-				<Tx x={-72} y={-12} s={30}>
-					d
-				</Tx>
-				<Tx x={-72} y={30} s={30}>
-					dx
-				</Tx>
-			</Frac>
-			<Tx x={-30} y={10} s={34} a="start">
-				(x²) = 2x
-			</Tx>
+			{/* phenol: a ring with a hydroxyl */}
+			<path d={poly(hex(40), 251, true)} fill="none" />
+			{[1, 3, 5].map((i) => {
+				const p = hex(40);
+				return <path key={i} d={inner(p[i], p[(i + 1) % 6], 0, 0, 8)} fill="none" />;
+			})}
+			<path d={ln(20, -34.6, 46, -56, 255, 1.4)} fill="none" />
+			<Fm t="OH" s={24} x={66} y={-52} a="start" />
 		</g>
 		<g id="k15">
-			{/* three-circle Venn, two intersections hatched */}
-			<g clipPath="url(#m60v1)">
-				<circle cx={-28} cy={-10} r={38} fill="url(#m60hatch)" stroke="none" />
-			</g>
-			<g clipPath="url(#m60v2)">
-				<circle cx={28} cy={-10} r={38} fill="url(#m60hatch)" stroke="none" />
-			</g>
-			<circle cx={-28} cy={-10} r={38} fill="none" />
-			<circle cx={28} cy={-10} r={38} fill="none" />
-			<circle cx={0} cy={30} r={38} fill="none" />
-			<Tx x={-52} y={-34} s={22}>
-				A
-			</Tx>
-			<Tx x={52} y={-34} s={22}>
-				B
-			</Tx>
-			<Tx x={0} y={68} s={22}>
-				C
-			</Tx>
+			{/* naphthalene: two rings fused on a shared vertical edge */}
+			<path d={poly(hex(40, -34.6, 0, Math.PI / 6), 261, true)} fill="none" />
+			<path d={poly(hex(40, 34.6, 0, Math.PI / 6), 265, true)} fill="none" />
 		</g>
 		<g id="k16">
-			{/* wireframe cube, hidden edges dashed, edges labelled a and b */}
-			<path d={poly([[-54, -30], [30, -30], [30, 46], [-54, 46]], 31, true)} fill="none" />
-			<path d={poly([[-24, -56], [60, -56], [60, 20], [-24, 20]], 35, true)} fill="none" strokeOpacity={0.9} />
-			<path d={ln(-54, -30, -24, -56, 39)} fill="none" />
-			<path d={ln(30, -30, 60, -56, 40)} fill="none" />
-			<path d={ln(30, 46, 60, 20, 41)} fill="none" />
-			<path d={ln(-54, 46, -24, 20, 42)} fill="none" strokeDasharray="5 6" />
-			<Tx x={-12} y={-66} s={26}>
-				a
-			</Tx>
-			<Tx x={76} y={-14} s={26}>
-				b
-			</Tx>
+			{/* methane: two bonds in plane, one wedge forward, one hashed back */}
+			<path d={ln(-13, -3, -50, -22, 271, 1.4)} fill="none" />
+			<path d={ln(13, -3, 50, -22, 272, 1.4)} fill="none" />
+			<path d="M-4 -12L4 -12L1 -44L-1 -44z" fill={CHALK} stroke="none" />
+			<path d="M-3 20h6M-4.5 30h9M-6 40h12" fill="none" />
+			<circle cx={0} cy={0} r={14} fill="none" />
+			<Fm t="C" s={20} x={0} y={7} />
+			<circle cx={-56} cy={-25} r={10} fill="none" />
+			<circle cx={56} cy={-25} r={10} fill="none" />
+			<circle cx={0} cy={-52} r={10} fill="none" />
+			<circle cx={0} cy={50} r={10} fill="none" />
 		</g>
 		<g id="k17">
-			{/* cone: dashed base ellipse, height and radius marked */}
-			<ellipse cx={0} cy={38} rx={46} ry={15} fill="none" strokeDasharray="6 7" />
-			<path d={`M-46 38A46 15 0 0 0 46 38`} fill="none" />
-			<path d={ln(-46, 38, 0, -52, 51)} fill="none" />
-			<path d={ln(46, 38, 0, -52, 52)} fill="none" />
-			<path d={`M0 -52L0 38`} fill="none" strokeDasharray="5 6" />
-			<path d={`M0 38L46 38`} fill="none" strokeDasharray="5 6" />
-			<Tx x={-12} y={4} s={24}>
-				h
-			</Tx>
-			<Tx x={24} y={60} s={24}>
-				r
-			</Tx>
+			{/* water: the bent molecule and its angle */}
+			<path d={ln(-12, -8, -40, 22, 281, 1.4)} fill="none" />
+			<path d={ln(12, -8, 40, 22, 282, 1.4)} fill="none" />
+			<circle cx={0} cy={-18} r={16} fill="none" />
+			<Fm t="O" s={22} x={0} y={-10} />
+			<circle cx={-48} cy={30} r={11} fill="none" />
+			<Fm t="H" s={17} x={-48} y={36} />
+			<circle cx={48} cy={30} r={11} fill="none" />
+			<Fm t="H" s={17} x={48} y={36} />
+			<path d="M-19 6a26 26 0 0 0 38 0" fill="none" />
+			<Fm t="105°" s={16} x={0} y={30} />
 		</g>
 		<g id="k18">
-			{/* square pyramid */}
-			<path d={poly([[-50, 40], [30, 40], [56, 16], [-24, 16]], 61, true)} fill="none" strokeDasharray="5 6" />
-			<path d={ln(-50, 40, 4, -54, 65)} fill="none" />
-			<path d={ln(30, 40, 4, -54, 66)} fill="none" />
-			<path d={ln(56, 16, 4, -54, 67)} fill="none" />
-			<path d={`M-50 40L30 40`} fill="none" />
+			{/* Bohr model: nucleus and two shells */}
+			<ellipse cx={0} cy={0} rx={58} ry={22} fill="none" transform="rotate(28)" />
+			<ellipse cx={0} cy={0} rx={58} ry={22} fill="none" transform="rotate(-28)" />
+			<circle cx={0} cy={0} r={12} fill={CHALK} stroke="none" />
+			<circle cx={49} cy={28} r={5} fill={CHALK} stroke="none" />
+			<circle cx={-49} cy={28} r={5} fill={CHALK} stroke="none" />
+			<circle cx={-14} cy={-30} r={5} fill={CHALK} stroke="none" />
 		</g>
 		<g id="k19">
-			{/* cylinder */}
-			<ellipse cx={0} cy={-34} rx={38} ry={13} fill="none" />
-			<path d={`M-38 42A38 13 0 0 0 38 42`} fill="none" />
-			<path d={`M-38 42A38 13 0 0 1 38 42`} fill="none" strokeDasharray="5 6" />
-			<path d={ln(-38, -34, -38, 42, 71, 1.6)} fill="none" />
-			<path d={ln(38, -34, 38, 42, 72, 1.6)} fill="none" />
-			<Tx x={16} y={10} s={24}>
-				h
-			</Tx>
+			{/* Erlenmeyer flask */}
+			<path d={ln(-13, -58, -13, -24, 291, 1.2)} fill="none" />
+			<path d={ln(13, -58, 13, -24, 292, 1.2)} fill="none" />
+			<path d={ln(-13, -58, 13, -58, 293, 1.2)} fill="none" />
+			<path d={ln(-13, -24, -50, 44, 294, 1.8)} fill="none" />
+			<path d={ln(13, -24, 50, 44, 295, 1.8)} fill="none" />
+			<path d={ln(-50, 44, 50, 44, 296, 1.6)} fill="none" />
+			<g clipPath="url(#m61flask)">
+				<rect x={-52} y={8} width={104} height={40} fill="url(#m61hatch)" stroke="none" />
+			</g>
+			<path d={ln(-30, 10, 30, 10, 297, 2.2)} fill="none" />
+			<circle cx={-12} cy={26} r={4} fill="none" />
+			<circle cx={8} cy={34} r={3} fill="none" />
 		</g>
 		<g id="k20">
-			{/* right triangle with the angle arc */}
-			<path d={poly([[-62, 40], [58, 40], [58, -38]], 81, true)} fill="none" />
-			<path d="M-30 40a32 32 0 0 0 -1 -12" fill="none" />
-			<path d="M40 40v-18h18" fill="none" strokeOpacity={0.85} />
-			<Tx x={-4} y={62} s={24}>
-				b
-			</Tx>
-			<Tx x={78} y={4} s={24}>
-				a
-			</Tx>
-			<Tx x={-4} y={-6} s={24}>
-				c
-			</Tx>
+			{/* graduated beaker */}
+			<path d={poly([[-38, -40], [-38, 46], [38, 46], [38, -40]], 301, false, 1.6)} fill="none" />
+			<path d={ln(-38, -40, -47, -36, 305, 1.0)} fill="none" />
+			<g clipPath="url(#m61beaker)">
+				<rect x={-40} y={6} width={80} height={44} fill="url(#m61hatch)" stroke="none" />
+			</g>
+			<path d={ln(-38, 6, 38, 6, 306, 2.2)} fill="none" />
+			<path d="M22 -22h16M22 -6h16M22 10h16" fill="none" />
 		</g>
 		<g id="k21">
-			{/* axes with a parabola */}
-			<path d={ln(-66, 44, 74, 44, 91, 1.8)} fill="none" />
-			<path d={ln(-52, -50, -52, 58, 92, 1.8)} fill="none" />
-			<path d="M-30 40Q10 -74 62 6" fill="none" />
-			<Tx x={80} y={58} s={22}>
-				x
-			</Tx>
-			<Tx x={-68} y={-46} s={22}>
-				y
-			</Tx>
+			{/* test tube */}
+			<path d={`M-15 -54L-15 26A15 15 0 0 0 15 26L15 -54`} fill="none" />
+			<path d={ln(-15, -54, 15, -54, 311, 1.2)} fill="none" />
+			<g clipPath="url(#m61tube)">
+				<rect x={-16} y={-6} width={32} height={52} fill="url(#m61hatch)" stroke="none" />
+			</g>
+			<path d={ln(-15, -6, 15, -6, 312, 1.8)} fill="none" />
+			<circle cx={-5} cy={8} r={3.4} fill="none" />
+			<circle cx={6} cy={18} r={2.6} fill="none" />
 		</g>
 		<g id="k22">
-			{/* circle with a marked radius */}
-			<circle cx={0} cy={0} r={44} fill="none" />
-			<path d={ln(0, 0, 44, 0, 101, 1.4)} fill="none" />
-			<circle cx={0} cy={0} r={2.6} fill={CHALK} stroke="none" />
-			<Tx x={22} y={-8} s={24}>
-				r
-			</Tx>
+			{/* one cell out of the periodic table */}
+			<path d={poly([[-38, -42], [38, -42], [38, 42], [-38, 42]], 321, true, 1.4)} fill="none" />
+			<Fm t="6" s={17} x={-29} y={-21} a="start" />
+			<Fm t="C" s={44} x={0} y={12} />
+			<Fm t="12.01" s={13} x={0} y={33} />
+		</g>
+		<g id="k24">
+			<Fm t="H_2SO_4" s={42} />
+		</g>
+		<g id="k25">
+			<Fm t="2Na + Cl_2" s={30} x={-36} a="end" />
+			<Arrow x={-30} y={-9} w={56} s={341} />
+			<Fm t="2NaCl" s={30} x={32} a="start" />
+		</g>
+		<g id="k26">
+			<Delta x={-112} y={-8} h={16} s={351} />
+			<Fm t="G =" s={32} x={-98} a="start" />
+			<Delta x={-30} y={-8} h={16} s={352} />
+			<Fm t="H - T" s={32} x={-16} a="start" />
+			<Delta x={68} y={-8} h={16} s={353} />
+			<Fm t="S" s={32} x={82} a="start" />
+		</g>
+		<g id="k27">
+			{/* titration curve with its equivalence point */}
+			<path d={ln(-62, 46, 74, 46, 361, 1.6)} fill="none" />
+			<path d={ln(-56, -50, -56, 56, 362, 1.6)} fill="none" />
+			<path d="M-48 38Q-6 32 4 -6Q12 -42 62 -46" fill="none" />
+			<path d="M4 -6m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0" fill="none" />
+			<path d="M-56 -6L-2 -6" fill="none" strokeDasharray="5 6" />
+			<Fm t="pH" s={18} x={-72} y={-44} a="start" />
 		</g>
 		<g id="k23">
-			{/* a bare angle mark, the small connective glyph the reference is full of */}
-			<path d={ln(-46, 26, 52, -18, 111, 1.6)} fill="none" />
-			<path d={ln(-46, 26, 52, 26, 112, 1.6)} fill="none" />
-			<path d="M-16 26a30 30 0 0 0 -2 -13" fill="none" />
+			{/* orbital box diagram: paired and unpaired spins */}
+			<path d={ln(-52, 26, -14, 26, 331, 1.2)} fill="none" />
+			<path d={ln(-6, 26, 32, 26, 332, 1.2)} fill="none" />
+			<path d={ln(-52, -18, -14, -18, 333, 1.2)} fill="none" />
+			<path d="M-38 20v-18l-4 5m4 -5l4 5" fill="none" />
+			<path d="M-24 8v18l-4 -5m4 5l4 -5" fill="none" />
+			<path d="M8 20v-18l-4 5m4 -5l4 5" fill="none" />
+			<path d="M-38 -24v-18l-4 5m4 -5l4 5" fill="none" />
+			<Fm t="2p" s={18} x={44} y={32} a="start" />
+			<Fm t="3s" s={18} x={44} y={-12} a="start" />
 		</g>
 	</>
 );
-const N_CARD = 24;
+const N_CARD = 28;
+
 
 /* --------------------------------------------------------------- the plate */
 
@@ -674,29 +746,29 @@ export const Motion: React.FC = () => {
 			/>
 			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
 				<defs>
-					<filter id="m60slate" x="0" y="0" width="100%" height="100%">
+					<filter id="m61slate" x="0" y="0" width="100%" height="100%">
 						<feTurbulence type="fractalNoise" baseFrequency="0.62 0.9" numOctaves={3} seed={9} />
 						<feColorMatrix type="saturate" values="0" />
 					</filter>
-					<filter id="m60blotch" x="-8%" y="-8%" width="116%" height="116%">
+					<filter id="m61blotch" x="-8%" y="-8%" width="116%" height="116%">
 						<feTurbulence type="fractalNoise" baseFrequency="0.0042" numOctaves={4} seed={17} />
 						<feColorMatrix type="saturate" values="0" />
 						<feComponentTransfer>
 							<feFuncA type="table" tableValues="0 0 0.1 0.4 0.85" />
 						</feComponentTransfer>
 					</filter>
-					<filter id="m60grain" x="0" y="0" width="100%" height="100%">
+					<filter id="m61grain" x="0" y="0" width="100%" height="100%">
 						<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={2} seed={4} />
 						<feColorMatrix type="saturate" values="0" />
 					</filter>
 				</defs>
-				<rect width={1920} height={1080} filter="url(#m60slate)" opacity={0.15} style={{mixBlendMode: 'overlay'}} />
+				<rect width={1920} height={1080} filter="url(#m61slate)" opacity={0.15} style={{mixBlendMode: 'overlay'}} />
 				<rect
 					x={-70}
 					y={-70}
 					width={2060}
 					height={1220}
-					filter="url(#m60blotch)"
+					filter="url(#m61blotch)"
 					opacity={0.2}
 					style={{mixBlendMode: 'soft-light'}}
 				/>
@@ -706,19 +778,22 @@ export const Motion: React.FC = () => {
 			{/* ------------------------------------------------------- the field */}
 			<svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{position: 'absolute', left: 0, top: 0}}>
 				<defs>
-					<clipPath id="m60v1">
-						<circle cx={28} cy={-10} r={38} />
+					<clipPath id="m61flask">
+						<path d="M-13 -24L-50 44L50 44L13 -24z" />
 					</clipPath>
-					<clipPath id="m60v2">
-						<circle cx={0} cy={30} r={38} />
+					<clipPath id="m61beaker">
+						<rect x={-38} y={-40} width={76} height={86} />
 					</clipPath>
-					<pattern id="m60hatch" width={9} height={9} patternUnits="userSpaceOnUse" patternTransform="rotate(40)">
+					<clipPath id="m61tube">
+						<path d="M-15 -54L-15 26A15 15 0 0 0 15 26L15 -54z" />
+					</clipPath>
+					<pattern id="m61hatch" width={9} height={9} patternUnits="userSpaceOnUse" patternTransform="rotate(40)">
 						<line x1={0} y1={0} x2={0} y2={9} stroke={CHALK} strokeWidth={1.6} />
 					</pattern>
 					{/* chalk is not a clean vector: displacing the whole writing layer
 					    through a noise field roughens every edge at once, which is far
 					    cheaper than roughening 176 elements individually */}
-					<filter id="m60chalk" x="-3%" y="-3%" width="106%" height="106%">
+					<filter id="m61chalk" x="-3%" y="-3%" width="106%" height="106%">
 						<feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves={3} seed={23} result="n" />
 						<feDisplacementMap
 							in="SourceGraphic"
@@ -747,7 +822,7 @@ export const Motion: React.FC = () => {
 					fill="none"
 					strokeLinecap="round"
 					strokeLinejoin="round"
-					filter="url(#m60chalk)"
+					filter="url(#m61chalk)"
 				>
 					{items}
 				</g>
@@ -771,7 +846,7 @@ export const Motion: React.FC = () => {
 					y={-70}
 					width={2060}
 					height={1220}
-					filter="url(#m60grain)"
+					filter="url(#m61grain)"
 					transform={`translate(${gx} ${gy})`}
 				/>
 			</svg>
