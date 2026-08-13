@@ -2,76 +2,63 @@ import React, {useEffect, useRef, useState} from 'react';
 import {AbsoluteFill, continueRender, delayRender, useCurrentFrame} from 'remotion';
 
 /**
- * MOTION 72 — "STORAGE DASHBOARD · DISK SPACE BREAKDOWN"
+ * MOTION 73 — "AI FILE TRANSFER · FOLDER TO FOLDER"
  * ---------------------------------------------------------------------------
- * A 512 GB volume breaks itself down. The ring track draws, then five category
- * arcs sweep in one at a time while the hero percentage counts with them and
- * each category's row slides in beside it. The free quarter fills last. Then
- * the two reclaimable segments lift out of the ring and the panel offers the
- * space back.
+ * Eight files move out of one folder, ride a transfer lane across the frame,
+ * get checked by a routing node halfway, and drop into another. The source
+ * folder's stack visibly empties while the destination's fills, both counters
+ * run against each other, and the panel reports the transfer.
  *
- * Fifth piece in the same design system as MOTION 68-71 — same plate, panel
- * chrome, footer and shadow language — so all five cut together as a set.
+ * Sixth piece in the same design system as MOTION 68-72 — same plate, panel
+ * chrome, footer, shadow language and folder construction — so all six cut
+ * together as a set.
  *
  * HOW IT IS BUILT
  * ---------------------------------------------------------------------------
  * [int] Original build, no reference clip.
  *
- * [int] THE PALETTE IS VALIDATED, NOT CHOSEN BY EYE. The first instinct was to
- *       reuse the category hues from MOTION 70 — blue, violet, amber, green.
- *       Run through a CVD check that set fails hard: blue #2B7FFF against
- *       violet #7C4DFF is ΔE 3.3 under deuteranopia and only 12.7 under normal
- *       vision, i.e. two segments that touch in the ring and cannot be told
- *       apart. Violet was dropped for magenta and the set re-stepped to blue
- *       #2a78d6 / orange #eb6834 / aqua #1baf7a / yellow #eda100 / magenta
- *       #e87ba4, which clears every gate on the ring-adjacent pairlist: worst
- *       adjacent CVD ΔE 9.1 (yellow↔aqua, protan), worst adjacent
- *       normal-vision ΔE 19.6 (magenta↔yellow). Aqua, yellow and magenta sit
- *       under 3:1 contrast on this light plate, which obliges visible labels —
- *       hence the row list, where every segment is named and valued in ink
- *       beside its swatch. Identity is never carried by colour alone.
- * [int] The ring order is the fixed slot order and the rows repeat it exactly.
- *       Sorting rows by size while the ring kept slot order would break the
- *       match between a swatch and its arc; instead the figures are set so the
- *       slot order IS descending.
- * [int] EQUAL TIME PER SEGMENT, not equal speed. A single constant-rate sweep
- *       gives the 32% segment 133 frames and the 4% segment 18, so the last
- *       three rows would arrive almost together. Each arc gets its own 62-frame
- *       slice instead and sweeps at whatever rate its own share needs.
- * [int] Segments are separated by a 1.8-degree pad — about 6 px at the ring's
- *       mid-radius — so the plate shows between them rather than two fills
- *       meeting on a shared edge. The free quarter is the track itself until
- *       the used arcs finish, and only then is it painted as its own segment,
- *       because until the breakdown is complete "empty" and "not yet measured"
- *       must not look the same.
- * [int] Row bars are scaled to the largest category, not to total capacity. At
- *       total-capacity scale the smallest row is 4% of the track and reads as
- *       an empty row. The ring already carries share-of-whole; the rows carry
- *       rank and absolute GB, and the two are labelled as what they are.
- * [int] Bars are rounded on the data end only and square where they meet the
- *       baseline, so a short bar cannot read as longer than it is.
- * [int] The numbers close: 164.8 + 96.4 + 58.2 + 42.6 + 22.0 = 384.0 GB used
- *       of 512, exactly 75%, leaving 128.0 free; the two reclaimable segments
- *       are 42.6 + 22.0 = 64.6 GB, which is what the card offers back and what
- *       takes the projection to 62%.
- * [int] EVERY segment carries its share INSIDE its own arc. The first pass
- *       pushed the 4.3% SYSTEM slice onto an outside leader on the theory
- *       that 15.5 degrees is only ~53 px of arc against a ~44 px label — but
- *       that is the wrong constraint. That slice sits at 173 degrees, where
- *       the radius points left and the arc runs vertically, so a horizontal
- *       label is bounded by the ring's 72 px THICKNESS, not by arc length. At
- *       16 px the label is ~40 px wide and clears by 16 px either side. Type
- *       steps 20 / 18 / 16 px by share so the small slices stay inside
- *       without any of them shrinking below reading size. The free quarter
- *       takes ink rather than white, its track being too light for reversed
- *       type. The share also appears on every row, so the table and the ring
- *       state the same number and neither has to be read off the other.
- * [int] The two reclaimable arcs are pushed 28 px out of the ring, not the
- *       18 first tried — at 18 the offset was a sixth of the ring's own
- *       thickness and read as a rendering seam rather than a deliberate
- *       explode.
+ * [int] BOTH FOLDERS CARRY STOCK. The source shows the files it still holds and
+ *       the destination shows the ones it has taken, as fanned mini-cards drawn
+ *       between each folder's back panel and its front flap. Without that the
+ *       piece is just objects crossing a gap; with it, the two ends are a
+ *       running account of the same eight files and the frame reads at any
+ *       point in the shot, not only while something is in flight.
+ * [int] CADENCE. A file leaves every 62 frames and each crossing takes 76, so
+ *       there are always two in the lane and briefly three. One at a time made
+ *       the lane look empty at this width; four made the routing labels
+ *       collide over the node.
+ * [int] THE PATH DIPS AT BOTH ENDS. A file starts 46 px below the lane's
+ *       centreline, rises into it over the first 13% of the crossing, runs the
+ *       lane, and drops the same 46 px at the far end. That is what lets the
+ *       front flaps do the hiding: every card is behind a flap exactly while it
+ *       is inside a folder and clear of both while it is in the lane, with no
+ *       per-card clipping anywhere. The draw order is what makes it work —
+ *       backs and stacks, then every card in flight, then both flaps.
+ * [int] The routing node sits ABOVE the lane, not in it. Putting it on the
+ *       centreline means either the files stop at it (which is MOTION 71's
+ *       gate, already used) or they pass behind it and the check is invisible.
+ *       Raised, it can drop a scan beam through the lane and stamp each file as
+ *       it goes by without ever interrupting the flow.
+ * [int] Card scale is 0.92, which puts the travelling card at 118 x 149 inside
+ *       a 196 px lane. Smaller and the type chip stops resolving at 1080p;
+ *       larger and the card touches the conduit walls. The folders run at
+ *       1.36 — at the 1.15 first tried, the two ends read as props beside the
+ *       lane rather than as the subject of the shot.
+ * [int] Two things a still cannot show. The state chip's pill is sized
+ *       label*12.2 + 50, not +40 — at +40 the right inset came out about
+ *       6 px against 15 on the left and READY sat on the edge of its own
+ *       capsule. And the VERIFIED stamp is latched to the crossing frame
+ *       rather than to how close the card is: inOutCubic is symmetric, so
+ *       the card is at the node exactly at t0+38 and moving 23 px a frame
+ *       there, which means a proximity window is gone in fifteen frames.
+ *       The stamp holds t0+28 to t0+84 instead — 56 frames, long enough to
+ *       read the filename and still 6 clear of the next file's window.
+ * [int] The figures close: 3.4 + 2.8 + 1.9 + 0.4 + 0.7 + 1.1 + 1.6 + 0.7 = 12.6
+ *       GB across eight files, and the two folder counters always sum to eight
+ *       files and 12.6 GB because both are derived from the same launch and
+ *       land frames rather than being animated separately.
  * [int] Every shadow is a radial-gradient ellipse rather than a Gaussian
- *       filter, as in the other four pieces.
+ *       filter, as in the other five pieces.
  */
 
 /* ------------------------------------------------------------------ fonts */
@@ -257,15 +244,15 @@ const FACE = `
 @font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI7}) format('woff2');font-weight:700;font-style:normal;font-display:block}
 @font-face{font-family:'CuMono';src:url(data:font/woff2;base64,${F_MO5}) format('woff2');font-weight:500;font-style:normal;font-display:block}`;
 
-if (typeof document !== 'undefined' && !document.getElementById('m72-faces')) {
+if (typeof document !== 'undefined' && !document.getElementById('m73-faces')) {
 	const st = document.createElement('style');
-	st.id = 'm72-faces';
+	st.id = 'm73-faces';
 	st.textContent = FACE;
 	document.head.appendChild(st);
 }
 
 const useFaces = () => {
-	const [handle] = useState(() => delayRender('m72 fonts'));
+	const [handle] = useState(() => delayRender('m73 fonts'));
 	const done = useRef(false);
 	useEffect(() => {
 		const fin = () => {
@@ -304,7 +291,7 @@ const inOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t
 const outCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const outQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 const outBack = (t: number) => {
-	const c = 1.7;
+	const c = 1.8;
 	return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 };
 const ez = (f: number, a: number, b: number, c: (t: number) => number = inOutCubic) => c(seg(f, a, b));
@@ -317,87 +304,148 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
 		`V${y + q}A${q} ${q} 0 0 1 ${x + q} ${y}Z`
 	);
 };
-/* bar: square where it meets the baseline, rounded on the data end only */
-const bar = (x: number, y: number, w: number, h: number, r: number) => {
-	if (w <= 0.5) return '';
-	const q = Math.min(r, w, h / 2);
-	return `M${x} ${y}H${x + w - q}A${q} ${q} 0 0 1 ${x + w} ${y + q}V${y + h - q}A${q} ${q} 0 0 1 ${x + w - q} ${y + h}H${x}Z`;
-};
 
 /* ------------------------------------------------------------------ stage */
 const W = 1920;
 const H = 1080;
 
-const CX = 610;
-const CY = 578;
-const R_OUT = 232;
-const R_IN = 160;
-const PAD = 1.8; /* degrees of plate between neighbouring segments */
+const CARD = 'M-64 -70A11 11 0 0 1 -53 -81H38L64 -55V70A11 11 0 0 1 53 81H-53A11 11 0 0 1 -64 70Z';
+const FLAP =
+	'M-118 -18H118Q125 -18 125.6 -11.2L114 59Q112.4 71.6 99.8 71.6H-99.8Q-112.4 71.6 -114 59L-125.6 -11.2Q-125 -18 -118 -18Z';
+const BACKP =
+	'M-115 -44V-64A13 13 0 0 1 -102 -77H-44A13 13 0 0 1 -33.6 -71.8L-21 -55A13 13 0 0 0 -10.6 -49.8H101A13 13 0 0 1 114 -36.8V58A13 13 0 0 1 101 71H-102A13 13 0 0 1 -115 58Z';
 
-const pol = (a: number, r: number): [number, number] => [
-	CX + r * Math.cos((a * Math.PI) / 180),
-	CY + r * Math.sin((a * Math.PI) / 180),
-];
-const ring = (a0: number, a1: number, ri: number, ro: number) => {
-	if (a1 - a0 <= 0.02) return '';
-	const lg = a1 - a0 > 180 ? 1 : 0;
-	const [x1, y1] = pol(a0, ro);
-	const [x2, y2] = pol(a1, ro);
-	const [x3, y3] = pol(a1, ri);
-	const [x4, y4] = pol(a0, ri);
-	return `M${x1} ${y1}A${ro} ${ro} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${ri} ${ri} 0 ${lg} 0 ${x4} ${y4}Z`;
-};
-
-/* ------------------------------------------------------------------ data */
-const CAP = 512;
-type Row = {key: string; col: string; gb: number; reclaim: boolean};
-const CATS: Row[] = [
-	{key: 'VIDEO', col: '#2a78d6', gb: 164.8, reclaim: false},
-	{key: 'IMAGES', col: '#eb6834', gb: 96.4, reclaim: false},
-	{key: 'DOCUMENTS', col: '#1baf7a', gb: 58.2, reclaim: false},
-	{key: 'ARCHIVES', col: '#eda100', gb: 42.6, reclaim: true},
-	{key: 'SYSTEM', col: '#e87ba4', gb: 22.0, reclaim: true},
-];
-const FREE_COL = '#C6D3E4';
-const USED = CATS.reduce((a, c) => a + c.gb, 0); /* 384.0 */
-const FREE = CAP - USED; /* 128.0 */
-const RECLAIM = CATS.filter((c) => c.reclaim).reduce((a, c) => a + c.gb, 0); /* 64.6 */
-const MAXGB = Math.max(...CATS.map((c) => c.gb));
-const CUM: number[] = [];
-CATS.reduce((a, c, i) => {
-	CUM[i] = a;
-	return a + c.gb;
-}, 0);
+const FSC = 1.36;
+const SRCX = 372;
+const DSTX = 1548;
+const FY = 600; /* both folders and the lane share a centreline */
+const LANE_X0 = 596;
+const LANE_X1 = 1324;
+const LANE_H = 196;
+const NODE_X = 960;
+const NODE_Y = 404;
+const CSC = 0.92; /* travelling card */
+const DIP = 52; /* how far below the lane a card sits while inside a folder */
 
 /* ------------------------------------------------------------------ beats */
-const F_TRACK = 34;
-const F_S0 = 110; /* first segment */
-const S_PITCH = 76;
-const S_LEN = 62;
-const segA = (i: number) => F_S0 + i * S_PITCH;
-const segB = (i: number) => segA(i) + S_LEN;
-const F_FREE = 488;
-const F_FULL = 546;
-const F_HI = 580; /* reclaimable segments lift */
-const F_DONE = 700;
+const F_SRC = 10;
+const F_DST = 34;
+const F_LANE = 62;
+const F_NODE = 100;
+const F_Q0 = 150;
+const STAG = 62;
+const T_ALL = 76;
+const t0 = (i: number) => F_Q0 + i * STAG;
+const tEnd = (i: number) => t0(i) + T_ALL;
+const F_LAST = tEnd(7); /* 660 */
+const F_DONE = 726;
 
-/* rows */
-const RX = 1004;
-const RY0 = 300;
-const R_PITCH = 88;
-const BAR_X = 1032;
-const BAR_W = 768;
+/* ------------------------------------------------------------------ files */
+const FILES = [
+	{name: 'SHOOT_RAW', ext: 'ZIP', gb: 3.4, col: '#0FA862', thumb: 0},
+	{name: 'EDIT_V4', ext: 'MP4', gb: 2.8, col: '#7C4DFF', thumb: 2},
+	{name: 'POSTER', ext: 'PSD', gb: 1.9, col: '#2B7FFF', thumb: 1},
+	{name: 'BRIEF', ext: 'PDF', gb: 0.4, col: '#FF4D4F', thumb: 0},
+	{name: 'LOGO_SET', ext: 'AI', gb: 0.7, col: '#F5811F', thumb: 1},
+	{name: 'AUDIO_MIX', ext: 'WAV', gb: 1.1, col: '#0EA5B7', thumb: 0},
+	{name: 'STILLS', ext: 'ZIP', gb: 1.6, col: '#0FA862', thumb: 1},
+	{name: 'NOTES', ext: 'DOC', gb: 0.7, col: '#2B7FFF', thumb: 0},
+];
+const TOTGB = FILES.reduce((a, c) => a + c.gb, 0); /* 12.6 */
 
 /* palette */
 const INK = '#16233A';
 const INK2 = '#5D6C86';
 const INK3 = '#96A3B8';
 const LINE = '#DCE3EE';
-const ACC = '#2a78d6';
-const TRACK = '#E7ECF4';
-const METER_TRACK = '#CDE2FB'; /* lighter step of the same ramp, per the meter rule */
-const WARN = '#eda100';
+const ACC = '#1D6BFF';
 const OKC = '#12B26A';
+
+/* ------------------------------------------------------------------ pieces */
+
+const MiniCard: React.FC<{i: number}> = ({i}) => {
+	const F = FILES[i];
+	return (
+		<g>
+			<path d={CARD} fill="#FFFFFF" />
+			<path d={CARD} fill="url(#gCardV)" />
+			<path d={CARD} fill="none" stroke="#DDE5F1" strokeWidth={2.4} />
+			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
+			<path d={rr(-44, -58, 60, 12, 6)} fill={F.col} opacity={0.55} />
+			{[0, 1, 2].map((k) => (
+				<path key={k} d={rr(-44, -32 + k * 22, [88, 70, 84][k], 10, 5)} fill="#E5EBF5" />
+			))}
+			<path d={rr(-44, 44, 46, 26, 8)} fill={F.col} opacity={0.18} />
+		</g>
+	);
+};
+
+const FileCard: React.FC<{i: number; hot: number}> = ({i, hot}) => {
+	const F = FILES[i];
+	const chipW = F.ext.length * 10 + 22;
+	return (
+		<g>
+			<path d={CARD} fill="#FFFFFF" />
+			<path d={CARD} fill="url(#gCardV)" />
+			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={1.8} />
+			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
+			<path d="M38 -81V-55H64" fill="none" stroke="#C3D1E4" strokeWidth={1.8} strokeLinejoin="round" />
+			{F.thumb === 0 ? (
+				<g>
+					<path d={rr(-44, -60, 62, 9, 4.5)} fill={F.col} opacity={0.5} />
+					{[0, 1, 2, 3].map((k) => (
+						<path key={k} d={rr(-44, -38 + k * 18, [88, 74, 88, 62][k], 8, 4)} fill="#E5EBF5" />
+					))}
+				</g>
+			) : (
+				<g>
+					<path d={rr(-47, -64, 94, 52, 8)} fill={`url(#gT${i})`} />
+					{F.thumb === 2 ? (
+						<g>
+							<circle cx={0} cy={-38} r={13} fill="#FFFFFF" opacity={0.92} />
+							<path d="M-4.5 -45L8 -38L-4.5 -31Z" fill={F.col} />
+						</g>
+					) : (
+						<g>
+							<circle cx={24} cy={-50} r={6.5} fill="#FFFFFF" opacity={0.85} />
+							<path d="M-47 -25L-19 -47L-2 -33L14 -45L47 -25V-20A8 8 0 0 1 39 -12H-39A8 8 0 0 1 -47 -20Z" fill="#FFFFFF" opacity={0.55} />
+						</g>
+					)}
+					<path d={rr(-44, -2, 88, 8, 4)} fill="#E5EBF5" />
+					<path d={rr(-44, 14, 66, 8, 4)} fill="#E5EBF5" />
+				</g>
+			)}
+			<path d={rr(-44, 44, chipW, 24, 7)} fill={F.col} opacity={0.15} />
+			<text x={-44 + chipW / 2} y={61} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={13} letterSpacing={1.1} fill={F.col}>
+				{F.ext}
+			</text>
+			{hot > 0.01 ? (
+				<g opacity={hot}>
+					<path d={CARD} fill={ACC} opacity={0.1} />
+					<path d={CARD} fill="none" stroke={ACC} strokeWidth={2.6} />
+				</g>
+			) : null}
+		</g>
+	);
+};
+
+const FolderBack: React.FC<{g: string}> = ({g}) => (
+	<g>
+		<ellipse cx={0} cy={96} rx={104} ry={15} fill="url(#gShadow)" opacity={0.6} />
+		<path d={BACKP} fill={`url(#gB${g})`} />
+		<path d={rr(-88, -40, 176, 96, 7)} fill="#FFFFFF" />
+		<path d={rr(-88, -40, 176, 96, 7)} fill="url(#gPaper)" />
+	</g>
+);
+
+const FolderFront: React.FC<{g: string; hi: string}> = ({g, hi}) => (
+	<g>
+		<path d={FLAP} fill={`url(#gF${g})`} />
+		<path d={FLAP} fill="url(#gSheen)" />
+		<path d={FLAP} fill="url(#gFlapShade)" />
+		<path d="M-115 -15.6H115" stroke={hi} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
+	</g>
+);
 
 /* ------------------------------------------------------------------ main */
 export const Motion: React.FC = () => {
@@ -406,33 +454,80 @@ export const Motion: React.FC = () => {
 
 	const plate = ez(f, 0, 34, outCubic);
 	const chrome = ez(f, 8, 46, outCubic);
-	const trackU = ez(f, F_TRACK, F_TRACK + 54, inOutCubic);
+	const srcIn = ez(f, F_SRC, F_SRC + 40, outBack);
+	const dstIn = ez(f, F_DST, F_DST + 40, outBack);
+	const laneIn = ez(f, F_LANE, F_LANE + 44, inOutCubic);
+	const nodeIn = ez(f, F_NODE, F_NODE + 32, outBack);
 
-	/* revealed GB, segment by segment */
-	const revOf = (i: number) => CATS[i].gb * ez(f, segA(i), segB(i), inOutCubic);
-	const revealed = CATS.reduce((a, _c, i) => a + revOf(i), 0);
-	const pct = (revealed / CAP) * 100;
+	/* ---------------- per-file crossing ---------------- */
+	const dipAt = (t: number) => 1 - Math.min(1, t / 0.13);
+	const cross = (i: number) => {
+		const u = ez(f, t0(i), tEnd(i), inOutCubic);
+		const raw = seg(f, t0(i), tEnd(i));
+		const d = DIP * (dipAt(raw) + dipAt(1 - raw));
+		const wob = Math.sin(raw * 6.6 + i * 1.7) * 9 * Math.sin(Math.PI * raw);
+		return {
+			x: lerp(SRCX, DSTX, u),
+			y: FY + d + wob,
+			sc: CSC - 0.2 * (dipAt(raw) + dipAt(1 - raw)),
+			rot: Math.sin(raw * 3.4 + i) * 2.6 * Math.sin(Math.PI * raw),
+		};
+	};
 
-	const freeU = ez(f, F_FREE, F_FREE + 56, inOutCubic);
-	const lift = ez(f, F_HI, F_HI + 44, outBack) * 28;
-	const hiPulse = 0.5 + 0.5 * Math.sin((f - F_HI) * 0.09);
+	const launched = FILES.filter((_x, i) => f >= t0(i) + 10).length;
+	const landed = FILES.filter((_x, i) => f >= tEnd(i)).length;
+	const srcGB = FILES.reduce((a, c, i) => a + (f >= t0(i) + 10 ? 0 : c.gb), 0);
+	const dstGB = FILES.reduce((a, c, i) => a + (f >= tEnd(i) ? c.gb : 0), 0);
+	const prog = FILES.reduce((a, _x, i) => a + seg(f, t0(i), tEnd(i)), 0) / FILES.length;
+
+	/* which file is under the beam right now — drives the beam and the card ring */
+	let nodeI = -1;
+	let nodeD = 999;
+	FILES.forEach((_x, i) => {
+		if (f < t0(i) || f > tEnd(i)) return;
+		const d = Math.abs(cross(i).x - NODE_X);
+		if (d < nodeD) {
+			nodeD = d;
+			nodeI = i;
+		}
+	});
+	const beamHot = nodeI >= 0 ? clamp(1 - nodeD / 180) : 0;
+
+	/* the stamp is LATCHED to the crossing frame, not to proximity */
+	let stampI = -1;
+	let stampOp = 0;
+	FILES.forEach((_x, i) => {
+		const at = t0(i) + 38;
+		if (f < at - 10 || f > at + 46) return;
+		stampI = i;
+		stampOp = ez(f, at - 10, at - 2, outCubic) * (1 - ez(f, at + 34, at + 46, outCubic));
+	});
+
+	/* last completed file, for the activity line */
+	let lastI = -1;
+	FILES.forEach((_x, i) => {
+		if (f >= tEnd(i)) lastI = i;
+	});
+	const actOp = lastI >= 0 ? ez(f, tEnd(lastI), tEnd(lastI) + 14, outCubic) : 0;
+
+	/* destination reaction */
+	const dstHit = FILES.reduce((a, _x, i) => {
+		const w = ez(f, tEnd(i) - 6, tEnd(i) + 6, outCubic) * (1 - ez(f, tEnd(i) + 6, tEnd(i) + 40, outQuint));
+		return Math.max(a, w);
+	}, 0);
+	const finale = ez(f, F_LAST + 8, F_LAST + 34, outCubic) * (1 - ez(f, F_LAST + 34, F_LAST + 100, outQuint));
+
+	const chip = f >= F_LAST + 8 ? 'COMPLETE' : f >= F_Q0 - 20 ? 'TRANSFERRING' : 'READY';
+	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_Q0 - 20 ? ACC : INK3;
 	const doneOp = ez(f, F_DONE, F_DONE + 30, outCubic);
 	const doneY = lerp(32, 0, ez(f, F_DONE, F_DONE + 36, outQuint));
-	const proj = ez(f, F_DONE + 34, F_DONE + 90, inOutCubic);
-
-	const chip = f >= F_FULL ? 'COMPLETE' : f >= F_S0 - 20 ? 'ANALYZING' : 'READY';
-	const chipCol = f >= F_FULL ? OKC : f >= F_S0 - 20 ? ACC : INK3;
+	const rate = f >= F_LAST || f < F_Q0 ? 0 : 186 + Math.round(Math.sin(f * 0.1) * 14 + Math.sin(f * 0.037) * 22);
 	const status =
-		f >= F_DONE
-			? `RECLAIMABLE · ${RECLAIM.toFixed(1)} GB`
-			: f >= F_HI
-				? 'CLEANUP CANDIDATES FOUND'
-				: f >= F_S0
-					? 'SCANNING VOLUME · LOCAL SSD'
-					: 'DISK ANALYSIS · READY';
-
-	/* meter in the panel follows the same revealed value */
-	const meterP = revealed / CAP;
+		f >= F_LAST + 8
+			? 'ALL FILES MOVED · SOURCE EMPTY'
+			: f >= F_Q0
+				? `ROUTING · ${Math.min(landed + 1, 8)} OF 8`
+				: 'AI ROUTING · READY';
 
 	return (
 		<AbsoluteFill style={{backgroundColor: '#EDF1F8'}}>
@@ -449,26 +544,87 @@ export const Motion: React.FC = () => {
 						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
 					</radialGradient>
 					<radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#22375C" stopOpacity="0.3" />
-						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.11" />
+						<stop offset="0" stopColor="#22375C" stopOpacity="0.32" />
+						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.12" />
 						<stop offset="1" stopColor="#22375C" stopOpacity="0" />
 					</radialGradient>
-					<radialGradient id="gDisc" cx="0.5" cy="0.42" r="0.6">
-						<stop offset="0" stopColor="#FFFFFF" />
-						<stop offset="1" stopColor="#F3F6FB" />
+					<radialGradient id="gAcc" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0.5" />
+						<stop offset="0.5" stopColor="#2E7BFF" stopOpacity="0.14" />
+						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
 					</radialGradient>
+					<radialGradient id="gGrn" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0" stopColor="#12B26A" stopOpacity="0.5" />
+						<stop offset="0.5" stopColor="#12B26A" stopOpacity="0.14" />
+						<stop offset="1" stopColor="#12B26A" stopOpacity="0" />
+					</radialGradient>
+					<linearGradient id="gCardV" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+						<stop offset="1" stopColor="#D8E1EF" stopOpacity="0.55" />
+					</linearGradient>
+					<linearGradient id="gPaper" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+						<stop offset="1" stopColor="#C9D7EA" stopOpacity="0.9" />
+					</linearGradient>
+					<linearGradient id="gSheen" x1="0.06" y1="0" x2="0.72" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.34" />
+						<stop offset="0.22" stopColor="#FFFFFF" stopOpacity="0.04" />
+						<stop offset="0.36" stopColor="#FFFFFF" stopOpacity="0.19" />
+						<stop offset="0.58" stopColor="#FFFFFF" stopOpacity="0" />
+					</linearGradient>
+					<linearGradient id="gFlapShade" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0.62" stopColor="#0B2A5E" stopOpacity="0" />
+						<stop offset="1" stopColor="#0B2A5E" stopOpacity="0.2" />
+					</linearGradient>
+					{/* source folder — muted slate */}
+					<linearGradient id="gBS" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#9AACC4" />
+						<stop offset="1" stopColor="#6D8199" />
+					</linearGradient>
+					<linearGradient id="gFS" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#C6D2E1" />
+						<stop offset="0.5" stopColor="#A2B3C8" />
+						<stop offset="1" stopColor="#7F93AB" />
+					</linearGradient>
+					{/* destination folder — accent */}
+					<linearGradient id="gBD" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#5291F4" />
+						<stop offset="1" stopColor="#2A5EC2" />
+					</linearGradient>
+					<linearGradient id="gFD" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#86B7FF" />
+						<stop offset="0.5" stopColor="#4F8DF4" />
+						<stop offset="1" stopColor="#2C68D8" />
+					</linearGradient>
+					{FILES.map((F, i) =>
+						F.thumb === 0 ? null : (
+							<linearGradient key={i} id={`gT${i}`} x1="0" y1="0" x2="0.7" y2="1">
+								<stop offset="0" stopColor={F.col} stopOpacity="0.85" />
+								<stop offset="1" stopColor={F.col} stopOpacity="0.45" />
+							</linearGradient>
+						)
+					)}
+					<linearGradient id="gLane" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
+						<stop offset="0.5" stopColor="#F2F6FC" stopOpacity="0.9" />
+						<stop offset="1" stopColor="#E3EAF5" stopOpacity="0.95" />
+					</linearGradient>
+					<clipPath id="cpLane">
+						<path d={rr(LANE_X0, FY - LANE_H / 2, LANE_X1 - LANE_X0, LANE_H, LANE_H / 2)} />
+					</clipPath>
 				</defs>
 
 				{/* ============================================================ plate */}
 				<rect width={W} height={H} fill="url(#gPlate)" />
-				<ellipse cx={760} cy={360} rx={1220} ry={760} fill="url(#gLift)" opacity={plate} />
+				<ellipse cx={960} cy={380} rx={1240} ry={760} fill="url(#gLift)" opacity={plate} />
+				<ellipse cx={DSTX} cy={FY} rx={430} ry={340} fill="url(#gAcc)" opacity={(0.1 + 0.16 * dstHit) * plate} />
 
 				{/* ============================================================ title */}
 				<g opacity={chrome} transform={`translate(0 ${lerp(-16, 0, chrome)})`}>
-					<path d="M578 66H712" stroke={LINE} strokeWidth={2} />
-					<path d="M1208 66H1342" stroke={LINE} strokeWidth={2} />
+					<path d="M614 66H750" stroke={LINE} strokeWidth={2} />
+					<path d="M1170 66H1306" stroke={LINE} strokeWidth={2} />
 					<text x={960} y={73} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={5.6} fill={INK2}>
-						STORAGE DASHBOARD · DISK SPACE BREAKDOWN
+						AI FILE TRANSFER · FOLDER TO FOLDER
 					</text>
 				</g>
 
@@ -478,266 +634,268 @@ export const Motion: React.FC = () => {
 					<path d={rr(480, 108, 960, 84, 20)} fill="#FFFFFF" />
 					<path d={rr(480, 108, 960, 84, 20)} fill="none" stroke="#E4EAF4" strokeWidth={2} />
 
-					{/* disk-stack glyph */}
-					<g transform="translate(524 150)">
-						<ellipse cx={0} cy={-14} rx={22} ry={8} fill={ACC} opacity={0.16} />
-						<ellipse cx={0} cy={-14} rx={22} ry={8} fill="none" stroke={ACC} strokeWidth={2.6} />
-						<path d="M-22 -14V2A22 8 0 0 0 22 2V-14" fill="none" stroke={ACC} strokeWidth={2.6} />
-						<path d="M-22 2V17A22 8 0 0 0 22 17V2" fill="none" stroke={ACC} strokeWidth={2.6} />
+					{/* folder → folder glyph */}
+					<g transform="translate(508 134)">
+						{[0, 46].map((dx, k) => (
+							<path
+								key={k}
+								d="M0 5A5 5 0 0 1 5 0H11A5 5 0 0 1 14.8 1.8L17.9 5.6A4 4 0 0 0 21.1 7.2H29A5 5 0 0 1 34 12.2V25A5 5 0 0 1 29 30H5A5 5 0 0 1 0 25Z"
+								transform={`translate(${dx} 0)`}
+								fill={k ? ACC : '#A2B3C8'}
+								opacity={k ? 0.85 : 0.75}
+							/>
+						))}
+						<path d="M38 15H44M41 12L44 15L41 18" fill="none" stroke={INK3} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
 					</g>
-					<text x={568} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
-						DISK ANALYSIS
+					<text x={600} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
+						AI TRANSFER ENGINE
 					</text>
-					<text x={568} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
-						512 GB SSD · LOCAL VOLUME
+					<text x={600} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
+						{`8 FILES · ${TOTGB.toFixed(1)} GB`}
 					</text>
 
-					<g transform="translate(882 0)">
-						<path d={rr(0, 134, chip.length * 12.2 + 40, 32, 16)} fill={chipCol} opacity={0.13} />
+					<g transform="translate(896 0)">
+						<path d={rr(0, 134, chip.length * 12.2 + 50, 32, 16)} fill={chipCol} opacity={0.13} />
 						<circle cx={20} cy={150} r={5} fill={chipCol} />
 						<text x={36} y={156} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={chipCol}>
 							{chip}
 						</text>
 					</g>
 
-					<g transform="translate(1112 150)">
-						{CATS.map((c, i) => (
-							<circle key={i} cx={i * 26} cy={0} r={7} fill={c.col} opacity={f >= segB(i) ? 1 : f >= segA(i) ? 0.55 : 0.2} />
-						))}
+					<g transform="translate(1128 150)">
+						{FILES.map((_x, i) => {
+							const d = f >= tEnd(i);
+							const a = f >= t0(i) && !d;
+							return <circle key={i} cx={i * 20} cy={0} r={d ? 6.4 : 5.4} fill={d ? OKC : a ? ACC : '#C7D2E2'} opacity={d ? 1 : a ? 0.85 : 0.5} />;
+						})}
 					</g>
 
-					<g transform="translate(1288 0)">
+					<g transform="translate(1300 0)">
 						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
-							USED
+							MOVED
 						</text>
-						<text x={132} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={INK}>
-							{`${Math.round(meterP * 100)}%`}
+						<text x={120} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
+							{`${landed}/8`}
 						</text>
-						<path d={rr(0, 152, 132, 8, 4)} fill={METER_TRACK} />
-						<path d={bar(0, 152, Math.max(1, 132 * meterP), 8, 4)} fill={ACC} />
+						<path d={rr(0, 152, 120, 8, 4)} fill="#E6EBF4" />
+						<path d={rr(0, 152, Math.max(2, 120 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
 					</g>
 				</g>
 
-				{/* ============================================================ donut */}
-				<g>
-					<ellipse cx={CX} cy={CY + 264} rx={250} ry={34} fill="url(#gShadow)" opacity={0.75 * plate} />
-					{/* track */}
-					<path d={ring(-90, -90 + 360 * trackU, R_IN, R_OUT)} fill={TRACK} />
-					{/* free segment, painted only once the breakdown is complete */}
-					{freeU > 0.004 ? (
-						<path
-							d={ring(-90 + 360 * (USED / CAP) + PAD, -90 + 360 * (USED / CAP) + PAD + (360 * (FREE / CAP) - PAD) * freeU, R_IN, R_OUT)}
-							fill={FREE_COL}
-						/>
-					) : null}
-					{/* category segments */}
-					{CATS.map((c, i) => {
-						const a0 = -90 + (360 * CUM[i]) / CAP + (i === 0 ? 0 : PAD);
-						const full = -90 + (360 * (CUM[i] + c.gb)) / CAP;
-						const a1 = lerp(a0, full, ez(f, segA(i), segB(i), inOutCubic));
-						if (a1 - a0 <= 0.02) return null;
-						const mid = ((a0 + a1) / 2) * (Math.PI / 180);
-						const lf = c.reclaim ? lift : 0;
-						const pop = ez(f, segB(i) - 8, segB(i) + 14, outBack) * (1 - ez(f, segB(i) + 14, segB(i) + 40, outQuint));
-						const gl = c.reclaim && f >= F_HI ? 0.25 + 0.22 * hiPulse : 0;
+				{/* ============================================================ lane */}
+				<g opacity={laneIn}>
+					<path d={rr(LANE_X0, FY - LANE_H / 2, (LANE_X1 - LANE_X0) * laneIn, LANE_H, LANE_H / 2)} fill="url(#gLane)" />
+					<path
+						d={rr(LANE_X0, FY - LANE_H / 2, (LANE_X1 - LANE_X0) * laneIn, LANE_H, LANE_H / 2)}
+						fill="none"
+						stroke="#D5DFEE"
+						strokeWidth={2.4}
+					/>
+					<g clipPath="url(#cpLane)" opacity={0.9}>
+						{Array.from({length: 16}, (_x, k) => {
+							const span = LANE_X1 - LANE_X0 + 120;
+							const x = LANE_X0 - 60 + ((f * 2.6 + k * (span / 16)) % span);
+							return (
+								<path
+									key={k}
+									d={`M${x - 9} ${FY - 13}l11 13l-11 13`}
+									fill="none"
+									stroke={ACC}
+									strokeWidth={3}
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									opacity={0.2}
+								/>
+							);
+						})}
+						<path d={`M${LANE_X0} ${FY - LANE_H / 2 + 22}H${LANE_X1}`} stroke="#E6EDF7" strokeWidth={2} />
+						<path d={`M${LANE_X0} ${FY + LANE_H / 2 - 22}H${LANE_X1}`} stroke="#E6EDF7" strokeWidth={2} />
+					</g>
+				</g>
+
+				{/* ============================================================ folder backs + stacks */}
+				<g opacity={clamp(srcIn * 1.4)} transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40}) scale(${FSC * lerp(0.9, 1, srcIn)})`}>
+					<FolderBack g="S" />
+					{FILES.map((_x, i) => {
+						if (f >= t0(i) + 10) return null;
+						const k = i - launched;
+						const c = (8 - launched - 1) / 2;
 						return (
-							<g key={i} transform={`translate(${Math.cos(mid) * lf} ${Math.sin(mid) * lf})`}>
-								{gl > 0 ? <path d={ring(a0 - 1.2, a1 + 1.2, R_IN - 7, R_OUT + 7)} fill={c.col} opacity={gl} /> : null}
-								<path d={ring(a0, a1, R_IN - 3 * pop, R_OUT + 3 * pop)} fill={c.col} />
+							<g key={i} transform={`translate(${(k - c) * 16} ${-49 + Math.abs(k - c) * 2.2}) rotate(${(k - c) * 2.0}) scale(0.44)`}>
+								<MiniCard i={i} />
 							</g>
 						);
 					})}
-					{/* inner disc + hero figure */}
-					<circle cx={CX} cy={CY} r={R_IN - 8} fill="url(#gDisc)" />
-					<text x={CX} y={CY - 8} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={84} letterSpacing={-2} fill={INK}>
-						{`${Math.round(pct)}%`}
-					</text>
-					<text x={CX} y={CY + 32} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={20} letterSpacing={1} fill={INK2}>
-						{`${revealed.toFixed(1)} GB USED`}
-					</text>
-					<text x={CX} y={CY + 62} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={3.6} fill={INK3}>
-						{`OF ${CAP} GB`}
-					</text>
-					{/* every segment is labelled: wide arcs carry it inside, the 4.3% one
-					    is carried outside on a leader because it cannot hold type */}
-					{CATS.map((c, i) => {
-						const share = c.gb / CAP;
-						const a0 = -90 + (360 * CUM[i]) / CAP + (i === 0 ? 0 : PAD);
-						const a1 = -90 + (360 * (CUM[i] + c.gb)) / CAP;
-						const mid = ((a0 + a1) / 2) * (Math.PI / 180);
-						const lf = c.reclaim ? lift : 0;
-						const ox = Math.cos(mid) * lf;
-						const oy = Math.sin(mid) * lf;
-						const o = ez(f, segB(i) - 14, segB(i) + 12, outCubic);
-						if (o <= 0.004) return null;
-						const txt = `${(share * 100).toFixed(1)}%`;
-						const r = (R_IN + R_OUT) / 2;
+				</g>
+				<g
+					opacity={clamp(dstIn * 1.4)}
+					transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40}) scale(${FSC * lerp(0.9, 1, dstIn)} ${FSC * lerp(0.9, 1, dstIn) * (1 - 0.05 * dstHit)})`}
+				>
+					<FolderBack g="D" />
+					{FILES.map((_x, i) => {
+						if (f < tEnd(i)) return null;
+						const c = (landed - 1) / 2;
 						return (
-							<text
-								key={i}
-								x={CX + Math.cos(mid) * r + ox}
-								y={CY + Math.sin(mid) * r + (share < 0.06 ? 6 : 7) + oy}
-								textAnchor="middle"
-								fontFamily="CuUI"
-								fontWeight={700}
-								fontSize={share < 0.06 ? 16 : share < 0.12 ? 18 : 20}
-								letterSpacing={0.4}
-								fill="#FFFFFF"
-								opacity={o}
-							>
-								{txt}
-							</text>
+							<g key={i} transform={`translate(${(i - c) * 16} ${-49 + Math.abs(i - c) * 2.2}) rotate(${(i - c) * 2.0}) scale(0.44)`}>
+								<MiniCard i={i} />
+							</g>
 						);
 					})}
-					{/* the free quarter carries its share too, in ink on the light track */}
-					{freeU > 0.5
-						? (() => {
-								const a0 = -90 + 360 * (USED / CAP) + PAD;
-								const a1 = -90 + 360;
-								const mid = ((a0 + a1) / 2) * (Math.PI / 180);
-								const r = (R_IN + R_OUT) / 2;
-								return (
-									<text
-										x={CX + Math.cos(mid) * r}
-										y={CY + Math.sin(mid) * r + 7}
-										textAnchor="middle"
-										fontFamily="CuUI"
-										fontWeight={700}
-										fontSize={20}
-										letterSpacing={0.6}
-										fill={INK2}
-										opacity={ez(f, F_FREE + 30, F_FREE + 60, outCubic)}
-									>
-										{`${((FREE / CAP) * 100).toFixed(1)}%`}
-									</text>
-								);
-							})()
-						: null}
-					{/* analysis sweep */}
-					{f < F_FULL && trackU > 0.5 ? (
-						<g opacity={0.55 * (1 - ez(f, F_FULL - 40, F_FULL, outCubic))}>
-							<circle
-								cx={CX}
-								cy={CY}
-								r={R_OUT + 16}
+				</g>
+
+				{/* ============================================================ files in flight */}
+				<g>
+					{FILES.map((_x, i) => {
+						if (f < t0(i) || f > tEnd(i)) return null;
+						const p = cross(i);
+						const hot = i === nodeI ? beamHot : 0;
+						return (
+							<g key={i} transform={`translate(${p.x} ${p.y}) rotate(${p.rot}) scale(${p.sc})`}>
+								<ellipse cx={0} cy={104} rx={62} ry={11} fill="url(#gShadow)" opacity={0.3} />
+								<FileCard i={i} hot={hot} />
+							</g>
+						);
+					})}
+				</g>
+
+				{/* ============================================================ folder fronts + labels */}
+				<g opacity={clamp(srcIn * 1.4)}>
+					<g transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40}) scale(${FSC * lerp(0.9, 1, srcIn)})`}>
+						<FolderFront g="S" hi="#DEE6F0" />
+					</g>
+					<g transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40})`}>
+						<text x={0} y={140} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={3.6} fill={INK3}>
+							SOURCE
+						</text>
+						<text x={0} y={174} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={23} letterSpacing={2.2} fill={INK}>
+							DOWNLOADS
+						</text>
+						<text x={0} y={206} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={1.2} fill={INK3}>
+							{`${8 - launched} FILES · ${srcGB.toFixed(1)} GB`}
+						</text>
+					</g>
+				</g>
+				<g opacity={clamp(dstIn * 1.4)}>
+					<g
+						transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40}) scale(${FSC * lerp(0.9, 1, dstIn)} ${FSC * lerp(0.9, 1, dstIn) * (1 - 0.05 * dstHit)})`}
+					>
+						<FolderFront g="D" hi="#B8D5FF" />
+					</g>
+					<g transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40})`}>
+						{finale > 0.01 ? <ellipse cx={0} cy={-10} rx={260} ry={210} fill="url(#gGrn)" opacity={finale * 0.5} /> : null}
+						<text x={0} y={140} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={3.6} fill={INK3}>
+							DESTINATION
+						</text>
+						<text x={0} y={174} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={23} letterSpacing={2.2} fill={INK}>
+							PROJECT
+						</text>
+						<text
+							x={0}
+							y={206}
+							textAnchor="middle"
+							fontFamily="CuMono"
+							fontWeight={500}
+							fontSize={16}
+							letterSpacing={1.2}
+							fill={f >= F_LAST ? OKC : INK3}
+						>
+							{`${landed} FILES · ${dstGB.toFixed(1)} GB`}
+						</text>
+					</g>
+					{f >= F_LAST ? (
+						<g transform={`translate(${DSTX + 96} ${FY - 82}) scale(${ez(f, F_LAST + 4, F_LAST + 30, outBack)})`}>
+							<circle cx={0} cy={0} r={30} fill="#FFFFFF" />
+							<circle cx={0} cy={0} r={30} fill="none" stroke={OKC} strokeWidth={3} />
+							<path
+								d="M-13 0L-4 9L14 -11"
 								fill="none"
-								stroke={ACC}
-								strokeWidth={2.6}
+								stroke={OKC}
+								strokeWidth={4.4}
 								strokeLinecap="round"
-								strokeDasharray={`${72} ${2 * Math.PI * (R_OUT + 16)}`}
-								strokeDashoffset={-f * 5.4}
+								strokeLinejoin="round"
+								strokeDasharray={40}
+								strokeDashoffset={40 * (1 - ez(f, F_LAST + 10, F_LAST + 36, outCubic))}
 							/>
 						</g>
 					) : null}
 				</g>
 
-				{/* ============================================================ rows */}
-				<g>
-					{CATS.map((c, i) => {
-						const a = ez(f, segA(i), segA(i) + 26, outCubic);
-						if (a <= 0.004) return null;
-						const y = RY0 + i * R_PITCH;
-						const grow = ez(f, segA(i), segB(i), inOutCubic);
-						const hot = c.reclaim ? ez(f, F_HI, F_HI + 30, outCubic) : 0;
-						return (
-							<g key={i} opacity={a} transform={`translate(${(1 - a) * 34} 0)`}>
-								<circle cx={RX} cy={y - 15} r={8} fill={c.col} />
-								<text x={RX + 28} y={y - 8} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.2} fill={INK}>
-									{c.key}
-								</text>
-								{hot > 0.01 ? (
-									<g opacity={hot} transform={`translate(${RX + 28 + c.key.length * 15.4 + 20} ${y - 15})`}>
-										<path d={rr(0, -15, 148, 30, 15)} fill={WARN} opacity={0.16} />
-										<text x={74} y={6} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={1.8} fill="#A06A00">
-											RECLAIMABLE
-										</text>
-									</g>
-								) : null}
-								<text x={RX + 660} y={y - 8} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={0.8} fill={INK3}>
-									{`${((c.gb / CAP) * 100).toFixed(1)}%`}
-								</text>
-								<text x={RX + 796} y={y - 8} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={20} letterSpacing={0.8} fill={INK}>
-									{`${c.gb.toFixed(1)} GB`}
-								</text>
-								<path d={rr(BAR_X, y + 8, BAR_W, 10, 5)} fill={TRACK} />
-								<path d={bar(BAR_X, y + 8, BAR_W * (c.gb / MAXGB) * grow, 10, 5)} fill={c.col} />
-							</g>
-						);
-					})}
-					{/* free row */}
-					{freeU > 0.004 ? (
-						<g opacity={freeU} transform={`translate(${(1 - freeU) * 34} 0)`}>
-							<circle cx={RX} cy={RY0 + 5 * R_PITCH - 15} r={8} fill={FREE_COL} />
-							<text x={RX + 28} y={RY0 + 5 * R_PITCH - 8} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.2} fill={INK2}>
-								FREE SPACE
+				{/* ============================================================ routing node */}
+				<g opacity={clamp(nodeIn * 1.3)} transform={`translate(${NODE_X} ${NODE_Y}) scale(${lerp(0.86, 1, nodeIn)}) translate(${-NODE_X} ${-NODE_Y})`}>
+					{/* scan beam through the lane */}
+					<g opacity={0.2 + 0.7 * beamHot}>
+						<path d={`M${NODE_X} ${NODE_Y + 34}V${FY + LANE_H / 2 - 6}`} stroke={ACC} strokeWidth={2.4} strokeDasharray="9 8" strokeDashoffset={-f * 1.4} />
+						<rect x={NODE_X - 3} y={FY - LANE_H / 2} width={6} height={LANE_H} fill={ACC} opacity={beamHot * 0.35} />
+					</g>
+					<ellipse cx={NODE_X} cy={NODE_Y} rx={190} ry={130} fill="url(#gAcc)" opacity={0.1 + 0.24 * beamHot} />
+					<path d={rr(NODE_X - 108, NODE_Y - 34, 216, 68, 34)} fill="#FFFFFF" />
+					<path d={rr(NODE_X - 108, NODE_Y - 34, 216, 68, 34)} fill="none" stroke={ACC} strokeWidth={2.6} opacity={0.55 + 0.45 * beamHot} />
+					<g transform={`translate(${NODE_X - 76} ${NODE_Y})`}>
+						<path d="M0 -16L3.9 -4.5L15 -1L3.9 3L0 14L-3.9 3L-15 -1L-3.9 -4.5Z" fill={ACC} />
+					</g>
+					<text x={NODE_X - 50} y={NODE_Y + 7} fontFamily="CuUI" fontWeight={700} fontSize={17} letterSpacing={2.6} fill={ACC}>
+						AI ROUTING
+					</text>
+					{/* verify stamp for the file passing under it */}
+					{stampI >= 0 && stampOp > 0.004 ? (
+						<g opacity={stampOp} transform={`translate(${NODE_X} ${NODE_Y - 66 - 6 * (1 - stampOp)})`}>
+							<path d={rr(-196, -20, 392, 40, 20)} fill="#FFFFFF" />
+							<path d={rr(-196, -20, 392, 40, 20)} fill="none" stroke={OKC} strokeWidth={2.2} />
+							<path d="M-172 0L-166 6L-155 -6" fill="none" stroke={OKC} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+							<text x={-140} y={6} fontFamily="CuUI" fontWeight={700} fontSize={17} letterSpacing={1.4} fill={INK}>
+								{`${FILES[stampI].name}.${FILES[stampI].ext}`}
 							</text>
-							<text
-								x={RX + 660}
-								y={RY0 + 5 * R_PITCH - 8}
-								textAnchor="end"
-								fontFamily="CuMono"
-								fontWeight={500}
-								fontSize={16}
-								letterSpacing={0.8}
-								fill={INK3}
-							>
-								{`${((FREE / CAP) * 100).toFixed(1)}%`}
+							<text x={176} y={6} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={2} fill={OKC}>
+								VERIFIED
 							</text>
-							<text
-								x={RX + 796}
-								y={RY0 + 5 * R_PITCH - 8}
-								textAnchor="end"
-								fontFamily="CuMono"
-								fontWeight={500}
-								fontSize={20}
-								letterSpacing={0.8}
-								fill={INK2}
-							>
-								{`${FREE.toFixed(1)} GB`}
-							</text>
-							<path d={rr(BAR_X, RY0 + 5 * R_PITCH + 8, BAR_W, 10, 5)} fill={TRACK} />
-							<path d={bar(BAR_X, RY0 + 5 * R_PITCH + 8, BAR_W * (FREE / MAXGB) * freeU, 10, 5)} fill={FREE_COL} />
 						</g>
 					) : null}
 				</g>
 
-				{/* total row — closes the table and balances the lower right */}
-				{freeU > 0.5 ? (
-					<g opacity={ez(f, F_FREE + 34, F_FREE + 70, outCubic)}>
-						<path d={`M${RX} ${RY0 + 6 * R_PITCH - 40}H${RX + 796}`} stroke={LINE} strokeWidth={2} />
-						<text x={RX + 28} y={RY0 + 6 * R_PITCH - 4} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.2} fill={INK2}>
-							TOTAL CAPACITY
-						</text>
-						<text
-							x={RX + 796}
-							y={RY0 + 6 * R_PITCH - 4}
-							textAnchor="end"
-							fontFamily="CuMono"
-							fontWeight={500}
-							fontSize={20}
-							letterSpacing={0.8}
-							fill={INK2}
-						>
-							{`${USED.toFixed(1)} / ${CAP}.0 GB`}
-						</text>
-					</g>
-				) : null}
+				{/* ============================================================ transfer meter */}
+				<g opacity={laneIn}>
+					<text x={LANE_X0} y={FY + 140} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3} fill={INK3}>
+						TRANSFER
+					</text>
+					<text x={LANE_X1} y={FY + 140} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={1.2} fill={prog > 0.995 ? OKC : INK2}>
+						{`${Math.round(prog * 100)}%${rate > 0 ? ` · ${rate} MB/S` : ''}`}
+					</text>
+					<path d={rr(LANE_X0, FY + 152, LANE_X1 - LANE_X0, 10, 5)} fill="#E3EAF4" />
+					<path d={rr(LANE_X0, FY + 152, Math.max(2, (LANE_X1 - LANE_X0) * prog), 10, 5)} fill={prog > 0.995 ? OKC : ACC} />
+					{actOp > 0.004 && lastI >= 0 ? (
+						<g opacity={actOp}>
+							<path d="M932 200V200" stroke="none" />
+							<text x={NODE_X} y={FY + 200} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={17} letterSpacing={1.4} fill={INK3}>
+								{`✓ ${FILES[lastI].name}.${FILES[lastI].ext}  ·  ${FILES[lastI].gb.toFixed(1)} GB MOVED`}
+							</text>
+						</g>
+					) : null}
+				</g>
 
-				{/* ============================================================ reclaim card */}
+				{/* ============================================================ completion */}
 				{doneOp > 0.004 ? (
 					<g opacity={doneOp} transform={`translate(0 ${doneY})`}>
-						<ellipse cx={CX} cy={952} rx={300} ry={22} fill="url(#gShadow)" opacity={0.55} />
-						<path d={rr(300, 880, 620, 76, 38)} fill="#FFFFFF" />
-						<path d={rr(300, 880, 620, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
-						<circle cx={350} cy={918} r={19} fill={WARN} opacity={0.16} />
-						<circle cx={350} cy={918} r={19} fill="none" stroke={WARN} strokeWidth={2.6} />
-						<path d="M350 908V922M350 928V928.5" stroke="#A06A00" strokeWidth={3.4} strokeLinecap="round" />
-						<text x={384} y={926} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.4} fill={INK}>
-							{`${RECLAIM.toFixed(1)} GB RECLAIMABLE`}
+						<ellipse cx={960} cy={952} rx={320} ry={22} fill="url(#gShadow)" opacity={0.55} />
+						<path d={rr(640, 880, 640, 76, 38)} fill="#FFFFFF" />
+						<path d={rr(640, 880, 640, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
+						<circle cx={690} cy={918} r={19} fill={OKC} opacity={0.14} />
+						<circle cx={690} cy={918} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
+						<path
+							d="M681 918.5L687.4 925L699.6 911.6"
+							fill="none"
+							stroke={OKC}
+							strokeWidth={3.4}
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeDasharray={26}
+							strokeDashoffset={26 * (1 - ez(f, F_DONE + 8, F_DONE + 34, outCubic))}
+						/>
+						<text x={724} y={926} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.6} fill={INK}>
+							TRANSFER COMPLETE
 						</text>
-						<path d="M742 898V938" stroke={LINE} strokeWidth={2} />
-						<text x={768} y={926} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.2} fill={OKC} opacity={proj}>
-							{`→ ${Math.round(((USED - RECLAIM * proj) / CAP) * 100)}% USED`}
+						<path d="M1046 898V938" stroke={LINE} strokeWidth={2} />
+						<text x={1072} y={926} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.2} fill={OKC}>
+							{`8 FILES · ${TOTGB.toFixed(1)} GB`}
 						</text>
 					</g>
 				) : null}
@@ -746,7 +904,7 @@ export const Motion: React.FC = () => {
 				<g opacity={chrome * 0.95}>
 					<path d="M120 1002H1800" stroke={LINE} strokeWidth={2} />
 					<text x={120} y={1040} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3.4} fill={INK3}>
-						ANALYZE · BREAK DOWN · RECLAIM
+						SELECT · ROUTE · TRANSFER
 					</text>
 					<text
 						x={1800}
@@ -756,7 +914,7 @@ export const Motion: React.FC = () => {
 						fontWeight={700}
 						fontSize={15}
 						letterSpacing={3.4}
-						fill={f >= F_HI ? '#A06A00' : INK3}
+						fill={f >= F_LAST + 8 ? OKC : INK3}
 					>
 						{status}
 					</text>
