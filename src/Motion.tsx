@@ -2,129 +2,62 @@ import React, {useEffect, useRef, useState} from 'react';
 import {AbsoluteFill, continueRender, delayRender, useCurrentFrame} from 'remotion';
 
 /**
- * MOTION 68 — "SMART CLEANUP · STORAGE OPTIMIZER"
+ * MOTION 69 — "CLOUD SYNC · UPLOAD BEAM"
  * ---------------------------------------------------------------------------
- * A light, uncluttered file workspace. A cursor drag-selects the top row of
- * folders, gathers them into one carried bundle, arcs it across to a frosted
- * bin, and the bin swallows and shreds them. The survivors reflow up into the
- * freed row and the panel reports the space recovered.
+ * Six file cards queue on a clean light workspace. One by one they lift, arc
+ * across to a glowing pad, and are drawn straight up a light beam into a cloud
+ * node. The cloud counts up as each file lands; when the queue empties the
+ * beam powers down and the panel reports the transfer.
  *
- * Same choreography as the reference clip, new art direction: a clean light
- * plate instead of the dark holographic murk, solid dimensional folders
- * instead of flat glass rectangles, and a frosted tapered bin with a lid that
- * actually opens.
+ * Same design system as MOTION 68 — same plate, panel chrome, footer, shadow
+ * language — so the two cut together as a set.
  *
- * WHAT WAS MEASURED FROM THE REFERENCE
+ * HOW IT IS BUILT
  * ---------------------------------------------------------------------------
- * Reference: 700x394, 60 fps, 900 frames, 15.000 s. [obs] came off the frames;
- * [int] is a decision stated as one.
+ * [int] No reference clip for this one; it is an original build. What follows
+ *       is why each decision was made rather than what was measured off frames.
  *
- * [obs] LAYOUT. Blue-dominant blob analysis on f60 puts the six folder bodies
- *       on an exact lattice: column starts x = 64, 197, 330 (pitch 133) and
- *       row starts y = 118, 226 (pitch 108), every body 80 x 62. The bin is a
- *       tapered cylinder centred on x = 573.7 — its silhouette runs 524..623
- *       at y = 174 and 536..612 at y = 295, so it narrows 99 -> 76 px over
- *       121 px of height and the two mid-lines agree to within 0.5 px. That
- *       0.77 taper ratio is what this file uses.
- *
- * [obs] CURSOR ENTRY, f64-f92. The arrow tracks (33.5, 337.8) -> (58.5, 119.9)
- *       through x = 33.5, 35.2, 37.2, 39.1, 41.3, 44.2, 46.6, 49.2, 51.2,
- *       53.5, 55.2, 56.8, 57.7, 58.3 and y = 337.8, 325.0, 310.2, 291.5,
- *       270.8, 249.3, 227.2, 205.5, 184.8, 166.2, 150.8, 138.3, 129.0, 123.1.
- *       Per-sample dy runs -12.8, -14.8, -18.7, -20.7, -21.5, -22.1, -21.7,
- *       -20.7, -18.6, -15.4, -12.5, -9.3, -5.9: it accelerates for a third of
- *       the move then decelerates hard into the corner. It then sits still at
- *       (58.6, 119.3) for twelve frames before the drag starts.
- *
- * [obs] MARQUEE, f104-f180. Frame-differenced against f30 the changed-pixel
- *       bounding box is anchored at (40, 106) and its right edge sweeps 71,
- *       80, 87, 98, 110, 140, 156, 175, 199, 221, 245, 270, 288, 310, 335,
- *       351, 371, 386, 399, 415, 423, 427, 431 and parks at 434. Against a
- *       smoothstep over f104-f176 the residuals are 0.039, 0.060, -0.008,
- *       -0.005, -0.012, 0.007, -0.007, 0.008 — the only real deviation is at
- *       the very start, where the reference leaves the corner slightly faster
- *       than a symmetric ease would. The rectangle then holds ~30 frames
- *       before release.
- * [obs] The three folders light up in sequence as the edge passes them: their
- *       cell ink starts climbing at f108, f134, f152 (spacing 26, 18). This
- *       file re-derives its triggers from its own sweep geometry instead of
- *       hardcoding them and lands on f116, f135, f153 (spacing 19, 18).
- * [obs] Verified against the finished render: the marquee's own accent-blue
- *       top edge, read back at thirteen sample frames, tracks the reference's
- *       normalised sweep to 0.032 rms, largest single deviation 0.058 — inside
- *       a fifth of a folder pitch the whole way. The carried bundle's centroid
- *       ramps to 88 px per six frames and holds there (14.6 px/frame against
- *       the reference's 14.0 once scaled, 4% high), its arc apex lands at f394
- *       40.5 px above the start (reference 44 px), the stack holds motionless
- *       f316-f352 (reference f314-f350), and the red-pixel count reproduces
- *       both steps and the 24-frame decay: flush at f478, plateau f502-f538,
- *       flare at f544, decay f652-f676. Coverage during the flare runs about
- *       2x the reference's, which is deliberate — the same red has to carry
- *       against a light plate instead of near-black.
- *
- * [obs] GATHER, f272-f314. The outer two folders converge on the middle one:
- *       the left centroid goes 99.8 -> 101.2, 105.2, 112.0, 122.6, 135.2,
- *       149.5 while the right goes 365.5 -> 364.1, 360.0, 353.4, 343.1, 330.8,
- *       315.8 — mirrored, both accelerating. At f293 they merge into a single
- *       212 px blob which then narrows 212 -> 181 -> 152 -> 127 -> 109 -> 98
- *       -> 95, i.e. they end up stacked one on top of another at the middle
- *       cell rather than lined up beside it. The stack then holds still from
- *       f314 to f350.
- *
- * [obs] CARRY, f350-f428. Centroid x: 229.2, 232.2, 234.3, 237.0, 240.9,
- *       244.8, 257.7, 263.8, 270.4, 277.8, 285.3, 302.4, 313.9, 326.2, 339.7,
- *       353.3, 368.0, 383.6, 399.2, 414.9, 430.2, 445.3, 459.6, 475.0. The
- *       per-sample step grows 1, 2, 2, 2, 4, 4, 6, 7, 7, 7, 12, 11, 12, 13,
- *       14, 15, 16, 16, 16, 15, 15, 14, 15: it ramps up over roughly 45 frames
- *       then holds a constant ~5.1 px/frame straight into the bin. It does NOT
- *       decelerate on arrival. Modelled here as a velocity that smoothsteps up
- *       over the first 55% of the move and is flat after; integrating that is
- *       exactly the position curve in carryP() below.
- * [obs] Centroid y over the same window: 158.7, 157.9, 157.2, 156.8, 151.3,
- *       150.8, 150.2, 150.1, 149.6, 144.0, 143.6, 143.0, 143.2, 143.4, 144.5,
- *       145.8, 147.5, 149.2, 152.5, 155.6, 157.9, 161.9. It rises 16 px above
- *       the start, bottoms out near f395, then falls to the rim — a thrown
- *       arc, not a straight slide. Fitting y = y0 + dy*u - A*sin(pi*u) puts
- *       the apex at u = 0.374 for A = 95 once scaled, which is what is used.
- *
- * [obs] PURGE, f476-f672. Red-dominant pixel count: 0 until f474, then 8, 38,
- *       98, 102, 186, 213, 231, 304, 337, 343 to a 418 plateau held f500-f538;
- *       a second climb 427, 685, 1050, 1470, 1722, 1860 across f540-f550; a
- *       long plateau near 1700-1860 to f648; then 1701, 1640, 1483, 1367,
- *       1146, 807, 420, 180, 92, 28, 4, 0 by f672. Two distinct events, not
- *       one: a warning flush when the bundle lands, then a far bigger flare
- *       about a second later when it is actually destroyed.
- * [obs] The cursor reappears at f422 beside the bin, eases (522.6, 164.1) ->
- *       (580.9, 185.2), parks on the rim through the whole purge and leaves
- *       down-right at f594-f616.
- *
- * [obs] The reference ends by dissolving the survivors at f796-f826 and
- *       re-materialising all six at f850-f890 — it is built to loop.
- * [int] This is a build, so that reset is replaced with a resolution: the
- *       survivors reflow up into the freed row and the panel reports the
- *       recovered space. Everything before f690 keeps the measured timing.
- *
- * [int] Clean light plate. One soft radial lift behind the workspace, one cool
- *       pool behind the bin, no grain, no grid, no vignette. Every shadow is a
- *       radial-gradient ellipse rather than a Gaussian filter, so nothing in
- *       the frame depends on the renderer's filter resolution.
- * [int] Each folder is four stacked pieces — back panel with tab, two sheets
- *       of paper, front flap, contact shadow — so it reads as an object with
- *       thickness rather than a glyph. Sheen and bottom shade are painted onto
- *       the flap path itself instead of separate overlay shapes, which is what
- *       keeps the silhouette seam-free at any scale.
- * [int] The lid is hinged on the RIGHT rim and swings open to the left, so
- *       the hinge end never sits in the corner of the mouth the bundle
- *       arrives over — hinging it on the left put the lid's low end exactly
- *       on the approach and the two crossed.
- * [int] The bundle is clipped to the half-plane above the rim's FRONT arc
- *       rather than faded out, so the elliptical lip cuts across it as it
- *       sinks — the same silhouette a real object gives when it drops into a
- *       hole. Fading it through the wall instead composites blue over white
- *       and lands on lilac, which is why that route was abandoned.
- * [int] Names and sizes are chosen so the arithmetic closes: the three deleted
- *       folders are 4.2 + 3.1 + 5.1 GB, the panel reports 12.4 GB freed, and
- *       the storage read-out falls 78% -> 59% to match.
+ * [int] TWO-STAGE TRANSPORT. A file does not fly diagonally into the cloud —
+ *       it arcs to the pad first and only then rises. The diagonal version was
+ *       tried and reads as a generic "thing moves to thing"; splitting it puts
+ *       the beam at the centre of the idea and gives each file a beat of
+ *       anticipation on the pad before it is taken. The arc is a straight lerp
+ *       plus a 96 px sine bulge, which keeps the apex at the midpoint where a
+ *       thrown object's apex belongs.
+ * [int] The rise uses inCubic, not an ease-out. An object being pulled by a
+ *       source above it accelerates the whole way; decelerating into the cloud
+ *       would read as the file parking rather than being consumed.
+ * [int] CADENCE. Files launch every 84 frames and each cycle runs 142 frames,
+ *       so two are always in motion but only one is ever inside the beam
+ *       (84 + 78 = 162 > 142). That was the point of choosing 84: the frame is
+ *       busy without the beam ever carrying two cards at once, which would
+ *       muddle the read.
+ * [int] BEAM CONSTRUCTION. Three nested quads of the same silhouette at 100%,
+ *       68% and 30% width, each with its own vertical gradient. Stacking
+ *       hard-edged shapes at descending width is what produces a soft-edged
+ *       column without a Gaussian filter — as in MOTION 68, nothing here
+ *       depends on the renderer's filter resolution. Ticks and scan rings ride
+ *       the same halfWidthAt() taper so nothing floats outside the light.
+ * [int] The cloud is five circles and a rounded base sharing ONE gradient in
+ *       userSpaceOnUse coordinates. Per-shape objectBoundingBox gradients give
+ *       each circle its own ramp and the unions show as visible seams; a
+ *       single user-space gradient makes the silhouette read as one solid.
+ * [int] Progress accrues continuously from the moment a file launches rather
+ *       than jumping on arrival, so the read-out is always moving and hits
+ *       100% on the exact frame the last card enters the cloud.
+ * [int] Cards in flight are re-sorted to the top of the draw order. Left in
+ *       index order the first card slides BEHIND the third one as its arc
+ *       passes over the top row, which reads as a glitch rather than depth. The six
+ *       sizes are chosen to total 17.5 GB — the same figure MOTION 68 starts
+ *       from, so the two pieces describe the same workspace.
+ * [int] The cloud sits at y 356, not 300. At 300 its crown reached y 182 and
+ *       its glow ellipse washed across the bottom-right corner of the panel
+ *       bar, which bottoms out at 192 — the two read as one overlapping
+ *       shape. Dropping it 56 px leaves 40 px of clear plate between them
+ *       and puts the beam's mid-height on the same line as the grid's, so
+ *       the move is a composition gain rather than a patch.
+ * [int] No cursor. This is an automatic transfer, and an idle pointer sitting
+ *       in frame for fifteen seconds would imply someone is driving it.
  */
 
 /* ------------------------------------------------------------------ fonts */
@@ -310,15 +243,15 @@ const FACE = `
 @font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI7}) format('woff2');font-weight:700;font-style:normal;font-display:block}
 @font-face{font-family:'CuMono';src:url(data:font/woff2;base64,${F_MO5}) format('woff2');font-weight:500;font-style:normal;font-display:block}`;
 
-if (typeof document !== 'undefined' && !document.getElementById('m68-faces')) {
+if (typeof document !== 'undefined' && !document.getElementById('m69-faces')) {
 	const st = document.createElement('style');
-	st.id = 'm68-faces';
+	st.id = 'm69-faces';
 	st.textContent = FACE;
 	document.head.appendChild(st);
 }
 
 const useFaces = () => {
-	const [handle] = useState(() => delayRender('m68 fonts'));
+	const [handle] = useState(() => delayRender('m69 fonts'));
 	const done = useRef(false);
 	useEffect(() => {
 		const fin = () => {
@@ -353,7 +286,6 @@ const useFaces = () => {
 const clamp = (v: number, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const seg = (f: number, a: number, b: number) => clamp((f - a) / (b - a));
-const smooth = (t: number) => t * t * (3 - 2 * t);
 const inOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const outCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const outQuint = (t: number) => 1 - Math.pow(1 - t, 5);
@@ -367,8 +299,6 @@ const hash = (n: number) => {
 	const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
 	return s - Math.floor(s);
 };
-
-/* rounded rectangle, top-left anchored */
 const rr = (x: number, y: number, w: number, h: number, r: number) => {
 	const q = Math.min(r, w / 2, h / 2);
 	return (
@@ -383,100 +313,54 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
 const W = 1920;
 const H = 1080;
 
-/* grid — pitch from the reference lattice, re-centred for 16:9 */
-const COLX = [330, 640, 950];
-const ROWY = [430, 730];
+const COLX = [330, 620, 910];
+const ROWY = [455, 750];
 const CELL = (i: number): [number, number] => [COLX[i % 3], ROWY[Math.floor(i / 3)]];
 
-/* folder geometry */
-const FLAP =
-	'M-118 -18H118Q125 -18 125.6 -11.2L114 59Q112.4 71.6 99.8 71.6H-99.8Q-112.4 71.6 -114 59L-125.6 -11.2Q-125 -18 -118 -18Z';
-const BACKP =
-	'M-115 -44V-64A13 13 0 0 1 -102 -77H-44A13 13 0 0 1 -33.6 -71.8L-21 -55A13 13 0 0 0 -10.6 -49.8H101A13 13 0 0 1 114 -36.8V58A13 13 0 0 1 101 71H-102A13 13 0 0 1 -115 58Z';
+/* card box: x -93..93, y -117..117, top-right corner folded */
+const CARD =
+	'M-93 -103A14 14 0 0 1 -79 -117H59L93 -83V103A14 14 0 0 1 79 117H-79A14 14 0 0 1 -93 103Z';
 
-/* bin */
-const BX = 1490;
-const RIMY = 545;
-const RX = 136;
-const RE = 36;
-const BOTY = 862;
-const RXB = 105; /* 0.77 taper, as measured */
-const REB = 27;
-const BIN_SIL =
-	`M${BX - RX} ${RIMY}A${RX} ${RE} 0 0 0 ${BX + RX} ${RIMY}` +
-	`Q${BX + RX + 5} ${(RIMY + BOTY) / 2} ${BX + RXB} ${BOTY}` +
-	`A${RXB} ${REB} 0 0 1 ${BX - RXB} ${BOTY}` +
-	`Q${BX - RX - 5} ${(RIMY + BOTY) / 2} ${BX - RX} ${RIMY}Z`;
+/* cloud + beam column */
+const BX = 1460;
+const CY = 356; /* cloud centre — kept clear of the panel bar above it */
+const BEAM_TOP = CY + 66;
+const PAD_Y = 890;
+const BW_T = 108; /* beam half-width at the top */
+const BW_B = 178; /* beam half-width at the pad */
+const PAD_RX = 180;
+const PAD_RY = 36;
+const halfW = (y: number) => lerp(BW_B, BW_T, clamp((PAD_Y - y) / (PAD_Y - BEAM_TOP)));
+const beamPath = (k: number) =>
+	`M${BX - BW_T * k} ${BEAM_TOP}H${BX + BW_T * k}L${BX + BW_B * k} ${PAD_Y}H${BX - BW_B * k}Z`;
 
 /* ------------------------------------------------------------------ beats */
 const F_GRID = 12;
-const F_CUR_IN = 64;
-const F_CUR_SET = 92;
-const F_MQ0 = 104;
-const F_MQ1 = 174;
-const F_MQ_OFF = 206;
-const F_LIFT = 214;
-const F_GATHER0 = 250;
-const F_GATHER1 = 300;
-const F_SETTLE = 320;
-const F_CARRY0 = 352;
-const F_CARRY1 = 432;
-const F_LID0 = 396;
-const F_LID1 = 442;
-const F_DROP1 = 480;
-const F_FLUSH = 476;
-const F_BURST = 540;
-const F_COOL = 648;
-const F_LIDC = 662;
-const F_REFLOW = 690;
-const F_DONE = 772;
+const F_CLOUD = 54;
+const F_BEAM = 78;
+const F_Q0 = 138; /* first launch */
+const STAG = 84; /* launch interval */
+const T_LIFT = 20;
+const T_ARC0 = 16;
+const T_ARC1 = 66;
+const T_PAD = 78; /* enters the beam */
+const T_ABS = 142; /* absorbed */
+const F_LAST = F_Q0 + 5 * STAG + T_ABS; /* 700 */
+const F_DONE = 748;
+const F_PWR = 764; /* beam powers down */
 
-/* marquee sweep */
-const MQX0 = 196;
-const MQY0 = 300;
-const MQX1 = 1170;
-const MQY1 = 612;
-const mqP = (f: number) => smooth(seg(f, F_MQ0, F_MQ1));
-const mqRight = (f: number) => lerp(MQX0, MQX1, mqP(f));
+const t0 = (i: number) => F_Q0 + i * STAG;
 
-/* selection trigger frames, derived from the sweep rather than hardcoded */
-const SEL_AT: number[] = (() => {
-	const out = [F_MQ1, F_MQ1, F_MQ1];
-	for (let i = 0; i < 3; i++) {
-		for (let f = F_MQ0; f <= F_MQ1; f++) {
-			if (mqRight(f) >= COLX[i] - 66) {
-				out[i] = f;
-				break;
-			}
-		}
-	}
-	return out;
-})();
-
-/* carry: velocity smoothsteps up over the first 55%, flat after */
-const CARRY_R = 0.55;
-const CARRY_V = 1 / (1 - CARRY_R / 2);
-const carryP = (u: number) => {
-	if (u <= 0) return 0;
-	if (u >= 1) return 1;
-	if (u < CARRY_R) {
-		const w = u / CARRY_R;
-		return CARRY_V * CARRY_R * (w * w * w - (w * w * w * w) / 2);
-	}
-	return CARRY_V * CARRY_R * 0.5 + CARRY_V * (u - CARRY_R);
-};
-
-/* bundle offsets — back, middle, front */
-const BUNDLE: [number, number, number, number][] = [
-	[-17, -13, -7, 0.94],
-	[0, 0, 0, 1],
-	[15, 11, 6, 0.97],
+/* ------------------------------------------------------------------ files */
+type Kind = 'img' | 'vid' | 'doc';
+const FILES: {name: string; ext: string; size: string; col: string; kind: Kind}[] = [
+	{name: 'CAMPAIGN', ext: 'PSD', size: '2.4 GB', col: '#2B7FFF', kind: 'img'},
+	{name: 'PROMO_CUT', ext: 'MP4', size: '6.8 GB', col: '#7C4DFF', kind: 'vid'},
+	{name: 'BRAND_KIT', ext: 'AI', size: '1.2 GB', col: '#FF8A2B', kind: 'img'},
+	{name: 'REPORT_Q3', ext: 'PDF', size: '0.4 GB', col: '#FF4D4F', kind: 'doc'},
+	{name: 'ASSETS', ext: 'ZIP', size: '5.9 GB', col: '#12B26A', kind: 'doc'},
+	{name: 'CONTRACT', ext: 'DOC', size: '0.8 GB', col: '#1D6BFF', kind: 'doc'},
 ];
-
-/* content */
-const NAMES = ['PROJECT ARCHIVE', 'OLD BACKUPS', 'TEMP CACHE', 'CLIENT ASSETS', 'DESIGN FILES', 'INVOICES 2025'];
-const SIZES = ['4.2 GB', '3.1 GB', '5.1 GB', '2.4 GB', '1.8 GB', '0.9 GB'];
-const FILLS = [0.82, 0.61, 0.94, 0.47, 0.35, 0.19];
 
 /* palette */
 const INK = '#16233A';
@@ -484,256 +368,171 @@ const INK2 = '#5D6C86';
 const INK3 = '#96A3B8';
 const LINE = '#DCE3EE';
 const ACC = '#1D6BFF';
-const DANGER = '#FF4D4F';
 const OKC = '#12B26A';
 
 /* ------------------------------------------------------------------ pieces */
 
-/* --- one folder, drawn around its own origin --- */
-const Folder: React.FC<{sel: number; tint: number; k: number; shadow?: boolean}> = ({sel, tint, k, shadow = true}) => (
-	<g>
-		{/* contact shadow */}
-		{shadow ? <ellipse cx={0} cy={96 + k * 12} rx={104 + k * 16} ry={15 + k * 5} fill="url(#gShadow)" opacity={0.6 - k * 0.2} /> : null}
-		{/* back panel with tab */}
-		<path d={BACKP} fill="url(#gBack)" />
-		{/* paper sheets */}
-		<path d={rr(-88, -40, 176, 96, 7)} fill="#FFFFFF" />
-		<path d={rr(-88, -40, 176, 96, 7)} fill="url(#gPaper)" />
-		<path d={rr(-79, -30, 158, 86, 6)} fill="#F3F7FC" />
-		<path d="M-68 -16H34" stroke="#D7E2F2" strokeWidth={4.5} strokeLinecap="round" />
-		<path d="M-68 -1H12" stroke="#E3EBF7" strokeWidth={4.5} strokeLinecap="round" />
-		{/* front flap: base, sheen, bottom shade — all on the same path */}
-		<path d={FLAP} fill="url(#gFront)" />
-		<path d={FLAP} fill="url(#gSheen)" />
-		<path d={FLAP} fill="url(#gFlapShade)" />
-		<path d="M-115 -15.6H115" stroke="#B8D5FF" strokeWidth={3} strokeLinecap="round" opacity={0.9} />
-		{/* danger tint */}
-		{tint > 0.004 ? (
-			<g opacity={tint}>
-				<path d={BACKP} fill="#D0433F" />
-				<path d={FLAP} fill="url(#gFrontW)" />
-				<path d={FLAP} fill="url(#gSheen)" />
-			</g>
-		) : null}
-		{/* selection ring */}
-		{sel > 0.003 ? (
-			<g opacity={sel}>
-				<path d={rr(-142, -92, 284, 179, 20)} fill={ACC} opacity={0.07} />
-				<path d={rr(-142, -92, 284, 179, 20)} fill="none" stroke={ACC} strokeWidth={3} />
-				{[
-					[-142, -92],
-					[142, -92],
-					[-142, 87],
-					[142, 87],
-				].map(([hx, hy], i) => (
-					<rect key={i} x={hx - 5.5} y={hy - 5.5} width={11} height={11} rx={2.5} fill="#FFFFFF" stroke={ACC} strokeWidth={2.6} />
-				))}
-			</g>
-		) : null}
-	</g>
-);
-
-/* --- caption block under a folder --- */
-const Caption: React.FC<{i: number; sel: number; op: number}> = ({i, sel, op}) =>
-	op <= 0.004 ? null : (
-		<g opacity={op}>
-			<text
-				x={0}
-				y={127}
-				textAnchor="middle"
-				fontFamily="CuUI"
-				fontWeight={700}
-				fontSize={19}
-				letterSpacing={1.9}
-				fill={sel > 0.5 ? ACC : INK}
-			>
-				{NAMES[i]}
-			</text>
-			<text x={0} y={153} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={1.2} fill={INK3}>
-				{SIZES[i]}
-			</text>
-			<path d={rr(-62, 167, 124, 6, 3)} fill="#DFE6F1" />
-			<path d={rr(-62, 167, 124 * FILLS[i], 6, 3)} fill={sel > 0.5 ? ACC : '#9EBDEE'} />
-		</g>
-	);
-
-/* --- empty slot placeholder --- */
-const Slot: React.FC<{op: number}> = ({op}) => (
-	<g opacity={op}>
-		<path
-			d={rr(-124, -80, 248, 156, 18)}
-			fill="none"
-			stroke="#C6D2E3"
-			strokeWidth={2.4}
-			strokeDasharray="12 11"
-			strokeLinecap="round"
-		/>
-		<path d="M-16 -2H16M0 -18V14" stroke="#CBD6E6" strokeWidth={3} strokeLinecap="round" />
-	</g>
-);
-
-/* --- cursor --- */
-const Cursor: React.FC<{x: number; y: number; op: number; press: number}> = ({x, y, op, press}) => {
-	if (op <= 0.004) return null;
-	const d = 'M0 0L0 24.6L5.9 19.3L9.6 27.9L14 26L10.4 17.6L18 17.3Z';
+const FileCard: React.FC<{i: number; glow: number}> = ({i, glow}) => {
+	const F = FILES[i];
+	const chipW = F.ext.length * 12 + 26;
 	return (
-		<g transform={`translate(${x} ${y}) scale(${2.05 - press * 0.13})`} opacity={op}>
-			<path d={d} fill="#0A1526" opacity={0.18} transform="translate(1.8 2.6)" />
-			<path d={d} fill="#FFFFFF" stroke="#24344E" strokeWidth={1.7} strokeLinejoin="round" />
+		<g>
+			<ellipse cx={0} cy={132 + glow * 14} rx={82 + glow * 18} ry={13 + glow * 5} fill="url(#gShadow)" opacity={0.62 - glow * 0.24} />
+			<path d={CARD} fill="#FFFFFF" />
+			<path d={CARD} fill="url(#gCardV)" />
+			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={2} />
+			{/* folded corner */}
+			<path d="M59 -117L93 -83H59Z" fill="#D5E0EF" />
+			<path d="M59 -117L93 -83H59Z" fill="url(#gFoldSh)" />
+			<path d="M59 -117V-83H93" fill="none" stroke="#C3D1E4" strokeWidth={2} strokeLinejoin="round" />
+			{/* body */}
+			{F.kind === 'doc' ? (
+				<g>
+					<path d={rr(-63, -86, 92, 12, 6)} fill={F.col} opacity={0.5} />
+					{[0, 1, 2, 3, 4].map((k) => (
+						<path key={k} d={rr(-63, -54 + k * 24, [126, 110, 126, 92, 118][k], 10, 5)} fill="#E5EBF5" />
+					))}
+				</g>
+			) : (
+				<g>
+					<path d={rr(-69, -94, 138, 96, 11)} fill={`url(#gThumb${i})`} />
+					{F.kind === 'vid' ? (
+						<g>
+							<circle cx={0} cy={-46} r={22} fill="#FFFFFF" opacity={0.9} />
+							<path d="M-7 -57L13 -46L-7 -35Z" fill={F.col} />
+						</g>
+					) : (
+						<g>
+							<circle cx={34} cy={-72} r={11} fill="#FFFFFF" opacity={0.85} />
+							<path d="M-69 -20L-24 -60L4 -36L30 -56L69 -20V-9A11 11 0 0 1 58 2H-58A11 11 0 0 1 -69 -9Z" fill="#FFFFFF" opacity={0.55} />
+						</g>
+					)}
+					<path d={rr(-63, 16, 126, 10, 5)} fill="#E5EBF5" />
+					<path d={rr(-63, 38, 96, 10, 5)} fill="#E5EBF5" />
+				</g>
+			)}
+			{/* type chip + size */}
+			<path d={rr(-63, 74, chipW, 30, 8)} fill={F.col} opacity={0.14} />
+			<text x={-63 + chipW / 2} y={95} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={1.4} fill={F.col}>
+				{F.ext}
+			</text>
+			<text x={63} y={95} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={0.6} fill={INK3}>
+				{F.size}
+			</text>
+			{/* upload halo while queued for transport */}
+			{glow > 0.01 ? (
+				<g opacity={glow}>
+					<path d={rr(-104, -128, 208, 256, 20)} fill="none" stroke={ACC} strokeWidth={3} />
+					<path d={rr(-104, -128, 208, 256, 20)} fill={ACC} opacity={0.05} />
+				</g>
+			) : null}
 		</g>
 	);
 };
+
+const Ghost: React.FC<{op: number; tick: number; live: number}> = ({op, tick, live}) => (
+	<g opacity={op}>
+		<path d={rr(-93, -117, 186, 234, 14)} fill="#FFFFFF" opacity={0.55} />
+		<path d={rr(-93, -117, 186, 234, 14)} fill="none" stroke="#CBD8E7" strokeWidth={2.4} strokeDasharray="12 11" strokeLinecap="round" />
+		{tick <= 0.002 ? (
+			<g opacity={0.9}>
+				<circle cx={0} cy={-8} r={22} fill="none" stroke={ACC} strokeWidth={2.6} strokeDasharray="8 9" strokeDashoffset={-live * 3} opacity={0.55} />
+				<path d="M0 2V-14M-7 -7L0 -14L7 -7" fill="none" stroke={ACC} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+				<text x={0} y={46} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.6} fill={INK3}>
+					IN TRANSIT
+				</text>
+			</g>
+		) : (
+			<g opacity={tick}>
+				<circle cx={0} cy={-8} r={27} fill={OKC} opacity={0.12} />
+				<circle cx={0} cy={-8} r={27} fill="none" stroke={OKC} strokeWidth={2.8} />
+				<path
+					d="M-12 -8L-3 1L13 -18"
+					fill="none"
+					stroke={OKC}
+					strokeWidth={4}
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					strokeDasharray={38}
+					strokeDashoffset={38 * (1 - tick)}
+				/>
+				<text x={0} y={46} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.6} fill={OKC}>
+					SYNCED
+				</text>
+			</g>
+		)}
+	</g>
+);
 
 /* ------------------------------------------------------------------ main */
 export const Motion: React.FC = () => {
 	useFaces();
 	const f = useCurrentFrame();
 
-	/* ---------------- global build ---------------- */
 	const plate = ez(f, 0, 34, outCubic);
 	const chrome = ez(f, 8, 46, outCubic);
+	const beamOn = ez(f, F_BEAM, F_BEAM + 46, outCubic) * (1 - 0.62 * ez(f, F_PWR, F_PWR + 52, inOutCubic));
+	const cloudIn = ez(f, F_CLOUD, F_CLOUD + 40, outBack);
 
-	/* ---------------- selection ---------------- */
-	const selOf = (i: number) =>
-		i < 3 ? ez(f, SEL_AT[i], SEL_AT[i] + 13, outBack) * (1 - ez(f, F_GATHER0 + 12, F_GATHER0 + 42, outCubic)) : 0;
-
-	/* ---------------- bundle transport ---------------- */
-	const gatherU = ez(f, F_GATHER0, F_GATHER1, inOutCubic);
-	const capFade = ez(f, F_GATHER0 + 2, F_GATHER0 + 32, outCubic);
-	const settleU = ez(f, F_GATHER1, F_SETTLE, outQuint);
-	const carryU = carryP(seg(f, F_CARRY0, F_CARRY1));
-	const dropU = ez(f, F_CARRY1, F_DROP1, inCubic);
-
-	const HOMEX = COLX[1];
-	const HOMEY = ROWY[0];
-	const liftY = -14 * ez(f, F_LIFT, F_GATHER0, outCubic);
-	const bx = lerp(HOMEX, BX, carryU);
-	const by = lerp(HOMEY, RIMY, carryU) - 95 * Math.sin(Math.PI * carryU) + liftY * (1 - carryU) + dropU * 138;
-	const bScale = (1 - 0.56 * dropU) * (1 + 0.12 * settleU * (1 - settleU));
-	const bOp = 1 - ez(f, F_DROP1 - 20, F_DROP1 + 8, outCubic);
-	const inBin = f >= F_CARRY1 + 2;
-
-	/* per-folder placement */
-	const folderPose = (i: number) => {
+	/* ---------------- per-file transport ---------------- */
+	const pose = (i: number) => {
 		const [cx, cy] = CELL(i);
-		if (i < 3) {
-			const [ox, oy, orot, osc] = BUNDLE[i];
+		const t = f - t0(i);
+		const lift = ez(f, t0(i), t0(i) + T_LIFT, outCubic) * (1 - ez(f, t0(i) + T_ARC0, t0(i) + T_ARC0 + 12, outCubic));
+		if (t < T_ARC0) return {x: cx, y: cy - 20 * lift, sc: 1 + 0.05 * lift, op: 1, glow: ez(f, t0(i) - 22, t0(i), outCubic), beam: 0, wash: 0};
+		if (t < T_PAD) {
+			const u = ez(f, t0(i) + T_ARC0, t0(i) + T_ARC1, inOutCubic);
+			const land = ez(f, t0(i) + T_ARC1, t0(i) + T_PAD, outQuint);
 			return {
-				x: lerp(cx, bx + ox, gatherU),
-				y: lerp(cy + liftY, by + oy, gatherU),
-				rot: orot * gatherU,
-				sc: lerp(1, osc, gatherU) * lerp(1, bScale, gatherU),
-				op: gatherU > 0.5 ? bOp : 1,
+				x: lerp(cx, BX, u),
+				y: lerp(cy - 20, PAD_Y - 130, u) - 150 * Math.sin(Math.PI * u) + 22 * land,
+				sc: lerp(1, 0.86, u) * (1 - 0.05 * land * (1 - land) * 4),
+				op: 1,
+				glow: 1,
+				beam: 0,
+				wash: 0,
 			};
 		}
-		const st = (i - 3) * 9;
-		const r = ez(f, F_REFLOW + st, F_REFLOW + 62 + st, inOutCubic);
-		return {x: cx, y: lerp(cy, ROWY[0], r), rot: 0, sc: 1, op: 1};
+		const u = ez(f, t0(i) + T_PAD, t0(i) + T_ABS, inCubic);
+		return {
+			x: BX + Math.sin(u * 7.4 + i) * 9 * (1 - u),
+			y: lerp(PAD_Y - 108, BEAM_TOP + 8, u),
+			sc: lerp(0.86, 0.14, u),
+			op: 1 - ez(f, t0(i) + T_ABS - 30, t0(i) + T_ABS, outCubic),
+			glow: 1 - u,
+			beam: 1,
+			wash: u,
+		};
 	};
 
-	/* ---------------- cursor ---------------- */
-	const cur = (() => {
-		if (f < F_CUR_IN - 2) return {x: 128, y: 1010, op: 0, press: 0};
-		if (f < F_CUR_SET) {
-			const u = ez(f, F_CUR_IN, F_CUR_SET, outCubic);
-			return {x: lerp(128, MQX0, u), y: lerp(1010, MQY0, u), op: ez(f, F_CUR_IN - 2, F_CUR_IN + 8, outCubic), press: 0};
-		}
-		if (f < F_MQ_OFF) {
-			const p = mqP(f);
-			return {
-				x: lerp(MQX0, MQX1, p),
-				y: lerp(MQY0, MQY1, p),
-				op: 1,
-				press: ez(f, F_MQ0 - 6, F_MQ0, outCubic) * (1 - ez(f, F_MQ_OFF - 8, F_MQ_OFF, outCubic)),
-			};
-		}
-		if (f < F_LIFT) {
-			const u = ez(f, F_MQ_OFF, F_LIFT, inOutCubic);
-			return {x: lerp(MQX1, HOMEX + 96, u), y: lerp(MQY1, HOMEY - 12, u), op: 1, press: 0};
-		}
-		if (f < 596) {
-			const park = ez(f, F_CARRY1, F_CARRY1 + 30, outCubic);
-			return {
-				x: lerp(bx + 96, BX + 40, park),
-				y: lerp(by - 12, RIMY - 10, park),
-				op: 1,
-				press: ez(f, F_LIFT, F_LIFT + 10, outCubic) * (1 - ez(f, F_CARRY1, F_CARRY1 + 12, outCubic)),
-			};
-		}
-		const u = ez(f, 596, 664, inCubic);
-		return {x: lerp(BX + 40, 1880, u), y: lerp(RIMY - 10, 1160, u), op: 1 - seg(f, 638, 664), press: 0};
-	})();
+	/* progress accrues while a file is inside the beam */
+	const prog = FILES.reduce((a, _u, i) => a + seg(f, t0(i) + 10, t0(i) + T_ABS), 0) / 6;
+	const nDone = FILES.filter((_u, i) => f >= t0(i) + T_ABS).length;
 
-	/* ---------------- bin state ---------------- */
-	const flush = ez(f, F_FLUSH, F_FLUSH + 26, outCubic);
-	const burst = ez(f, F_BURST, F_BURST + 12, outCubic);
-	const cool = ez(f, F_COOL, 674, inOutCubic);
-	const heat = clamp(Math.max(flush * 0.4, burst) * (1 - cool));
-	const arm = ez(f, F_CARRY0 - 16, F_CARRY0 + 26, outCubic) * (1 - flush);
-	const lid = ez(f, F_LID0, F_LID1, outCubic) * (1 - ez(f, F_LIDC, F_LIDC + 46, inOutCubic));
-	const impact = ez(f, F_CARRY1 + 2, F_CARRY1 + 12, outCubic) * (1 - ez(f, F_CARRY1 + 12, F_CARRY1 + 48, outQuint));
-	const binSq = 1 - impact * 0.045;
-	const shock = ez(f, F_BURST, F_BURST + 34, outQuint);
-	const shock2 = ez(f, F_FLUSH, F_FLUSH + 30, outQuint);
+	/* cloud reacts to each arrival */
+	const flash = FILES.reduce((a, _u, i) => Math.max(a, 1 - ez(f, t0(i) + T_ABS - 6, t0(i) + T_ABS + 26, outCubic) * (f >= t0(i) + T_ABS - 6 ? 1 : 0)), 0);
+	const arrive = FILES.reduce((a, _u, i) => {
+		const w = ez(f, t0(i) + T_ABS - 8, t0(i) + T_ABS + 4, outCubic) * (1 - ez(f, t0(i) + T_ABS + 4, t0(i) + T_ABS + 40, outQuint));
+		return Math.max(a, w);
+	}, 0);
+	const finale = ez(f, F_LAST, F_LAST + 26, outCubic) * (1 - ez(f, F_LAST + 26, F_LAST + 90, outQuint));
+	const cloudSc = cloudIn * (1 + 0.035 * arrive + 0.05 * finale);
 
-	/* rising shred particles */
-	const parts = (() => {
-		const out: React.ReactNode[] = [];
-		if (f < F_BURST - 6 || f > 706) return out;
-		for (let i = 0; i < 64; i++) {
-			const t0 = F_BURST - 4 + hash(i * 3.7) * 78;
-			const life = 64 + hash(i * 5.1) * 48;
-			const u = seg(f, t0, t0 + life);
-			if (u <= 0 || u >= 1) continue;
-			const ang = hash(i * 1.9) * Math.PI * 2;
-			const rad = 20 + hash(i * 2.3) * (RX - 36);
-			const px = BX + Math.cos(ang) * rad;
-			const drift = (hash(i * 4.4) - 0.5) * 84;
-			const rise = 92 + hash(i * 6.2) * 186;
-			const w = 7 + hash(i * 7.7) * 11;
-			const hh = 5 + hash(i * 8.9) * 9;
-			const rot = (hash(i * 9.6) - 0.5) * 880 * u;
-			const op = Math.sin(Math.PI * Math.pow(u, 0.6)) * 0.92;
-			out.push(
-				<g key={i} transform={`translate(${px + drift * u} ${RIMY - 8 - rise * outCubic(u)}) rotate(${rot})`} opacity={op}>
-					<rect x={-w / 2} y={-hh / 2} width={w} height={hh} rx={1.6} fill={hash(i * 11.3) > 0.55 ? '#FF7A6B' : '#FFB7A6'} />
-				</g>
-			);
-		}
-		return out;
-	})();
+	/* pad impulses when a file lands */
+	const padHit = FILES.map((_u, i) => ez(f, t0(i) + T_ARC1, t0(i) + T_ARC1 + 46, outQuint));
 
-	/* ---------------- panel read-outs ---------------- */
-	const nSel = [0, 1, 2].filter((i) => f >= SEL_AT[i]).length;
-	const chip =
-		f >= F_DONE
-			? 'COMPLETE'
-			: f >= F_FLUSH && f < F_COOL + 26
-				? 'DELETING'
-				: f >= F_CARRY1 + 26
-					? 'CLEANING'
-					: nSel > 0
-						? `${nSel} SELECTED`
-						: 'READY';
-	const chipCol = f >= F_DONE ? OKC : f >= F_FLUSH && f < F_COOL + 26 ? DANGER : nSel > 0 ? ACC : INK3;
-	const storeP = lerp(0.78, 0.59, ez(f, F_DONE - 10, F_DONE + 58, inOutCubic));
+	/* ---------------- read-outs ---------------- */
+	const chip = f >= F_LAST + 8 ? 'COMPLETE' : f >= F_Q0 - 24 ? 'UPLOADING' : 'READY';
+	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_Q0 - 24 ? ACC : INK3;
 	const doneOp = ez(f, F_DONE, F_DONE + 30, outCubic);
 	const doneY = lerp(32, 0, ez(f, F_DONE, F_DONE + 36, outQuint));
-
 	const status =
-		f >= F_DONE
-			? 'WORKSPACE OPTIMIZED'
-			: f >= F_COOL
-				? 'SECURE ERASE COMPLETE'
-				: f >= F_FLUSH
-					? 'SHREDDING · DO NOT INTERRUPT'
-					: f >= F_LIFT
-						? 'MOVING 3 ITEMS TO TRASH'
-						: f >= F_MQ0
-							? 'DRAG SELECT ACTIVE'
-							: 'READY TO SELECT';
-
-	const binLabel = heat > 0.28 ? 'SHREDDING' : f >= F_COOL ? 'TRASH · EMPTIED' : 'TRASH · READY';
+		f >= F_LAST + 8
+			? 'ALL FILES SYNCED'
+			: f >= F_Q0
+				? `UPLOADING ${Math.min(nDone + 1, 6)} OF 6`
+				: 'ENCRYPTED CHANNEL · TLS 1.3';
+	const rate = f >= F_LAST || f < F_Q0 ? 0 : 118 + Math.round(Math.sin(f * 0.11) * 9 + Math.sin(f * 0.043) * 14);
 
 	return (
 		<AbsoluteFill style={{backgroundColor: '#EDF1F8'}}>
@@ -750,101 +549,90 @@ export const Motion: React.FC = () => {
 						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
 					</radialGradient>
 					<radialGradient id="gPool" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#B7CDF0" stopOpacity="0.52" />
-						<stop offset="1" stopColor="#B7CDF0" stopOpacity="0" />
+						<stop offset="0" stopColor="#A8C4F0" stopOpacity="0.55" />
+						<stop offset="1" stopColor="#A8C4F0" stopOpacity="0" />
 					</radialGradient>
 					<radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5">
 						<stop offset="0" stopColor="#22375C" stopOpacity="0.32" />
 						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.12" />
 						<stop offset="1" stopColor="#22375C" stopOpacity="0" />
 					</radialGradient>
-					<radialGradient id="gHeat" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#FF6B5A" stopOpacity="0.8" />
-						<stop offset="0.5" stopColor="#FF6B5A" stopOpacity="0.26" />
-						<stop offset="1" stopColor="#FF6B5A" stopOpacity="0" />
+					<radialGradient id="gAcc" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0.55" />
+						<stop offset="0.5" stopColor="#2E7BFF" stopOpacity="0.16" />
+						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
 					</radialGradient>
 
-					<linearGradient id="gBack" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#5291F4" />
-						<stop offset="1" stopColor="#2A5EC2" />
-					</linearGradient>
-					<linearGradient id="gFront" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#86B7FF" />
-						<stop offset="0.5" stopColor="#4F8DF4" />
-						<stop offset="1" stopColor="#2C68D8" />
-					</linearGradient>
-					<linearGradient id="gFrontW" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FFA396" />
-						<stop offset="0.5" stopColor="#F4675E" />
-						<stop offset="1" stopColor="#D8433D" />
-					</linearGradient>
-					<linearGradient id="gSheen" x1="0.06" y1="0" x2="0.72" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.34" />
-						<stop offset="0.22" stopColor="#FFFFFF" stopOpacity="0.04" />
-						<stop offset="0.36" stopColor="#FFFFFF" stopOpacity="0.19" />
-						<stop offset="0.58" stopColor="#FFFFFF" stopOpacity="0" />
-					</linearGradient>
-					<linearGradient id="gFlapShade" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0.62" stopColor="#0B2A5E" stopOpacity="0" />
-						<stop offset="1" stopColor="#0B2A5E" stopOpacity="0.2" />
-					</linearGradient>
-					<linearGradient id="gPaper" x1="0" y1="0" x2="0" y2="1">
+					<linearGradient id="gCardV" x1="0" y1="0" x2="0" y2="1">
 						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
-						<stop offset="1" stopColor="#C9D7EA" stopOpacity="0.9" />
+						<stop offset="1" stopColor="#D8E1EF" stopOpacity="0.55" />
+					</linearGradient>
+					<linearGradient id="gFoldSh" x1="0" y1="0" x2="0.4" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.6" />
+						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+					</linearGradient>
+					{FILES.map((F, i) =>
+						F.kind === 'doc' ? null : (
+							<linearGradient key={i} id={`gThumb${i}`} x1="0" y1="0" x2="0.7" y2="1">
+								<stop offset="0" stopColor={F.col} stopOpacity="0.85" />
+								<stop offset="1" stopColor={F.col} stopOpacity="0.45" />
+							</linearGradient>
+						)
+					)}
+
+					{/* beam */}
+					<linearGradient id="gBeam1" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#3E86FF" stopOpacity="0.30" />
+						<stop offset="0.55" stopColor="#3E86FF" stopOpacity="0.11" />
+						<stop offset="1" stopColor="#3E86FF" stopOpacity="0.05" />
+					</linearGradient>
+					<linearGradient id="gBeam2" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#6BA6FF" stopOpacity="0.34" />
+						<stop offset="0.6" stopColor="#6BA6FF" stopOpacity="0.13" />
+						<stop offset="1" stopColor="#6BA6FF" stopOpacity="0.05" />
+					</linearGradient>
+					<linearGradient id="gBeam3" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.62" />
+						<stop offset="0.5" stopColor="#DCEAFF" stopOpacity="0.28" />
+						<stop offset="1" stopColor="#DCEAFF" stopOpacity="0.07" />
 					</linearGradient>
 
-					<linearGradient id="gBinBody" x1="0" y1="0" x2="1" y2="0">
-						<stop offset="0" stopColor="#B4C4D9" />
-						<stop offset="0.07" stopColor="#E6ECF6" />
-						<stop offset="0.22" stopColor="#FDFEFF" />
-						<stop offset="0.5" stopColor="#EAF0F8" />
-						<stop offset="0.78" stopColor="#D0DAEA" />
-						<stop offset="0.93" stopColor="#E9EFF8" />
-						<stop offset="1" stopColor="#A9BAD2" />
+					{/* cloud — one gradient in stage space so the union is seamless */}
+					<linearGradient id="gCloud" x1={BX - 200} y1={CY - 110} x2={BX + 140} y2={CY + 90} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#8CBEFF" />
+						<stop offset="0.5" stopColor="#4A8BF2" />
+						<stop offset="1" stopColor="#2B63CE" />
 					</linearGradient>
-					<linearGradient id="gBinShade" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#22375C" stopOpacity="0" />
-						<stop offset="0.62" stopColor="#22375C" stopOpacity="0.05" />
-						<stop offset="1" stopColor="#22375C" stopOpacity="0.17" />
-					</linearGradient>
-					<radialGradient id="gCav" cx="0.5" cy="0.32" r="0.74">
-						<stop offset="0" stopColor="#93A6C0" />
-						<stop offset="0.55" stopColor="#6E819D" />
-						<stop offset="1" stopColor="#485974" />
-					</radialGradient>
-					<linearGradient id="gLid" x1="0" y1="0" x2="0.28" y2="1">
-						<stop offset="0" stopColor="#FDFEFF" />
-						<stop offset="0.45" stopColor="#E9EFF7" />
-						<stop offset="1" stopColor="#C1CFE1" />
-					</linearGradient>
-					<linearGradient id="gRim" x1="0" y1="0" x2="1" y2="0">
-						<stop offset="0" stopColor="#8FA3BE" />
-						<stop offset="0.3" stopColor="#D2DCEA" />
-						<stop offset="0.72" stopColor="#A5B6CD" />
-						<stop offset="1" stopColor="#8194B0" />
+					<linearGradient id="gCloudHi" x1={BX} y1={CY - 120} x2={BX} y2={CY + 20} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.45" />
+						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
 					</linearGradient>
 
-					<clipPath id="cpBin">
-						<path d={BIN_SIL} />
+					<clipPath id="cpBeam">
+						<path d={beamPath(1)} />
 					</clipPath>
-					<clipPath id="cpMouth">
-						<path
-							d={`M${BX - 520} ${RIMY - 640}H${BX + 520}V${RIMY}H${BX + RX}A${RX} ${RE} 0 0 1 ${BX - RX} ${RIMY}H${BX - 520}Z`}
-						/>
+					<clipPath id="cpCloud">
+						<g>
+							<circle cx={BX - 100} cy={CY + 10} r={64} />
+							<circle cx={BX - 26} cy={CY - 34} r={84} />
+							<circle cx={BX + 58} cy={CY - 8} r={64} />
+							<circle cx={BX + 124} cy={CY + 26} r={48} />
+							<path d={rr(BX - 164, CY + 26, 336, 48, 24)} />
+						</g>
 					</clipPath>
 				</defs>
 
 				{/* ============================================================ plate */}
 				<rect width={W} height={H} fill="url(#gPlate)" />
-				<ellipse cx={820} cy={330} rx={1180} ry={720} fill="url(#gLift)" opacity={plate} />
-				<ellipse cx={BX} cy={700} rx={520} ry={380} fill="url(#gPool)" opacity={0.5 * plate} />
+				<ellipse cx={760} cy={330} rx={1180} ry={720} fill="url(#gLift)" opacity={plate} />
+				<ellipse cx={BX} cy={640} rx={560} ry={430} fill="url(#gPool)" opacity={0.5 * plate} />
 
 				{/* ============================================================ title */}
 				<g opacity={chrome} transform={`translate(0 ${lerp(-16, 0, chrome)})`}>
-					<path d="M600 66H758" stroke={LINE} strokeWidth={2} />
-					<path d="M1162 66H1320" stroke={LINE} strokeWidth={2} />
+					<path d="M610 66H752" stroke={LINE} strokeWidth={2} />
+					<path d="M1168 66H1310" stroke={LINE} strokeWidth={2} />
 					<text x={960} y={73} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={5.6} fill={INK2}>
-						SMART CLEANUP · STORAGE OPTIMIZER
+						CLOUD SYNC · SECURE UPLOAD
 					</text>
 				</g>
 
@@ -854,27 +642,29 @@ export const Motion: React.FC = () => {
 					<path d={rr(480, 108, 960, 84, 20)} fill="#FFFFFF" />
 					<path d={rr(480, 108, 960, 84, 20)} fill="none" stroke="#E4EAF4" strokeWidth={2} />
 
-					<g transform="translate(514 132) scale(0.94)">
+					<g transform="translate(512 126)">
 						<path
-							d="M0 6A6 6 0 0 1 6 0H14A6 6 0 0 1 18.6 2.2L22.4 7A5 5 0 0 0 26.4 9H42A6 6 0 0 1 48 15V30A6 6 0 0 1 42 36H6A6 6 0 0 1 0 30Z"
+							d="M12 34A12 12 0 0 1 12 10A17 17 0 0 1 45 4A13 13 0 0 1 64 12A11 11 0 0 1 64 34Z"
 							fill={ACC}
 							opacity={0.15}
 						/>
 						<path
-							d="M0 6A6 6 0 0 1 6 0H14A6 6 0 0 1 18.6 2.2L22.4 7A5 5 0 0 0 26.4 9H42A6 6 0 0 1 48 15V30A6 6 0 0 1 42 36H6A6 6 0 0 1 0 30Z"
+							d="M12 34A12 12 0 0 1 12 10A17 17 0 0 1 45 4A13 13 0 0 1 64 12A11 11 0 0 1 64 34Z"
 							fill="none"
 							stroke={ACC}
 							strokeWidth={2.6}
+							strokeLinejoin="round"
 						/>
+						<path d="M38 30V15M31 21L38 14L45 21" fill="none" stroke={ACC} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
 					</g>
-					<text x={584} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
-						FILE WORKSPACE
+					<text x={596} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
+						SYNC QUEUE
 					</text>
-					<text x={584} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
-						{f >= F_CARRY1 + 26 ? '3 ITEMS · 5.1 GB' : '6 ITEMS · 17.5 GB'}
+					<text x={596} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
+						{`${6 - nDone} PENDING · 17.5 GB`}
 					</text>
 
-					<g transform="translate(806 0)">
+					<g transform="translate(790 0)">
 						<path d={rr(0, 134, chip.length * 12.2 + 40, 32, 16)} fill={chipCol} opacity={0.13} />
 						<circle cx={20} cy={150} r={5} fill={chipCol} />
 						<text x={36} y={156} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={chipCol}>
@@ -883,22 +673,13 @@ export const Motion: React.FC = () => {
 					</g>
 
 					<g transform="translate(1032 150)">
-						{[0, 1, 2, 3, 4, 5].map((i) => {
-							const gone = i < 3 && f >= F_CARRY1 + 24;
-							const s = i < 3 ? (f >= SEL_AT[i] ? 1 : 0) : 0;
-							const cxx = i * 34;
+						{FILES.map((_u, i) => {
+							const done = f >= t0(i) + T_ABS;
+							const act = f >= t0(i) && !done;
 							return (
 								<g key={i}>
-									<circle
-										cx={cxx}
-										cy={0}
-										r={9}
-										fill="none"
-										stroke={gone ? '#DCE3EE' : s ? ACC : '#C3CFE0'}
-										strokeWidth={2.2}
-										strokeDasharray={gone ? '3 3' : undefined}
-									/>
-									{gone ? null : <circle cx={cxx} cy={0} r={4.6} fill={s ? ACC : '#C3CFE0'} opacity={s ? 1 : 0.55} />}
+									<circle cx={i * 34} cy={0} r={9} fill="none" stroke={done ? OKC : act ? ACC : '#C3CFE0'} strokeWidth={2.2} />
+									<circle cx={i * 34} cy={0} r={4.6} fill={done ? OKC : act ? ACC : '#C3CFE0'} opacity={done || act ? 1 : 0.5} />
 								</g>
 							);
 						})}
@@ -906,247 +687,172 @@ export const Motion: React.FC = () => {
 
 					<g transform="translate(1250 0)">
 						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
-							STORAGE
+							UPLOADED
 						</text>
-						<text
-							x={168}
-							y={141}
-							textAnchor="end"
-							fontFamily="CuMono"
-							fontWeight={500}
-							fontSize={15}
-							letterSpacing={1}
-							fill={storeP < 0.7 ? OKC : INK}
-						>
-							{Math.round(storeP * 100) + '%'}
+						<text x={168} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
+							{Math.round(prog * 100) + '%'}
 						</text>
 						<path d={rr(0, 152, 168, 8, 4)} fill="#E6EBF4" />
-						<path d={rr(0, 152, 168 * storeP, 8, 4)} fill={storeP < 0.7 ? OKC : ACC} />
+						<path d={rr(0, 152, Math.max(2, 168 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
 					</g>
 				</g>
 
-				{/* ============================================================ slots */}
+				{/* ============================================================ ghosts */}
 				<g>
-					{[0, 1, 2].map((i) => {
-						const born = i === 1 ? F_CARRY0 + 42 : F_GATHER1 - 4;
-						const op = ez(f, born, born + 26, outCubic) * (1 - ez(f, F_REFLOW - 6, F_REFLOW + 30, outCubic));
+					{FILES.map((_u, i) => {
+						const [cx, cy] = CELL(i);
+						const op = ez(f, t0(i) + T_ARC0 + 10, t0(i) + T_ARC0 + 40, outCubic);
 						if (op <= 0.004) return null;
 						return (
-							<g key={i} transform={`translate(${COLX[i]} ${ROWY[0]})`}>
-								<Slot op={op * 0.78} />
-							</g>
-						);
-					})}
-					{[0, 1, 2].map((i) => {
-						const op = ez(f, F_REFLOW + 34, F_REFLOW + 70, outCubic) * (1 - ez(f, F_DONE + 46, F_DONE + 84, outCubic));
-						if (op <= 0.004) return null;
-						return (
-							<g key={'b' + i} transform={`translate(${COLX[i]} ${ROWY[1]})`}>
-								<Slot op={op * 0.5} />
+							<g key={i} transform={`translate(${cx} ${cy})`}>
+								<Ghost op={op} tick={ez(f, t0(i) + T_ABS, t0(i) + T_ABS + 24, outCubic)} live={f} />
 							</g>
 						);
 					})}
 				</g>
 
-				{/* ============================================================ bin — back */}
-				<g transform={`translate(${BX} ${BOTY}) scale(1 ${binSq}) translate(${-BX} ${-BOTY})`}>
-					{heat > 0.01 ? <ellipse cx={BX} cy={RIMY + 120} rx={340} ry={340} fill="url(#gHeat)" opacity={heat * 0.5} /> : null}
-					<ellipse cx={BX} cy={BOTY + 18} rx={190} ry={30} fill="url(#gShadow)" opacity={0.95 * plate} />
-					<ellipse cx={BX} cy={RIMY} rx={RX - 7} ry={RE - 3} fill="url(#gCav)" />
-					{heat > 0.01 ? <ellipse cx={BX} cy={RIMY} rx={RX - 7} ry={RE - 3} fill={DANGER} opacity={heat * 0.75} /> : null}
-					<ellipse cx={BX} cy={RIMY - 6} rx={RX - 17} ry={RE - 12} fill="#0F1D33" opacity={0.16} />
-					{heat > 0.01 ? <ellipse cx={BX} cy={RIMY + 3} rx={RX - 24} ry={RE - 13} fill="#FFE0D6" opacity={heat * 0.6} /> : null}
+				{/* ============================================================ pad */}
+				<g opacity={beamOn}>
+					<ellipse cx={BX} cy={PAD_Y} rx={300} ry={78} fill="url(#gAcc)" opacity={0.5 + 0.3 * Math.max(...padHit.map((p) => (p > 0 && p < 1 ? 1 - p : 0)), 0)} />
+					<ellipse cx={BX} cy={PAD_Y} rx={PAD_RX} ry={PAD_RY} fill="none" stroke={ACC} strokeWidth={3.4} opacity={0.7} />
+					<ellipse
+						cx={BX}
+						cy={PAD_Y}
+						rx={PAD_RX - 26}
+						ry={PAD_RY - 6}
+						fill="none"
+						stroke={ACC}
+						strokeWidth={2}
+						strokeDasharray="10 12"
+						strokeDashoffset={-f * 0.7}
+						opacity={0.42}
+					/>
+					{padHit.map((p, i) =>
+						p > 0.001 && p < 0.999 ? (
+							<ellipse
+								key={i}
+								cx={BX}
+								cy={PAD_Y}
+								rx={PAD_RX + p * 150}
+								ry={PAD_RY + p * 30}
+								fill="none"
+								stroke={ACC}
+								strokeWidth={3.4 * (1 - p)}
+								opacity={(1 - p) * 0.6}
+							/>
+						) : null
+					)}
 				</g>
 
-				{/* bundle, once it is below the rim */}
-				{inBin && bOp > 0.004 ? (
-					<g clipPath="url(#cpMouth)" opacity={bOp}>
-					<g transform={`translate(${bx} ${by})`}>
+				{/* ============================================================ beam */}
+				<g opacity={beamOn}>
+					<path d={beamPath(1)} fill="url(#gBeam1)" />
+					<path d={beamPath(0.68)} fill="url(#gBeam2)" />
+					<path d={beamPath(0.3)} fill="url(#gBeam3)" />
+					<g clipPath="url(#cpBeam)">
+						{/* rising ticks */}
+						{Array.from({length: 30}, (_u, i) => {
+							const sp = 2.1 + hash(i * 1.7) * 1.7;
+							const span = PAD_Y - BEAM_TOP + 140;
+							const y = PAD_Y + 60 - (((f * sp + hash(i * 3.3) * span) % span) + 0);
+							const hw = halfW(y);
+							const x = BX + (hash(i * 5.9) - 0.5) * 1.72 * hw;
+							const wl = 10 + hash(i * 7.1) * 26;
+							const a = clamp((PAD_Y + 40 - y) / 120) * clamp((y - BEAM_TOP + 10) / 120) * (0.3 + hash(i * 9.4) * 0.55);
+							return <rect key={i} x={x - wl / 2} y={y} width={wl} height={3} rx={1.5} fill="#FFFFFF" opacity={a} />;
+						})}
+						{/* scan rings */}
 						{[0, 1, 2].map((i) => {
-							const [ox, oy, orot, osc] = BUNDLE[i];
+							const span = PAD_Y - BEAM_TOP;
+							const y = PAD_Y - ((f * 2.6 + (i * span) / 3) % span);
+							const hw = halfW(y) * 0.92;
 							return (
-								<g key={i} transform={`translate(${ox} ${oy}) rotate(${orot}) scale(${osc * bScale})`}>
-									<Folder sel={0} tint={0} k={1} shadow={false} />
-								</g>
+								<ellipse
+									key={i}
+									cx={BX}
+									cy={y}
+									rx={hw}
+									ry={hw * 0.2}
+									fill="none"
+									stroke="#FFFFFF"
+									strokeWidth={2.4}
+									opacity={0.36 * clamp((y - BEAM_TOP) / 150) * clamp((PAD_Y - y) / 90)}
+								/>
 							);
 						})}
 					</g>
-					</g>
-				) : null}
-
-				{/* ============================================================ bin — front */}
-				<g transform={`translate(${BX} ${BOTY}) scale(1 ${binSq}) translate(${-BX} ${-BOTY})`}>
-					<g opacity={0.96}>
-						<path d={BIN_SIL} fill="url(#gBinBody)" />
-						<path d={BIN_SIL} fill="url(#gBinShade)" />
-					</g>
-					<g clipPath="url(#cpBin)">
-						{[-0.62, -0.24, 0.24, 0.62].map((t, i) => (
-							<path
-								key={i}
-								d={`M${BX + RX * t} ${RIMY + RE * 0.5}Q${BX + RX * t * 1.03} ${(RIMY + BOTY) / 2} ${BX + RXB * t} ${BOTY}`}
-								stroke="#1E3357"
-								strokeOpacity={0.06}
-								strokeWidth={3}
-								fill="none"
-							/>
-						))}
-						<path
-							d={
-								`M${BX - RX * 0.66} ${RIMY}Q${BX - RX * 0.7} ${(RIMY + BOTY) / 2} ${BX - RXB * 0.64} ${BOTY}` +
-								`L${BX - RXB * 0.3} ${BOTY}Q${BX - RX * 0.34} ${(RIMY + BOTY) / 2} ${BX - RX * 0.32} ${RIMY}Z`
-							}
-							fill="#FFFFFF"
-							opacity={0.55}
-						/>
-						{heat > 0.01 ? (
-							<rect x={BX - RX - 12} y={RIMY - 44} width={2 * RX + 24} height={BOTY - RIMY + 90} fill={DANGER} opacity={heat * 0.15} />
-						) : null}
-					</g>
-					<path d={`M${BX - RXB} ${BOTY}A${RXB} ${REB} 0 0 0 ${BX + RXB} ${BOTY}`} fill="none" stroke="#A4B5CB" strokeWidth={2.6} />
-					<ellipse cx={BX} cy={RIMY} rx={RX} ry={RE} fill="none" stroke="url(#gRim)" strokeWidth={7} />
-					<ellipse cx={BX} cy={RIMY} rx={RX} ry={RE} fill="none" stroke="#FFFFFF" strokeWidth={2.2} opacity={0.75} />
-					{arm > 0.01 ? <ellipse cx={BX} cy={RIMY} rx={RX + 6} ry={RE + 4} fill="none" stroke={ACC} strokeWidth={3} opacity={arm * 0.8} /> : null}
-					{heat > 0.01 ? <ellipse cx={BX} cy={RIMY} rx={RX + 6} ry={RE + 4} fill="none" stroke={DANGER} strokeWidth={3.4} opacity={heat} /> : null}
-					{shock2 > 0.001 && shock2 < 0.999 ? (
-						<ellipse
-							cx={BX}
-							cy={RIMY}
-							rx={RX + shock2 * 96}
-							ry={RE + shock2 * 26}
-							fill="none"
-							stroke={DANGER}
-							strokeWidth={3.2 * (1 - shock2)}
-							opacity={(1 - shock2) * 0.55}
-						/>
-					) : null}
-					{shock > 0.001 && shock < 0.999 ? (
-						<ellipse
-							cx={BX}
-							cy={RIMY}
-							rx={RX + shock * 150}
-							ry={RE + shock * 40}
-							fill="none"
-							stroke={DANGER}
-							strokeWidth={4.4 * (1 - shock)}
-							opacity={(1 - shock) * 0.45}
-						/>
-					) : null}
 				</g>
 
-				<g>{parts}</g>
-
-				{/* ============================================================ lid */}
-				<g transform={`translate(${BX + RX + 6} ${RIMY - 10}) rotate(${lid * 48}) translate(${-(BX + RX + 6)} ${-(RIMY - 10)})`}>
-					<g transform={`translate(0 ${-8 - lid * 5})`}>
-						<path
-							d={
-								`M${BX - RX - 9} ${RIMY - 4}Q${BX - RX - 9} ${RIMY - 45} ${BX} ${RIMY - 45}` +
-								`Q${BX + RX + 9} ${RIMY - 45} ${BX + RX + 9} ${RIMY - 4}` +
-								`A${RX + 9} ${RE + 2} 0 0 1 ${BX - RX - 9} ${RIMY - 4}Z`
-							}
-							fill="url(#gLid)"
-						/>
-						{heat > 0.01 ? (
-							<path
-								d={
-									`M${BX - RX - 9} ${RIMY - 4}Q${BX - RX - 9} ${RIMY - 45} ${BX} ${RIMY - 45}` +
-									`Q${BX + RX + 9} ${RIMY - 45} ${BX + RX + 9} ${RIMY - 4}` +
-									`A${RX + 9} ${RE + 2} 0 0 1 ${BX - RX - 9} ${RIMY - 4}Z`
-								}
-								fill={DANGER}
-								opacity={heat * 0.15}
-							/>
-						) : null}
-						<path
-							d={`M${BX - RX - 9} ${RIMY - 4}Q${BX - RX - 9} ${RIMY - 45} ${BX} ${RIMY - 45}Q${BX + RX + 9} ${RIMY - 45} ${BX + RX + 9} ${RIMY - 4}`}
-							fill="none"
-							stroke="#FFFFFF"
-							strokeWidth={2.6}
-							opacity={0.8}
-						/>
-						<path
-							d={`M${BX - RX - 9} ${RIMY - 4}A${RX + 9} ${RE + 2} 0 0 0 ${BX + RX + 9} ${RIMY - 4}`}
-							fill="none"
-							stroke="#A6B7CE"
-							strokeWidth={2.4}
-						/>
-						<path d={rr(BX - 38, RIMY - 63, 76, 15, 7.5)} fill="#DCE4F0" />
-						<path d={rr(BX - 38, RIMY - 63, 76, 8, 4)} fill="#F7FAFD" />
-						<path d={rr(BX - 38, RIMY - 63, 76, 15, 7.5)} fill="none" stroke="#B2C0D5" strokeWidth={2} />
-					</g>
-				</g>
-
-				<text
-					x={BX}
-					y={BOTY + 78}
-					textAnchor="middle"
-					fontFamily="CuUI"
-					fontWeight={700}
-					fontSize={19}
-					letterSpacing={3.2}
-					fill={heat > 0.28 ? DANGER : INK2}
-					opacity={plate}
-				>
-					{binLabel}
-				</text>
-
-				{/* ============================================================ folders */}
+				{/* ============================================================ files */}
 				<g>
-					{[3, 4, 5, 0, 1, 2].map((i) => {
-						if (i < 3 && inBin) return null;
-						const p = folderPose(i);
-						const born = F_GRID + i * 7;
+					{[...FILES.keys()]
+						.sort((a, b) => (f >= t0(a) ? 1 : 0) - (f >= t0(b) ? 1 : 0) || a - b)
+						.map((i) => {
+						const p = pose(i);
+						const born = F_GRID + i * 8;
 						const inU = ez(f, born, born + 30, outBack);
 						if (inU <= 0.002 || p.op <= 0.004) return null;
-						const bob = Math.sin((f + i * 41) * 0.026) * 2.1 * (i < 3 ? 1 - gatherU : 1);
-						const s = selOf(i);
+						const bob = Math.sin((f + i * 47) * 0.024) * 2.2 * (f < t0(i) ? 1 : 0);
+						const nm = FILES[i].name;
 						return (
-							<g
-								key={i}
-								transform={`translate(${p.x} ${p.y + bob + (1 - inU) * 46}) rotate(${p.rot}) scale(${p.sc * lerp(0.86, 1, inU)})`}
-								opacity={p.op * clamp(inU * 1.4)}
-							>
-								<Folder sel={s} tint={0} k={i < 3 ? gatherU : 0} />
-								<Caption i={i} sel={s} op={(i < 3 ? 1 - capFade : 1) * clamp(inU * 1.6)} />
+							<g key={i} transform={`translate(${p.x} ${p.y + bob + (1 - inU) * 46}) scale(${p.sc * lerp(0.86, 1, inU)})`} opacity={p.op * clamp(inU * 1.4)}>
+								<FileCard i={i} glow={p.glow} />
+								{p.wash > 0.01 ? <path d={CARD} fill="#DCEBFF" opacity={p.wash * 0.75} /> : null}
+								{p.beam < 0.5 ? (
+									<g opacity={clamp(inU * 1.6) * (1 - p.glow * 0.55)}>
+										<text x={0} y={158} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={1.9} fill={INK}>
+											{nm}
+										</text>
+									</g>
+								) : null}
 							</g>
 						);
 					})}
 				</g>
 
-				{/* ============================================================ marquee */}
-				{(() => {
-					const on = ez(f, F_MQ0 - 4, F_MQ0 + 6, outCubic) * (1 - ez(f, F_MQ_OFF - 10, F_MQ_OFF + 6, outCubic));
-					if (on <= 0.004) return null;
-					const p = mqP(f);
-					const x1 = lerp(MQX0, MQX1, p);
-					const y1 = lerp(MQY0, MQY1, p);
-					return (
-						<g opacity={on}>
-							<path d={rr(MQX0, MQY0, x1 - MQX0, y1 - MQY0, 6)} fill={ACC} opacity={0.09} />
-							<path
-								d={rr(MQX0, MQY0, x1 - MQX0, y1 - MQY0, 6)}
-								fill="none"
-								stroke={ACC}
-								strokeWidth={2.6}
-								strokeDasharray="14 8"
-								strokeDashoffset={-f * 0.9}
-							/>
-							<circle cx={MQX0} cy={MQY0} r={5.5} fill="#FFFFFF" stroke={ACC} strokeWidth={2.6} />
-						</g>
-					);
-				})()}
+				{/* ============================================================ cloud */}
+				<g transform={`translate(${BX} ${CY}) scale(${cloudSc}) translate(${-BX} ${-CY})`} opacity={clamp(cloudIn * 1.5)}>
+					<ellipse cx={BX} cy={CY + 10} rx={318} ry={172} fill="url(#gAcc)" opacity={0.35 + 0.3 * arrive + 0.35 * finale} />
+					<g>
+						<circle cx={BX - 100} cy={CY + 10} r={64} fill="url(#gCloud)" />
+						<circle cx={BX - 26} cy={CY - 34} r={84} fill="url(#gCloud)" />
+						<circle cx={BX + 58} cy={CY - 8} r={64} fill="url(#gCloud)" />
+						<circle cx={BX + 124} cy={CY + 26} r={48} fill="url(#gCloud)" />
+						<path d={rr(BX - 164, CY + 26, 336, 48, 24)} fill="url(#gCloud)" />
+					</g>
+					<g clipPath="url(#cpCloud)">
+						<path d={rr(BX - 200, CY - 130, 400, 150, 0)} fill="url(#gCloudHi)" />
+						<path d={rr(BX - 200, CY + 44, 400, 40, 0)} fill="#12305F" opacity={0.16} />
+						{arrive > 0.01 ? <rect x={BX - 220} y={CY - 140} width={440} height={280} fill="#FFFFFF" opacity={arrive * 0.42} /> : null}
+					</g>
+					<text x={BX} y={CY + 18} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={62} letterSpacing={-1} fill="#FFFFFF">
+						{Math.round(prog * 100) + '%'}
+					</text>
+					<text x={BX} y={CY + 50} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={4.6} fill="#FFFFFF" opacity={0.72}>
+						UPLOADED
+					</text>
+				</g>
+
+				{/* pad label + rate */}
+				<g opacity={Math.min(plate, ez(f, F_CLOUD + 6, F_CLOUD + 44, outCubic))}>
+					<text x={BX} y={PAD_Y + 84} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={3.2} fill={INK2}>
+						{f >= F_LAST + 8 ? 'CLOUD STORAGE · SECURED' : 'CLOUD STORAGE'}
+					</text>
+					<text x={BX} y={PAD_Y + 112} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1.4} fill={INK3}>
+						{rate > 0 ? `${rate} MB/S · TLS 1.3` : 'IDLE · TLS 1.3'}
+					</text>
+				</g>
 
 				{/* ============================================================ completion */}
 				{doneOp > 0.004 ? (
 					<g opacity={doneOp} transform={`translate(0 ${doneY})`}>
-						<ellipse cx={640} cy={908} rx={300} ry={22} fill="url(#gShadow)" opacity={0.55} />
-						<path d={rr(352, 838, 576, 76, 38)} fill="#FFFFFF" />
-						<path d={rr(352, 838, 576, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
-						<circle cx={402} cy={876} r={19} fill={OKC} opacity={0.14} />
-						<circle cx={402} cy={876} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
+						<ellipse cx={620} cy={966} rx={300} ry={22} fill="url(#gShadow)" opacity={0.55} />
+						<path d={rr(332, 894, 576, 76, 38)} fill="#FFFFFF" />
+						<path d={rr(332, 894, 576, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
+						<circle cx={382} cy={932} r={19} fill={OKC} opacity={0.14} />
+						<circle cx={382} cy={932} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
 						<path
-							d="M393 876.5L399.4 883L411.6 869.6"
+							d="M373 932.5L379.4 939L391.6 925.6"
 							fill="none"
 							stroke={OKC}
 							strokeWidth={3.4}
@@ -1155,12 +861,12 @@ export const Motion: React.FC = () => {
 							strokeDasharray={26}
 							strokeDashoffset={26 * (1 - ez(f, F_DONE + 8, F_DONE + 34, outCubic))}
 						/>
-						<text x={436} y={884} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
-							CLEANUP COMPLETE
+						<text x={416} y={940} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
+							SYNC COMPLETE
 						</text>
-						<path d="M702 856V896" stroke={LINE} strokeWidth={2} />
-						<text x={728} y={884} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
-							12.4 GB FREED
+						<path d="M672 912V952" stroke={LINE} strokeWidth={2} />
+						<text x={698} y={940} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
+							17.5 GB UPLOADED
 						</text>
 					</g>
 				) : null}
@@ -1169,7 +875,7 @@ export const Motion: React.FC = () => {
 				<g opacity={chrome * 0.95}>
 					<path d="M120 1002H1800" stroke={LINE} strokeWidth={2} />
 					<text x={120} y={1040} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3.4} fill={INK3}>
-						DRAG · SELECT · DELETE
+						QUEUE · UPLOAD · VERIFY
 					</text>
 					<text
 						x={1800}
@@ -1179,14 +885,11 @@ export const Motion: React.FC = () => {
 						fontWeight={700}
 						fontSize={15}
 						letterSpacing={3.4}
-						fill={f >= F_DONE ? OKC : f >= F_FLUSH && f < F_COOL + 26 ? DANGER : INK3}
+						fill={f >= F_LAST + 8 ? OKC : INK3}
 					>
 						{status}
 					</text>
 				</g>
-
-				{/* ============================================================ cursor */}
-				<Cursor x={cur.x} y={cur.y} op={cur.op * plate} press={cur.press} />
 			</svg>
 		</AbsoluteFill>
 	);
