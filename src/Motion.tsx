@@ -1,925 +1,1002 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {AbsoluteFill, continueRender, delayRender, useCurrentFrame} from 'remotion';
+import React, {useEffect, useState} from 'react';
+import {
+	AbsoluteFill,
+	continueRender,
+	delayRender,
+	Easing,
+	interpolate,
+	useCurrentFrame,
+	useVideoConfig,
+} from 'remotion';
 
-/**
- * MOTION 73 — "AI FILE TRANSFER · FOLDER TO FOLDER"
- * ---------------------------------------------------------------------------
- * Eight files move out of one folder, ride a transfer lane across the frame,
- * get checked by a routing node halfway, and drop into another. The source
- * folder's stack visibly empties while the destination's fills, both counters
- * run against each other, and the panel reports the transfer.
+/* ------------------------------------------------------------------ *
+ *  4K QUALITY SELECTOR — streaming player, resolution upgrade
+ *  1920x1080 | 60fps | 15s
  *
- * Sixth piece in the same design system as MOTION 68-72 — same plate, panel
- * chrome, footer, shadow language and folder construction — so all six cut
- * together as a set.
+ *  The interaction beat is the point: cursor travels to the gear, the
+ *  quality menu opens upward, the highlight tracks the pointer down the
+ *  list, 2160p is picked, the menu collapses — and then the picture
+ *  itself actually changes. Low quality is not faked with a label: the
+ *  clip is drawn with chunkier window lights, a visible pixel grid and
+ *  real softening, and the upgrade resolves all three while a sharpening
+ *  pass sweeps down the frame.
  *
- * HOW IT IS BUILT
- * ---------------------------------------------------------------------------
- * [int] Original build, no reference clip.
- *
- * [int] BOTH FOLDERS CARRY STOCK. The source shows the files it still holds and
- *       the destination shows the ones it has taken, as fanned mini-cards drawn
- *       between each folder's back panel and its front flap. Without that the
- *       piece is just objects crossing a gap; with it, the two ends are a
- *       running account of the same eight files and the frame reads at any
- *       point in the shot, not only while something is in flight.
- * [int] CADENCE. A file leaves every 62 frames and each crossing takes 76, so
- *       there are always two in the lane and briefly three. One at a time made
- *       the lane look empty at this width; four made the routing labels
- *       collide over the node.
- * [int] THE PATH DIPS AT BOTH ENDS. A file starts 46 px below the lane's
- *       centreline, rises into it over the first 13% of the crossing, runs the
- *       lane, and drops the same 46 px at the far end. That is what lets the
- *       front flaps do the hiding: every card is behind a flap exactly while it
- *       is inside a folder and clear of both while it is in the lane, with no
- *       per-card clipping anywhere. The draw order is what makes it work —
- *       backs and stacks, then every card in flight, then both flaps.
- * [int] The routing node sits ABOVE the lane, not in it. Putting it on the
- *       centreline means either the files stop at it (which is MOTION 71's
- *       gate, already used) or they pass behind it and the check is invisible.
- *       Raised, it can drop a scan beam through the lane and stamp each file as
- *       it goes by without ever interrupting the flow.
- * [int] Card scale is 0.92, which puts the travelling card at 118 x 149 inside
- *       a 196 px lane. Smaller and the type chip stops resolving at 1080p;
- *       larger and the card touches the conduit walls. The folders run at
- *       1.36 — at the 1.15 first tried, the two ends read as props beside the
- *       lane rather than as the subject of the shot.
- * [int] Two things a still cannot show. The state chip's pill is sized
- *       label*12.2 + 50, not +40 — at +40 the right inset came out about
- *       6 px against 15 on the left and READY sat on the edge of its own
- *       capsule. And the VERIFIED stamp is latched to the crossing frame
- *       rather than to how close the card is: inOutCubic is symmetric, so
- *       the card is at the node exactly at t0+38 and moving 23 px a frame
- *       there, which means a proximity window is gone in fifteen frames.
- *       The stamp holds t0+28 to t0+84 instead — 56 frames, long enough to
- *       read the filename and still 6 clear of the next file's window.
- * [int] The figures close: 3.4 + 2.8 + 1.9 + 0.4 + 0.7 + 1.1 + 1.6 + 0.7 = 12.6
- *       GB across eight files, and the two folder counters always sum to eight
- *       files and 12.6 GB because both are derived from the same launch and
- *       land frames rather than being animated separately.
- * [int] Every shadow is a radial-gradient ellipse rather than a Gaussian
- *       filter, as in the other five pieces.
- */
+ *  The clip inside the player is a live night-city parallax: three
+ *  skyline planes of lit windows across a bay, a light-pollution dome,
+ *  blinking aircraft beacons, and a real mirrored reflection broken up
+ *  by drifting ripple streaks — high frequency detail on purpose, so
+ *  the resolution change has something to bite on.
+ * ------------------------------------------------------------------ */
 
-/* ------------------------------------------------------------------ fonts */
-const F_UI7 =
-	'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';
-const F_UI6 =
-	'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';
-const F_MO5 =
-	'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';
-
-const FACE = `
-@font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI6}) format('woff2');font-weight:600;font-style:normal;font-display:block}
-@font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI7}) format('woff2');font-weight:700;font-style:normal;font-display:block}
-@font-face{font-family:'CuMono';src:url(data:font/woff2;base64,${F_MO5}) format('woff2');font-weight:500;font-style:normal;font-display:block}`;
-
-if (typeof document !== 'undefined' && !document.getElementById('m73-faces')) {
-	const st = document.createElement('style');
-	st.id = 'm73-faces';
-	st.textContent = FACE;
-	document.head.appendChild(st);
-}
-
-const useFaces = () => {
-	const [handle] = useState(() => delayRender('m73 fonts'));
-	const done = useRef(false);
-	useEffect(() => {
-		const fin = () => {
-			if (!done.current) {
-				done.current = true;
-				continueRender(handle);
-			}
-		};
-		const d: any = typeof document === 'undefined' ? null : document;
-		const ok =
-			d && d.fonts && d.fonts.check
-				? d.fonts.check("600 20px 'CuUI'") && d.fonts.check("700 20px 'CuUI'") && d.fonts.check("500 20px 'CuMono'")
-				: false;
-		if (ok) {
-			fin();
-			return;
-		}
-		if (d && d.fonts && d.fonts.load) {
-			Promise.all([d.fonts.load("600 20px 'CuUI'"), d.fonts.load("700 20px 'CuUI'"), d.fonts.load("500 20px 'CuMono'")])
-				.then(fin)
-				.catch(fin);
-		} else fin();
-		const id = setTimeout(fin, 900);
-		return () => {
-			clearTimeout(id);
-			fin();
-		};
-	}, [handle]);
+const FONT = 'InterPlay';
+const F5 = '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';
+const F7 = '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';
+const F8 = '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';
+let fontRequested = false;
+const ensureFont = () => {
+	if (fontRequested || typeof document === 'undefined') return;
+	fontRequested = true;
+	const el = document.createElement('style');
+	const face = (w: number, b: string) =>
+		"@font-face{font-family:'" + FONT + "';font-style:normal;font-weight:" + w +
+		';font-display:block;src:url(data:font/woff2;base64,' + b + ") format('woff2');}";
+	el.textContent = face(500, F5) + face(700, F7) + face(800, F8);
+	document.head.appendChild(el);
 };
 
-/* ------------------------------------------------------------------ maths */
-const clamp = (v: number, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const seg = (f: number, a: number, b: number) => clamp((f - a) / (b - a));
-const inOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-const outCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-const outQuint = (t: number) => 1 - Math.pow(1 - t, 5);
-const outBack = (t: number) => {
-	const c = 1.8;
-	return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
-};
-const ez = (f: number, a: number, b: number, c: (t: number) => number = inOutCubic) => c(seg(f, a, b));
-const rr = (x: number, y: number, w: number, h: number, r: number) => {
-	const q = Math.min(r, w / 2, h / 2);
-	return (
-		`M${x + q} ${y}H${x + w - q}A${q} ${q} 0 0 1 ${x + w} ${y + q}` +
-		`V${y + h - q}A${q} ${q} 0 0 1 ${x + w - q} ${y + h}` +
-		`H${x + q}A${q} ${q} 0 0 1 ${x} ${y + h - q}` +
-		`V${y + q}A${q} ${q} 0 0 1 ${x + q} ${y}Z`
-	);
-};
-
-/* ------------------------------------------------------------------ stage */
 const W = 1920;
 const H = 1080;
+const TAU = Math.PI * 2;
 
-const CARD = 'M-64 -70A11 11 0 0 1 -53 -81H38L64 -55V70A11 11 0 0 1 53 81H-53A11 11 0 0 1 -64 70Z';
-const FLAP =
-	'M-118 -18H118Q125 -18 125.6 -11.2L114 59Q112.4 71.6 99.8 71.6H-99.8Q-112.4 71.6 -114 59L-125.6 -11.2Q-125 -18 -118 -18Z';
-const BACKP =
-	'M-115 -44V-64A13 13 0 0 1 -102 -77H-44A13 13 0 0 1 -33.6 -71.8L-21 -55A13 13 0 0 0 -10.6 -49.8H101A13 13 0 0 1 114 -36.8V58A13 13 0 0 1 101 71H-102A13 13 0 0 1 -115 58Z';
+/* ---- player geometry ---- */
+const CX = 200;
+const CY = 88;
+const CW = 1520;
+const CH = 855; /* 16:9 */
+const CR = 18;
 
-const FSC = 1.36;
-const SRCX = 372;
-const DSTX = 1548;
-const FY = 600; /* both folders and the lane share a centreline */
-const LANE_X0 = 596;
-const LANE_X1 = 1324;
-const LANE_H = 196;
-const NODE_X = 960;
-const NODE_Y = 404;
-const CSC = 0.92; /* travelling card */
-const DIP = 52; /* how far below the lane a card sits while inside a folder */
+/* ---- menu geometry ---- */
+const MNW = 276;
+const MNROW = 48;
+const MNHEAD = 46;
+const OPTS = ['360p', '480p', '720p', '1080p', '1440p', '2160p'];
+const TAGS = ['', '', '', 'HD', '', '4K'];
+const MNH = MNHEAD + OPTS.length * MNROW + 12;
+const MNX = CX + CW - 306;
+const MNY = 863 - MNH;
+const GEARX = MNX + MNW - 62;
+const GEARY = 903;
 
-/* ------------------------------------------------------------------ beats */
-const F_SRC = 10;
-const F_DST = 34;
-const F_LANE = 62;
-const F_NODE = 100;
-const F_Q0 = 150;
-const STAG = 62;
-const T_ALL = 76;
-const t0 = (i: number) => F_Q0 + i * STAG;
-const tEnd = (i: number) => t0(i) + T_ALL;
-const F_LAST = tEnd(7); /* 660 */
-const F_DONE = 726;
+const INK = '#F2F5FB';
+const DIM = '#98A3B8';
+const DIM2 = '#6A7488';
+const ACC = '#FFC24D';
 
-/* ------------------------------------------------------------------ files */
-const FILES = [
-	{name: 'SHOOT_RAW', ext: 'ZIP', gb: 3.4, col: '#0FA862', thumb: 0},
-	{name: 'EDIT_V4', ext: 'MP4', gb: 2.8, col: '#7C4DFF', thumb: 2},
-	{name: 'POSTER', ext: 'PSD', gb: 1.9, col: '#2B7FFF', thumb: 1},
-	{name: 'BRIEF', ext: 'PDF', gb: 0.4, col: '#FF4D4F', thumb: 0},
-	{name: 'LOGO_SET', ext: 'AI', gb: 0.7, col: '#F5811F', thumb: 1},
-	{name: 'AUDIO_MIX', ext: 'WAV', gb: 1.1, col: '#0EA5B7', thumb: 0},
-	{name: 'STILLS', ext: 'ZIP', gb: 1.6, col: '#0FA862', thumb: 1},
-	{name: 'NOTES', ext: 'DOC', gb: 0.7, col: '#2B7FFF', thumb: 0},
-];
-const TOTGB = FILES.reduce((a, c) => a + c.gb, 0); /* 12.6 */
+const EASE = Easing.bezier(0.16, 0.86, 0.22, 1);
+const EASE_IO = Easing.bezier(0.42, 0, 0.24, 1);
 
-/* palette */
-const INK = '#16233A';
-const INK2 = '#5D6C86';
-const INK3 = '#96A3B8';
-const LINE = '#DCE3EE';
-const ACC = '#1D6BFF';
-const OKC = '#12B26A';
-
-/* ------------------------------------------------------------------ pieces */
-
-const MiniCard: React.FC<{i: number}> = ({i}) => {
-	const F = FILES[i];
-	return (
-		<g>
-			<path d={CARD} fill="#FFFFFF" />
-			<path d={CARD} fill="url(#gCardV)" />
-			<path d={CARD} fill="none" stroke="#DDE5F1" strokeWidth={2.4} />
-			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
-			<path d={rr(-44, -58, 60, 12, 6)} fill={F.col} opacity={0.55} />
-			{[0, 1, 2].map((k) => (
-				<path key={k} d={rr(-44, -32 + k * 22, [88, 70, 84][k], 10, 5)} fill="#E5EBF5" />
-			))}
-			<path d={rr(-44, 44, 46, 26, 8)} fill={F.col} opacity={0.18} />
-		</g>
-	);
+let _s = 0x5ab3d17f >>> 0;
+const rr = () => {
+	_s = (Math.imul(_s, 1664525) + 1013904223) >>> 0;
+	return _s / 4294967296;
 };
 
-const FileCard: React.FC<{i: number; hot: number}> = ({i, hot}) => {
-	const F = FILES[i];
-	const chipW = F.ext.length * 10 + 22;
-	return (
-		<g>
-			<path d={CARD} fill="#FFFFFF" />
-			<path d={CARD} fill="url(#gCardV)" />
-			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={1.8} />
-			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
-			<path d="M38 -81V-55H64" fill="none" stroke="#C3D1E4" strokeWidth={1.8} strokeLinejoin="round" />
-			{F.thumb === 0 ? (
-				<g>
-					<path d={rr(-44, -60, 62, 9, 4.5)} fill={F.col} opacity={0.5} />
-					{[0, 1, 2, 3].map((k) => (
-						<path key={k} d={rr(-44, -38 + k * 18, [88, 74, 88, 62][k], 8, 4)} fill="#E5EBF5" />
-					))}
-				</g>
-			) : (
-				<g>
-					<path d={rr(-47, -64, 94, 52, 8)} fill={`url(#gT${i})`} />
-					{F.thumb === 2 ? (
-						<g>
-							<circle cx={0} cy={-38} r={13} fill="#FFFFFF" opacity={0.92} />
-							<path d="M-4.5 -45L8 -38L-4.5 -31Z" fill={F.col} />
-						</g>
-					) : (
-						<g>
-							<circle cx={24} cy={-50} r={6.5} fill="#FFFFFF" opacity={0.85} />
-							<path d="M-47 -25L-19 -47L-2 -33L14 -45L47 -25V-20A8 8 0 0 1 39 -12H-39A8 8 0 0 1 -47 -20Z" fill="#FFFFFF" opacity={0.55} />
-						</g>
-					)}
-					<path d={rr(-44, -2, 88, 8, 4)} fill="#E5EBF5" />
-					<path d={rr(-44, 14, 66, 8, 4)} fill="#E5EBF5" />
-				</g>
-			)}
-			<path d={rr(-44, 44, chipW, 24, 7)} fill={F.col} opacity={0.15} />
-			<text x={-44 + chipW / 2} y={61} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={13} letterSpacing={1.1} fill={F.col}>
-				{F.ext}
-			</text>
-			{hot > 0.01 ? (
-				<g opacity={hot}>
-					<path d={CARD} fill={ACC} opacity={0.1} />
-					<path d={CARD} fill="none" stroke={ACC} strokeWidth={2.6} />
-				</g>
-			) : null}
-		</g>
-	);
-};
+/* ------------------------------------------------------------------ *
+ *  the clip: night city
+ * ------------------------------------------------------------------ */
 
-const FolderBack: React.FC<{g: string}> = ({g}) => (
-	<g>
-		<ellipse cx={0} cy={96} rx={104} ry={15} fill="url(#gShadow)" opacity={0.6} />
-		<path d={BACKP} fill={`url(#gB${g})`} />
-		<path d={rr(-88, -40, 176, 96, 7)} fill="#FFFFFF" />
-		<path d={rr(-88, -40, 176, 96, 7)} fill="url(#gPaper)" />
-	</g>
-);
+type City = {o: string; b1: string; b2: string; b3: string; f: string; tops: number[][]};
 
-const FolderFront: React.FC<{g: string; hi: string}> = ({g, hi}) => (
-	<g>
-		<path d={FLAP} fill={`url(#gF${g})`} />
-		<path d={FLAP} fill="url(#gSheen)" />
-		<path d={FLAP} fill="url(#gFlapShade)" />
-		<path d="M-115 -15.6H115" stroke={hi} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
-	</g>
-);
-
-/* ------------------------------------------------------------------ main */
-export const Motion: React.FC = () => {
-	useFaces();
-	const f = useCurrentFrame();
-
-	const plate = ez(f, 0, 34, outCubic);
-	const chrome = ez(f, 8, 46, outCubic);
-	const srcIn = ez(f, F_SRC, F_SRC + 40, outBack);
-	const dstIn = ez(f, F_DST, F_DST + 40, outBack);
-	const laneIn = ez(f, F_LANE, F_LANE + 44, inOutCubic);
-	const nodeIn = ez(f, F_NODE, F_NODE + 32, outBack);
-
-	/* ---------------- per-file crossing ---------------- */
-	const dipAt = (t: number) => 1 - Math.min(1, t / 0.13);
-	const cross = (i: number) => {
-		const u = ez(f, t0(i), tEnd(i), inOutCubic);
-		const raw = seg(f, t0(i), tEnd(i));
-		const d = DIP * (dipAt(raw) + dipAt(1 - raw));
-		const wob = Math.sin(raw * 6.6 + i * 1.7) * 9 * Math.sin(Math.PI * raw);
-		return {
-			x: lerp(SRCX, DSTX, u),
-			y: FY + d + wob,
-			sc: CSC - 0.2 * (dipAt(raw) + dipAt(1 - raw)),
-			rot: Math.sin(raw * 3.4 + i) * 2.6 * Math.sin(Math.PI * raw),
-		};
-	};
-
-	const launched = FILES.filter((_x, i) => f >= t0(i) + 10).length;
-	const landed = FILES.filter((_x, i) => f >= tEnd(i)).length;
-	const srcGB = FILES.reduce((a, c, i) => a + (f >= t0(i) + 10 ? 0 : c.gb), 0);
-	const dstGB = FILES.reduce((a, c, i) => a + (f >= tEnd(i) ? c.gb : 0), 0);
-	const prog = FILES.reduce((a, _x, i) => a + seg(f, t0(i), tEnd(i)), 0) / FILES.length;
-
-	/* which file is under the beam right now — drives the beam and the card ring */
-	let nodeI = -1;
-	let nodeD = 999;
-	FILES.forEach((_x, i) => {
-		if (f < t0(i) || f > tEnd(i)) return;
-		const d = Math.abs(cross(i).x - NODE_X);
-		if (d < nodeD) {
-			nodeD = d;
-			nodeI = i;
+const makeCity = (
+	baseY: number,
+	minH: number,
+	maxH: number,
+	minW: number,
+	maxW: number,
+	cw: number,
+	ch: number,
+	lit: number,
+	gap: number
+): City => {
+	const o: string[] = [];
+	const b1: string[] = [];
+	const b2: string[] = [];
+	const b3: string[] = [];
+	const f: string[] = [];
+	const tops: number[][] = [];
+	let bx = -260;
+	while (bx < 1460) {
+		const w = minW + rr() * (maxW - minW);
+		const h = minH + rr() * (maxH - minH);
+		const top = baseY - h;
+		o.push(
+			'M' + bx.toFixed(1) + ' ' + baseY.toFixed(1) + 'V' + top.toFixed(1) + 'H' +
+			(bx + w).toFixed(1) + 'V' + baseY.toFixed(1) + 'Z'
+		);
+		tops.push([bx + w / 2, top, h]);
+		for (let y = top + ch * 1.4; y < baseY - ch * 0.7; y += ch) {
+			for (let x = bx + cw; x < bx + w - cw * 0.6; x += cw) {
+				if (rr() < lit) {
+					const sd = 'M' + x.toFixed(1) + ' ' + y.toFixed(1) + 'h.01';
+					const b = rr();
+					if (b < 0.16) b1.push(sd);
+					else if (b < 0.56) b2.push(sd);
+					else b3.push(sd);
+				}
+				if (rr() < lit * 0.46) {
+					f.push(
+						'M' + (x + cw * 0.44).toFixed(1) + ' ' + (y + ch * 0.44).toFixed(1) + 'h.01'
+					);
+				}
+			}
 		}
-	});
-	const beamHot = nodeI >= 0 ? clamp(1 - nodeD / 180) : 0;
+		bx += w + gap * 0.4 + rr() * gap;
+	}
+	return {o: o.join(''), b1: b1.join(''), b2: b2.join(''), b3: b3.join(''), f: f.join(''), tops};
+};
 
-	/* the stamp is LATCHED to the crossing frame, not to proximity */
-	let stampI = -1;
-	let stampOp = 0;
-	FILES.forEach((_x, i) => {
-		const at = t0(i) + 38;
-		if (f < at - 10 || f > at + 46) return;
-		stampI = i;
-		stampOp = ez(f, at - 10, at - 2, outCubic) * (1 - ez(f, at + 34, at + 46, outCubic));
-	});
+const FAR = makeCity(346, 46, 128, 24, 58, 7.2, 8.6, 0.46, 12);
+const MID = makeCity(388, 62, 172, 32, 82, 8.6, 10.4, 0.5, 16);
+const NEAR = makeCity(440, 78, 212, 44, 108, 10.2, 12.6, 0.48, 22);
+const WY = 440; /* waterline */
 
-	/* last completed file, for the activity line */
-	let lastI = -1;
-	FILES.forEach((_x, i) => {
-		if (f >= tEnd(i)) lastI = i;
-	});
-	const actOp = lastI >= 0 ? ez(f, tEnd(lastI), tEnd(lastI) + 14, outCubic) : 0;
+/* aircraft beacons on the tallest towers of each plane */
+const BEACONS = [FAR, MID, NEAR]
+	.map((c, li) =>
+		c.tops
+			.filter((v) => v[2] > (li === 0 ? 104 : li === 1 ? 140 : 176))
+			.slice(0, 4)
+			.map((v) => ({x: v[0], y: v[1], li, ph: rr()}))
+	)
+	.reduce((a, b) => a.concat(b), [] as Array<{x: number; y: number; li: number; ph: number}>);
 
-	/* destination reaction */
-	const dstHit = FILES.reduce((a, _x, i) => {
-		const w = ez(f, tEnd(i) - 6, tEnd(i) + 6, outCubic) * (1 - ez(f, tEnd(i) + 6, tEnd(i) + 40, outQuint));
-		return Math.max(a, w);
-	}, 0);
-	const finale = ez(f, F_LAST + 8, F_LAST + 34, outCubic) * (1 - ez(f, F_LAST + 34, F_LAST + 100, outQuint));
+const STAR_A = Array.from({length: 52}, () => ({
+	x: rr() * 1200,
+	y: 12 + rr() * 250,
+	r: 0.7 + rr() * 1.3,
+	o: 0.22 + rr() * 0.5,
+}));
+const CLOUD = Array.from({length: 7}, (_, i) => ({
+	x: -140 + i * 208 + rr() * 90,
+	y: 214 + rr() * 96,
+	rx: 150 + rr() * 130,
+	ry: 9 + rr() * 11,
+	o: 0.16 + rr() * 0.22,
+	sp: 2.4 + rr() * 3.6,
+}));
+const STAR_B = Array.from({length: 96}, () => ({
+	x: rr() * 1200,
+	y: 8 + rr() * 290,
+	r: 0.42 + rr() * 0.7,
+	o: 0.14 + rr() * 0.36,
+}));
 
-	const chip = f >= F_LAST + 8 ? 'COMPLETE' : f >= F_Q0 - 20 ? 'TRANSFERRING' : 'READY';
-	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_Q0 - 20 ? ACC : INK3;
-	const doneOp = ez(f, F_DONE, F_DONE + 30, outCubic);
-	const doneY = lerp(32, 0, ez(f, F_DONE, F_DONE + 36, outQuint));
-	const rate = f >= F_LAST || f < F_Q0 ? 0 : 186 + Math.round(Math.sin(f * 0.1) * 14 + Math.sin(f * 0.037) * 22);
-	const status =
-		f >= F_LAST + 8
-			? 'ALL FILES MOVED · SOURCE EMPTY'
-			: f >= F_Q0
-				? `ROUTING · ${Math.min(landed + 1, 8)} OF 8`
-				: 'AI ROUTING · READY';
+/* the bay: soft light columns falling from the brightest blocks, plus
+   ripple streaks that break the mirrored image up the way water does */
+const COLS = Array.from({length: 15}, () => ({
+	x: rr() * 1260 - 30,
+	w: 12 + rr() * 34,
+	h: 66 + rr() * 138,
+	o: 0.1 + rr() * 0.2,
+	warm: rr() < 0.62,
+	ph: rr(),
+}));
+const RIPS = Array.from({length: 58}, () => {
+	const dep = Math.pow(rr(), 0.68);
+	return {
+		x: rr() * 1320 - 70,
+		y: WY + 8 + dep * 224,
+		w: 26 + rr() * 168,
+		h: 1.1 + rr() * 2.4,
+		o: 0.08 + rr() * 0.34,
+		warm: rr() < 0.56,
+		amp: 5 + dep * 20,
+		sp: 0.18 + rr() * 0.42,
+		ph: rr(),
+		dep,
+	};
+});
+
+type CP = {t: number; q: number};
+
+const Clip = ({t, q}: CP) => {
+	/* one slow lateral drift, parallax by plane */
+	const lay = (d: number) => {
+		const sc = 1 + 0.004 * d * t;
+		const dx = -t * (0.7 + 2.6 * d);
+		return (
+			'translate(' + (600 - 600 * sc + dx).toFixed(2) + ' ' + (370 - 370 * sc).toFixed(2) +
+			') scale(' + sc.toFixed(5) + ')'
+		);
+	};
+	/* low resolution reads as chunkier lights, not just softer ones */
+	const wA = 2.05 + (1 - q) * 2.5;
+	const wB = 1.8 + (1 - q) * 2.2;
+	const wC = 1.45 + (1 - q) * 1.9;
 
 	return (
-		<AbsoluteFill style={{backgroundColor: '#EDF1F8'}}>
-			<svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{display: 'block'}}>
-				<defs>
-					<linearGradient id="gPlate" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FAFCFF" />
-						<stop offset="0.55" stopColor="#EFF3FA" />
-						<stop offset="1" stopColor="#E1E7F3" />
-					</linearGradient>
-					<radialGradient id="gLift" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
-						<stop offset="0.6" stopColor="#FFFFFF" stopOpacity="0.4" />
-						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-					</radialGradient>
-					<radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#22375C" stopOpacity="0.32" />
-						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.12" />
-						<stop offset="1" stopColor="#22375C" stopOpacity="0" />
-					</radialGradient>
-					<radialGradient id="gAcc" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0.5" />
-						<stop offset="0.5" stopColor="#2E7BFF" stopOpacity="0.14" />
-						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
-					</radialGradient>
-					<radialGradient id="gGrn" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#12B26A" stopOpacity="0.5" />
-						<stop offset="0.5" stopColor="#12B26A" stopOpacity="0.14" />
-						<stop offset="1" stopColor="#12B26A" stopOpacity="0" />
-					</radialGradient>
-					<linearGradient id="gCardV" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
-						<stop offset="1" stopColor="#D8E1EF" stopOpacity="0.55" />
-					</linearGradient>
-					<linearGradient id="gPaper" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
-						<stop offset="1" stopColor="#C9D7EA" stopOpacity="0.9" />
-					</linearGradient>
-					<linearGradient id="gSheen" x1="0.06" y1="0" x2="0.72" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.34" />
-						<stop offset="0.22" stopColor="#FFFFFF" stopOpacity="0.04" />
-						<stop offset="0.36" stopColor="#FFFFFF" stopOpacity="0.19" />
-						<stop offset="0.58" stopColor="#FFFFFF" stopOpacity="0" />
-					</linearGradient>
-					<linearGradient id="gFlapShade" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0.62" stopColor="#0B2A5E" stopOpacity="0" />
-						<stop offset="1" stopColor="#0B2A5E" stopOpacity="0.2" />
-					</linearGradient>
-					{/* source folder — muted slate */}
-					<linearGradient id="gBS" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#9AACC4" />
-						<stop offset="1" stopColor="#6D8199" />
-					</linearGradient>
-					<linearGradient id="gFS" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#C6D2E1" />
-						<stop offset="0.5" stopColor="#A2B3C8" />
-						<stop offset="1" stopColor="#7F93AB" />
-					</linearGradient>
-					{/* destination folder — accent */}
-					<linearGradient id="gBD" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#5291F4" />
-						<stop offset="1" stopColor="#2A5EC2" />
-					</linearGradient>
-					<linearGradient id="gFD" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#86B7FF" />
-						<stop offset="0.5" stopColor="#4F8DF4" />
-						<stop offset="1" stopColor="#2C68D8" />
-					</linearGradient>
-					{FILES.map((F, i) =>
-						F.thumb === 0 ? null : (
-							<linearGradient key={i} id={`gT${i}`} x1="0" y1="0" x2="0.7" y2="1">
-								<stop offset="0" stopColor={F.col} stopOpacity="0.85" />
-								<stop offset="1" stopColor={F.col} stopOpacity="0.45" />
-							</linearGradient>
-						)
-					)}
-					<linearGradient id="gLane" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
-						<stop offset="0.5" stopColor="#F2F6FC" stopOpacity="0.9" />
-						<stop offset="1" stopColor="#E3EAF5" stopOpacity="0.95" />
-					</linearGradient>
-					<clipPath id="cpLane">
-						<path d={rr(LANE_X0, FY - LANE_H / 2, LANE_X1 - LANE_X0, LANE_H, LANE_H / 2)} />
-					</clipPath>
-				</defs>
+		<svg viewBox="0 0 1200 675" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style={{display: 'block'}}>
+			<defs>
+				<linearGradient id="c-sky" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#04061A" />
+					<stop offset="0.32" stopColor="#0A0E2E" />
+					<stop offset="0.6" stopColor="#181B46" />
+					<stop offset="0.82" stopColor="#2C2450" />
+					<stop offset="1" stopColor="#3B2A4C" />
+				</linearGradient>
+				<radialGradient id="c-dome">
+					<stop offset="0" stopColor="#FFB165" stopOpacity={0.55} />
+					<stop offset="0.42" stopColor="#D2743A" stopOpacity={0.24} />
+					<stop offset="1" stopColor="#8A4A50" stopOpacity={0} />
+				</radialGradient>
+				<radialGradient id="c-dome2">
+					<stop offset="0" stopColor="#FFD9A6" stopOpacity={0.5} />
+					<stop offset="1" stopColor="#FFA35C" stopOpacity={0} />
+				</radialGradient>
+				<linearGradient id="c-far" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#1E2448" />
+					<stop offset="1" stopColor="#2A2D55" />
+				</linearGradient>
+				<linearGradient id="c-mid" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#12173A" />
+					<stop offset="1" stopColor="#1C2046" />
+				</linearGradient>
+				<linearGradient id="c-near" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#080B22" />
+					<stop offset="1" stopColor="#0F1330" />
+				</linearGradient>
+				<linearGradient id="c-water" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#2A2349" />
+					<stop offset="0.22" stopColor="#161634" />
+					<stop offset="0.62" stopColor="#0A0C22" />
+					<stop offset="1" stopColor="#050614" />
+				</linearGradient>
+				<linearGradient id="c-wfade" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#12142F" stopOpacity={0} />
+					<stop offset="0.42" stopColor="#0C0E26" stopOpacity={0.56} />
+					<stop offset="1" stopColor="#050614" stopOpacity={0.95} />
+				</linearGradient>
+				<linearGradient id="c-colw" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#FFCB8C" stopOpacity={0.55} />
+					<stop offset="1" stopColor="#FFA85C" stopOpacity={0} />
+				</linearGradient>
+				<linearGradient id="c-colc" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#A6BCF6" stopOpacity={0.42} />
+					<stop offset="1" stopColor="#6E85D0" stopOpacity={0} />
+				</linearGradient>
+				<radialGradient id="c-cloud">
+					<stop offset="0" stopColor="#E4B98C" stopOpacity={0.9} />
+					<stop offset="0.5" stopColor="#9C86A8" stopOpacity={0.4} />
+					<stop offset="1" stopColor="#6A6090" stopOpacity={0} />
+				</radialGradient>
+				<radialGradient id="c-vig">
+					<stop offset="0.48" stopColor="#000000" stopOpacity={0} />
+					<stop offset="1" stopColor="#000000" stopOpacity={0.55} />
+				</radialGradient>
+			</defs>
 
-				{/* ============================================================ plate */}
-				<rect width={W} height={H} fill="url(#gPlate)" />
-				<ellipse cx={960} cy={380} rx={1240} ry={760} fill="url(#gLift)" opacity={plate} />
-				<ellipse cx={DSTX} cy={FY} rx={430} ry={340} fill="url(#gAcc)" opacity={(0.1 + 0.16 * dstHit) * plate} />
+			<rect x={0} y={0} width={1200} height={675} fill="url(#c-sky)" />
 
-				{/* ============================================================ title */}
-				<g opacity={chrome} transform={`translate(0 ${lerp(-16, 0, chrome)})`}>
-					<path d="M614 66H750" stroke={LINE} strokeWidth={2} />
-					<path d="M1170 66H1306" stroke={LINE} strokeWidth={2} />
-					<text x={960} y={73} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={5.6} fill={INK2}>
-						AI FILE TRANSFER · FOLDER TO FOLDER
-					</text>
-				</g>
+			<g opacity={0.9}>
+				{STAR_A.map((v, i) => (
+					<circle key={'sa' + i} cx={v.x} cy={v.y} r={v.r} fill="#DCE6FF" opacity={v.o} />
+				))}
+			</g>
+			<g opacity={q}>
+				{STAR_B.map((v, i) => (
+					<circle key={'sb' + i} cx={v.x} cy={v.y} r={v.r} fill="#CBD8F5" opacity={v.o} />
+				))}
+			</g>
 
-				{/* ============================================================ panel */}
-				<g opacity={chrome} transform={`translate(0 ${lerp(-22, 0, chrome)})`}>
-					<ellipse cx={960} cy={200} rx={470} ry={26} fill="url(#gShadow)" opacity={0.5} />
-					<path d={rr(480, 108, 960, 84, 20)} fill="#FFFFFF" />
-					<path d={rr(480, 108, 960, 84, 20)} fill="none" stroke="#E4EAF4" strokeWidth={2} />
-
-					{/* folder → folder glyph */}
-					<g transform="translate(508 134)">
-						{[0, 46].map((dx, k) => (
-							<path
-								key={k}
-								d="M0 5A5 5 0 0 1 5 0H11A5 5 0 0 1 14.8 1.8L17.9 5.6A4 4 0 0 0 21.1 7.2H29A5 5 0 0 1 34 12.2V25A5 5 0 0 1 29 30H5A5 5 0 0 1 0 25Z"
-								transform={`translate(${dx} 0)`}
-								fill={k ? ACC : '#A2B3C8'}
-								opacity={k ? 0.85 : 0.75}
-							/>
-						))}
-						<path d="M38 15H44M41 12L44 15L41 18" fill="none" stroke={INK3} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-					</g>
-					<text x={600} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
-						AI TRANSFER ENGINE
-					</text>
-					<text x={600} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
-						{`8 FILES · ${TOTGB.toFixed(1)} GB`}
-					</text>
-
-					<g transform="translate(896 0)">
-						<path d={rr(0, 134, chip.length * 12.2 + 50, 32, 16)} fill={chipCol} opacity={0.13} />
-						<circle cx={20} cy={150} r={5} fill={chipCol} />
-						<text x={36} y={156} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={chipCol}>
-							{chip}
-						</text>
-					</g>
-
-					<g transform="translate(1128 150)">
-						{FILES.map((_x, i) => {
-							const d = f >= tEnd(i);
-							const a = f >= t0(i) && !d;
-							return <circle key={i} cx={i * 20} cy={0} r={d ? 6.4 : 5.4} fill={d ? OKC : a ? ACC : '#C7D2E2'} opacity={d ? 1 : a ? 0.85 : 0.5} />;
-						})}
-					</g>
-
-					<g transform="translate(1300 0)">
-						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
-							MOVED
-						</text>
-						<text x={120} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
-							{`${landed}/8`}
-						</text>
-						<path d={rr(0, 152, 120, 8, 4)} fill="#E6EBF4" />
-						<path d={rr(0, 152, Math.max(2, 120 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
-					</g>
-				</g>
-
-				{/* ============================================================ lane */}
-				<g opacity={laneIn}>
-					<path d={rr(LANE_X0, FY - LANE_H / 2, (LANE_X1 - LANE_X0) * laneIn, LANE_H, LANE_H / 2)} fill="url(#gLane)" />
-					<path
-						d={rr(LANE_X0, FY - LANE_H / 2, (LANE_X1 - LANE_X0) * laneIn, LANE_H, LANE_H / 2)}
-						fill="none"
-						stroke="#D5DFEE"
-						strokeWidth={2.4}
+			<g>
+				{CLOUD.map((c, i) => (
+					<ellipse
+						key={'cl' + i}
+						cx={c.x + t * c.sp}
+						cy={c.y}
+						rx={c.rx}
+						ry={c.ry}
+						fill="url(#c-cloud)"
+						opacity={c.o}
 					/>
-					<g clipPath="url(#cpLane)" opacity={0.9}>
-						{Array.from({length: 16}, (_x, k) => {
-							const span = LANE_X1 - LANE_X0 + 120;
-							const x = LANE_X0 - 60 + ((f * 2.6 + k * (span / 16)) % span);
-							return (
-								<path
-									key={k}
-									d={`M${x - 9} ${FY - 13}l11 13l-11 13`}
-									fill="none"
-									stroke={ACC}
-									strokeWidth={3}
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									opacity={0.2}
-								/>
-							);
-						})}
-						<path d={`M${LANE_X0} ${FY - LANE_H / 2 + 22}H${LANE_X1}`} stroke="#E6EDF7" strokeWidth={2} />
-						<path d={`M${LANE_X0} ${FY + LANE_H / 2 - 22}H${LANE_X1}`} stroke="#E6EDF7" strokeWidth={2} />
-					</g>
-				</g>
+				))}
+			</g>
 
-				{/* ============================================================ folder backs + stacks */}
-				<g opacity={clamp(srcIn * 1.4)} transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40}) scale(${FSC * lerp(0.9, 1, srcIn)})`}>
-					<FolderBack g="S" />
-					{FILES.map((_x, i) => {
-						if (f >= t0(i) + 10) return null;
-						const k = i - launched;
-						const c = (8 - launched - 1) / 2;
-						return (
-							<g key={i} transform={`translate(${(k - c) * 16} ${-49 + Math.abs(k - c) * 2.2}) rotate(${(k - c) * 2.0}) scale(0.44)`}>
-								<MiniCard i={i} />
-							</g>
-						);
-					})}
+			{/* light-pollution dome rising out of the skyline */}
+			<ellipse cx={600} cy={376} rx={800} ry={300} fill="url(#c-dome)" />
+			<ellipse cx={600} cy={364} rx={430} ry={152} fill="url(#c-dome2)" opacity={0.6} />
+
+			{/* --- far plane --- */}
+			<g transform={lay(0.16)}>
+				<path d={FAR.o} fill="url(#c-far)" />
+				<path d={FAR.b3} stroke="#B7C6F0" strokeWidth={wC} strokeLinecap="round" opacity={0.4} />
+				<path d={FAR.b2} stroke="#FFD9A2" strokeWidth={wC} strokeLinecap="round" opacity={0.5} />
+				<path d={FAR.b1} stroke="#FFF0CE" strokeWidth={wC * 1.15} strokeLinecap="round" opacity={0.7} />
+				<path d={FAR.f} stroke="#FFE3B4" strokeWidth={1.1} strokeLinecap="round" opacity={0.34 * q} />
+			</g>
+
+			<rect x={0} y={274} width={1200} height={401} fill="url(#c-dome)" opacity={0.28} />
+
+			{/* --- mid plane --- */}
+			<g transform={lay(0.4)}>
+				<path d={MID.o} fill="url(#c-mid)" />
+				<path d={MID.b3} stroke="#A9BCF0" strokeWidth={wB} strokeLinecap="round" opacity={0.48} />
+				<path d={MID.b2} stroke="#FFD394" strokeWidth={wB} strokeLinecap="round" opacity={0.62} />
+				<path d={MID.b1} stroke="#FFF3D4" strokeWidth={wB * 1.2} strokeLinecap="round" opacity={0.85} />
+				<path d={MID.f} stroke="#FFDCA4" strokeWidth={1.2} strokeLinecap="round" opacity={0.4 * q} />
+			</g>
+
+			<rect x={0} y={308} width={1200} height={367} fill="url(#c-dome)" opacity={0.19} />
+
+			{/* --- near plane --- */}
+			<g transform={lay(0.78)}>
+				<path d={NEAR.o} fill="url(#c-near)" />
+				<path d={NEAR.b3} stroke="#9FB6F5" strokeWidth={wA} strokeLinecap="round" opacity={0.55} />
+				<path d={NEAR.b2} stroke="#FFCB84" strokeWidth={wA} strokeLinecap="round" opacity={0.72} />
+				<path d={NEAR.b1} stroke="#FFF6DE" strokeWidth={wA * 1.22} strokeLinecap="round" opacity={0.95} />
+				<path d={NEAR.f} stroke="#FFD79A" strokeWidth={1.3} strokeLinecap="round" opacity={0.46 * q} />
+			</g>
+
+			{/* aircraft beacons */}
+			{BEACONS.map((b, i) => {
+				const on = (t * 0.62 + b.ph) % 1 < 0.44 ? 1 : 0.06;
+				const d = b.li === 0 ? 0.16 : b.li === 1 ? 0.4 : 0.78;
+				return (
+					<g key={'bc' + i} transform={lay(d)}>
+						<circle cx={b.x} cy={b.y - 2} r={4.4} fill="#FF4D4D" opacity={0.22 * on} />
+						<circle cx={b.x} cy={b.y - 2} r={1.5} fill="#FF6B6B" opacity={on} />
+					</g>
+				);
+			})}
+
+			{/* ================= the bay ================= */}
+			<rect x={0} y={WY} width={1200} height={675 - WY} fill="url(#c-water)" />
+
+			{/* the city, actually mirrored — not a painted suggestion of one */}
+			<g transform={'translate(0 ' + (WY * 1.78).toFixed(1) + ') scale(1 -0.78)'}>
+				<g transform={lay(0.4)}>
+					<path d={MID.o} fill="#0E1230" opacity={0.62} />
+					<path d={MID.b2} stroke="#FFCB84" strokeWidth={wB * 1.5} strokeLinecap="round" opacity={0.2} />
+					<path d={MID.b1} stroke="#FFE7BC" strokeWidth={wB * 1.7} strokeLinecap="round" opacity={0.3} />
 				</g>
-				<g
-					opacity={clamp(dstIn * 1.4)}
-					transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40}) scale(${FSC * lerp(0.9, 1, dstIn)} ${FSC * lerp(0.9, 1, dstIn) * (1 - 0.05 * dstHit)})`}
+				<g transform={lay(0.78)}>
+					<path d={NEAR.o} fill="#080B24" opacity={0.74} />
+					<path d={NEAR.b3} stroke="#9FB6F5" strokeWidth={wA * 1.4} strokeLinecap="round" opacity={0.2} />
+					<path d={NEAR.b2} stroke="#FFC680" strokeWidth={wA * 1.6} strokeLinecap="round" opacity={0.3} />
+					<path d={NEAR.b1} stroke="#FFF0D2" strokeWidth={wA * 1.8} strokeLinecap="round" opacity={0.42} />
+				</g>
+			</g>
+
+			{/* depth swallows the reflection */}
+			<rect x={0} y={WY} width={1200} height={675 - WY} fill="url(#c-wfade)" />
+
+			{/* the dome's own reflection, and light columns under the bright blocks */}
+			<ellipse cx={600} cy={WY + 34} rx={500} ry={62} fill="url(#c-dome2)" opacity={0.2 + 0.06 * q} />
+			{COLS.map((c, i) => (
+				<rect
+					key={'co' + i}
+					x={c.x - t * 1.6 + Math.sin(TAU * (t * 0.06 + c.ph)) * 5}
+					y={WY}
+					width={c.w}
+					height={c.h}
+					fill={c.warm ? 'url(#c-colw)' : 'url(#c-colc)'}
+					opacity={c.o * (0.82 + 0.18 * Math.sin(TAU * (t * 0.19 + c.ph)))}
+				/>
+			))}
+
+			{/* ripples */}
+			{RIPS.map((r, i) => (
+				<rect
+					key={'rp' + i}
+					x={r.x + Math.sin(TAU * (t * r.sp + r.ph)) * r.amp - t * (1.2 + r.dep * 2.6)}
+					y={r.y}
+					width={r.w * (q > 0.5 ? 1 : 1.25)}
+					height={r.h}
+					rx={r.h / 2}
+					fill={r.warm ? '#FFD9A4' : '#AFC4F5'}
+					opacity={r.o * (0.7 + 0.3 * Math.sin(TAU * (t * 0.42 + r.ph * 3.1)))}
+				/>
+			))}
+
+			{/* the waterline itself */}
+			<rect x={0} y={WY - 1.5} width={1200} height={2.4} fill="#FFDCAE" opacity={0.14} />
+
+			<rect x={0} y={0} width={1200} height={675} fill="url(#c-vig)" />
+		</svg>
+	);
+};
+
+/* ------------------------------------------------------------------ */
+
+const fmtClock = (sec: number) => {
+	const m = Math.floor(sec / 60);
+	const s = Math.floor(sec % 60);
+	return m + ':' + (s < 10 ? '0' : '') + s;
+};
+
+const BARS = Array.from({length: 34}, () => 0.24 + rr() * 0.5);
+
+export const Motion: React.FC = () => {
+	const frame = useCurrentFrame();
+	const {fps} = useVideoConfig();
+	const t = frame / fps;
+
+	const [fh] = useState(() => delayRender('play-font'));
+	useEffect(() => {
+		let done = false;
+		const fin = () => {
+			if (done) return;
+			done = true;
+			continueRender(fh);
+		};
+		ensureFont();
+		const id = setTimeout(fin, 2500);
+		Promise.all([
+			document.fonts.load('500 16px ' + FONT),
+			document.fonts.load('700 16px ' + FONT),
+			document.fonts.load('800 40px ' + FONT),
+		])
+			.then(fin)
+			.catch(fin);
+		return () => clearTimeout(id);
+	}, [fh]);
+
+	const at = (s: number, d: number, e = EASE) =>
+		interpolate(t, [s, s + d], [0, 1], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+			easing: e,
+		});
+
+	const intro = at(0, 0.75);
+
+	/* ---------- cursor path ---------- */
+	const KX = [0.0, 0.9, 2.15, 2.65, 3.05, 3.38, 3.68, 3.98, 4.28, 4.6, 4.9, 5.28, 5.62, 6.2, 6.62, 7.6, 8.9, 9.6];
+	const PX = [812, 812, GEARX, 1444, 1444, 1444, 1444, 1444, 1444, 1444, 1444, 1444, 1444, 1444, 1330, 1132, 1010, 986];
+	const PY = [566, 566, GEARY, 583, 583, 631, 631, 727, 727, 775, 775, 823, 823, 823, 792, 700, 604, 588];
+	let ci = 0;
+	for (let i = 0; i < KX.length - 1; i++) if (t >= KX[i]) ci = i;
+	const segA = KX[ci];
+	const segB = KX[Math.min(KX.length - 1, ci + 1)];
+	const segT =
+		segB > segA
+			? interpolate(t, [segA, segB], [0, 1], {
+					extrapolateLeft: 'clamp',
+					extrapolateRight: 'clamp',
+					easing: EASE_IO,
+			  })
+			: 1;
+	const cx = PX[ci] + (PX[Math.min(PX.length - 1, ci + 1)] - PX[ci]) * segT;
+	const cy = PY[ci] + (PY[Math.min(PY.length - 1, ci + 1)] - PY[ci]) * segT;
+	const curO = at(0.55, 0.3) * (1 - at(9.3, 0.4));
+
+	/* ---------- menu ---------- */
+	const open = at(2.24, 0.22) * (1 - at(6.22, 0.2));
+	const menuOpen = t > 2.24 && t < 6.42;
+	const rawIdx = Math.floor((cy - (MNY + MNHEAD)) / MNROW);
+	const hov =
+		menuOpen && open > 0.85 && cx > MNX && cx < MNX + MNW && rawIdx >= 0 && rawIdx < OPTS.length
+			? rawIdx
+			: -1;
+	const picked = t >= 6.18 ? 5 : 1;
+
+	/* click ripples */
+	const rip = (s: number) => {
+		const p = interpolate(t, [s, s + 0.42], [0, 1], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+			easing: Easing.out(Easing.quad),
+		});
+		return p > 0 && p < 1 ? p : 0;
+	};
+	const rip1 = rip(2.16);
+	const rip2 = rip(6.16);
+
+	/* ---------- resolution upgrade ---------- */
+	const q = interpolate(t, [6.46, 7.4], [0, 1], {
+		extrapolateLeft: 'clamp',
+		extrapolateRight: 'clamp',
+		easing: Easing.bezier(0.22, 0.78, 0.2, 1),
+	});
+	const flash = Math.max(0, 1 - Math.max(0, t - 6.46) / 0.3) * (t > 6.46 ? 1 : 0);
+	const sweep = interpolate(t, [6.44, 7.34], [-0.18, 1.18], {
+		extrapolateLeft: 'clamp',
+		extrapolateRight: 'clamp',
+	});
+	const sweeping = t > 6.44 && t < 7.34;
+	const badge = at(6.98, 0.55);
+	/* the old chip clears out before the 4K one arrives, so the two never
+	   sit side by side in the same row mid-crossfade */
+	const oldChip = 1 - at(6.5, 0.3);
+	const mbps = interpolate(t, [6.5, 8.3], [1.8, 24.8], {
+		extrapolateLeft: 'clamp',
+		extrapolateRight: 'clamp',
+		easing: Easing.bezier(0.2, 0.7, 0.2, 1),
+	});
+
+	/* ---------- chrome auto-hide ---------- */
+	const chrome = 1 - at(9.4, 0.55);
+	const pos = 724 + t;
+	const prog = pos / 2840;
+
+	const gearRot = open * 62;
+
+	return (
+		<AbsoluteFill style={{backgroundColor: '#04050A', fontFamily: FONT}}>
+			<AbsoluteFill
+				style={{background: 'radial-gradient(72% 78% at 50% 44%, #0C1024 0%, #070916 52%, #04050A 88%)'}}
+			/>
+			{/* ambient bleed picked up from the clip */}
+			<AbsoluteFill
+				style={{
+					background:
+						'radial-gradient(760px 460px at ' + (700 + 60 * Math.sin(t * 0.35)).toFixed(0) +
+						'px 700px, rgba(226,140,64,' + (0.1 + 0.08 * q).toFixed(3) + ') 0%, rgba(226,140,64,0) 70%)',
+				}}
+			/>
+			<AbsoluteFill
+				style={{
+					background:
+						'radial-gradient(720px 460px at ' + (1240 + 70 * Math.cos(t * 0.28)).toFixed(0) +
+						'px 380px, rgba(96,110,220,' + (0.1 + 0.06 * q).toFixed(3) + ') 0%, rgba(96,110,220,0) 70%)',
+				}}
+			/>
+
+			{/* ================= player ================= */}
+			<div
+				style={{
+					position: 'absolute',
+					left: CX,
+					top: CY,
+					width: CW,
+					height: CH,
+					borderRadius: CR,
+					overflow: 'hidden',
+					background: '#04050E',
+					border: '1px solid rgba(150,175,235,0.12)',
+					boxShadow: '0 46px 130px rgba(0,0,0,0.66)',
+					opacity: intro,
+					transform: 'translateY(' + ((1 - intro) * 22).toFixed(1) + 'px) scale(' + (1 + 0.012 * at(10.2, 4.6)).toFixed(4) + ')',
+				}}
+			>
+				{/* the clip, drawn at the selected quality */}
+				<div
+					style={{
+						position: 'absolute',
+						inset: 0,
+						filter:
+							'blur(' + ((1 - q) * 3.4).toFixed(2) + 'px) saturate(' + (0.86 + 0.14 * q).toFixed(3) +
+							') contrast(' + (0.94 + 0.06 * q).toFixed(3) + ')',
+						transform: 'scale(' + (1 + (1 - q) * 0.006).toFixed(4) + ')',
+					}}
 				>
-					<FolderBack g="D" />
-					{FILES.map((_x, i) => {
-						if (f < tEnd(i)) return null;
-						const c = (landed - 1) / 2;
-						return (
-							<g key={i} transform={`translate(${(i - c) * 16} ${-49 + Math.abs(i - c) * 2.2}) rotate(${(i - c) * 2.0}) scale(0.44)`}>
-								<MiniCard i={i} />
-							</g>
-						);
-					})}
-				</g>
+					<Clip t={t} q={q} />
+				</div>
 
-				{/* ============================================================ files in flight */}
-				<g>
-					{FILES.map((_x, i) => {
-						if (f < t0(i) || f > tEnd(i)) return null;
-						const p = cross(i);
-						const hot = i === nodeI ? beamHot : 0;
-						return (
-							<g key={i} transform={`translate(${p.x} ${p.y}) rotate(${p.rot}) scale(${p.sc})`}>
-								<ellipse cx={0} cy={104} rx={62} ry={11} fill="url(#gShadow)" opacity={0.3} />
-								<FileCard i={i} hot={hot} />
-							</g>
-						);
-					})}
-				</g>
-
-				{/* ============================================================ folder fronts + labels */}
-				<g opacity={clamp(srcIn * 1.4)}>
-					<g transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40}) scale(${FSC * lerp(0.9, 1, srcIn)})`}>
-						<FolderFront g="S" hi="#DEE6F0" />
-					</g>
-					<g transform={`translate(${SRCX} ${FY + (1 - srcIn) * 40})`}>
-						<text x={0} y={140} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={3.6} fill={INK3}>
-							SOURCE
-						</text>
-						<text x={0} y={174} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={23} letterSpacing={2.2} fill={INK}>
-							DOWNLOADS
-						</text>
-						<text x={0} y={206} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={1.2} fill={INK3}>
-							{`${8 - launched} FILES · ${srcGB.toFixed(1)} GB`}
-						</text>
-					</g>
-				</g>
-				<g opacity={clamp(dstIn * 1.4)}>
-					<g
-						transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40}) scale(${FSC * lerp(0.9, 1, dstIn)} ${FSC * lerp(0.9, 1, dstIn) * (1 - 0.05 * dstHit)})`}
-					>
-						<FolderFront g="D" hi="#B8D5FF" />
-					</g>
-					<g transform={`translate(${DSTX} ${FY + (1 - dstIn) * 40})`}>
-						{finale > 0.01 ? <ellipse cx={0} cy={-10} rx={260} ry={210} fill="url(#gGrn)" opacity={finale * 0.5} /> : null}
-						<text x={0} y={140} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={3.6} fill={INK3}>
-							DESTINATION
-						</text>
-						<text x={0} y={174} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={23} letterSpacing={2.2} fill={INK}>
-							PROJECT
-						</text>
-						<text
-							x={0}
-							y={206}
-							textAnchor="middle"
-							fontFamily="CuMono"
-							fontWeight={500}
-							fontSize={16}
-							letterSpacing={1.2}
-							fill={f >= F_LAST ? OKC : INK3}
-						>
-							{`${landed} FILES · ${dstGB.toFixed(1)} GB`}
-						</text>
-					</g>
-					{f >= F_LAST ? (
-						<g transform={`translate(${DSTX + 96} ${FY - 82}) scale(${ez(f, F_LAST + 4, F_LAST + 30, outBack)})`}>
-							<circle cx={0} cy={0} r={30} fill="#FFFFFF" />
-							<circle cx={0} cy={0} r={30} fill="none" stroke={OKC} strokeWidth={3} />
-							<path
-								d="M-13 0L-4 9L14 -11"
-								fill="none"
-								stroke={OKC}
-								strokeWidth={4.4}
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeDasharray={40}
-								strokeDashoffset={40 * (1 - ez(f, F_LAST + 10, F_LAST + 36, outCubic))}
-							/>
-						</g>
-					) : null}
-				</g>
-
-				{/* ============================================================ routing node */}
-				<g opacity={clamp(nodeIn * 1.3)} transform={`translate(${NODE_X} ${NODE_Y}) scale(${lerp(0.86, 1, nodeIn)}) translate(${-NODE_X} ${-NODE_Y})`}>
-					{/* scan beam through the lane */}
-					<g opacity={0.2 + 0.7 * beamHot}>
-						<path d={`M${NODE_X} ${NODE_Y + 34}V${FY + LANE_H / 2 - 6}`} stroke={ACC} strokeWidth={2.4} strokeDasharray="9 8" strokeDashoffset={-f * 1.4} />
-						<rect x={NODE_X - 3} y={FY - LANE_H / 2} width={6} height={LANE_H} fill={ACC} opacity={beamHot * 0.35} />
-					</g>
-					<ellipse cx={NODE_X} cy={NODE_Y} rx={190} ry={130} fill="url(#gAcc)" opacity={0.1 + 0.24 * beamHot} />
-					<path d={rr(NODE_X - 108, NODE_Y - 34, 216, 68, 34)} fill="#FFFFFF" />
-					<path d={rr(NODE_X - 108, NODE_Y - 34, 216, 68, 34)} fill="none" stroke={ACC} strokeWidth={2.6} opacity={0.55 + 0.45 * beamHot} />
-					<g transform={`translate(${NODE_X - 76} ${NODE_Y})`}>
-						<path d="M0 -16L3.9 -4.5L15 -1L3.9 3L0 14L-3.9 3L-15 -1L-3.9 -4.5Z" fill={ACC} />
-					</g>
-					<text x={NODE_X - 50} y={NODE_Y + 7} fontFamily="CuUI" fontWeight={700} fontSize={17} letterSpacing={2.6} fill={ACC}>
-						AI ROUTING
-					</text>
-					{/* verify stamp for the file passing under it */}
-					{stampI >= 0 && stampOp > 0.004 ? (
-						<g opacity={stampOp} transform={`translate(${NODE_X} ${NODE_Y - 66 - 6 * (1 - stampOp)})`}>
-							<path d={rr(-196, -20, 392, 40, 20)} fill="#FFFFFF" />
-							<path d={rr(-196, -20, 392, 40, 20)} fill="none" stroke={OKC} strokeWidth={2.2} />
-							<path d="M-172 0L-166 6L-155 -6" fill="none" stroke={OKC} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
-							<text x={-140} y={6} fontFamily="CuUI" fontWeight={700} fontSize={17} letterSpacing={1.4} fill={INK}>
-								{`${FILES[stampI].name}.${FILES[stampI].ext}`}
-							</text>
-							<text x={176} y={6} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={2} fill={OKC}>
-								VERIFIED
-							</text>
-						</g>
-					) : null}
-				</g>
-
-				{/* ============================================================ transfer meter */}
-				<g opacity={laneIn}>
-					<text x={LANE_X0} y={FY + 140} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3} fill={INK3}>
-						TRANSFER
-					</text>
-					<text x={LANE_X1} y={FY + 140} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={16} letterSpacing={1.2} fill={prog > 0.995 ? OKC : INK2}>
-						{`${Math.round(prog * 100)}%${rate > 0 ? ` · ${rate} MB/S` : ''}`}
-					</text>
-					<path d={rr(LANE_X0, FY + 152, LANE_X1 - LANE_X0, 10, 5)} fill="#E3EAF4" />
-					<path d={rr(LANE_X0, FY + 152, Math.max(2, (LANE_X1 - LANE_X0) * prog), 10, 5)} fill={prog > 0.995 ? OKC : ACC} />
-					{actOp > 0.004 && lastI >= 0 ? (
-						<g opacity={actOp}>
-							<path d="M932 200V200" stroke="none" />
-							<text x={NODE_X} y={FY + 200} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={17} letterSpacing={1.4} fill={INK3}>
-								{`✓ ${FILES[lastI].name}.${FILES[lastI].ext}  ·  ${FILES[lastI].gb.toFixed(1)} GB MOVED`}
-							</text>
-						</g>
-					) : null}
-				</g>
-
-				{/* ============================================================ completion */}
-				{doneOp > 0.004 ? (
-					<g opacity={doneOp} transform={`translate(0 ${doneY})`}>
-						<ellipse cx={960} cy={952} rx={320} ry={22} fill="url(#gShadow)" opacity={0.55} />
-						<path d={rr(640, 880, 640, 76, 38)} fill="#FFFFFF" />
-						<path d={rr(640, 880, 640, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
-						<circle cx={690} cy={918} r={19} fill={OKC} opacity={0.14} />
-						<circle cx={690} cy={918} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
-						<path
-							d="M681 918.5L687.4 925L699.6 911.6"
-							fill="none"
-							stroke={OKC}
-							strokeWidth={3.4}
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeDasharray={26}
-							strokeDashoffset={26 * (1 - ez(f, F_DONE + 8, F_DONE + 34, outCubic))}
-						/>
-						<text x={724} y={926} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.6} fill={INK}>
-							TRANSFER COMPLETE
-						</text>
-						<path d="M1046 898V938" stroke={LINE} strokeWidth={2} />
-						<text x={1072} y={926} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.2} fill={OKC}>
-							{`8 FILES · ${TOTGB.toFixed(1)} GB`}
-						</text>
-					</g>
+				{/* the pixel grid only a low bitrate stream shows you */}
+				{q < 0.995 ? (
+					<AbsoluteFill
+						style={{
+							opacity: (1 - q) * 0.44,
+							pointerEvents: 'none',
+							background:
+								'repeating-linear-gradient(0deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.5) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 6px),' +
+								'repeating-linear-gradient(90deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.5) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 6px)',
+						}}
+					/>
+				) : null}
+				{q < 0.995 ? (
+					<AbsoluteFill
+						style={{
+							opacity: (1 - q) * 0.2,
+							pointerEvents: 'none',
+							background:
+								'repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 24px),' +
+								'repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 24px)',
+						}}
+					/>
 				) : null}
 
-				{/* ============================================================ footer */}
-				<g opacity={chrome * 0.95}>
-					<path d="M120 1002H1800" stroke={LINE} strokeWidth={2} />
-					<text x={120} y={1040} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3.4} fill={INK3}>
-						SELECT · ROUTE · TRANSFER
-					</text>
-					<text
-						x={1800}
-						y={1040}
-						textAnchor="end"
-						fontFamily="CuUI"
-						fontWeight={700}
-						fontSize={15}
-						letterSpacing={3.4}
-						fill={f >= F_LAST + 8 ? OKC : INK3}
+				{/* sharpening pass */}
+				{sweeping ? (
+					<div
+						style={{
+							position: 'absolute',
+							left: 0,
+							top: sweep * CH - 90,
+							width: CW,
+							height: 180,
+							background:
+								'linear-gradient(180deg, rgba(255,194,77,0) 0%, rgba(255,194,77,0.1) 44%, rgba(255,240,205,0.42) 50%, rgba(255,194,77,0.09) 56%, rgba(255,194,77,0) 100%)',
+							pointerEvents: 'none',
+						}}
+					/>
+				) : null}
+				{flash > 0.003 ? (
+					<AbsoluteFill style={{background: '#FFF6E2', opacity: flash * 0.09, pointerEvents: 'none'}} />
+				) : null}
+
+				{/* top scrim + title */}
+				<div
+					style={{
+						position: 'absolute',
+						left: 0,
+						top: 0,
+						width: CW,
+						height: 150,
+						background: 'linear-gradient(180deg, rgba(3,5,12,0.78) 0%, rgba(3,5,12,0) 100%)',
+						opacity: chrome,
+					}}
+				/>
+				<div style={{position: 'absolute', left: 34, top: 30, opacity: chrome}}>
+					<div style={{fontSize: 12, fontWeight: 700, letterSpacing: 2.6, color: ACC}}>NOW PLAYING</div>
+					<div style={{marginTop: 9, fontSize: 27, fontWeight: 800, letterSpacing: -0.2, color: INK}}>
+						Nightfall &#183; Aerial Series
+					</div>
+				</div>
+
+				{/* quality chip */}
+				<div style={{position: 'absolute', right: 34, top: 34, display: 'flex', gap: 10, alignItems: 'center', opacity: intro}}>
+					{badge > 0.01 ? (
+						<div
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								gap: 8,
+								padding: '9px 14px',
+								borderRadius: 9,
+								background: 'linear-gradient(100deg, rgba(255,194,77,0.94), rgba(255,214,130,0.94))',
+								color: '#221600',
+								fontSize: 12.5,
+								fontWeight: 800,
+								letterSpacing: 2,
+								opacity: badge,
+								transform: 'scale(' + (0.88 + 0.12 * badge).toFixed(3) + ')',
+							}}
+						>
+							4K ULTRA HD
+						</div>
+					) : null}
+					{badge > 0.01 ? (
+						<div
+							style={{
+								padding: '9px 12px',
+								borderRadius: 9,
+								border: '1px solid rgba(255,194,77,0.5)',
+								background: 'rgba(10,10,16,0.6)',
+								color: ACC,
+								fontSize: 12.5,
+								fontWeight: 800,
+								letterSpacing: 1.8,
+								opacity: at(7.32, 0.4),
+							}}
+						>
+							HDR
+						</div>
+					) : null}
+					{oldChip > 0.01 ? (
+						<div
+							style={{
+								padding: '9px 13px',
+								borderRadius: 9,
+								border: '1px solid rgba(150,175,235,0.24)',
+								background: 'rgba(10,12,20,0.62)',
+								color: DIM,
+								fontSize: 12.5,
+								fontWeight: 700,
+								letterSpacing: 1.8,
+								opacity: oldChip,
+							}}
+						>
+							480p
+						</div>
+					) : null}
+				</div>
+
+				{/* bottom scrim */}
+				<div
+					style={{
+						position: 'absolute',
+						left: 0,
+						top: CH - 196,
+						width: CW,
+						height: 196,
+						background: 'linear-gradient(180deg, rgba(3,5,12,0) 0%, rgba(3,5,12,0.5) 44%, rgba(3,5,12,0.9) 100%)',
+						opacity: chrome,
+					}}
+				/>
+			</div>
+
+			{/* ---------- controls (screen space, over the player) ---------- */}
+			<div style={{position: 'absolute', left: CX + 30, top: CY + CH - 92, width: CW - 60, opacity: chrome * intro}}>
+				<div style={{position: 'relative', height: 5, borderRadius: 3, background: 'rgba(238,244,255,0.2)'}}>
+					<div
+						style={{
+							position: 'absolute',
+							left: 0,
+							top: 0,
+							height: 5,
+							borderRadius: 3,
+							width: (prog * 100 + 9).toFixed(2) + '%',
+							background: 'rgba(238,244,255,0.34)',
+						}}
+					/>
+					<div
+						style={{
+							position: 'absolute',
+							left: 0,
+							top: 0,
+							height: 5,
+							borderRadius: 3,
+							width: (prog * 100).toFixed(3) + '%',
+							background: 'linear-gradient(90deg,#FF9B3D,' + ACC + ')',
+						}}
+					/>
+					<div
+						style={{
+							position: 'absolute',
+							left: 'calc(' + (prog * 100).toFixed(3) + '% - 7px)',
+							top: -4.5,
+							width: 14,
+							height: 14,
+							borderRadius: 7,
+							background: '#FFF3DC',
+							boxShadow: '0 0 12px rgba(255,194,77,0.75)',
+						}}
+					/>
+				</div>
+			</div>
+
+			<div
+				style={{
+					position: 'absolute',
+					left: CX + 30,
+					top: GEARY - 19,
+					width: CW - 60,
+					height: 38,
+					display: 'flex',
+					alignItems: 'center',
+					gap: 24,
+					opacity: chrome * intro,
+				}}
+			>
+				<svg width={17} height={19} viewBox="0 0 17 19">
+					<rect x={1} y={1} width={5} height={17} rx={1.6} fill={INK} />
+					<rect x={11} y={1} width={5} height={17} rx={1.6} fill={INK} />
+				</svg>
+				<svg width={20} height={19} viewBox="0 0 20 19">
+					<path d="M2 1.5 L13 9.5 L2 17.5 Z" fill={INK} />
+					<rect x={15.5} y={1.5} width={3} height={16} rx={1.4} fill={INK} />
+				</svg>
+				<div style={{display: 'flex', alignItems: 'center', gap: 11}}>
+					<svg width={21} height={19} viewBox="0 0 21 19">
+						<path d="M2 7 H6 L11 2.6 V16.4 L6 12 H2 Z" fill={INK} />
+						<path d="M13.6 6.4 a4.4 4.4 0 0 1 0 6.2 M15.9 4 a7.8 7.8 0 0 1 0 11" fill="none" stroke={INK} strokeWidth={1.7} strokeLinecap="round" />
+					</svg>
+					<div style={{width: 86, height: 4, borderRadius: 2, background: 'rgba(238,244,255,0.24)'}}>
+						<div style={{width: '72%', height: 4, borderRadius: 2, background: INK}} />
+					</div>
+				</div>
+				<span style={{fontSize: 14, fontWeight: 600, letterSpacing: 0.9, color: INK, fontVariantNumeric: 'tabular-nums'}}>
+					{fmtClock(pos)} / 47:20
+				</span>
+				<div style={{flex: 1}} />
+				<svg width={22} height={18} viewBox="0 0 22 18">
+					<rect x={1} y={1} width={20} height={16} rx={3} fill="none" stroke={INK} strokeWidth={1.7} />
+					<path d="M5 11.5 H10 M12.5 11.5 H17" stroke={INK} strokeWidth={1.9} strokeLinecap="round" />
+				</svg>
+				{/* gear */}
+				<div style={{position: 'relative', width: 24, height: 24}}>
+					<svg width={24} height={24} viewBox="0 0 24 24" style={{transform: 'rotate(' + gearRot.toFixed(2) + 'deg)'}}>
+						<path
+							d="M12 2.2 l2 1.05 2.2-.35 1.05 1.95 1.95 1.05-.35 2.2 1.05 2-1.05 2 .35 2.2-1.95 1.05-1.05 1.95-2.2-.35-2 1.05-2-1.05-2.2.35-1.05-1.95-1.95-1.05.35-2.2-1.05-2 1.05-2-.35-2.2 1.95-1.05L7.8 2.9 10 3.25z"
+							fill="none"
+							stroke={hov >= 0 || open > 0.1 ? ACC : INK}
+							strokeWidth={1.5}
+							strokeLinejoin="round"
+						/>
+						<circle cx={12} cy={12} r={3.3} fill="none" stroke={hov >= 0 || open > 0.1 ? ACC : INK} strokeWidth={1.5} />
+					</svg>
+				</div>
+				<svg width={21} height={17} viewBox="0 0 21 17">
+					<rect x={1} y={1} width={19} height={15} rx={2.6} fill="none" stroke={INK} strokeWidth={1.7} />
+					<rect x={10} y={8} width={9} height={8} rx={1.8} fill={INK} />
+				</svg>
+				<svg width={19} height={19} viewBox="0 0 19 19">
+					<path d="M2 6.6 V2 H6.6 M12.4 2 H17 V6.6 M17 12.4 V17 H12.4 M6.6 17 H2 V12.4" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" />
+				</svg>
+			</div>
+
+			{/* ---------- quality menu ---------- */}
+			{open > 0.005 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: MNX,
+						top: MNY,
+						width: MNW,
+						height: MNH,
+						borderRadius: 14,
+						background: 'rgba(14,15,22,0.9)',
+						backdropFilter: 'blur(20px)',
+						WebkitBackdropFilter: 'blur(20px)',
+						border: '1px solid rgba(180,196,230,0.16)',
+						boxShadow: '0 26px 70px rgba(0,0,0,0.6)',
+						opacity: open,
+						transform:
+							'translateY(' + ((1 - open) * 14).toFixed(1) + 'px) scale(' + (0.95 + 0.05 * open).toFixed(4) + ')',
+						transformOrigin: '86% 100%',
+						overflow: 'hidden',
+					}}
+				>
+					<div
+						style={{
+							height: MNHEAD,
+							display: 'flex',
+							alignItems: 'center',
+							padding: '0 18px',
+							borderBottom: '1px solid rgba(180,196,230,0.12)',
+							fontSize: 12.5,
+							fontWeight: 800,
+							letterSpacing: 2.4,
+							color: DIM,
+						}}
 					>
-						{status}
-					</text>
-				</g>
+						QUALITY
+					</div>
+					{OPTS.map((o, i) => {
+						const isHov = hov === i;
+						const isSel = picked === i;
+						return (
+							<div
+								key={o}
+								style={{
+									position: 'relative',
+									height: MNROW,
+									display: 'flex',
+									alignItems: 'center',
+									padding: '0 18px',
+									background: isHov ? 'rgba(238,244,255,0.11)' : 'transparent',
+								}}
+							>
+								<div style={{width: 26, display: 'flex', alignItems: 'center'}}>
+									{isSel ? (
+										<svg width={15} height={15} viewBox="0 0 15 15">
+											<path d="M2.4 8 L5.9 11.4 L12.6 3.6" fill="none" stroke={ACC} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+										</svg>
+									) : null}
+								</div>
+								<span
+									style={{
+										fontSize: 16,
+										fontWeight: isSel ? 800 : 600,
+										letterSpacing: 0.4,
+										color: isSel ? ACC : isHov ? INK : 'rgba(226,233,247,0.86)',
+									}}
+								>
+									{o}
+								</span>
+								{TAGS[i] ? (
+									<span
+										style={{
+											marginLeft: 10,
+											padding: '3px 6px',
+											borderRadius: 4,
+											fontSize: 9.5,
+											fontWeight: 800,
+											letterSpacing: 1,
+											color: i === 5 ? '#221600' : DIM2,
+											background: i === 5 ? ACC : 'rgba(180,196,230,0.16)',
+										}}
+									>
+										{TAGS[i]}
+									</span>
+								) : null}
+							</div>
+						);
+					})}
+				</div>
+			) : null}
+
+			{/* ---------- meta strip ---------- */}
+			<div
+				style={{
+					position: 'absolute',
+					left: CX,
+					top: CY + CH + 34,
+					width: CW,
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'space-between',
+					opacity: at(0.85, 0.6),
+				}}
+			>
+				<div style={{display: 'flex', alignItems: 'center', gap: 26, fontSize: 12.5, fontWeight: 700, letterSpacing: 1.9, color: DIM2}}>
+					<span style={{color: q > 0.5 ? ACC : DIM2}}>{q > 0.5 ? '3840 \u00D7 2160' : '854 \u00D7 480'}</span>
+					<span>H.265 / HEVC</span>
+					<span>59.94 FPS</span>
+					<span style={{color: q > 0.5 ? '#D9E2F5' : DIM2, fontVariantNumeric: 'tabular-nums'}}>
+						{mbps.toFixed(1)} MBPS
+					</span>
+				</div>
+				<div style={{display: 'flex', alignItems: 'flex-end', gap: 3, height: 26}}>
+					{BARS.map((b, i) => {
+						const lift = interpolate(t, [6.5 + i * 0.016, 7.1 + i * 0.016], [0, 1], {
+							extrapolateLeft: 'clamp',
+							extrapolateRight: 'clamp',
+							easing: EASE,
+						});
+						const h = 26 * (b * (0.28 + 0.72 * lift)) + 2;
+						return (
+							<div
+								key={'bb' + i}
+								style={{
+									width: 4,
+									height: h,
+									borderRadius: 1.5,
+									background: lift > 0.5 ? 'linear-gradient(180deg,' + ACC + ',#FF9B3D)' : 'rgba(140,156,190,0.4)',
+								}}
+							/>
+						);
+					})}
+				</div>
+			</div>
+
+			{/* ---------- cursor ---------- */}
+			{rip1 > 0 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: GEARX - 34,
+						top: GEARY - 34,
+						width: 68,
+						height: 68,
+						borderRadius: 34,
+						border: '2px solid rgba(255,194,77,' + (0.62 * (1 - rip1)).toFixed(3) + ')',
+						transform: 'scale(' + (0.3 + rip1 * 0.9).toFixed(3) + ')',
+					}}
+				/>
+			) : null}
+			{rip2 > 0 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: 1444 - 34,
+						top: 823 - 34,
+						width: 68,
+						height: 68,
+						borderRadius: 34,
+						border: '2px solid rgba(255,194,77,' + (0.62 * (1 - rip2)).toFixed(3) + ')',
+						transform: 'scale(' + (0.3 + rip2 * 0.9).toFixed(3) + ')',
+					}}
+				/>
+			) : null}
+			<svg
+				width={30}
+				height={38}
+				viewBox="0 0 30 38"
+				style={{position: 'absolute', left: cx - 3, top: cy - 2, opacity: curO, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))'}}
+			>
+				<path d="M3 2 L3 27.5 L9.6 21.4 L14 31.5 L18.4 29.6 L14.1 19.7 L23 19.4 Z" fill="#FFFFFF" stroke="#0B0D14" strokeWidth={1.6} strokeLinejoin="round" />
 			</svg>
+
+			{/* ---------- grade ---------- */}
+			<AbsoluteFill
+				style={{
+					background: 'radial-gradient(94% 96% at 50% 46%, rgba(0,0,0,0) 46%, rgba(2,4,9,0.4) 80%, rgba(1,2,5,0.88) 100%)',
+					pointerEvents: 'none',
+				}}
+			/>
+			<AbsoluteFill style={{opacity: 0.035, mixBlendMode: 'overlay', pointerEvents: 'none'}}>
+				<svg width={W} height={H}>
+					<filter id="grain45">
+						<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={(frame % 12) + 1} />
+					</filter>
+					<rect width={W} height={H} filter="url(#grain45)" />
+				</svg>
+			</AbsoluteFill>
 		</AbsoluteFill>
 	);
 };
+
+export default Motion;
