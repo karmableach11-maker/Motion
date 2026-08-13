@@ -2,62 +2,50 @@ import React, {useEffect, useRef, useState} from 'react';
 import {AbsoluteFill, continueRender, delayRender, useCurrentFrame} from 'remotion';
 
 /**
- * MOTION 69 — "CLOUD SYNC · UPLOAD BEAM"
+ * MOTION 70 — "AI FILE SORTER · AUTO ORGANIZE"
  * ---------------------------------------------------------------------------
- * Six file cards queue on a clean light workspace. One by one they lift, arc
- * across to a glowing pad, and are drawn straight up a light beam into a cloud
- * node. The cloud counts up as each file lands; when the queue empties the
- * beam powers down and the panel reports the transfer.
+ * Twelve files land in a messy pile on a clean light workspace. A scan line
+ * sweeps left to right; as it touches each file the engine tags it with a
+ * category, and the file launches on an arc into the matching folder below.
+ * The four folder counters climb, the pile empties, and the panel reports the
+ * sort.
  *
- * Same design system as MOTION 68 — same plate, panel chrome, footer, shadow
- * language — so the two cut together as a set.
+ * Third piece in the same design system as MOTION 68 and MOTION 69 — same
+ * plate, panel chrome, footer, shadow language and folder construction — so
+ * all three cut together as a set.
  *
  * HOW IT IS BUILT
  * ---------------------------------------------------------------------------
- * [int] No reference clip for this one; it is an original build. What follows
- *       is why each decision was made rather than what was measured off frames.
+ * [int] Original build, no reference clip. What follows is why each decision
+ *       was made rather than what was measured off frames.
  *
- * [int] TWO-STAGE TRANSPORT. A file does not fly diagonally into the cloud —
- *       it arcs to the pad first and only then rises. The diagonal version was
- *       tried and reads as a generic "thing moves to thing"; splitting it puts
- *       the beam at the centre of the idea and gives each file a beat of
- *       anticipation on the pad before it is taken. The arc is a straight lerp
- *       plus a 96 px sine bulge, which keeps the apex at the midpoint where a
- *       thrown object's apex belongs.
- * [int] The rise uses inCubic, not an ease-out. An object being pulled by a
- *       source above it accelerates the whole way; decelerating into the cloud
- *       would read as the file parking rather than being consumed.
- * [int] CADENCE. Files launch every 84 frames and each cycle runs 142 frames,
- *       so two are always in motion but only one is ever inside the beam
- *       (84 + 78 = 162 > 142). That was the point of choosing 84: the frame is
- *       busy without the beam ever carrying two cards at once, which would
- *       muddle the read.
- * [int] BEAM CONSTRUCTION. Three nested quads of the same silhouette at 100%,
- *       68% and 30% width, each with its own vertical gradient. Stacking
- *       hard-edged shapes at descending width is what produces a soft-edged
- *       column without a Gaussian filter — as in MOTION 68, nothing here
- *       depends on the renderer's filter resolution. Ticks and scan rings ride
- *       the same halfWidthAt() taper so nothing floats outside the light.
- * [int] The cloud is five circles and a rounded base sharing ONE gradient in
- *       userSpaceOnUse coordinates. Per-shape objectBoundingBox gradients give
- *       each circle its own ramp and the unions show as visible seams; a
- *       single user-space gradient makes the silhouette read as one solid.
- * [int] Progress accrues continuously from the moment a file launches rather
- *       than jumping on arrival, so the read-out is always moving and hits
- *       100% on the exact frame the last card enters the cloud.
- * [int] Cards in flight are re-sorted to the top of the draw order. Left in
- *       index order the first card slides BEHIND the third one as its arc
- *       passes over the top row, which reads as a glitch rather than depth. The six
- *       sizes are chosen to total 17.5 GB — the same figure MOTION 68 starts
- *       from, so the two pieces describe the same workspace.
- * [int] The cloud sits at y 356, not 300. At 300 its crown reached y 182 and
- *       its glow ellipse washed across the bottom-right corner of the panel
- *       bar, which bottoms out at 192 — the two read as one overlapping
- *       shape. Dropping it 56 px leaves 40 px of clear plate between them
- *       and puts the beam's mid-height on the same line as the grid's, so
- *       the move is a composition gain rather than a patch.
- * [int] No cursor. This is an automatic transfer, and an idle pointer sitting
- *       in frame for fifteen seconds would imply someone is driving it.
+ * [int] THE SCAN DRIVES EVERYTHING. Tag times are not authored — each file's
+ *       tag frame is solved from its own x against the sweep, so the beam can
+ *       never pass a file without lighting it or light one it has not reached.
+ *       Move a card in the pile and its whole cue shifts with it. The twelve
+ *       pile positions were then chosen to have twelve DISTINCT x values about
+ *       100 px apart, which spaces the tags roughly 34 frames apart at the
+ *       sweep's 2.94 px/frame — close enough that two files are always in the
+ *       air, far enough apart that each tag reads as its own event.
+ * [int] The categories cycle IMAGES / VIDEO / DOCS / ARCHIVE down the sorted-by-x
+ *       order rather than being grouped, so consecutive flights cross the frame
+ *       in different directions instead of stacking into one corridor. That
+ *       crossing is most of what sells "sorting" rather than "moving".
+ * [int] Each file waits 18 frames between tag and launch. Without that beat the
+ *       detection box has no time to read and the sort looks like a reflex; with
+ *       it, the engine appears to decide.
+ * [int] Files insert BEHIND the folder flap. All four folder backs are drawn,
+ *       then every file in flight, then all four flaps — so a card is in front
+ *       of the folder as it descends and hidden the instant it drops past the
+ *       flap's top edge, without any per-file clipping.
+ * [int] The folders are the MOTION 68 folder, re-tinted per category from one
+ *       shared path pair at 0.78 scale. Same construction: back panel with tab,
+ *       paper sheets, front flap carrying its own sheen and bottom shade, and a
+ *       radial-gradient contact shadow rather than a Gaussian filter — nothing
+ *       in the frame depends on the renderer's filter resolution.
+ * [int] Unscanned files sit at 0.94 opacity and lift to full when tagged. It is
+ *       a small difference, but it is what makes the swept region read as
+ *       "already processed" without adding a tint wash over half the plate.
  */
 
 /* ------------------------------------------------------------------ fonts */
@@ -243,15 +231,15 @@ const FACE = `
 @font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI7}) format('woff2');font-weight:700;font-style:normal;font-display:block}
 @font-face{font-family:'CuMono';src:url(data:font/woff2;base64,${F_MO5}) format('woff2');font-weight:500;font-style:normal;font-display:block}`;
 
-if (typeof document !== 'undefined' && !document.getElementById('m69-faces')) {
+if (typeof document !== 'undefined' && !document.getElementById('m70-faces')) {
 	const st = document.createElement('style');
-	st.id = 'm69-faces';
+	st.id = 'm70-faces';
 	st.textContent = FACE;
 	document.head.appendChild(st);
 }
 
 const useFaces = () => {
-	const [handle] = useState(() => delayRender('m69 fonts'));
+	const [handle] = useState(() => delayRender('m70 fonts'));
 	const done = useRef(false);
 	useEffect(() => {
 		const fin = () => {
@@ -291,7 +279,7 @@ const outCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const outQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 const inCubic = (t: number) => t * t * t;
 const outBack = (t: number) => {
-	const c = 1.85;
+	const c = 1.8;
 	return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 };
 const ez = (f: number, a: number, b: number, c: (t: number) => number = inOutCubic) => c(seg(f, a, b));
@@ -313,54 +301,64 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
 const W = 1920;
 const H = 1080;
 
-const COLX = [330, 620, 910];
-const ROWY = [455, 750];
-const CELL = (i: number): [number, number] => [COLX[i % 3], ROWY[Math.floor(i / 3)]];
+/* compact file card: x -64..64, y -81..81, top-right corner folded */
+const CARD = 'M-64 -70A11 11 0 0 1 -53 -81H38L64 -55V70A11 11 0 0 1 53 81H-53A11 11 0 0 1 -64 70Z';
 
-/* card box: x -93..93, y -117..117, top-right corner folded */
-const CARD =
-	'M-93 -103A14 14 0 0 1 -79 -117H59L93 -83V103A14 14 0 0 1 79 117H-79A14 14 0 0 1 -93 103Z';
+/* folder, inherited from MOTION 68 */
+const FLAP =
+	'M-118 -18H118Q125 -18 125.6 -11.2L114 59Q112.4 71.6 99.8 71.6H-99.8Q-112.4 71.6 -114 59L-125.6 -11.2Q-125 -18 -118 -18Z';
+const BACKP =
+	'M-115 -44V-64A13 13 0 0 1 -102 -77H-44A13 13 0 0 1 -33.6 -71.8L-21 -55A13 13 0 0 0 -10.6 -49.8H101A13 13 0 0 1 114 -36.8V58A13 13 0 0 1 101 71H-102A13 13 0 0 1 -115 58Z';
 
-/* cloud + beam column */
-const BX = 1460;
-const CY = 356; /* cloud centre — kept clear of the panel bar above it */
-const BEAM_TOP = CY + 66;
-const PAD_Y = 890;
-const BW_T = 108; /* beam half-width at the top */
-const BW_B = 178; /* beam half-width at the pad */
-const PAD_RX = 180;
-const PAD_RY = 36;
-const halfW = (y: number) => lerp(BW_B, BW_T, clamp((PAD_Y - y) / (PAD_Y - BEAM_TOP)));
-const beamPath = (k: number) =>
-	`M${BX - BW_T * k} ${BEAM_TOP}H${BX + BW_T * k}L${BX + BW_B * k} ${PAD_Y}H${BX - BW_B * k}Z`;
+const FSC = 0.78; /* folder scale */
+const FOLDER_Y = 800;
+const FOLDER_X = [480, 800, 1120, 1440];
 
-/* ------------------------------------------------------------------ beats */
-const F_GRID = 12;
-const F_CLOUD = 54;
-const F_BEAM = 78;
-const F_Q0 = 138; /* first launch */
-const STAG = 84; /* launch interval */
-const T_LIFT = 20;
-const T_ARC0 = 16;
-const T_ARC1 = 66;
-const T_PAD = 78; /* enters the beam */
-const T_ABS = 142; /* absorbed */
-const F_LAST = F_Q0 + 5 * STAG + T_ABS; /* 700 */
-const F_DONE = 748;
-const F_PWR = 764; /* beam powers down */
+/* scan sweep */
+const SX0 = 250;
+const SX1 = 1720;
+const F_SCAN0 = 160;
+const F_SCAN1 = 660;
+const SCAN_TOP = 266;
+const SCAN_BOT = 714;
+const scanX = (f: number) => lerp(SX0, SX1, seg(f, F_SCAN0, F_SCAN1));
 
-const t0 = (i: number) => F_Q0 + i * STAG;
+/* cue offsets */
+const D_LAUNCH = 18;
+const D_FLY = 56;
+const D_INSERT = 15; /* final frames of the flight, spent dropping behind the flap */
 
 /* ------------------------------------------------------------------ files */
-type Kind = 'img' | 'vid' | 'doc';
-const FILES: {name: string; ext: string; size: string; col: string; kind: Kind}[] = [
-	{name: 'CAMPAIGN', ext: 'PSD', size: '2.4 GB', col: '#2B7FFF', kind: 'img'},
-	{name: 'PROMO_CUT', ext: 'MP4', size: '6.8 GB', col: '#7C4DFF', kind: 'vid'},
-	{name: 'BRAND_KIT', ext: 'AI', size: '1.2 GB', col: '#FF8A2B', kind: 'img'},
-	{name: 'REPORT_Q3', ext: 'PDF', size: '0.4 GB', col: '#FF4D4F', kind: 'doc'},
-	{name: 'ASSETS', ext: 'ZIP', size: '5.9 GB', col: '#12B26A', kind: 'doc'},
-	{name: 'CONTRACT', ext: 'DOC', size: '0.8 GB', col: '#1D6BFF', kind: 'doc'},
+type Cat = 0 | 1 | 2 | 3;
+const CATS = [
+	{key: 'IMAGES', col: '#2B7FFF', b0: '#5291F4', b1: '#2A5EC2', f0: '#86B7FF', f1: '#4F8DF4', f2: '#2C68D8', hi: '#B8D5FF'},
+	{key: 'VIDEO', col: '#7C4DFF', b0: '#9878FF', b1: '#5A32D2', f0: '#B9A0FF', f1: '#8A5CFF', f2: '#6435D8', hi: '#DCCDFF'},
+	{key: 'DOCS', col: '#F5811F', b0: '#FFA45A', b1: '#D3690F', f0: '#FFC38C', f1: '#FF9440', f2: '#E0761A', hi: '#FFDCBB'},
+	{key: 'ARCHIVE', col: '#0FA862', b0: '#3ACB8B', b1: '#0A8850', f0: '#6FE0AE', f1: '#20BB77', f2: '#0D9558', hi: '#B6F0D6'},
 ];
+
+type FileDef = {p: [number, number]; rot: number; cat: Cat; name: string; ext: string; thumb: 0 | 1 | 2};
+const FILES: FileDef[] = [
+	{p: [360, 390], rot: -11, cat: 0, name: 'SHOT_01', ext: 'JPG', thumb: 1},
+	{p: [400, 620], rot: 9, cat: 2, name: 'BRIEF', ext: 'PDF', thumb: 0},
+	{p: [520, 505], rot: -5, cat: 1, name: 'CLIP_A', ext: 'MP4', thumb: 2},
+	{p: [640, 620], rot: 14, cat: 3, name: 'BACKUP', ext: 'ZIP', thumb: 0},
+	{p: [690, 390], rot: 6, cat: 0, name: 'HERO', ext: 'PNG', thumb: 1},
+	{p: [850, 505], rot: -13, cat: 2, name: 'NOTES', ext: 'DOC', thumb: 0},
+	{p: [960, 620], rot: 4, cat: 1, name: 'REEL', ext: 'MOV', thumb: 2},
+	{p: [1010, 390], rot: -8, cat: 3, name: 'ASSETS', ext: 'RAR', thumb: 0},
+	{p: [1170, 505], rot: 12, cat: 0, name: 'LOGO', ext: 'SVG', thumb: 1},
+	{p: [1290, 620], rot: -6, cat: 2, name: 'SHEET', ext: 'XLS', thumb: 0},
+	{p: [1330, 390], rot: 10, cat: 1, name: 'TEASER', ext: 'MP4', thumb: 2},
+	{p: [1490, 505], rot: -10, cat: 3, name: 'OLD', ext: '7Z', thumb: 0},
+];
+
+/* every cue is solved from the sweep, never authored */
+const TAG: number[] = FILES.map((F) => F_SCAN0 + ((F.p[0] - SX0) / (SX1 - SX0)) * (F_SCAN1 - F_SCAN0));
+const LAUNCH = TAG.map((t) => t + D_LAUNCH);
+const LAND = LAUNCH.map((t) => t + D_FLY);
+const F_LAST = Math.max(...LAND);
+const F_DONE = 736;
 
 /* palette */
 const INK = '#16233A';
@@ -372,95 +370,84 @@ const OKC = '#12B26A';
 
 /* ------------------------------------------------------------------ pieces */
 
-const FileCard: React.FC<{i: number; glow: number}> = ({i, glow}) => {
+const FileCard: React.FC<{i: number; tag: number}> = ({i, tag}) => {
 	const F = FILES[i];
-	const chipW = F.ext.length * 12 + 26;
+	const C = CATS[F.cat];
+	const chipW = F.ext.length * 10 + 22;
 	return (
 		<g>
-			<ellipse cx={0} cy={132 + glow * 14} rx={82 + glow * 18} ry={13 + glow * 5} fill="url(#gShadow)" opacity={0.62 - glow * 0.24} />
+			<ellipse cx={0} cy={94} rx={64} ry={11} fill="url(#gShadow)" opacity={0.5} />
 			<path d={CARD} fill="#FFFFFF" />
 			<path d={CARD} fill="url(#gCardV)" />
-			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={2} />
-			{/* folded corner */}
-			<path d="M59 -117L93 -83H59Z" fill="#D5E0EF" />
-			<path d="M59 -117L93 -83H59Z" fill="url(#gFoldSh)" />
-			<path d="M59 -117V-83H93" fill="none" stroke="#C3D1E4" strokeWidth={2} strokeLinejoin="round" />
-			{/* body */}
-			{F.kind === 'doc' ? (
+			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={1.8} />
+			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
+			<path d="M38 -81V-55H64" fill="none" stroke="#C3D1E4" strokeWidth={1.8} strokeLinejoin="round" />
+			{F.thumb === 0 ? (
 				<g>
-					<path d={rr(-63, -86, 92, 12, 6)} fill={F.col} opacity={0.5} />
-					{[0, 1, 2, 3, 4].map((k) => (
-						<path key={k} d={rr(-63, -54 + k * 24, [126, 110, 126, 92, 118][k], 10, 5)} fill="#E5EBF5" />
+					<path d={rr(-44, -60, 62, 9, 4.5)} fill={C.col} opacity={0.5} />
+					{[0, 1, 2, 3].map((k) => (
+						<path key={k} d={rr(-44, -38 + k * 18, [88, 74, 88, 62][k], 8, 4)} fill="#E5EBF5" />
 					))}
 				</g>
 			) : (
 				<g>
-					<path d={rr(-69, -94, 138, 96, 11)} fill={`url(#gThumb${i})`} />
-					{F.kind === 'vid' ? (
+					<path d={rr(-47, -64, 94, 52, 8)} fill={`url(#gT${i})`} />
+					{F.thumb === 2 ? (
 						<g>
-							<circle cx={0} cy={-46} r={22} fill="#FFFFFF" opacity={0.9} />
-							<path d="M-7 -57L13 -46L-7 -35Z" fill={F.col} />
+							<circle cx={0} cy={-38} r={13} fill="#FFFFFF" opacity={0.92} />
+							<path d="M-4.5 -45L8 -38L-4.5 -31Z" fill={C.col} />
 						</g>
 					) : (
 						<g>
-							<circle cx={34} cy={-72} r={11} fill="#FFFFFF" opacity={0.85} />
-							<path d="M-69 -20L-24 -60L4 -36L30 -56L69 -20V-9A11 11 0 0 1 58 2H-58A11 11 0 0 1 -69 -9Z" fill="#FFFFFF" opacity={0.55} />
+							<circle cx={24} cy={-50} r={6.5} fill="#FFFFFF" opacity={0.85} />
+							<path d="M-47 -25L-19 -47L-2 -33L14 -45L47 -25V-20A8 8 0 0 1 39 -12H-39A8 8 0 0 1 -47 -20Z" fill="#FFFFFF" opacity={0.55} />
 						</g>
 					)}
-					<path d={rr(-63, 16, 126, 10, 5)} fill="#E5EBF5" />
-					<path d={rr(-63, 38, 96, 10, 5)} fill="#E5EBF5" />
+					<path d={rr(-44, -2, 88, 8, 4)} fill="#E5EBF5" />
+					<path d={rr(-44, 14, 66, 8, 4)} fill="#E5EBF5" />
 				</g>
 			)}
-			{/* type chip + size */}
-			<path d={rr(-63, 74, chipW, 30, 8)} fill={F.col} opacity={0.14} />
-			<text x={-63 + chipW / 2} y={95} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={1.4} fill={F.col}>
+			<path d={rr(-44, 44, chipW, 24, 7)} fill={C.col} opacity={0.15} />
+			<text x={-44 + chipW / 2} y={61} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={13} letterSpacing={1.1} fill={C.col}>
 				{F.ext}
 			</text>
-			<text x={63} y={95} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={0.6} fill={INK3}>
-				{F.size}
-			</text>
-			{/* upload halo while queued for transport */}
-			{glow > 0.01 ? (
-				<g opacity={glow}>
-					<path d={rr(-104, -128, 208, 256, 20)} fill="none" stroke={ACC} strokeWidth={3} />
-					<path d={rr(-104, -128, 208, 256, 20)} fill={ACC} opacity={0.05} />
+			{/* detection frame */}
+			{tag > 0.004 ? (
+				<g opacity={tag}>
+					<path d={rr(-76, -93, 152, 186, 14)} fill={C.col} opacity={0.06} />
+					<path d={rr(-76, -93, 152, 186, 14)} fill="none" stroke={C.col} strokeWidth={2.6} />
+					{[
+						[-76, -93],
+						[76, -93],
+						[-76, 93],
+						[76, 93],
+					].map(([hx, hy], k) => (
+						<rect key={k} x={hx - 4.5} y={hy - 4.5} width={9} height={9} rx={2} fill="#FFFFFF" stroke={C.col} strokeWidth={2.2} />
+					))}
 				</g>
 			) : null}
 		</g>
 	);
 };
 
-const Ghost: React.FC<{op: number; tick: number; live: number}> = ({op, tick, live}) => (
-	<g opacity={op}>
-		<path d={rr(-93, -117, 186, 234, 14)} fill="#FFFFFF" opacity={0.55} />
-		<path d={rr(-93, -117, 186, 234, 14)} fill="none" stroke="#CBD8E7" strokeWidth={2.4} strokeDasharray="12 11" strokeLinecap="round" />
-		{tick <= 0.002 ? (
-			<g opacity={0.9}>
-				<circle cx={0} cy={-8} r={22} fill="none" stroke={ACC} strokeWidth={2.6} strokeDasharray="8 9" strokeDashoffset={-live * 3} opacity={0.55} />
-				<path d="M0 2V-14M-7 -7L0 -14L7 -7" fill="none" stroke={ACC} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
-				<text x={0} y={46} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.6} fill={INK3}>
-					IN TRANSIT
-				</text>
-			</g>
-		) : (
-			<g opacity={tick}>
-				<circle cx={0} cy={-8} r={27} fill={OKC} opacity={0.12} />
-				<circle cx={0} cy={-8} r={27} fill="none" stroke={OKC} strokeWidth={2.8} />
-				<path
-					d="M-12 -8L-3 1L13 -18"
-					fill="none"
-					stroke={OKC}
-					strokeWidth={4}
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					strokeDasharray={38}
-					strokeDashoffset={38 * (1 - tick)}
-				/>
-				<text x={0} y={46} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.6} fill={OKC}>
-					SYNCED
-				</text>
-			</g>
-		)}
+const FolderBack: React.FC<{c: number}> = ({c}) => (
+	<g>
+		<ellipse cx={0} cy={96} rx={104} ry={15} fill="url(#gShadow)" opacity={0.6} />
+		<path d={BACKP} fill={`url(#gB${c})`} />
+		<path d={rr(-88, -40, 176, 96, 7)} fill="#FFFFFF" />
+		<path d={rr(-88, -40, 176, 96, 7)} fill="url(#gPaper)" />
+		<path d={rr(-79, -30, 158, 86, 6)} fill="#F3F7FC" />
+		<path d="M-68 -16H34" stroke="#D7E2F2" strokeWidth={4.5} strokeLinecap="round" />
+		<path d="M-68 -1H12" stroke="#E3EBF7" strokeWidth={4.5} strokeLinecap="round" />
+	</g>
+);
+
+const FolderFront: React.FC<{c: number}> = ({c}) => (
+	<g>
+		<path d={FLAP} fill={`url(#gF${c})`} />
+		<path d={FLAP} fill="url(#gSheen)" />
+		<path d={FLAP} fill="url(#gFlapShade)" />
+		<path d="M-115 -15.6H115" stroke={CATS[c].hi} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
 	</g>
 );
 
@@ -471,68 +458,55 @@ export const Motion: React.FC = () => {
 
 	const plate = ez(f, 0, 34, outCubic);
 	const chrome = ez(f, 8, 46, outCubic);
-	const beamOn = ez(f, F_BEAM, F_BEAM + 46, outCubic) * (1 - 0.62 * ez(f, F_PWR, F_PWR + 52, inOutCubic));
-	const cloudIn = ez(f, F_CLOUD, F_CLOUD + 40, outBack);
+	const beamOn = ez(f, F_SCAN0 - 22, F_SCAN0 + 10, outCubic) * (1 - ez(f, F_SCAN1, F_SCAN1 + 40, inOutCubic));
+	const sx = scanX(f);
 
 	/* ---------------- per-file transport ---------------- */
 	const pose = (i: number) => {
-		const [cx, cy] = CELL(i);
-		const t = f - t0(i);
-		const lift = ez(f, t0(i), t0(i) + T_LIFT, outCubic) * (1 - ez(f, t0(i) + T_ARC0, t0(i) + T_ARC0 + 12, outCubic));
-		if (t < T_ARC0) return {x: cx, y: cy - 20 * lift, sc: 1 + 0.05 * lift, op: 1, glow: ez(f, t0(i) - 22, t0(i), outCubic), beam: 0, wash: 0};
-		if (t < T_PAD) {
-			const u = ez(f, t0(i) + T_ARC0, t0(i) + T_ARC1, inOutCubic);
-			const land = ez(f, t0(i) + T_ARC1, t0(i) + T_PAD, outQuint);
+		const F = FILES[i];
+		const C = FILES[i].cat;
+		const tagU = ez(f, TAG[i], TAG[i] + 9, outBack) * (1 - ez(f, LAUNCH[i], LAUNCH[i] + 8, outCubic));
+		if (f < LAUNCH[i]) {
+			const pop = ez(f, TAG[i], TAG[i] + 10, outBack) * (1 - ez(f, TAG[i] + 10, LAUNCH[i], outCubic));
 			return {
-				x: lerp(cx, BX, u),
-				y: lerp(cy - 20, PAD_Y - 130, u) - 150 * Math.sin(Math.PI * u) + 22 * land,
-				sc: lerp(1, 0.86, u) * (1 - 0.05 * land * (1 - land) * 4),
-				op: 1,
-				glow: 1,
-				beam: 0,
-				wash: 0,
+				x: F.p[0],
+				y: F.p[1] - 12 * pop,
+				rot: F.rot * (1 - 0.25 * pop),
+				sc: 1 + 0.06 * pop,
+				op: f >= TAG[i] ? 1 : 0.94,
+				tag: tagU,
+				done: 0,
 			};
 		}
-		const u = ez(f, t0(i) + T_PAD, t0(i) + T_ABS, inCubic);
+		const u = ez(f, LAUNCH[i], LAND[i] - D_INSERT, inOutCubic);
+		const ins = ez(f, LAND[i] - D_INSERT, LAND[i], inCubic);
+		const tx = FOLDER_X[C];
 		return {
-			x: BX + Math.sin(u * 7.4 + i) * 9 * (1 - u),
-			y: lerp(PAD_Y - 108, BEAM_TOP + 8, u),
-			sc: lerp(0.86, 0.14, u),
-			op: 1 - ez(f, t0(i) + T_ABS - 30, t0(i) + T_ABS, outCubic),
-			glow: 1 - u,
-			beam: 1,
-			wash: u,
+			x: lerp(F.p[0], tx, u),
+			y: lerp(F.p[1], FOLDER_Y - 96, u) - 150 * Math.sin(Math.PI * u) + ins * 108,
+			rot: F.rot * (1 - u),
+			sc: lerp(1, 0.58, u) * (1 - 0.42 * ins),
+			op: 1,
+			tag: tagU,
+			done: ins,
 		};
 	};
 
-	/* progress accrues while a file is inside the beam */
-	const prog = FILES.reduce((a, _u, i) => a + seg(f, t0(i) + 10, t0(i) + T_ABS), 0) / 6;
-	const nDone = FILES.filter((_u, i) => f >= t0(i) + T_ABS).length;
+	const countOf = (c: number) => FILES.filter((F, i) => F.cat === c && f >= LAND[i]).length;
+	const nDone = FILES.filter((_x, i) => f >= LAND[i]).length;
+	const nTag = FILES.filter((_x, i) => f >= TAG[i]).length;
+	const prog = nDone / 12;
 
-	/* cloud reacts to each arrival */
-	const flash = FILES.reduce((a, _u, i) => Math.max(a, 1 - ez(f, t0(i) + T_ABS - 6, t0(i) + T_ABS + 26, outCubic) * (f >= t0(i) + T_ABS - 6 ? 1 : 0)), 0);
-	const arrive = FILES.reduce((a, _u, i) => {
-		const w = ez(f, t0(i) + T_ABS - 8, t0(i) + T_ABS + 4, outCubic) * (1 - ez(f, t0(i) + T_ABS + 4, t0(i) + T_ABS + 40, outQuint));
-		return Math.max(a, w);
-	}, 0);
-	const finale = ez(f, F_LAST, F_LAST + 26, outCubic) * (1 - ez(f, F_LAST + 26, F_LAST + 90, outQuint));
-	const cloudSc = cloudIn * (1 + 0.035 * arrive + 0.05 * finale);
-
-	/* pad impulses when a file lands */
-	const padHit = FILES.map((_u, i) => ez(f, t0(i) + T_ARC1, t0(i) + T_ARC1 + 46, outQuint));
-
-	/* ---------------- read-outs ---------------- */
-	const chip = f >= F_LAST + 8 ? 'COMPLETE' : f >= F_Q0 - 24 ? 'UPLOADING' : 'READY';
-	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_Q0 - 24 ? ACC : INK3;
+	const chip = f >= F_LAST + 8 ? 'ORGANIZED' : f >= F_SCAN0 - 20 ? (nTag > nDone ? 'SORTING' : 'SCANNING') : 'READY';
+	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_SCAN0 - 20 ? ACC : INK3;
 	const doneOp = ez(f, F_DONE, F_DONE + 30, outCubic);
 	const doneY = lerp(32, 0, ez(f, F_DONE, F_DONE + 36, outQuint));
 	const status =
 		f >= F_LAST + 8
-			? 'ALL FILES SYNCED'
-			: f >= F_Q0
-				? `UPLOADING ${Math.min(nDone + 1, 6)} OF 6`
-				: 'ENCRYPTED CHANNEL · TLS 1.3';
-	const rate = f >= F_LAST || f < F_Q0 ? 0 : 118 + Math.round(Math.sin(f * 0.11) * 9 + Math.sin(f * 0.043) * 14);
+			? 'ALL FILES ORGANIZED'
+			: f >= F_SCAN0
+				? `CLASSIFYING · ${nTag} OF 12 ANALYZED`
+				: 'NEURAL CLASSIFIER · READY';
 
 	return (
 		<AbsoluteFill style={{backgroundColor: '#EDF1F8'}}>
@@ -548,91 +522,76 @@ export const Motion: React.FC = () => {
 						<stop offset="0.6" stopColor="#FFFFFF" stopOpacity="0.4" />
 						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
 					</radialGradient>
-					<radialGradient id="gPool" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#A8C4F0" stopOpacity="0.55" />
-						<stop offset="1" stopColor="#A8C4F0" stopOpacity="0" />
-					</radialGradient>
 					<radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5">
 						<stop offset="0" stopColor="#22375C" stopOpacity="0.32" />
 						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.12" />
 						<stop offset="1" stopColor="#22375C" stopOpacity="0" />
 					</radialGradient>
-					<radialGradient id="gAcc" cx="0.5" cy="0.5" r="0.5">
-						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0.55" />
-						<stop offset="0.5" stopColor="#2E7BFF" stopOpacity="0.16" />
-						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
-					</radialGradient>
-
 					<linearGradient id="gCardV" x1="0" y1="0" x2="0" y2="1">
 						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
 						<stop offset="1" stopColor="#D8E1EF" stopOpacity="0.55" />
 					</linearGradient>
-					<linearGradient id="gFoldSh" x1="0" y1="0" x2="0.4" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.6" />
-						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+					<linearGradient id="gPaper" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+						<stop offset="1" stopColor="#C9D7EA" stopOpacity="0.9" />
 					</linearGradient>
+					<linearGradient id="gSheen" x1="0.06" y1="0" x2="0.72" y2="1">
+						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.34" />
+						<stop offset="0.22" stopColor="#FFFFFF" stopOpacity="0.04" />
+						<stop offset="0.36" stopColor="#FFFFFF" stopOpacity="0.19" />
+						<stop offset="0.58" stopColor="#FFFFFF" stopOpacity="0" />
+					</linearGradient>
+					<linearGradient id="gFlapShade" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0.62" stopColor="#0B2A5E" stopOpacity="0" />
+						<stop offset="1" stopColor="#0B2A5E" stopOpacity="0.2" />
+					</linearGradient>
+					{CATS.map((C, c) => (
+						<React.Fragment key={c}>
+							<linearGradient id={`gB${c}`} x1="0" y1="0" x2="0" y2="1">
+								<stop offset="0" stopColor={C.b0} />
+								<stop offset="1" stopColor={C.b1} />
+							</linearGradient>
+							<linearGradient id={`gF${c}`} x1="0" y1="0" x2="0" y2="1">
+								<stop offset="0" stopColor={C.f0} />
+								<stop offset="0.5" stopColor={C.f1} />
+								<stop offset="1" stopColor={C.f2} />
+							</linearGradient>
+							<radialGradient id={`gG${c}`} cx="0.5" cy="0.5" r="0.5">
+								<stop offset="0" stopColor={C.col} stopOpacity="0.5" />
+								<stop offset="1" stopColor={C.col} stopOpacity="0" />
+							</radialGradient>
+						</React.Fragment>
+					))}
 					{FILES.map((F, i) =>
-						F.kind === 'doc' ? null : (
-							<linearGradient key={i} id={`gThumb${i}`} x1="0" y1="0" x2="0.7" y2="1">
-								<stop offset="0" stopColor={F.col} stopOpacity="0.85" />
-								<stop offset="1" stopColor={F.col} stopOpacity="0.45" />
+						F.thumb === 0 ? null : (
+							<linearGradient key={i} id={`gT${i}`} x1="0" y1="0" x2="0.7" y2="1">
+								<stop offset="0" stopColor={CATS[F.cat].col} stopOpacity="0.85" />
+								<stop offset="1" stopColor={CATS[F.cat].col} stopOpacity="0.45" />
 							</linearGradient>
 						)
 					)}
-
-					{/* beam */}
-					<linearGradient id="gBeam1" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#3E86FF" stopOpacity="0.30" />
-						<stop offset="0.55" stopColor="#3E86FF" stopOpacity="0.11" />
-						<stop offset="1" stopColor="#3E86FF" stopOpacity="0.05" />
+					<linearGradient id="gScanTrail" x1="0" y1="0" x2="1" y2="0">
+						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0" />
+						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0.13" />
 					</linearGradient>
-					<linearGradient id="gBeam2" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#6BA6FF" stopOpacity="0.34" />
-						<stop offset="0.6" stopColor="#6BA6FF" stopOpacity="0.13" />
-						<stop offset="1" stopColor="#6BA6FF" stopOpacity="0.05" />
+					<linearGradient id="gScanV" x1="0" y1={SCAN_TOP} x2="0" y2={SCAN_BOT} gradientUnits="userSpaceOnUse">
+						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0" />
+						<stop offset="0.16" stopColor="#2E7BFF" stopOpacity="1" />
+						<stop offset="0.84" stopColor="#2E7BFF" stopOpacity="1" />
+						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
 					</linearGradient>
-					<linearGradient id="gBeam3" x1="0" y1={BEAM_TOP} x2="0" y2={PAD_Y} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.62" />
-						<stop offset="0.5" stopColor="#DCEAFF" stopOpacity="0.28" />
-						<stop offset="1" stopColor="#DCEAFF" stopOpacity="0.07" />
-					</linearGradient>
-
-					{/* cloud — one gradient in stage space so the union is seamless */}
-					<linearGradient id="gCloud" x1={BX - 200} y1={CY - 110} x2={BX + 140} y2={CY + 90} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#8CBEFF" />
-						<stop offset="0.5" stopColor="#4A8BF2" />
-						<stop offset="1" stopColor="#2B63CE" />
-					</linearGradient>
-					<linearGradient id="gCloudHi" x1={BX} y1={CY - 120} x2={BX} y2={CY + 20} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.45" />
-						<stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-					</linearGradient>
-
-					<clipPath id="cpBeam">
-						<path d={beamPath(1)} />
-					</clipPath>
-					<clipPath id="cpCloud">
-						<g>
-							<circle cx={BX - 100} cy={CY + 10} r={64} />
-							<circle cx={BX - 26} cy={CY - 34} r={84} />
-							<circle cx={BX + 58} cy={CY - 8} r={64} />
-							<circle cx={BX + 124} cy={CY + 26} r={48} />
-							<path d={rr(BX - 164, CY + 26, 336, 48, 24)} />
-						</g>
-					</clipPath>
 				</defs>
 
 				{/* ============================================================ plate */}
 				<rect width={W} height={H} fill="url(#gPlate)" />
-				<ellipse cx={760} cy={330} rx={1180} ry={720} fill="url(#gLift)" opacity={plate} />
-				<ellipse cx={BX} cy={640} rx={560} ry={430} fill="url(#gPool)" opacity={0.5 * plate} />
+				<ellipse cx={900} cy={340} rx={1220} ry={740} fill="url(#gLift)" opacity={plate} />
 
 				{/* ============================================================ title */}
 				<g opacity={chrome} transform={`translate(0 ${lerp(-16, 0, chrome)})`}>
-					<path d="M610 66H752" stroke={LINE} strokeWidth={2} />
-					<path d="M1168 66H1310" stroke={LINE} strokeWidth={2} />
+					<path d="M620 66H756" stroke={LINE} strokeWidth={2} />
+					<path d="M1164 66H1300" stroke={LINE} strokeWidth={2} />
 					<text x={960} y={73} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={5.6} fill={INK2}>
-						CLOUD SYNC · SECURE UPLOAD
+						AI FILE SORTER · AUTO ORGANIZE
 					</text>
 				</g>
 
@@ -642,29 +601,19 @@ export const Motion: React.FC = () => {
 					<path d={rr(480, 108, 960, 84, 20)} fill="#FFFFFF" />
 					<path d={rr(480, 108, 960, 84, 20)} fill="none" stroke="#E4EAF4" strokeWidth={2} />
 
-					<g transform="translate(512 126)">
-						<path
-							d="M12 34A12 12 0 0 1 12 10A17 17 0 0 1 45 4A13 13 0 0 1 64 12A11 11 0 0 1 64 34Z"
-							fill={ACC}
-							opacity={0.15}
-						/>
-						<path
-							d="M12 34A12 12 0 0 1 12 10A17 17 0 0 1 45 4A13 13 0 0 1 64 12A11 11 0 0 1 64 34Z"
-							fill="none"
-							stroke={ACC}
-							strokeWidth={2.6}
-							strokeLinejoin="round"
-						/>
-						<path d="M38 30V15M31 21L38 14L45 21" fill="none" stroke={ACC} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+					{/* sparkle glyph */}
+					<g transform="translate(524 150)">
+						<path d="M0 -22L5.4 -6.2L21 -1L5.4 4.2L0 20L-5.4 4.2L-21 -1L-5.4 -6.2Z" fill={ACC} opacity={0.9} />
+						<path d="M20 -20L22.6 -13.4L29 -11L22.6 -8.6L20 -2L17.4 -8.6L11 -11L17.4 -13.4Z" fill={ACC} opacity={0.55} />
 					</g>
-					<text x={596} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
-						SYNC QUEUE
+					<text x={572} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
+						SORTING ENGINE
 					</text>
-					<text x={596} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
-						{`${6 - nDone} PENDING · 17.5 GB`}
+					<text x={572} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
+						12 FILES · 4 CATEGORIES
 					</text>
 
-					<g transform="translate(790 0)">
+					<g transform="translate(818 0)">
 						<path d={rr(0, 134, chip.length * 12.2 + 40, 32, 16)} fill={chipCol} opacity={0.13} />
 						<circle cx={20} cy={150} r={5} fill={chipCol} />
 						<text x={36} y={156} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={chipCol}>
@@ -672,187 +621,160 @@ export const Motion: React.FC = () => {
 						</text>
 					</g>
 
-					<g transform="translate(1032 150)">
-						{FILES.map((_u, i) => {
-							const done = f >= t0(i) + T_ABS;
-							const act = f >= t0(i) && !done;
+					<g transform="translate(1050 150)">
+						{FILES.map((F, i) => {
+							const landed = f >= LAND[i];
+							const seen = f >= TAG[i];
 							return (
-								<g key={i}>
-									<circle cx={i * 34} cy={0} r={9} fill="none" stroke={done ? OKC : act ? ACC : '#C3CFE0'} strokeWidth={2.2} />
-									<circle cx={i * 34} cy={0} r={4.6} fill={done ? OKC : act ? ACC : '#C3CFE0'} opacity={done || act ? 1 : 0.5} />
-								</g>
-							);
-						})}
-					</g>
-
-					<g transform="translate(1250 0)">
-						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
-							UPLOADED
-						</text>
-						<text x={168} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
-							{Math.round(prog * 100) + '%'}
-						</text>
-						<path d={rr(0, 152, 168, 8, 4)} fill="#E6EBF4" />
-						<path d={rr(0, 152, Math.max(2, 168 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
-					</g>
-				</g>
-
-				{/* ============================================================ ghosts */}
-				<g>
-					{FILES.map((_u, i) => {
-						const [cx, cy] = CELL(i);
-						const op = ez(f, t0(i) + T_ARC0 + 10, t0(i) + T_ARC0 + 40, outCubic);
-						if (op <= 0.004) return null;
-						return (
-							<g key={i} transform={`translate(${cx} ${cy})`}>
-								<Ghost op={op} tick={ez(f, t0(i) + T_ABS, t0(i) + T_ABS + 24, outCubic)} live={f} />
-							</g>
-						);
-					})}
-				</g>
-
-				{/* ============================================================ pad */}
-				<g opacity={beamOn}>
-					<ellipse cx={BX} cy={PAD_Y} rx={300} ry={78} fill="url(#gAcc)" opacity={0.5 + 0.3 * Math.max(...padHit.map((p) => (p > 0 && p < 1 ? 1 - p : 0)), 0)} />
-					<ellipse cx={BX} cy={PAD_Y} rx={PAD_RX} ry={PAD_RY} fill="none" stroke={ACC} strokeWidth={3.4} opacity={0.7} />
-					<ellipse
-						cx={BX}
-						cy={PAD_Y}
-						rx={PAD_RX - 26}
-						ry={PAD_RY - 6}
-						fill="none"
-						stroke={ACC}
-						strokeWidth={2}
-						strokeDasharray="10 12"
-						strokeDashoffset={-f * 0.7}
-						opacity={0.42}
-					/>
-					{padHit.map((p, i) =>
-						p > 0.001 && p < 0.999 ? (
-							<ellipse
-								key={i}
-								cx={BX}
-								cy={PAD_Y}
-								rx={PAD_RX + p * 150}
-								ry={PAD_RY + p * 30}
-								fill="none"
-								stroke={ACC}
-								strokeWidth={3.4 * (1 - p)}
-								opacity={(1 - p) * 0.6}
-							/>
-						) : null
-					)}
-				</g>
-
-				{/* ============================================================ beam */}
-				<g opacity={beamOn}>
-					<path d={beamPath(1)} fill="url(#gBeam1)" />
-					<path d={beamPath(0.68)} fill="url(#gBeam2)" />
-					<path d={beamPath(0.3)} fill="url(#gBeam3)" />
-					<g clipPath="url(#cpBeam)">
-						{/* rising ticks */}
-						{Array.from({length: 30}, (_u, i) => {
-							const sp = 2.1 + hash(i * 1.7) * 1.7;
-							const span = PAD_Y - BEAM_TOP + 140;
-							const y = PAD_Y + 60 - (((f * sp + hash(i * 3.3) * span) % span) + 0);
-							const hw = halfW(y);
-							const x = BX + (hash(i * 5.9) - 0.5) * 1.72 * hw;
-							const wl = 10 + hash(i * 7.1) * 26;
-							const a = clamp((PAD_Y + 40 - y) / 120) * clamp((y - BEAM_TOP + 10) / 120) * (0.3 + hash(i * 9.4) * 0.55);
-							return <rect key={i} x={x - wl / 2} y={y} width={wl} height={3} rx={1.5} fill="#FFFFFF" opacity={a} />;
-						})}
-						{/* scan rings */}
-						{[0, 1, 2].map((i) => {
-							const span = PAD_Y - BEAM_TOP;
-							const y = PAD_Y - ((f * 2.6 + (i * span) / 3) % span);
-							const hw = halfW(y) * 0.92;
-							return (
-								<ellipse
+								<circle
 									key={i}
-									cx={BX}
-									cy={y}
-									rx={hw}
-									ry={hw * 0.2}
-									fill="none"
-									stroke="#FFFFFF"
-									strokeWidth={2.4}
-									opacity={0.36 * clamp((y - BEAM_TOP) / 150) * clamp((PAD_Y - y) / 90)}
+									cx={i * 20}
+									cy={0}
+									r={landed ? 6.4 : 5.4}
+									fill={landed ? CATS[F.cat].col : seen ? ACC : '#C7D2E2'}
+									opacity={landed ? 1 : seen ? 0.75 : 0.55}
 								/>
 							);
 						})}
 					</g>
+
+					<g transform="translate(1288 0)">
+						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
+							SORTED
+						</text>
+						<text x={132} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
+							{`${nDone}/12`}
+						</text>
+						<path d={rr(0, 152, 132, 8, 4)} fill="#E6EBF4" />
+						<path d={rr(0, 152, Math.max(2, 132 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
+					</g>
+				</g>
+
+				{/* ============================================================ scan */}
+				{beamOn > 0.004 ? (
+					<g opacity={beamOn}>
+						<rect x={sx - 300} y={SCAN_TOP} width={300} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanTrail)" />
+						<rect x={sx - 26} y={SCAN_TOP} width={52} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.1} />
+						<rect x={sx - 11} y={SCAN_TOP} width={22} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.22} />
+						<rect x={sx - 2.2} y={SCAN_TOP} width={4.4} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.95} />
+						{[0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+							const y = SCAN_TOP + 24 + ((f * 3.4 + k * 62) % (SCAN_BOT - SCAN_TOP - 48));
+							return <rect key={k} x={sx - 16} y={y} width={32} height={2.4} rx={1.2} fill="#FFFFFF" opacity={0.5} />;
+						})}
+						<g transform={`translate(${sx} ${SCAN_BOT})`}>
+							<path d="M0 24L12 12L0 0L-12 12Z" fill={ACC} />
+							<path d="M-30 12H-18M18 12H30" stroke={ACC} strokeWidth={2.4} strokeLinecap="round" opacity={0.5} />
+						</g>
+					</g>
+				) : null}
+
+				{/* ============================================================ folder backs */}
+				<g>
+					{CATS.map((C, c) => {
+						const inU = ez(f, 56 + c * 8, 56 + c * 8 + 34, outBack);
+						if (inU <= 0.002) return null;
+						const last = FILES.reduce((a, F, i) => (F.cat === c && f >= LAND[i] ? Math.max(a, LAND[i]) : a), -999);
+						const hit = ez(f, last, last + 10, outCubic) * (1 - ez(f, last + 10, last + 44, outQuint));
+						return (
+							<g key={c} transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60}) scale(${FSC * lerp(0.86, 1, inU)} ${FSC * lerp(0.86, 1, inU) * (1 - 0.06 * hit)})`} opacity={clamp(inU * 1.4)}>
+								<ellipse cx={0} cy={20} rx={150} ry={110} fill={`url(#gG${c})`} opacity={0.16 + 0.34 * hit} />
+								<FolderBack c={c} />
+							</g>
+						);
+					})}
 				</g>
 
 				{/* ============================================================ files */}
 				<g>
 					{[...FILES.keys()]
-						.sort((a, b) => (f >= t0(a) ? 1 : 0) - (f >= t0(b) ? 1 : 0) || a - b)
+						.sort((a, b) => (f >= LAUNCH[a] ? 1 : 0) - (f >= LAUNCH[b] ? 1 : 0) || a - b)
 						.map((i) => {
-						const p = pose(i);
-						const born = F_GRID + i * 8;
-						const inU = ez(f, born, born + 30, outBack);
-						if (inU <= 0.002 || p.op <= 0.004) return null;
-						const bob = Math.sin((f + i * 47) * 0.024) * 2.2 * (f < t0(i) ? 1 : 0);
-						const nm = FILES[i].name;
+							const p = pose(i);
+							const born = 12 + i * 6;
+							const inU = ez(f, born, born + 30, outBack);
+							if (inU <= 0.002 || p.op <= 0.004) return null;
+							if (f >= LAND[i]) return null;
+							return (
+								<g
+									key={i}
+									transform={`translate(${p.x} ${p.y + (1 - inU) * 52}) rotate(${p.rot}) scale(${p.sc * lerp(0.86, 1, inU)})`}
+									opacity={p.op * clamp(inU * 1.4)}
+								>
+									<FileCard i={i} tag={p.tag} />
+								</g>
+							);
+						})}
+				</g>
+
+				{/* detection labels sit above the pile, unrotated */}
+				<g>
+					{FILES.map((F, i) => {
+						const a = ez(f, TAG[i] + 2, TAG[i] + 11, outCubic) * (1 - ez(f, LAUNCH[i], LAUNCH[i] + 8, outCubic));
+						if (a <= 0.004) return null;
+						const C = CATS[F.cat];
+						const label = `${F.name}.${F.ext}`;
+						const wl = label.length * 11.4 + C.key.length * 11.4 + 108;
 						return (
-							<g key={i} transform={`translate(${p.x} ${p.y + bob + (1 - inU) * 46}) scale(${p.sc * lerp(0.86, 1, inU)})`} opacity={p.op * clamp(inU * 1.4)}>
-								<FileCard i={i} glow={p.glow} />
-								{p.wash > 0.01 ? <path d={CARD} fill="#DCEBFF" opacity={p.wash * 0.75} /> : null}
-								{p.beam < 0.5 ? (
-									<g opacity={clamp(inU * 1.6) * (1 - p.glow * 0.55)}>
-										<text x={0} y={158} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={1.9} fill={INK}>
-											{nm}
-										</text>
-									</g>
-								) : null}
+							<g key={i} opacity={a} transform={`translate(${F.p[0]} ${F.p[1] - 100 - 10 * a})`}>
+								<path d={rr(-wl / 2, -19, wl, 38, 19)} fill="#FFFFFF" />
+								<path d={rr(-wl / 2, -19, wl, 38, 19)} fill="none" stroke={C.col} strokeWidth={2.2} />
+								<text x={-wl / 2 + 20} y={6} fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={1.5} fill={INK}>
+									{label}
+								</text>
+								<text x={wl / 2 - 20} y={6} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={1.5} fill={C.col}>
+									{`→ ${C.key}`}
+								</text>
 							</g>
 						);
 					})}
 				</g>
 
-				{/* ============================================================ cloud */}
-				<g transform={`translate(${BX} ${CY}) scale(${cloudSc}) translate(${-BX} ${-CY})`} opacity={clamp(cloudIn * 1.5)}>
-					<ellipse cx={BX} cy={CY + 10} rx={318} ry={172} fill="url(#gAcc)" opacity={0.35 + 0.3 * arrive + 0.35 * finale} />
-					<g>
-						<circle cx={BX - 100} cy={CY + 10} r={64} fill="url(#gCloud)" />
-						<circle cx={BX - 26} cy={CY - 34} r={84} fill="url(#gCloud)" />
-						<circle cx={BX + 58} cy={CY - 8} r={64} fill="url(#gCloud)" />
-						<circle cx={BX + 124} cy={CY + 26} r={48} fill="url(#gCloud)" />
-						<path d={rr(BX - 164, CY + 26, 336, 48, 24)} fill="url(#gCloud)" />
-					</g>
-					<g clipPath="url(#cpCloud)">
-						<path d={rr(BX - 200, CY - 130, 400, 150, 0)} fill="url(#gCloudHi)" />
-						<path d={rr(BX - 200, CY + 44, 400, 40, 0)} fill="#12305F" opacity={0.16} />
-						{arrive > 0.01 ? <rect x={BX - 220} y={CY - 140} width={440} height={280} fill="#FFFFFF" opacity={arrive * 0.42} /> : null}
-					</g>
-					<text x={BX} y={CY + 18} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={62} letterSpacing={-1} fill="#FFFFFF">
-						{Math.round(prog * 100) + '%'}
-					</text>
-					<text x={BX} y={CY + 50} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={4.6} fill="#FFFFFF" opacity={0.72}>
-						UPLOADED
-					</text>
-				</g>
-
-				{/* pad label + rate */}
-				<g opacity={Math.min(plate, ez(f, F_CLOUD + 6, F_CLOUD + 44, outCubic))}>
-					<text x={BX} y={PAD_Y + 84} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={3.2} fill={INK2}>
-						{f >= F_LAST + 8 ? 'CLOUD STORAGE · SECURED' : 'CLOUD STORAGE'}
-					</text>
-					<text x={BX} y={PAD_Y + 112} textAnchor="middle" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1.4} fill={INK3}>
-						{rate > 0 ? `${rate} MB/S · TLS 1.3` : 'IDLE · TLS 1.3'}
-					</text>
+				{/* ============================================================ folder fronts */}
+				<g>
+					{CATS.map((C, c) => {
+						const inU = ez(f, 56 + c * 8, 56 + c * 8 + 34, outBack);
+						if (inU <= 0.002) return null;
+						const last = FILES.reduce((a, F, i) => (F.cat === c && f >= LAND[i] ? Math.max(a, LAND[i]) : a), -999);
+						const hit = ez(f, last, last + 10, outCubic) * (1 - ez(f, last + 10, last + 44, outQuint));
+						const n = countOf(c);
+						return (
+							<g key={c} opacity={clamp(inU * 1.4)}>
+								<g transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60}) scale(${FSC * lerp(0.86, 1, inU)} ${FSC * lerp(0.86, 1, inU) * (1 - 0.06 * hit)})`}>
+									<FolderFront c={c} />
+								</g>
+								<g transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60})`}>
+									<text x={0} y={118} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={2.6} fill={INK}>
+										{C.key}
+									</text>
+									<g transform={`translate(-8 154) scale(${1 + 0.3 * hit})`}>
+										<text x={0} y={0} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={28} fill={C.col}>
+											{n}
+										</text>
+									</g>
+									<text x={4} y={154} fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={2.4} fill={INK3}>
+										FILES
+									</text>
+									{hit > 0.01 ? (
+										<text x={98} y={150 - 26 * (1 - hit)} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} fill={C.col} opacity={hit}>
+											+1
+										</text>
+									) : null}
+								</g>
+							</g>
+						);
+					})}
 				</g>
 
 				{/* ============================================================ completion */}
 				{doneOp > 0.004 ? (
 					<g opacity={doneOp} transform={`translate(0 ${doneY})`}>
-						<ellipse cx={620} cy={966} rx={300} ry={22} fill="url(#gShadow)" opacity={0.55} />
-						<path d={rr(332, 894, 576, 76, 38)} fill="#FFFFFF" />
-						<path d={rr(332, 894, 576, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
-						<circle cx={382} cy={932} r={19} fill={OKC} opacity={0.14} />
-						<circle cx={382} cy={932} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
+						<ellipse cx={960} cy={472} rx={320} ry={24} fill="url(#gShadow)" opacity={0.55} />
+						<path d={rr(624, 400, 672, 76, 38)} fill="#FFFFFF" />
+						<path d={rr(624, 400, 672, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
+						<circle cx={674} cy={438} r={19} fill={OKC} opacity={0.14} />
+						<circle cx={674} cy={438} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
 						<path
-							d="M373 932.5L379.4 939L391.6 925.6"
+							d="M665 438.5L671.4 445L683.6 431.6"
 							fill="none"
 							stroke={OKC}
 							strokeWidth={3.4}
@@ -861,12 +783,12 @@ export const Motion: React.FC = () => {
 							strokeDasharray={26}
 							strokeDashoffset={26 * (1 - ez(f, F_DONE + 8, F_DONE + 34, outCubic))}
 						/>
-						<text x={416} y={940} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
-							SYNC COMPLETE
+						<text x={708} y={446} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
+							WORKSPACE ORGANIZED
 						</text>
-						<path d="M672 912V952" stroke={LINE} strokeWidth={2} />
-						<text x={698} y={940} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
-							17.5 GB UPLOADED
+						<path d="M1044 418V458" stroke={LINE} strokeWidth={2} />
+						<text x={1070} y={446} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
+							12 FILES SORTED
 						</text>
 					</g>
 				) : null}
@@ -875,7 +797,7 @@ export const Motion: React.FC = () => {
 				<g opacity={chrome * 0.95}>
 					<path d="M120 1002H1800" stroke={LINE} strokeWidth={2} />
 					<text x={120} y={1040} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3.4} fill={INK3}>
-						QUEUE · UPLOAD · VERIFY
+						SCAN · CLASSIFY · FILE
 					</text>
 					<text
 						x={1800}
