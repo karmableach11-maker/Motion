@@ -2,50 +2,63 @@ import React, {useEffect, useRef, useState} from 'react';
 import {AbsoluteFill, continueRender, delayRender, useCurrentFrame} from 'remotion';
 
 /**
- * MOTION 70 — "AI FILE SORTER · AUTO ORGANIZE"
+ * MOTION 71 — "SECURE VAULT · ENCRYPT & LOCK"
  * ---------------------------------------------------------------------------
- * Twelve files land in a messy pile on a clean light workspace. A scan line
- * sweeps left to right; as it touches each file the engine tags it with a
- * category, and the file launches on an arc into the matching folder below.
- * The four folder counters climb, the pile empties, and the panel reports the
- * sort.
+ * Five files queue on the left. One at a time each flies to a gate ring in the
+ * middle, is scrambled into a dark cipher block while a progress arc closes
+ * around it, then drops into an open vault and settles onto the pile inside.
+ * With the queue empty the iris sweeps shut, the bolts drive out, the dial
+ * spins home and the badge turns green.
  *
- * Third piece in the same design system as MOTION 68 and MOTION 69 — same
- * plate, panel chrome, footer, shadow language and folder construction — so
- * all three cut together as a set.
+ * Fourth piece in the same design system as MOTION 68, 69 and 70 — same plate,
+ * panel chrome, footer, shadow language and file-card construction — so all
+ * four cut together as a set.
  *
  * HOW IT IS BUILT
  * ---------------------------------------------------------------------------
  * [int] Original build, no reference clip. What follows is why each decision
  *       was made rather than what was measured off frames.
  *
- * [int] THE SCAN DRIVES EVERYTHING. Tag times are not authored — each file's
- *       tag frame is solved from its own x against the sweep, so the beam can
- *       never pass a file without lighting it or light one it has not reached.
- *       Move a card in the pile and its whole cue shifts with it. The twelve
- *       pile positions were then chosen to have twelve DISTINCT x values about
- *       100 px apart, which spaces the tags roughly 34 frames apart at the
- *       sweep's 2.94 px/frame — close enough that two files are always in the
- *       air, far enough apart that each tag reads as its own event.
- * [int] The categories cycle IMAGES / VIDEO / DOCS / ARCHIVE down the sorted-by-x
- *       order rather than being grouped, so consecutive flights cross the frame
- *       in different directions instead of stacking into one corridor. That
- *       crossing is most of what sells "sorting" rather than "moving".
- * [int] Each file waits 18 frames between tag and launch. Without that beat the
- *       detection box has no time to read and the sort looks like a reflex; with
- *       it, the engine appears to decide.
- * [int] Files insert BEHIND the folder flap. All four folder backs are drawn,
- *       then every file in flight, then all four flaps — so a card is in front
- *       of the folder as it descends and hidden the instant it drops past the
- *       flap's top edge, without any per-file clipping.
- * [int] The folders are the MOTION 68 folder, re-tinted per category from one
- *       shared path pair at 0.78 scale. Same construction: back panel with tab,
- *       paper sheets, front flap carrying its own sheen and bottom shade, and a
- *       radial-gradient contact shadow rather than a Gaussian filter — nothing
- *       in the frame depends on the renderer's filter resolution.
- * [int] Unscanned files sit at 0.94 opacity and lift to full when tagged. It is
- *       a small difference, but it is what makes the swept region read as
- *       "already processed" without adding a tint wash over half the plate.
+ * [int] THREE STATIONS, LEFT TO RIGHT. Queue, gate, vault. The encryption is
+ *       given its own station and its own 52-frame hold instead of happening
+ *       in flight, because a transformation that occurs while an object is
+ *       moving cannot be read — the eye is tracking position, not content. The
+ *       card stops, the ring closes, the hex scrambles, and only then does it
+ *       travel on.
+ * [int] CADENCE. A file launches every 90 frames and each pipeline run takes
+ *       140, so the gate is occupied from t+44 to t+96 and the next card does
+ *       not arrive until t+134 — the two never share it, but there is always a
+ *       second card in transit, which keeps the frame busy.
+ * [int] The queue is a LIST, not a grid. The thumbnails fly away but the rows
+ *       stay, each one turning to a green SEALED tag as its file lands. Emptying
+ *       the left third entirely would kill a quarter of the frame for the last
+ *       four seconds; leaving the ledger behind is what the piece is about
+ *       anyway — a record that the files were processed.
+ * [int] THE IRIS is six annular sectors whose inner radius runs from 178 to 0
+ *       while the whole assembly counter-rotates 26 degrees. A real camera iris
+ *       pivots each blade on the rim; that construction needs a per-blade
+ *       inverse solve and, at this size, resolves to something visually
+ *       identical to sectors. The sectors overlap by two degrees so no seam
+ *       ever opens between neighbours mid-close, and alternate blades carry
+ *       different gradients so the mechanism reads as separate plates rather
+ *       than one shrinking disc. Below radius 0.6 the inner arc is replaced by
+ *       a line to the origin — an SVG elliptical arc with a zero radius is
+ *       undefined and drops the whole path.
+ * [int] The hex on a cipher block is real text in the embedded mono face, not
+ *       bars standing in for text. It re-rolls every three frames while the
+ *       block is being encrypted and freezes on the frame it finishes, so the
+ *       scramble has a clear end rather than fading out.
+ * [int] Blocks land on an actual pile inside the vault — each one flies to its
+ *       own slot in a five-wide fan on the cavity floor, so the vault visibly
+ *       fills. Dissolving them at the mouth would have been cheaper and would
+ *       have left the vault looking empty at the moment it seals.
+ * [int] The throw from queue to gate carries a 150 px sine bulge, not the 60
+ *       it started with. At 60 the card tracked straight across the list and
+ *       sat on the filename of whatever row it was passing for about twenty
+ *       frames; the taller arc lifts it clear of the type.
+ * [int] Every shadow is a radial-gradient ellipse rather than a Gaussian
+ *       filter, as in the other three pieces, so nothing in the frame depends
+ *       on the renderer's filter resolution.
  */
 
 /* ------------------------------------------------------------------ fonts */
@@ -231,15 +244,15 @@ const FACE = `
 @font-face{font-family:'CuUI';src:url(data:font/woff2;base64,${F_UI7}) format('woff2');font-weight:700;font-style:normal;font-display:block}
 @font-face{font-family:'CuMono';src:url(data:font/woff2;base64,${F_MO5}) format('woff2');font-weight:500;font-style:normal;font-display:block}`;
 
-if (typeof document !== 'undefined' && !document.getElementById('m70-faces')) {
+if (typeof document !== 'undefined' && !document.getElementById('m71-faces')) {
 	const st = document.createElement('style');
-	st.id = 'm70-faces';
+	st.id = 'm71-faces';
 	st.textContent = FACE;
 	document.head.appendChild(st);
 }
 
 const useFaces = () => {
-	const [handle] = useState(() => delayRender('m70 fonts'));
+	const [handle] = useState(() => delayRender('m71 fonts'));
 	const done = useRef(false);
 	useEffect(() => {
 		const fin = () => {
@@ -304,61 +317,46 @@ const H = 1080;
 /* compact file card: x -64..64, y -81..81, top-right corner folded */
 const CARD = 'M-64 -70A11 11 0 0 1 -53 -81H38L64 -55V70A11 11 0 0 1 53 81H-53A11 11 0 0 1 -64 70Z';
 
-/* folder, inherited from MOTION 68 */
-const FLAP =
-	'M-118 -18H118Q125 -18 125.6 -11.2L114 59Q112.4 71.6 99.8 71.6H-99.8Q-112.4 71.6 -114 59L-125.6 -11.2Q-125 -18 -118 -18Z';
-const BACKP =
-	'M-115 -44V-64A13 13 0 0 1 -102 -77H-44A13 13 0 0 1 -33.6 -71.8L-21 -55A13 13 0 0 0 -10.6 -49.8H101A13 13 0 0 1 114 -36.8V58A13 13 0 0 1 101 71H-102A13 13 0 0 1 -115 58Z';
+const QX = 250; /* queue column */
+const QY = [320, 452, 584, 716, 848];
+const QSC = 0.68; /* queue thumbnails ride small so five rows do not overlap */
+const GX = 900; /* gate */
+const GY = 560;
+const VX = 1470; /* vault */
+const VY = 560;
+const R_BEZ = 246;
+const R_APER = 196;
+const R_PARK = 178; /* blade inner radius when the iris is open */
 
-const FSC = 0.78; /* folder scale */
-const FOLDER_Y = 800;
-const FOLDER_X = [480, 800, 1120, 1440];
+/* pile slot inside the vault */
+const slot = (j: number): [number, number, number] => [VX + (j - 2) * 58, VY + 104 - Math.abs(j - 2) * 9, (j - 2) * 7];
 
-/* scan sweep */
-const SX0 = 250;
-const SX1 = 1720;
-const F_SCAN0 = 160;
-const F_SCAN1 = 660;
-const SCAN_TOP = 266;
-const SCAN_BOT = 714;
-const scanX = (f: number) => lerp(SX0, SX1, seg(f, F_SCAN0, F_SCAN1));
+/* ------------------------------------------------------------------ beats */
+const F_QUEUE = 12;
+const F_VAULT = 52;
+const F_GATE = 96;
+const F_Q0 = 140;
+const STAG = 90;
+const T_ARR = 44; /* reaches the gate */
+const T_ENC = 96; /* encryption finished */
+const T_DEP = 140; /* settled inside the vault */
+const F_LAST = F_Q0 + 4 * STAG + T_DEP; /* 640 */
+const F_SEAL0 = 658;
+const F_SEAL1 = 728;
+const F_BOLT = 716;
+const F_LOCK = 754;
+const F_DONE = 774;
 
-/* cue offsets */
-const D_LAUNCH = 18;
-const D_FLY = 56;
-const D_INSERT = 15; /* final frames of the flight, spent dropping behind the flap */
+const t0 = (i: number) => F_Q0 + i * STAG;
 
 /* ------------------------------------------------------------------ files */
-type Cat = 0 | 1 | 2 | 3;
-const CATS = [
-	{key: 'IMAGES', col: '#2B7FFF', b0: '#5291F4', b1: '#2A5EC2', f0: '#86B7FF', f1: '#4F8DF4', f2: '#2C68D8', hi: '#B8D5FF'},
-	{key: 'VIDEO', col: '#7C4DFF', b0: '#9878FF', b1: '#5A32D2', f0: '#B9A0FF', f1: '#8A5CFF', f2: '#6435D8', hi: '#DCCDFF'},
-	{key: 'DOCS', col: '#F5811F', b0: '#FFA45A', b1: '#D3690F', f0: '#FFC38C', f1: '#FF9440', f2: '#E0761A', hi: '#FFDCBB'},
-	{key: 'ARCHIVE', col: '#0FA862', b0: '#3ACB8B', b1: '#0A8850', f0: '#6FE0AE', f1: '#20BB77', f2: '#0D9558', hi: '#B6F0D6'},
+const FILES = [
+	{name: 'CLIENT_DB', ext: 'SQL', size: '2.8 GB', col: '#2B7FFF'},
+	{name: 'PAYROLL', ext: 'XLS', size: '0.6 GB', col: '#0FA862'},
+	{name: 'CONTRACTS', ext: 'PDF', size: '1.4 GB', col: '#FF4D4F'},
+	{name: 'ID_SCANS', ext: 'ZIP', size: '3.2 GB', col: '#F5811F'},
+	{name: 'MASTER_KEY', ext: 'PEM', size: '0.1 GB', col: '#7C4DFF'},
 ];
-
-type FileDef = {p: [number, number]; rot: number; cat: Cat; name: string; ext: string; thumb: 0 | 1 | 2};
-const FILES: FileDef[] = [
-	{p: [360, 390], rot: -11, cat: 0, name: 'SHOT_01', ext: 'JPG', thumb: 1},
-	{p: [400, 620], rot: 9, cat: 2, name: 'BRIEF', ext: 'PDF', thumb: 0},
-	{p: [520, 505], rot: -5, cat: 1, name: 'CLIP_A', ext: 'MP4', thumb: 2},
-	{p: [640, 620], rot: 14, cat: 3, name: 'BACKUP', ext: 'ZIP', thumb: 0},
-	{p: [690, 390], rot: 6, cat: 0, name: 'HERO', ext: 'PNG', thumb: 1},
-	{p: [850, 505], rot: -13, cat: 2, name: 'NOTES', ext: 'DOC', thumb: 0},
-	{p: [960, 620], rot: 4, cat: 1, name: 'REEL', ext: 'MOV', thumb: 2},
-	{p: [1010, 390], rot: -8, cat: 3, name: 'ASSETS', ext: 'RAR', thumb: 0},
-	{p: [1170, 505], rot: 12, cat: 0, name: 'LOGO', ext: 'SVG', thumb: 1},
-	{p: [1290, 620], rot: -6, cat: 2, name: 'SHEET', ext: 'XLS', thumb: 0},
-	{p: [1330, 390], rot: 10, cat: 1, name: 'TEASER', ext: 'MP4', thumb: 2},
-	{p: [1490, 505], rot: -10, cat: 3, name: 'OLD', ext: '7Z', thumb: 0},
-];
-
-/* every cue is solved from the sweep, never authored */
-const TAG: number[] = FILES.map((F) => F_SCAN0 + ((F.p[0] - SX0) / (SX1 - SX0)) * (F_SCAN1 - F_SCAN0));
-const LAUNCH = TAG.map((t) => t + D_LAUNCH);
-const LAND = LAUNCH.map((t) => t + D_FLY);
-const F_LAST = Math.max(...LAND);
-const F_DONE = 736;
 
 /* palette */
 const INK = '#16233A';
@@ -367,89 +365,81 @@ const INK3 = '#96A3B8';
 const LINE = '#DCE3EE';
 const ACC = '#1D6BFF';
 const OKC = '#12B26A';
+const CIPH = '#5FE3A0';
+
+const HEXCH = '0123456789ABCDEF';
+const hx = (n: number) => HEXCH[Math.floor(hash(n) * 16)] + HEXCH[Math.floor(hash(n + 91.3) * 16)];
+const hexRow = (i: number, r: number, sd: number) =>
+	`${hx(i * 31 + r * 7 + sd * 3.1)} ${hx(i * 31 + r * 7 + sd * 3.1 + 1)} ${hx(i * 31 + r * 7 + sd * 3.1 + 2)} ${hx(i * 31 + r * 7 + sd * 3.1 + 3)}`;
 
 /* ------------------------------------------------------------------ pieces */
 
-const FileCard: React.FC<{i: number; tag: number}> = ({i, tag}) => {
+const PlainCard: React.FC<{i: number}> = ({i}) => {
 	const F = FILES[i];
-	const C = CATS[F.cat];
 	const chipW = F.ext.length * 10 + 22;
 	return (
 		<g>
-			<ellipse cx={0} cy={94} rx={64} ry={11} fill="url(#gShadow)" opacity={0.5} />
 			<path d={CARD} fill="#FFFFFF" />
 			<path d={CARD} fill="url(#gCardV)" />
 			<path d={CARD} fill="none" stroke="#E3E9F3" strokeWidth={1.8} />
 			<path d="M38 -81L64 -55H38Z" fill="#D5E0EF" />
 			<path d="M38 -81V-55H64" fill="none" stroke="#C3D1E4" strokeWidth={1.8} strokeLinejoin="round" />
-			{F.thumb === 0 ? (
-				<g>
-					<path d={rr(-44, -60, 62, 9, 4.5)} fill={C.col} opacity={0.5} />
-					{[0, 1, 2, 3].map((k) => (
-						<path key={k} d={rr(-44, -38 + k * 18, [88, 74, 88, 62][k], 8, 4)} fill="#E5EBF5" />
-					))}
-				</g>
-			) : (
-				<g>
-					<path d={rr(-47, -64, 94, 52, 8)} fill={`url(#gT${i})`} />
-					{F.thumb === 2 ? (
-						<g>
-							<circle cx={0} cy={-38} r={13} fill="#FFFFFF" opacity={0.92} />
-							<path d="M-4.5 -45L8 -38L-4.5 -31Z" fill={C.col} />
-						</g>
-					) : (
-						<g>
-							<circle cx={24} cy={-50} r={6.5} fill="#FFFFFF" opacity={0.85} />
-							<path d="M-47 -25L-19 -47L-2 -33L14 -45L47 -25V-20A8 8 0 0 1 39 -12H-39A8 8 0 0 1 -47 -20Z" fill="#FFFFFF" opacity={0.55} />
-						</g>
-					)}
-					<path d={rr(-44, -2, 88, 8, 4)} fill="#E5EBF5" />
-					<path d={rr(-44, 14, 66, 8, 4)} fill="#E5EBF5" />
-				</g>
-			)}
-			<path d={rr(-44, 44, chipW, 24, 7)} fill={C.col} opacity={0.15} />
-			<text x={-44 + chipW / 2} y={61} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={13} letterSpacing={1.1} fill={C.col}>
+			<path d={rr(-44, -60, 62, 9, 4.5)} fill={F.col} opacity={0.5} />
+			{[0, 1, 2, 3].map((k) => (
+				<path key={k} d={rr(-44, -38 + k * 18, [88, 74, 88, 62][k], 8, 4)} fill="#E5EBF5" />
+			))}
+			<path d={rr(-44, 44, chipW, 24, 7)} fill={F.col} opacity={0.15} />
+			<text x={-44 + chipW / 2} y={61} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={13} letterSpacing={1.1} fill={F.col}>
 				{F.ext}
 			</text>
-			{/* detection frame */}
-			{tag > 0.004 ? (
-				<g opacity={tag}>
-					<path d={rr(-76, -93, 152, 186, 14)} fill={C.col} opacity={0.06} />
-					<path d={rr(-76, -93, 152, 186, 14)} fill="none" stroke={C.col} strokeWidth={2.6} />
-					{[
-						[-76, -93],
-						[76, -93],
-						[-76, 93],
-						[76, 93],
-					].map(([hx, hy], k) => (
-						<rect key={k} x={hx - 4.5} y={hy - 4.5} width={9} height={9} rx={2} fill="#FFFFFF" stroke={C.col} strokeWidth={2.2} />
-					))}
-				</g>
-			) : null}
 		</g>
 	);
 };
 
-const FolderBack: React.FC<{c: number}> = ({c}) => (
+const CipherCard: React.FC<{i: number; sd: number; live: number}> = ({i, sd, live}) => (
 	<g>
-		<ellipse cx={0} cy={96} rx={104} ry={15} fill="url(#gShadow)" opacity={0.6} />
-		<path d={BACKP} fill={`url(#gB${c})`} />
-		<path d={rr(-88, -40, 176, 96, 7)} fill="#FFFFFF" />
-		<path d={rr(-88, -40, 176, 96, 7)} fill="url(#gPaper)" />
-		<path d={rr(-79, -30, 158, 86, 6)} fill="#F3F7FC" />
-		<path d="M-68 -16H34" stroke="#D7E2F2" strokeWidth={4.5} strokeLinecap="round" />
-		<path d="M-68 -1H12" stroke="#E3EBF7" strokeWidth={4.5} strokeLinecap="round" />
+		<path d={CARD} fill="url(#gCipher)" />
+		<path d={CARD} fill="none" stroke="#2E6BF0" strokeWidth={1.8} opacity={0.75} />
+		<path d="M38 -81L64 -55H38Z" fill="#22314F" />
+		<path d="M38 -81V-55H64" fill="none" stroke="#3C5480" strokeWidth={1.8} strokeLinejoin="round" />
+		<path d="M-44 -64H18" stroke={CIPH} strokeWidth={3} strokeLinecap="round" opacity={0.75} />
+		{[0, 1, 2, 3, 4].map((r) => (
+			<text
+				key={r}
+				x={0}
+				y={-42 + r * 19}
+				textAnchor="middle"
+				fontFamily="CuMono"
+				fontWeight={500}
+				fontSize={13}
+				letterSpacing={0.6}
+				fill={CIPH}
+				opacity={0.5 + 0.45 * hash(i * 5 + r + sd)}
+			>
+				{hexRow(i, r, sd)}
+			</text>
+		))}
+		<g transform="translate(-30 58)">
+			<path d="M-7 -6V-10A7 7 0 0 1 7 -10V-6" fill="none" stroke={CIPH} strokeWidth={2.6} strokeLinecap="round" />
+			<path d={rr(-10, -6, 20, 16, 3.5)} fill={CIPH} />
+		</g>
+		<text x={-12} y={64} fontFamily="CuUI" fontWeight={700} fontSize={12} letterSpacing={1.6} fill={CIPH} opacity={0.85}>
+			AES-256
+		</text>
+		{live > 0.01 ? <path d={CARD} fill={CIPH} opacity={live * 0.22} /> : null}
 	</g>
 );
 
-const FolderFront: React.FC<{c: number}> = ({c}) => (
-	<g>
-		<path d={FLAP} fill={`url(#gF${c})`} />
-		<path d={FLAP} fill="url(#gSheen)" />
-		<path d={FLAP} fill="url(#gFlapShade)" />
-		<path d="M-115 -15.6H115" stroke={CATS[c].hi} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
-	</g>
-);
+/* iris blade: annular sector centred on angle 0 */
+const blade = (a: number, R: number, half: number) => {
+	const c1 = Math.cos(-half);
+	const s1 = Math.sin(-half);
+	const c2 = Math.cos(half);
+	const s2 = Math.sin(half);
+	const head = `M${R * c1} ${R * s1}A${R} ${R} 0 0 1 ${R * c2} ${R * s2}`;
+	if (a < 0.6) return `${head}L0 0Z`;
+	return `${head}L${a * c2} ${a * s2}A${a} ${a} 0 0 0 ${a * c1} ${a * s1}Z`;
+};
 
 /* ------------------------------------------------------------------ main */
 export const Motion: React.FC = () => {
@@ -458,55 +448,76 @@ export const Motion: React.FC = () => {
 
 	const plate = ez(f, 0, 34, outCubic);
 	const chrome = ez(f, 8, 46, outCubic);
-	const beamOn = ez(f, F_SCAN0 - 22, F_SCAN0 + 10, outCubic) * (1 - ez(f, F_SCAN1, F_SCAN1 + 40, inOutCubic));
-	const sx = scanX(f);
+	const vaultIn = ez(f, F_VAULT, F_VAULT + 44, outBack);
+	const gateIn = ez(f, F_GATE, F_GATE + 34, outBack);
 
-	/* ---------------- per-file transport ---------------- */
-	const pose = (i: number) => {
-		const F = FILES[i];
-		const C = FILES[i].cat;
-		const tagU = ez(f, TAG[i], TAG[i] + 9, outBack) * (1 - ez(f, LAUNCH[i], LAUNCH[i] + 8, outCubic));
-		if (f < LAUNCH[i]) {
-			const pop = ez(f, TAG[i], TAG[i] + 10, outBack) * (1 - ez(f, TAG[i] + 10, LAUNCH[i], outCubic));
+	/* ---------------- per-file pipeline ---------------- */
+	const stage = (i: number) => {
+		const t = f - t0(i);
+		const encU = ez(f, t0(i) + T_ARR + 6, t0(i) + T_ENC - 4, inOutCubic);
+		const sd = f < t0(i) + T_ENC - 4 ? Math.floor(f / 3) : Math.floor((t0(i) + T_ENC - 4) / 3);
+		if (t < 0) return {x: QX, y: QY[i], rot: 0, sc: QSC, op: 1, enc: 0, sd, live: 0, at: 0};
+		if (t < T_ARR) {
+			const u = ez(f, t0(i), t0(i) + T_ARR, inOutCubic);
 			return {
-				x: F.p[0],
-				y: F.p[1] - 12 * pop,
-				rot: F.rot * (1 - 0.25 * pop),
-				sc: 1 + 0.06 * pop,
-				op: f >= TAG[i] ? 1 : 0.94,
-				tag: tagU,
-				done: 0,
+				x: lerp(QX, GX, u),
+				y: lerp(QY[i], GY, u) - 150 * Math.sin(Math.PI * u),
+				rot: 0,
+				sc: lerp(QSC, 1.18, u),
+				op: 1,
+				enc: 0,
+				sd,
+				live: 0,
+				at: 1,
 			};
 		}
-		const u = ez(f, LAUNCH[i], LAND[i] - D_INSERT, inOutCubic);
-		const ins = ez(f, LAND[i] - D_INSERT, LAND[i], inCubic);
-		const tx = FOLDER_X[C];
+		if (t < T_ENC) {
+			const wob = Math.sin((f - t0(i)) * 0.6) * 1.6 * (1 - encU);
+			return {x: GX + wob, y: GY, rot: 0, sc: 1.18, op: 1, enc: encU, sd, live: encU < 1 ? 1 - encU : 0, at: 2};
+		}
+		const [sxp, syp, srp] = slot(i);
+		const u = ez(f, t0(i) + T_ENC, t0(i) + T_DEP, inOutCubic);
 		return {
-			x: lerp(F.p[0], tx, u),
-			y: lerp(F.p[1], FOLDER_Y - 96, u) - 150 * Math.sin(Math.PI * u) + ins * 108,
-			rot: F.rot * (1 - u),
-			sc: lerp(1, 0.58, u) * (1 - 0.42 * ins),
+			x: lerp(GX, sxp, u),
+			y: lerp(GY, syp, u) - 96 * Math.sin(Math.PI * u),
+			rot: srp * u,
+			sc: lerp(1.18, 0.4, u),
 			op: 1,
-			tag: tagU,
-			done: ins,
+			enc: 1,
+			sd,
+			live: 0,
+			at: 3,
 		};
 	};
 
-	const countOf = (c: number) => FILES.filter((F, i) => F.cat === c && f >= LAND[i]).length;
-	const nDone = FILES.filter((_x, i) => f >= LAND[i]).length;
-	const nTag = FILES.filter((_x, i) => f >= TAG[i]).length;
-	const prog = nDone / 12;
+	const gateAt = FILES.findIndex((_x, i) => f >= t0(i) + T_ARR && f < t0(i) + T_ENC);
+	const gateP = gateAt < 0 ? 0 : seg(f, t0(gateAt) + T_ARR + 6, t0(gateAt) + T_ENC - 4);
+	const gateHot = gateAt < 0 ? 0 : ez(f, t0(gateAt) + T_ARR - 8, t0(gateAt) + T_ARR + 6, outCubic) * (1 - ez(f, t0(gateAt) + T_ENC - 8, t0(gateAt) + T_ENC, outCubic));
+	const nDone = FILES.filter((_x, i) => f >= t0(i) + T_DEP).length;
+	const prog = FILES.reduce((a, _x, i) => a + seg(f, t0(i) + T_ARR, t0(i) + T_DEP), 0) / 5;
 
-	const chip = f >= F_LAST + 8 ? 'ORGANIZED' : f >= F_SCAN0 - 20 ? (nTag > nDone ? 'SORTING' : 'SCANNING') : 'READY';
-	const chipCol = f >= F_LAST + 8 ? OKC : f >= F_SCAN0 - 20 ? ACC : INK3;
+	/* ---------------- vault mechanism ---------------- */
+	const close = ez(f, F_SEAL0, F_SEAL1, inOutCubic);
+	const aper = lerp(R_PARK, 0, close);
+	const spin = lerp(0, 26, close);
+	const bolt = ez(f, F_BOLT, F_BOLT + 40, outBack);
+	const dial = ez(f, F_SEAL1 - 20, F_LOCK, inOutCubic);
+	const lock = ez(f, F_LOCK, F_LOCK + 26, outCubic);
+	const flash = ez(f, F_LOCK, F_LOCK + 8, outCubic) * (1 - ez(f, F_LOCK + 8, F_LOCK + 54, outQuint));
+
+	/* ---------------- read-outs ---------------- */
+	const chip = f >= F_LOCK ? 'SEALED' : f >= F_SEAL0 ? 'LOCKING' : f >= F_Q0 - 20 ? 'ENCRYPTING' : 'READY';
+	const chipCol = f >= F_LOCK ? OKC : f >= F_Q0 - 20 ? ACC : INK3;
 	const doneOp = ez(f, F_DONE, F_DONE + 30, outCubic);
 	const doneY = lerp(32, 0, ez(f, F_DONE, F_DONE + 36, outQuint));
 	const status =
-		f >= F_LAST + 8
-			? 'ALL FILES ORGANIZED'
-			: f >= F_SCAN0
-				? `CLASSIFYING · ${nTag} OF 12 ANALYZED`
-				: 'NEURAL CLASSIFIER · READY';
+		f >= F_LOCK
+			? 'VAULT SEALED · KEYS DESTROYED'
+			: f >= F_SEAL0
+				? 'DRIVING BOLTS'
+				: f >= F_Q0
+					? `ENCRYPTING · ${Math.min(nDone + 1, 5)} OF 5`
+					: 'AES-256 · RSA-4096 · READY';
 
 	return (
 		<AbsoluteFill style={{backgroundColor: '#EDF1F8'}}>
@@ -527,71 +538,67 @@ export const Motion: React.FC = () => {
 						<stop offset="0.55" stopColor="#22375C" stopOpacity="0.12" />
 						<stop offset="1" stopColor="#22375C" stopOpacity="0" />
 					</radialGradient>
+					<radialGradient id="gAcc" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0.5" />
+						<stop offset="0.5" stopColor="#2E7BFF" stopOpacity="0.15" />
+						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
+					</radialGradient>
+					<radialGradient id="gGrn" cx="0.5" cy="0.5" r="0.5">
+						<stop offset="0" stopColor="#12B26A" stopOpacity="0.55" />
+						<stop offset="0.5" stopColor="#12B26A" stopOpacity="0.16" />
+						<stop offset="1" stopColor="#12B26A" stopOpacity="0" />
+					</radialGradient>
 					<linearGradient id="gCardV" x1="0" y1="0" x2="0" y2="1">
 						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
 						<stop offset="1" stopColor="#D8E1EF" stopOpacity="0.55" />
 					</linearGradient>
-					<linearGradient id="gPaper" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
-						<stop offset="1" stopColor="#C9D7EA" stopOpacity="0.9" />
+					<linearGradient id="gCipher" x1="0" y1="0" x2="0.4" y2="1">
+						<stop offset="0" stopColor="#1E2C49" />
+						<stop offset="0.55" stopColor="#131E35" />
+						<stop offset="1" stopColor="#0B1424" />
 					</linearGradient>
-					<linearGradient id="gSheen" x1="0.06" y1="0" x2="0.72" y2="1">
-						<stop offset="0" stopColor="#FFFFFF" stopOpacity="0.34" />
-						<stop offset="0.22" stopColor="#FFFFFF" stopOpacity="0.04" />
-						<stop offset="0.36" stopColor="#FFFFFF" stopOpacity="0.19" />
-						<stop offset="0.58" stopColor="#FFFFFF" stopOpacity="0" />
+
+					{/* steel */}
+					<linearGradient id="gSteel" x1="0" y1="0" x2="0.55" y2="1">
+						<stop offset="0" stopColor="#FDFEFF" />
+						<stop offset="0.28" stopColor="#E4EAF4" />
+						<stop offset="0.52" stopColor="#F6F9FD" />
+						<stop offset="0.78" stopColor="#CBD6E6" />
+						<stop offset="1" stopColor="#AFBED2" />
 					</linearGradient>
-					<linearGradient id="gFlapShade" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0.62" stopColor="#0B2A5E" stopOpacity="0" />
-						<stop offset="1" stopColor="#0B2A5E" stopOpacity="0.2" />
+					<linearGradient id="gSteel2" x1="0" y1="0" x2="0.6" y2="1">
+						<stop offset="0" stopColor="#EFF4FA" />
+						<stop offset="0.4" stopColor="#D3DDEB" />
+						<stop offset="1" stopColor="#A9B9CF" />
 					</linearGradient>
-					{CATS.map((C, c) => (
-						<React.Fragment key={c}>
-							<linearGradient id={`gB${c}`} x1="0" y1="0" x2="0" y2="1">
-								<stop offset="0" stopColor={C.b0} />
-								<stop offset="1" stopColor={C.b1} />
-							</linearGradient>
-							<linearGradient id={`gF${c}`} x1="0" y1="0" x2="0" y2="1">
-								<stop offset="0" stopColor={C.f0} />
-								<stop offset="0.5" stopColor={C.f1} />
-								<stop offset="1" stopColor={C.f2} />
-							</linearGradient>
-							<radialGradient id={`gG${c}`} cx="0.5" cy="0.5" r="0.5">
-								<stop offset="0" stopColor={C.col} stopOpacity="0.5" />
-								<stop offset="1" stopColor={C.col} stopOpacity="0" />
-							</radialGradient>
-						</React.Fragment>
-					))}
-					{FILES.map((F, i) =>
-						F.thumb === 0 ? null : (
-							<linearGradient key={i} id={`gT${i}`} x1="0" y1="0" x2="0.7" y2="1">
-								<stop offset="0" stopColor={CATS[F.cat].col} stopOpacity="0.85" />
-								<stop offset="1" stopColor={CATS[F.cat].col} stopOpacity="0.45" />
-							</linearGradient>
-						)
-					)}
-					<linearGradient id="gScanTrail" x1="0" y1="0" x2="1" y2="0">
-						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0" />
-						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0.13" />
+					<linearGradient id="gBladeA" x1="0" y1="0" x2="0.8" y2="1">
+						<stop offset="0" stopColor="#F7FAFD" />
+						<stop offset="0.55" stopColor="#DDE5F0" />
+						<stop offset="1" stopColor="#B9C7DA" />
 					</linearGradient>
-					<linearGradient id="gScanV" x1="0" y1={SCAN_TOP} x2="0" y2={SCAN_BOT} gradientUnits="userSpaceOnUse">
-						<stop offset="0" stopColor="#2E7BFF" stopOpacity="0" />
-						<stop offset="0.16" stopColor="#2E7BFF" stopOpacity="1" />
-						<stop offset="0.84" stopColor="#2E7BFF" stopOpacity="1" />
-						<stop offset="1" stopColor="#2E7BFF" stopOpacity="0" />
+					<linearGradient id="gBladeB" x1="0" y1="0" x2="0.8" y2="1">
+						<stop offset="0" stopColor="#E9EFF7" />
+						<stop offset="0.55" stopColor="#CDD8E8" />
+						<stop offset="1" stopColor="#A7B7CD" />
 					</linearGradient>
+					<radialGradient id="gCav" cx="0.5" cy="0.36" r="0.72">
+						<stop offset="0" stopColor="#243350" />
+						<stop offset="0.55" stopColor="#16233C" />
+						<stop offset="1" stopColor="#0A1120" />
+					</radialGradient>
 				</defs>
 
 				{/* ============================================================ plate */}
 				<rect width={W} height={H} fill="url(#gPlate)" />
-				<ellipse cx={900} cy={340} rx={1220} ry={740} fill="url(#gLift)" opacity={plate} />
+				<ellipse cx={880} cy={340} rx={1220} ry={740} fill="url(#gLift)" opacity={plate} />
+				<ellipse cx={VX} cy={VY} rx={520} ry={430} fill="url(#gAcc)" opacity={0.16 * plate} />
 
 				{/* ============================================================ title */}
 				<g opacity={chrome} transform={`translate(0 ${lerp(-16, 0, chrome)})`}>
-					<path d="M620 66H756" stroke={LINE} strokeWidth={2} />
-					<path d="M1164 66H1300" stroke={LINE} strokeWidth={2} />
+					<path d="M634 66H758" stroke={LINE} strokeWidth={2} />
+					<path d="M1162 66H1286" stroke={LINE} strokeWidth={2} />
 					<text x={960} y={73} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={5.6} fill={INK2}>
-						AI FILE SORTER · AUTO ORGANIZE
+						SECURE VAULT · ENCRYPT &amp; LOCK
 					</text>
 				</g>
 
@@ -601,19 +608,20 @@ export const Motion: React.FC = () => {
 					<path d={rr(480, 108, 960, 84, 20)} fill="#FFFFFF" />
 					<path d={rr(480, 108, 960, 84, 20)} fill="none" stroke="#E4EAF4" strokeWidth={2} />
 
-					{/* sparkle glyph */}
 					<g transform="translate(524 150)">
-						<path d="M0 -22L5.4 -6.2L21 -1L5.4 4.2L0 20L-5.4 4.2L-21 -1L-5.4 -6.2Z" fill={ACC} opacity={0.9} />
-						<path d="M20 -20L22.6 -13.4L29 -11L22.6 -8.6L20 -2L17.4 -8.6L11 -11L17.4 -13.4Z" fill={ACC} opacity={0.55} />
+						<path d="M0 -24L19 -15V1C19 14 10 22 0 26C-10 22 -19 14 -19 1V-15Z" fill={ACC} opacity={0.15} />
+						<path d="M0 -24L19 -15V1C19 14 10 22 0 26C-10 22 -19 14 -19 1V-15Z" fill="none" stroke={ACC} strokeWidth={2.6} strokeLinejoin="round" />
+						<circle cx={0} cy={-2} r={4.6} fill={ACC} />
+						<path d="M0 2V10" stroke={ACC} strokeWidth={3} strokeLinecap="round" />
 					</g>
 					<text x={572} y={144} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={2.6} fill={INK}>
-						SORTING ENGINE
+						ENCRYPTION ENGINE
 					</text>
 					<text x={572} y={172} fontFamily="CuMono" fontWeight={500} fontSize={14} letterSpacing={1.6} fill={INK3}>
-						12 FILES · 4 CATEGORIES
+						{`${5 - nDone} PENDING · 8.1 GB`}
 					</text>
 
-					<g transform="translate(818 0)">
+					<g transform="translate(898 0)">
 						<path d={rr(0, 134, chip.length * 12.2 + 40, 32, 16)} fill={chipCol} opacity={0.13} />
 						<circle cx={20} cy={150} r={5} fill={chipCol} />
 						<text x={36} y={156} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={chipCol}>
@@ -621,160 +629,276 @@ export const Motion: React.FC = () => {
 						</text>
 					</g>
 
-					<g transform="translate(1050 150)">
-						{FILES.map((F, i) => {
-							const landed = f >= LAND[i];
-							const seen = f >= TAG[i];
+					<g transform="translate(1128 150)">
+						{FILES.map((_x, i) => {
+							const d = f >= t0(i) + T_DEP;
+							const a = f >= t0(i) && !d;
 							return (
-								<circle
-									key={i}
-									cx={i * 20}
-									cy={0}
-									r={landed ? 6.4 : 5.4}
-									fill={landed ? CATS[F.cat].col : seen ? ACC : '#C7D2E2'}
-									opacity={landed ? 1 : seen ? 0.75 : 0.55}
-								/>
+								<g key={i}>
+									<circle cx={i * 26} cy={0} r={9} fill="none" stroke={d ? OKC : a ? ACC : '#C3CFE0'} strokeWidth={2.2} />
+									<circle cx={i * 26} cy={0} r={4.6} fill={d ? OKC : a ? ACC : '#C3CFE0'} opacity={d || a ? 1 : 0.5} />
+								</g>
 							);
 						})}
 					</g>
 
 					<g transform="translate(1288 0)">
 						<text x={0} y={141} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={2.2} fill={INK2}>
-							SORTED
+							SEALED
 						</text>
 						<text x={132} y={141} textAnchor="end" fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1} fill={prog > 0.995 ? OKC : INK}>
-							{`${nDone}/12`}
+							{`${nDone}/5`}
 						</text>
 						<path d={rr(0, 152, 132, 8, 4)} fill="#E6EBF4" />
 						<path d={rr(0, 152, Math.max(2, 132 * prog), 8, 4)} fill={prog > 0.995 ? OKC : ACC} />
 					</g>
 				</g>
 
-				{/* ============================================================ scan */}
-				{beamOn > 0.004 ? (
-					<g opacity={beamOn}>
-						<rect x={sx - 300} y={SCAN_TOP} width={300} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanTrail)" />
-						<rect x={sx - 26} y={SCAN_TOP} width={52} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.1} />
-						<rect x={sx - 11} y={SCAN_TOP} width={22} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.22} />
-						<rect x={sx - 2.2} y={SCAN_TOP} width={4.4} height={SCAN_BOT - SCAN_TOP} fill="url(#gScanV)" opacity={0.95} />
-						{[0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
-							const y = SCAN_TOP + 24 + ((f * 3.4 + k * 62) % (SCAN_BOT - SCAN_TOP - 48));
-							return <rect key={k} x={sx - 16} y={y} width={32} height={2.4} rx={1.2} fill="#FFFFFF" opacity={0.5} />;
-						})}
-						<g transform={`translate(${sx} ${SCAN_BOT})`}>
-							<path d="M0 24L12 12L0 0L-12 12Z" fill={ACC} />
-							<path d="M-30 12H-18M18 12H30" stroke={ACC} strokeWidth={2.4} strokeLinecap="round" opacity={0.5} />
-						</g>
-					</g>
-				) : null}
-
-				{/* ============================================================ folder backs */}
+				{/* ============================================================ queue list */}
 				<g>
-					{CATS.map((C, c) => {
-						const inU = ez(f, 56 + c * 8, 56 + c * 8 + 34, outBack);
+					{FILES.map((F, i) => {
+						const born = F_QUEUE + i * 10;
+						const inU = ez(f, born, born + 30, outBack);
 						if (inU <= 0.002) return null;
-						const last = FILES.reduce((a, F, i) => (F.cat === c && f >= LAND[i] ? Math.max(a, LAND[i]) : a), -999);
-						const hit = ez(f, last, last + 10, outCubic) * (1 - ez(f, last + 10, last + 44, outQuint));
+						const gone = f >= t0(i);
+						const sealed = f >= t0(i) + T_DEP;
+						const st = sealed ? 'SEALED' : gone ? 'IN PROCESS' : 'QUEUED';
+						const sc = sealed ? OKC : gone ? ACC : INK3;
 						return (
-							<g key={c} transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60}) scale(${FSC * lerp(0.86, 1, inU)} ${FSC * lerp(0.86, 1, inU) * (1 - 0.06 * hit)})`} opacity={clamp(inU * 1.4)}>
-								<ellipse cx={0} cy={20} rx={150} ry={110} fill={`url(#gG${c})`} opacity={0.16 + 0.34 * hit} />
-								<FolderBack c={c} />
+							<g key={i} opacity={clamp(inU * 1.4)} transform={`translate(0 ${(1 - inU) * 34})`}>
+								{gone ? (
+									<g transform={`translate(${QX} ${QY[i]})`} opacity={ez(f, t0(i) + 10, t0(i) + 34, outCubic)}>
+										<path d={rr(-44, -55, 88, 110, 10)} fill="#FFFFFF" opacity={0.5} />
+										<path d={rr(-44, -55, 88, 110, 10)} fill="none" stroke="#CBD8E7" strokeWidth={2.2} strokeDasharray="9 9" strokeLinecap="round" />
+										{sealed ? (
+											<g transform="translate(0 -2)">
+												<circle cx={0} cy={0} r={18} fill={OKC} opacity={0.12} />
+												<circle cx={0} cy={0} r={18} fill="none" stroke={OKC} strokeWidth={2.4} />
+												<path d="M-7 -7V-11A7 7 0 0 1 7 -11V-7" fill="none" stroke={OKC} strokeWidth={2.4} strokeLinecap="round" />
+												<path d={rr(-10, -7, 20, 15, 3.5)} fill={OKC} />
+											</g>
+										) : null}
+									</g>
+								) : null}
+								<text x={352} y={QY[i] - 6} fontFamily="CuUI" fontWeight={700} fontSize={20} letterSpacing={1.8} fill={sealed ? INK3 : INK}>
+									{`${F.name}.${F.ext}`}
+								</text>
+								<text x={352} y={QY[i] + 24} fontFamily="CuMono" fontWeight={500} fontSize={15} letterSpacing={1.2} fill={INK3}>
+									{F.size}
+								</text>
+								<g transform={`translate(624 ${QY[i]})`}>
+									<path d={rr(-st.length * 5.9 - 32, -17, st.length * 11.8 + 64, 34, 17)} fill={sc} opacity={0.12} />
+									<text x={0} y={6} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={2} fill={sc}>
+										{st}
+									</text>
+								</g>
 							</g>
 						);
 					})}
 				</g>
 
-				{/* ============================================================ files */}
+				{/* ============================================================ gate */}
+				<g opacity={clamp(gateIn * 1.3) * (1 - 0.58 * ez(f, F_LAST - 24, F_LAST + 44, inOutCubic))} transform={`translate(${GX} ${GY}) scale(${lerp(0.86, 1, gateIn)}) translate(${-GX} ${-GY})`}>
+					<ellipse cx={GX} cy={GY} rx={236} ry={236} fill="url(#gAcc)" opacity={0.16 + 0.3 * gateHot} />
+					<circle cx={GX} cy={GY} r={168} fill="none" stroke={ACC} strokeWidth={2.4} strokeDasharray="18 14" strokeDashoffset={-f * 1.1} opacity={0.5} />
+					<circle cx={GX} cy={GY} r={148} fill="none" stroke={ACC} strokeWidth={1.8} opacity={0.25} />
+					{[0, 1, 2, 3].map((k) => (
+						<path
+							key={k}
+							d={`M${GX - 132} ${GY - 132}h-26v26`}
+							fill="none"
+							stroke={ACC}
+							strokeWidth={3}
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							opacity={0.6}
+							transform={`rotate(${k * 90} ${GX} ${GY})`}
+						/>
+					))}
+					{gateHot > 0.01 ? (
+						<g opacity={gateHot}>
+							<circle cx={GX} cy={GY} r={154} fill="none" stroke={ACC} strokeWidth={5.5} opacity={0.14} />
+							<circle
+								cx={GX}
+								cy={GY}
+								r={154}
+								fill="none"
+								stroke={ACC}
+								strokeWidth={5.5}
+								strokeLinecap="round"
+								strokeDasharray={2 * Math.PI * 154}
+								strokeDashoffset={2 * Math.PI * 154 * (1 - gateP)}
+								transform={`rotate(-90 ${GX} ${GY})`}
+							/>
+							{[0, 1, 2].map((k) => (
+								<circle
+									key={k}
+									cx={GX}
+									cy={GY}
+									r={186 + k * 12}
+									fill="none"
+									stroke={ACC}
+									strokeWidth={2.4}
+									strokeLinecap="round"
+									strokeDasharray={`${60 + k * 20} ${2 * Math.PI * (186 + k * 12)}`}
+									strokeDashoffset={-f * (2.4 + k * 1.3) * (k % 2 ? -1 : 1)}
+									opacity={0.62}
+								/>
+							))}
+							<rect x={GX - 92} y={GY - 96 + 192 * ((f * 2.2) % 100) / 100} width={184} height={3} rx={1.5} fill={ACC} opacity={0.5} />
+						</g>
+					) : null}
+					<text x={GX} y={GY + 236} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={3.2} fill={INK2}>
+						{gateHot > 0.5 ? `ENCRYPTING · ${Math.round(gateP * 100)}%` : f >= F_LAST ? 'CIPHER GATE · IDLE' : 'CIPHER GATE'}
+					</text>
+				</g>
+
+				{/* ============================================================ vault */}
+				<g opacity={clamp(vaultIn * 1.3)} transform={`translate(${VX} ${VY}) scale(${lerp(0.88, 1, vaultIn)}) translate(${-VX} ${-VY})`}>
+					<ellipse cx={VX} cy={VY + 268} rx={250} ry={38} fill="url(#gShadow)" opacity={0.85} />
+					{/* bolts, drawn under the bezel so they emerge from it */}
+					{[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
+						<g key={k} transform={`rotate(${k * 45} ${VX} ${VY})`}>
+							<path d={rr(VX - 15, VY - R_BEZ - 6 - 30 * bolt, 30, 42, 8)} fill="url(#gSteel2)" />
+							<path d={rr(VX - 15, VY - R_BEZ - 6 - 30 * bolt, 30, 42, 8)} fill="none" stroke="#93A5BE" strokeWidth={2} />
+							<path d={rr(VX - 9, VY - R_BEZ - 2 - 30 * bolt, 18, 12, 5)} fill="#FFFFFF" opacity={0.7} />
+						</g>
+					))}
+					{/* bezel */}
+					<circle cx={VX} cy={VY} r={R_BEZ} fill="url(#gSteel)" />
+					<circle cx={VX} cy={VY} r={R_BEZ} fill="none" stroke="#94A6BF" strokeWidth={3} />
+					<circle cx={VX} cy={VY} r={R_BEZ - 22} fill="none" stroke="#B6C4D8" strokeWidth={2.4} />
+					{[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
+						<circle
+							key={k}
+							cx={VX + Math.cos((k * Math.PI) / 4) * (R_BEZ - 11)}
+							cy={VY + Math.sin((k * Math.PI) / 4) * (R_BEZ - 11)}
+							r={7}
+							fill="#C7D3E3"
+							stroke="#9BAABF"
+							strokeWidth={1.8}
+						/>
+					))}
+					{/* cavity */}
+					<circle cx={VX} cy={VY} r={R_APER} fill="url(#gCav)" />
+					<g opacity={0.5}>
+						{[-120, -60, 0, 60, 120].map((d, k) => (
+							<path
+								key={k}
+								d={`M${VX - Math.sqrt(Math.max(0, R_APER * R_APER - d * d))} ${VY + d}h${2 * Math.sqrt(Math.max(0, R_APER * R_APER - d * d))}`}
+								stroke="#3B5480"
+								strokeWidth={1.4}
+								opacity={0.5}
+							/>
+						))}
+					</g>
+					<circle cx={VX} cy={VY} r={R_APER} fill="none" stroke="#7E90AB" strokeWidth={4} />
+				</g>
+
+				{/* ============================================================ cards */}
 				<g>
 					{[...FILES.keys()]
-						.sort((a, b) => (f >= LAUNCH[a] ? 1 : 0) - (f >= LAUNCH[b] ? 1 : 0) || a - b)
+						.sort((a, b) => (f >= t0(a) ? 1 : 0) - (f >= t0(b) ? 1 : 0) || a - b)
 						.map((i) => {
-							const p = pose(i);
-							const born = 12 + i * 6;
+							const p = stage(i);
+							const born = F_QUEUE + i * 10;
 							const inU = ez(f, born, born + 30, outBack);
-							if (inU <= 0.002 || p.op <= 0.004) return null;
-							if (f >= LAND[i]) return null;
+							if (inU <= 0.002) return null;
+							if (p.at === 0 && f >= t0(i)) return null;
 							return (
-								<g
-									key={i}
-									transform={`translate(${p.x} ${p.y + (1 - inU) * 52}) rotate(${p.rot}) scale(${p.sc * lerp(0.86, 1, inU)})`}
-									opacity={p.op * clamp(inU * 1.4)}
-								>
-									<FileCard i={i} tag={p.tag} />
+								<g key={i} opacity={clamp(inU * 1.4)}>
+									{p.at < 3 || p.sc > 0.4 ? (
+										<ellipse cx={p.x} cy={p.y + 104 * p.sc} rx={64 * p.sc} ry={11 * p.sc} fill="url(#gShadow)" opacity={0.42 * (p.at === 0 ? 1 : 0.55)} />
+									) : null}
+									<g transform={`translate(${p.x} ${p.y + (1 - inU) * 46}) rotate(${p.rot}) scale(${p.sc * lerp(0.86, 1, inU)})`}>
+										{p.enc < 0.999 ? (
+											<g opacity={1 - p.enc}>
+												<PlainCard i={i} />
+											</g>
+										) : null}
+										{p.enc > 0.001 ? (
+											<g opacity={p.enc}>
+												<CipherCard i={i} sd={p.sd} live={p.live} />
+											</g>
+										) : null}
+									</g>
 								</g>
 							);
 						})}
-				</g>
-
-				{/* detection labels sit above the pile, unrotated */}
-				<g>
-					{FILES.map((F, i) => {
-						const a = ez(f, TAG[i] + 2, TAG[i] + 11, outCubic) * (1 - ez(f, LAUNCH[i], LAUNCH[i] + 8, outCubic));
-						if (a <= 0.004) return null;
-						const C = CATS[F.cat];
-						const label = `${F.name}.${F.ext}`;
-						const wl = label.length * 11.4 + C.key.length * 11.4 + 108;
+					{/* settled pile inside the vault */}
+					{FILES.map((_x, i) => {
+						if (f < t0(i) + T_DEP) return null;
+						const [sxp, syp, srp] = slot(i);
 						return (
-							<g key={i} opacity={a} transform={`translate(${F.p[0]} ${F.p[1] - 100 - 10 * a})`}>
-								<path d={rr(-wl / 2, -19, wl, 38, 19)} fill="#FFFFFF" />
-								<path d={rr(-wl / 2, -19, wl, 38, 19)} fill="none" stroke={C.col} strokeWidth={2.2} />
-								<text x={-wl / 2 + 20} y={6} fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={1.5} fill={INK}>
-									{label}
-								</text>
-								<text x={wl / 2 - 20} y={6} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={16} letterSpacing={1.5} fill={C.col}>
-									{`→ ${C.key}`}
-								</text>
+							<g key={'s' + i} transform={`translate(${sxp} ${syp}) rotate(${srp}) scale(0.34)`} opacity={1 - close * 0.6}>
+								<CipherCard i={i} sd={Math.floor((t0(i) + T_ENC - 4) / 3)} live={0} />
 							</g>
 						);
 					})}
 				</g>
 
-				{/* ============================================================ folder fronts */}
-				<g>
-					{CATS.map((C, c) => {
-						const inU = ez(f, 56 + c * 8, 56 + c * 8 + 34, outBack);
-						if (inU <= 0.002) return null;
-						const last = FILES.reduce((a, F, i) => (F.cat === c && f >= LAND[i] ? Math.max(a, LAND[i]) : a), -999);
-						const hit = ez(f, last, last + 10, outCubic) * (1 - ez(f, last + 10, last + 44, outQuint));
-						const n = countOf(c);
-						return (
-							<g key={c} opacity={clamp(inU * 1.4)}>
-								<g transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60}) scale(${FSC * lerp(0.86, 1, inU)} ${FSC * lerp(0.86, 1, inU) * (1 - 0.06 * hit)})`}>
-									<FolderFront c={c} />
-								</g>
-								<g transform={`translate(${FOLDER_X[c]} ${FOLDER_Y + (1 - inU) * 60})`}>
-									<text x={0} y={118} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} letterSpacing={2.6} fill={INK}>
-										{C.key}
-									</text>
-									<g transform={`translate(-8 154) scale(${1 + 0.3 * hit})`}>
-										<text x={0} y={0} textAnchor="end" fontFamily="CuUI" fontWeight={700} fontSize={28} fill={C.col}>
-											{n}
-										</text>
+				{/* ============================================================ iris + hub */}
+				<g opacity={clamp(vaultIn * 1.3)} transform={`translate(${VX} ${VY}) scale(${lerp(0.88, 1, vaultIn)})`}>
+					<g transform={`rotate(${spin})`}>
+						{[0, 1, 2, 3, 4, 5].map((k) => (
+							<g key={k} transform={`rotate(${k * 60})`}>
+								<path d={blade(aper, R_APER - 2, (31 * Math.PI) / 180)} fill={k % 2 ? 'url(#gBladeB)' : 'url(#gBladeA)'} stroke="#8FA1BA" strokeWidth={1.6} />
+							</g>
+						))}
+					</g>
+					{close > 0.55 ? (
+						<g opacity={ez(f, F_SEAL1 - 30, F_SEAL1, outCubic)}>
+							<circle cx={0} cy={0} r={70} fill="url(#gSteel)" stroke="#94A6BF" strokeWidth={3} />
+							<circle cx={0} cy={0} r={52} fill="none" stroke="#B6C4D8" strokeWidth={2.2} />
+							<g transform={`rotate(${dial * 300})`}>
+								{[0, 1, 2, 3].map((k) => (
+									<g key={k} transform={`rotate(${k * 90})`}>
+										<path d={rr(-8, -62, 16, 52, 8)} fill="url(#gSteel2)" stroke="#93A5BE" strokeWidth={1.8} />
 									</g>
-									<text x={4} y={154} fontFamily="CuUI" fontWeight={700} fontSize={14} letterSpacing={2.4} fill={INK3}>
-										FILES
-									</text>
-									{hit > 0.01 ? (
-										<text x={98} y={150 - 26 * (1 - hit)} textAnchor="middle" fontFamily="CuUI" fontWeight={700} fontSize={19} fill={C.col} opacity={hit}>
-											+1
-										</text>
-									) : null}
-								</g>
+								))}
+								<circle cx={0} cy={0} r={19} fill="url(#gSteel2)" stroke="#93A5BE" strokeWidth={2} />
 							</g>
-						);
-					})}
+						</g>
+					) : null}
+					{/* lock badge */}
+					{lock > 0.01 ? (
+						<g opacity={lock} transform={`translate(0 0) scale(${lerp(0.7, 1, lock)})`}>
+							<circle cx={0} cy={0} r={128} fill="url(#gGrn)" opacity={0.55} />
+							<circle cx={0} cy={0} r={44} fill="#FFFFFF" />
+							<circle cx={0} cy={0} r={44} fill="none" stroke={OKC} strokeWidth={3.4} />
+							<path d="M-15 -6V-16A15 15 0 0 1 15 -16V-6" fill="none" stroke={OKC} strokeWidth={4.4} strokeLinecap="round" />
+							<path d={rr(-21, -6, 42, 32, 7)} fill={OKC} />
+						</g>
+					) : null}
+					{flash > 0.001 ? (
+						<circle cx={0} cy={0} r={R_APER + flash * 130} fill="none" stroke={OKC} strokeWidth={5 * (1 - flash)} opacity={(1 - flash) * 0.7} />
+					) : null}
 				</g>
+
+				<text
+					x={VX}
+					y={VY + 316}
+					textAnchor="middle"
+					fontFamily="CuUI"
+					fontWeight={700}
+					fontSize={19}
+					letterSpacing={3.2}
+					fill={f >= F_LOCK ? OKC : INK2}
+					opacity={clamp(vaultIn * 1.3)}
+				>
+					{f >= F_LOCK ? 'VAULT · LOCKED' : f >= F_SEAL0 ? 'VAULT · SEALING' : 'VAULT · OPEN'}
+				</text>
 
 				{/* ============================================================ completion */}
 				{doneOp > 0.004 ? (
 					<g opacity={doneOp} transform={`translate(0 ${doneY})`}>
-						<ellipse cx={960} cy={472} rx={320} ry={24} fill="url(#gShadow)" opacity={0.55} />
-						<path d={rr(624, 400, 672, 76, 38)} fill="#FFFFFF" />
-						<path d={rr(624, 400, 672, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
-						<circle cx={674} cy={438} r={19} fill={OKC} opacity={0.14} />
-						<circle cx={674} cy={438} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
+						<ellipse cx={620} cy={1002 - 42} rx={300} ry={22} fill="url(#gShadow)" opacity={0.55} />
+						<path d={rr(316, 894, 608, 76, 38)} fill="#FFFFFF" />
+						<path d={rr(316, 894, 608, 76, 38)} fill="none" stroke="#E1E8F2" strokeWidth={2} />
+						<circle cx={366} cy={932} r={19} fill={OKC} opacity={0.14} />
+						<circle cx={366} cy={932} r={19} fill="none" stroke={OKC} strokeWidth={2.6} />
 						<path
-							d="M665 438.5L671.4 445L683.6 431.6"
+							d="M357 932.5L363.4 939L375.6 925.6"
 							fill="none"
 							stroke={OKC}
 							strokeWidth={3.4}
@@ -783,12 +907,12 @@ export const Motion: React.FC = () => {
 							strokeDasharray={26}
 							strokeDashoffset={26 * (1 - ez(f, F_DONE + 8, F_DONE + 34, outCubic))}
 						/>
-						<text x={708} y={446} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
-							WORKSPACE ORGANIZED
+						<text x={400} y={940} fontFamily="CuUI" fontWeight={700} fontSize={21} letterSpacing={2.8} fill={INK}>
+							VAULT SEALED
 						</text>
-						<path d="M1044 418V458" stroke={LINE} strokeWidth={2} />
-						<text x={1070} y={446} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
-							12 FILES SORTED
+						<path d="M644 912V952" stroke={LINE} strokeWidth={2} />
+						<text x={670} y={940} fontFamily="CuMono" fontWeight={500} fontSize={19} letterSpacing={1.4} fill={OKC}>
+							5 FILES · AES-256
 						</text>
 					</g>
 				) : null}
@@ -797,7 +921,7 @@ export const Motion: React.FC = () => {
 				<g opacity={chrome * 0.95}>
 					<path d="M120 1002H1800" stroke={LINE} strokeWidth={2} />
 					<text x={120} y={1040} fontFamily="CuUI" fontWeight={700} fontSize={15} letterSpacing={3.4} fill={INK3}>
-						SCAN · CLASSIFY · FILE
+						ENCRYPT · SEAL · VERIFY
 					</text>
 					<text
 						x={1800}
@@ -807,7 +931,7 @@ export const Motion: React.FC = () => {
 						fontWeight={700}
 						fontSize={15}
 						letterSpacing={3.4}
-						fill={f >= F_LAST + 8 ? OKC : INK3}
+						fill={f >= F_LOCK ? OKC : INK3}
 					>
 						{status}
 					</text>
