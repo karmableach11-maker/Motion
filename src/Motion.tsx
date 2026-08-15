@@ -1,16 +1,18 @@
 /* =============================================================================
-   MOTION31 — "AUTOMATED DATA REDACTION"
-   A confidential document is swept right-to-left by a cyan inspection field.
-   Everything the field passes is converted in place into its redacted twin:
-   black bars over every line, padlocks on the sealed attachments, hatched
-   stock instead of white paper. HUD counts the sweep from 0 to 100 %, then a
-   REDACTED stamp slams on.
+   MOTION32 — "DIGITAL CONTRACT EXECUTION"
+   An unsigned multi-party agreement is crossed top-to-bottom by a cyan
+   verification field. Everything the field passes is sealed in place: clauses
+   get green ticks, each signatory panel gains an avatar, a handwritten
+   signature and a SIGNED pill, and the footer resolves into an audit QR and a
+   notary seal. The HUD counts 0/3 -> 3/3 as each countersign mark is reached,
+   then an EXECUTED stamp slams on.
    1920 x 1080 - 60 fps - 900 frames (15 s) - ONE-SHOT (not a loop)
 
    The boundary is NOT a clip-path. It is a signed-distance-field front, so it
-   hugs the sheet's real silhouette - including the folded corner - and the
-   conversion happens under a live flame edge with ember, rim glow and heat
-   shimmer. Built on the "remotion-flame" engine in CONVERT mode, axis 'x'.
+   hugs the sheet's real silhouette - including the three punched binding holes,
+   which the field rings one by one - and the conversion happens under a live
+   flame edge with ember, rim glow and heat shimmer. Built on the
+   "remotion-flame" engine in CONVERT mode, axis 'y', front travelling down.
 
    Shader adapted from the Canvas UI "FlameWrap" component
    (github.com/DavidHDev/canvas-ui) - MIT + Commons Clause.
@@ -932,10 +934,9 @@ const VH = 1080;
 /** durationInFrames — copy this into your <Composition/> */
 export const MOTION_FRAMES = 900; // 15 s @ 60 fps
 
-/* --- the document sheet, in texture space -------------------------------- */
+/* --- the agreement, in texture space ------------------------------------- */
 const SW = 560; // sheet width
 const SH = 740; // sheet height
-const FOLD = 78; // dog-ear
 const BOX_W = 760; // content texture = sheet + 100 px SDF padding all round
 const BOX_H = 940;
 const SX = 100;
@@ -945,32 +946,53 @@ const IY = SY + 44;
 const IW = SW - 88; // 472
 const IH = SH - 88; // 652
 
+/* three punched holes down the binding margin — real holes in the alpha, so
+   the baked SDF carries them and the front rings each one as it passes */
+const HOLE_R = 10;
+const HOLE_X = SX + 24;
+const HOLE_Y = [SY + 170, SY + 370, SY + 570];
+
 /* --- where the sheet sits on screen -------------------------------------- */
 const CX = 960;
 const CY = 530;
 const RECT = {cx: CX, cy: CY, w: BOX_W, h: BOX_H};
 const RGN = {x: 550, y: 45, w: 820, h: 970};
 
-/* --- the sweep ------------------------------------------------------------ */
-/** level 1 = far right edge of the padded box, 0 = past its left edge.
- *  The sheet itself spans 0.868 .. 0.132, so the front starts and finishes
- *  just clear of the paper. */
-const LEVEL_TOP = 0.885;
-const LEVEL_BOT = 0.09;
+/* --- the verification pass ------------------------------------------------ */
+/** axis 'y': level 1 = above the sheet, 0 = past its bottom edge. The front
+ *  travels DOWN, so the pass finishes on the signature block. */
+const LEVEL_TOP = 0.905;
+const LEVEL_BOT = 0.075;
 
-const F_IN = 4; // sheet fades up
-const F_ARM = 116; // status flips to SCANNING
-const F_IGNITE = 138; // field lights up at the right edge
-const F_GO = 150; // front starts travelling
-const F_END = 640; // front clears the left edge
-const F_OUT = 676; // field fades out
-const F_STAMP = 700; // REDACTED slams on
+const F_IN = 4;
+const F_ARM = 116;
+const F_IGNITE = 138;
+const F_GO = 150;
+const F_END = 640;
+const F_OUT = 676;
+const F_STAMP = 700;
 
 const C_CYAN = '#29D4F0';
-const C_RED = '#FF4A33';
+const C_GREEN = '#2BD07A';
+const C_AMBER = '#F2B33D';
 const C_INK = '#E9F2FF';
 
-const beamX = (lv: number) => CX + BOX_W * (lv - 0.5);
+/* --- signatory panels ----------------------------------------------------- */
+const PANEL_Y = [192, 322, 452]; // inner coords
+const PANEL_H = 116;
+/** screen y of each panel's countersign mark — used to tick the HUD counter */
+const SIG_SCREEN_Y = PANEL_Y.map((y) => CY - BOX_H / 2 + IY + y + 86);
+
+const levelAt = (f: number) =>
+  lerp(LEVEL_TOP, LEVEL_BOT, trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14));
+const frontYAt = (lv: number) => CY - BOX_H * (lv - 0.5);
+
+/** the frame each party's mark is reached — resolved once, from the same
+ *  timing function the front uses, so HUD and artwork can never drift apart */
+const TICK_F = SIG_SCREEN_Y.map((y) => {
+  for (let f = F_GO; f <= F_END + 2; f++) if (frontYAt(levelAt(f)) > y) return f;
+  return F_END;
+});
 
 /** the inspection field, scaled from the 300 px reference to the sheet */
 const FIELD: FlameParams = {
@@ -1029,14 +1051,16 @@ const bar = (
   c.fill();
 };
 
-/** the sheet outline — identical in both versions, so the baked SDF is valid
- *  for the converted artwork too */
+/** the sheet outline, holes included — identical in both versions, so the one
+ *  baked SDF is valid for the sealed artwork too. Fill with 'evenodd': punching
+ *  the holes with destination-out would tear real gaps in the alpha and the
+ *  shader would light them as confetti mid-pass. */
 const sheetPath = (c: CanvasRenderingContext2D) => {
   const r = 12;
   c.beginPath();
   c.moveTo(SX + r, SY);
-  c.lineTo(SX + SW - FOLD, SY);
-  c.lineTo(SX + SW, SY + FOLD);
+  c.lineTo(SX + SW - r, SY);
+  c.quadraticCurveTo(SX + SW, SY, SX + SW, SY + r);
   c.lineTo(SX + SW, SY + SH - r);
   c.quadraticCurveTo(SX + SW, SY + SH, SX + SW - r, SY + SH);
   c.lineTo(SX + r, SY + SH);
@@ -1044,145 +1068,202 @@ const sheetPath = (c: CanvasRenderingContext2D) => {
   c.lineTo(SX, SY + r);
   c.quadraticCurveTo(SX, SY, SX + r, SY);
   c.closePath();
+  for (const hy of HOLE_Y) {
+    c.moveTo(HOLE_X + HOLE_R, hy);
+    c.arc(HOLE_X, hy, HOLE_R, 0, Math.PI * 2);
+    c.closePath();
+  }
 };
 
-const padlock = (
+const paperFill = (c: CanvasRenderingContext2D, a: string, b: string) => {
+  sheetPath(c);
+  const g = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
+  g.addColorStop(0, a);
+  g.addColorStop(1, b);
+  c.fillStyle = g;
+  c.fill('evenodd');
+};
+
+const check = (
   c: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   s: number,
   col: string,
-  keyhole: string,
+  w: number,
 ) => {
-  const bw = s * 0.9;
-  const bh = s * 0.68;
-  const bx = cx - bw / 2;
-  const by = cy - bh / 2 + s * 0.16;
   c.save();
   c.strokeStyle = col;
-  c.lineWidth = Math.max(2, s * 0.13);
+  c.lineWidth = w;
   c.lineCap = 'round';
+  c.lineJoin = 'round';
   c.beginPath();
-  c.arc(cx, by + s * 0.02, s * 0.29, Math.PI, 2 * Math.PI);
+  c.moveTo(cx - s * 0.42, cy + s * 0.04);
+  c.lineTo(cx - s * 0.1, cy + s * 0.36);
+  c.lineTo(cx + s * 0.46, cy - s * 0.34);
   c.stroke();
   c.restore();
-  rr(c, bx, by, bw, bh, s * 0.13);
-  c.fillStyle = col;
-  c.fill();
-  c.beginPath();
-  c.arc(cx, by + bh * 0.4, s * 0.09, 0, Math.PI * 2);
-  c.fillStyle = keyhole;
-  c.fill();
-  c.fillRect(cx - s * 0.035, by + bh * 0.4, s * 0.07, bh * 0.3);
 };
 
-/* -------------------------------------------------------- content A — clean */
+/** three handwritten strokes, deterministic — no glyphs, so no font risk */
+const SIGN: number[][] = [
+  [0, -2, 14, -26, 34, 20, 52, -6, 66, -24, 78, 18, 100, -10, 120, -22, 134, 14, 156, -4],
+  [0, 6, 12, -22, 30, 22, 46, -2, 62, -26, 74, 16, 96, -6, 116, -24, 132, 10, 152, 2],
+  [0, -6, 16, -28, 36, 16, 54, -10, 70, -22, 82, 20, 104, -4, 122, -26, 136, 12, 158, -2],
+];
 
-const drawClean = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  c.clearRect(0, 0, w, h);
-
-  sheetPath(c);
-  const paper = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
-  paper.addColorStop(0, '#FCFDFF');
-  paper.addColorStop(1, '#E4EBF5');
-  c.fillStyle = paper;
-  c.fill();
-
+const signature = (
+  c: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  k: number,
+  col: string,
+) => {
+  const p = SIGN[k];
   c.save();
-  sheetPath(c);
-  c.clip();
-
-  /* the underside of the folded corner */
+  c.strokeStyle = col;
+  c.lineWidth = 3.4;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
   c.beginPath();
-  c.moveTo(SX + SW - FOLD, SY);
-  c.lineTo(SX + SW, SY + FOLD);
-  c.lineTo(SX + SW - FOLD, SY + FOLD);
-  c.closePath();
-  const gf = c.createLinearGradient(SX + SW - FOLD, SY, SX + SW, SY + FOLD);
-  gf.addColorStop(0, '#C4CFDE');
-  gf.addColorStop(1, '#EFF3F9');
-  c.fillStyle = gf;
-  c.fill();
-
-  /* header — avatar + name */
-  c.save();
-  c.beginPath();
-  c.arc(IX + 24, IY + 24, 24, 0, Math.PI * 2);
-  c.clip();
-  c.fillStyle = '#2E6BE6';
-  c.fillRect(IX, IY, 60, 60);
-  c.fillStyle = 'rgba(255,255,255,0.92)';
-  c.beginPath();
-  c.arc(IX + 24, IY + 18, 8.5, 0, Math.PI * 2);
-  c.fill();
-  c.beginPath();
-  c.arc(IX + 24, IY + 43, 14, Math.PI, 2 * Math.PI);
-  c.fill();
-  c.restore();
-
-  bar(c, IX + 62, IY + 10, 210, 16, '#2A3243', 5);
-  bar(c, IX + 62, IY + 36, 138, 11, '#9FADC1', 4);
-
-  bar(c, IX, IY + 76, IW, 2, '#D6DEEA', 1);
-
-  /* body copy */
-  bar(c, IX, IY + 100, IW, 12, '#3B4757');
-  bar(c, IX, IY + 124, 432, 12, '#5C6A7D');
-  bar(c, IX, IY + 148, 358, 12, '#8794A6');
-
-  /* tagged fields */
-  bar(c, IX, IY + 178, 160, 28, '#17B8D8', 7);
-  bar(c, IX + 16, IY + 189, 92, 6, 'rgba(255,255,255,0.85)', 3);
-  bar(c, IX + 172, IY + 178, 128, 28, '#2E6BE6', 7);
-  bar(c, IX + 188, IY + 189, 72, 6, 'rgba(255,255,255,0.85)', 3);
-  bar(c, IX + 312, IY + 178, 96, 28, '#2BB673', 7);
-  bar(c, IX + 328, IY + 189, 52, 6, 'rgba(255,255,255,0.85)', 3);
-
-  /* attached image */
-  rr(c, IX, IY + 224, IW, 196, 12);
-  const gi = c.createLinearGradient(IX, IY + 224, IX + IW, IY + 420);
-  gi.addColorStop(0, '#2C63DE');
-  gi.addColorStop(1, '#14C0E6');
-  c.fillStyle = gi;
-  c.fill();
-  c.save();
-  rr(c, IX, IY + 224, IW, 196, 12);
-  c.clip();
-  c.fillStyle = '#FFD46B';
-  c.beginPath();
-  c.arc(IX + 78, IY + 282, 24, 0, Math.PI * 2);
-  c.fill();
-  c.fillStyle = '#1746A8';
-  c.beginPath();
-  c.moveTo(IX + 40, IY + 420);
-  c.lineTo(IX + 176, IY + 292);
-  c.lineTo(IX + 300, IY + 420);
-  c.closePath();
-  c.fill();
-  c.fillStyle = 'rgba(20,90,180,0.85)';
-  c.beginPath();
-  c.moveTo(IX + 214, IY + 420);
-  c.lineTo(IX + 330, IY + 318);
-  c.lineTo(IX + 452, IY + 420);
-  c.closePath();
-  c.fill();
-  c.fillStyle = 'rgba(255,255,255,0.16)';
-  c.fillRect(IX, IY + 402, IW, 18);
-  c.restore();
-
-  bar(c, IX, IY + 440, IW, 12, '#48546A');
-  bar(c, IX, IY + 464, 398, 12, '#8794A6');
-
-  /* chart */
-  const base = IY + 640;
-  const hs = [78, 132, 96, 160, 116];
-  const cols = ['#17B8D8', '#2E6BE6', '#2BB673', '#2E6BE6', '#17B8D8'];
-  for (let i = 0; i < 5; i++) {
-    rr(c, IX + i * 101, base - hs[i], 68, hs[i], 7);
-    c.fillStyle = cols[i];
-    c.fill();
+  c.moveTo(x + p[0], y + p[1]);
+  for (let i = 2; i + 5 < p.length; i += 6) {
+    c.bezierCurveTo(
+      x + p[i],
+      y + p[i + 1],
+      x + p[i + 2],
+      y + p[i + 3],
+      x + p[i + 4],
+      y + p[i + 5],
+    );
   }
-  bar(c, IX, base + 2, IW, 2, '#D0D9E6', 1);
+  c.stroke();
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(x + 132, y + 16);
+  c.lineTo(x + 176, y + 6);
+  c.stroke();
+  c.restore();
+};
+
+/** deterministic block grid that reads as an audit QR */
+const auditBlock = (
+  c: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  s: number,
+  dark: string,
+  light: string,
+) => {
+  const n = 9;
+  const u = s / n;
+  let r = 20250815;
+  const rnd = () => {
+    r = (r * 1103515245 + 12345) & 0x7fffffff;
+    return r / 0x7fffffff;
+  };
+  c.fillStyle = dark;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) if (rnd() > 0.47) c.fillRect(x + i * u, y + j * u, u, u);
+  }
+  const finder = (fx: number, fy: number) => {
+    c.fillStyle = dark;
+    c.fillRect(fx, fy, u * 3, u * 3);
+    c.fillStyle = light;
+    c.fillRect(fx + u * 0.6, fy + u * 0.6, u * 1.8, u * 1.8);
+    c.fillStyle = dark;
+    c.fillRect(fx + u, fy + u, u, u);
+  };
+  finder(x, y);
+  finder(x + u * 6, y);
+  finder(x, y + u * 6);
+};
+
+/* ------------------------------------------------- content A — draft, unsigned */
+
+const drawDraft = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.clearRect(0, 0, w, h);
+  paperFill(c, '#FBFCFE', '#E4EAF4');
+
+  c.save();
+  sheetPath(c);
+  c.clip('evenodd');
+
+  /* letterhead */
+  rr(c, IX, IY, 36, 36, 9);
+  c.fillStyle = '#C6D0DE';
+  c.fill();
+  bar(c, IX + 48, IY + 6, 250, 18, '#98A6B9', 5);
+  bar(c, IX + 48, IY + 30, 168, 10, '#BCC6D4', 4);
+  bar(c, IX, IY + 56, IW, 2, '#DCE3EC', 1);
+
+  /* clauses */
+  const clause = (y: number, ws: number[]) => {
+    rr(c, IX, IY + y, 26, 26, 7);
+    c.fillStyle = '#DDE4EE';
+    c.fill();
+    bar(c, IX + 8, IY + y + 11, 10, 4, '#AAB6C6', 2);
+    ws.forEach((wd, i) => bar(c, IX + 36, IY + y + 4 + i * 18, wd, 10, '#B4BFCE'));
+  };
+  clause(72, [436, 402, 300]);
+  clause(136, [436, 352]);
+
+  /* signatory panels, all pending */
+  PANEL_Y.forEach((py) => {
+    rr(c, IX, IY + py, IW, PANEL_H, 12);
+    c.fillStyle = '#EFF3F9';
+    c.fill();
+    c.save();
+    c.strokeStyle = '#C9D3E1';
+    c.lineWidth = 2;
+    c.setLineDash([9, 7]);
+    rr(c, IX + 1, IY + py + 1, IW - 2, PANEL_H - 2, 12);
+    c.stroke();
+    c.restore();
+
+    c.beginPath();
+    c.arc(IX + 30, IY + py + 34, 20, 0, Math.PI * 2);
+    c.fillStyle = '#CFD8E4';
+    c.fill();
+    bar(c, IX + 64, IY + py + 22, 160, 13, '#AFBACA', 4);
+    bar(c, IX + 64, IY + py + 42, 104, 9, '#C6CFDB', 4);
+    bar(c, IX + 64, IY + py + 86, 250, 2, '#B4C0CF', 1);
+
+    rr(c, IX + IW - 118, IY + py + 22, 108, 28, 14);
+    c.fillStyle = '#E2E8F1';
+    c.fill();
+    bar(c, IX + IW - 100, IY + py + 32, 72, 8, '#B0BCCB', 4);
+
+    c.save();
+    c.strokeStyle = '#C4CEDC';
+    c.lineWidth = 2.4;
+    c.setLineDash([6, 5]);
+    c.beginPath();
+    c.arc(IX + IW - 40, IY + py + 86, 15, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
+  });
+
+  /* audit strip, empty */
+  c.save();
+  c.strokeStyle = '#C9D3E1';
+  c.lineWidth = 2;
+  c.setLineDash([8, 6]);
+  rr(c, IX, IY + 588, 62, 62, 8);
+  c.stroke();
+  c.restore();
+  bar(c, IX + 76, IY + 596, 210, 11, '#C3CDDA');
+  bar(c, IX + 76, IY + 617, 268, 9, '#D0D8E3');
+  bar(c, IX + 76, IY + 634, 180, 9, '#D0D8E3');
+
+  c.save();
+  c.strokeStyle = '#CBD4E1';
+  c.lineWidth = 2.4;
+  c.setLineDash([7, 6]);
+  c.beginPath();
+  c.arc(IX + IW - 44, IY + 616, 36, 0, Math.PI * 2);
+  c.stroke();
+  c.restore();
 
   c.restore();
 
@@ -1192,100 +1273,113 @@ const drawClean = (c: CanvasRenderingContext2D, w: number, h: number) => {
   c.stroke();
 };
 
-/* --------------------------------------------------- content B — redacted */
+/* ----------------------------------------------- content B — executed, sealed */
 
-const BLACK = '#0A0D14';
+const INK = '#16295E';
 
-const drawRedacted = (c: CanvasRenderingContext2D, w: number, h: number) => {
+const drawSealed = (c: CanvasRenderingContext2D, w: number, h: number) => {
   c.clearRect(0, 0, w, h);
-
-  sheetPath(c);
-  const paper = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
-  paper.addColorStop(0, '#BCC4D0');
-  paper.addColorStop(1, '#98A1AE');
-  c.fillStyle = paper;
-  c.fill();
+  paperFill(c, '#FDFEFF', '#E7F1EC');
 
   c.save();
   sheetPath(c);
-  c.clip();
+  c.clip('evenodd');
 
-  /* hatched stock */
-  c.strokeStyle = 'rgba(255,255,255,0.20)';
-  c.lineWidth = 3;
-  for (let i = -SH; i < SW + SH; i += 15) {
+  /* letterhead, now official */
+  bar(c, SX, SY, SW, 7, C_GREEN, 0);
+  rr(c, IX, IY, 36, 36, 9);
+  c.fillStyle = '#1F49C0';
+  c.fill();
+  bar(c, IX + 9, IY + 10, 18, 4, 'rgba(255,255,255,0.9)', 2);
+  bar(c, IX + 9, IY + 18, 18, 4, 'rgba(255,255,255,0.65)', 2);
+  bar(c, IX + 9, IY + 26, 11, 4, 'rgba(255,255,255,0.5)', 2);
+  bar(c, IX + 48, IY + 6, 250, 18, '#1B2433', 5);
+  bar(c, IX + 48, IY + 30, 168, 10, '#5E6B7E', 4);
+  bar(c, IX, IY + 56, IW, 2, '#BFD8CB', 1);
+
+  const clause = (y: number, ws: number[]) => {
     c.beginPath();
-    c.moveTo(SX + i, SY);
-    c.lineTo(SX + i - SH, SY + SH);
-    c.stroke();
-  }
-  c.strokeStyle = 'rgba(40,52,72,0.10)';
-  c.lineWidth = 3;
-  for (let i = -SH; i < SW + SH; i += 15) {
-    c.beginPath();
-    c.moveTo(SX + i + 7, SY);
-    c.lineTo(SX + i + 7 - SH, SY + SH);
-    c.stroke();
-  }
-
-  c.beginPath();
-  c.moveTo(SX + SW - FOLD, SY);
-  c.lineTo(SX + SW, SY + FOLD);
-  c.lineTo(SX + SW - FOLD, SY + FOLD);
-  c.closePath();
-  c.fillStyle = '#7E8795';
-  c.fill();
-
-  /* header — identity struck out */
-  c.beginPath();
-  c.arc(IX + 24, IY + 24, 24, 0, Math.PI * 2);
-  c.fillStyle = BLACK;
-  c.fill();
-  bar(c, IX + 58, IY + 6, 218, 24, BLACK, 3);
-  bar(c, IX + 58, IY + 34, 146, 15, BLACK, 3);
-
-  bar(c, IX, IY + 76, IW, 2, 'rgba(30,40,58,0.35)', 1);
-
-  bar(c, IX - 4, IY + 96, IW + 8, 20, BLACK, 3);
-  bar(c, IX - 4, IY + 120, 440, 20, BLACK, 3);
-  bar(c, IX - 4, IY + 144, 366, 20, BLACK, 3);
-
-  bar(c, IX - 4, IY + 176, 168, 32, BLACK, 5);
-  bar(c, IX + 168, IY + 176, 136, 32, BLACK, 5);
-  bar(c, IX + 308, IY + 176, 104, 32, BLACK, 5);
-  padlock(c, IX + 442, IY + 192, 30, C_RED, '#2A0A05');
-
-  /* attached image sealed */
-  rr(c, IX, IY + 224, IW, 196, 12);
-  c.fillStyle = '#20262F';
-  c.fill();
-  c.save();
-  rr(c, IX + 4, IY + 228, IW - 8, 188, 10);
-  c.strokeStyle = 'rgba(255,74,51,0.55)';
-  c.lineWidth = 3;
-  c.setLineDash([14, 10]);
-  c.stroke();
-  c.restore();
-  padlock(c, IX + IW / 2, IY + 322, 66, C_RED, '#20262F');
-
-  bar(c, IX - 4, IY + 436, IW + 8, 20, BLACK, 3);
-  bar(c, IX - 4, IY + 460, 406, 20, BLACK, 3);
-
-  /* chart flattened */
-  const base = IY + 640;
-  const hs = [78, 132, 96, 160, 116];
-  for (let i = 0; i < 5; i++) {
-    rr(c, IX + i * 101, base - hs[i], 68, hs[i], 7);
-    c.fillStyle = '#39414F';
+    c.arc(IX + 13, IY + y + 13, 13, 0, Math.PI * 2);
+    c.fillStyle = C_GREEN;
     c.fill();
-    bar(c, IX + i * 101, base - hs[i], 68, 18, BLACK, 6);
+    check(c, IX + 13, IY + y + 13, 15, '#FFFFFF', 3);
+    ws.forEach((wd, i) => bar(c, IX + 36, IY + y + 4 + i * 18, wd, 10, '#414D60'));
+  };
+  clause(72, [436, 402, 300]);
+  clause(136, [436, 352]);
+
+  /* signatory panels, all executed */
+  PANEL_Y.forEach((py, k) => {
+    rr(c, IX, IY + py, IW, PANEL_H, 12);
+    c.fillStyle = '#F1FAF4';
+    c.fill();
+    c.strokeStyle = 'rgba(43,208,122,0.55)';
+    c.lineWidth = 2;
+    rr(c, IX + 1, IY + py + 1, IW - 2, PANEL_H - 2, 12);
+    c.stroke();
+
+    c.beginPath();
+    c.arc(IX + 30, IY + py + 34, 20, 0, Math.PI * 2);
+    c.fillStyle = ['#1F49C0', '#0E9A8A', '#7A3FCB'][k];
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.92)';
+    c.beginPath();
+    c.arc(IX + 30, IY + py + 28, 7, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.arc(IX + 30, IY + py + 49, 12, Math.PI, 2 * Math.PI);
+    c.fill();
+
+    bar(c, IX + 64, IY + py + 22, 160, 13, '#1B2433', 4);
+    bar(c, IX + 64, IY + py + 42, 104, 9, '#6C7A8C', 4);
+    signature(c, IX + 70, IY + py + 74, k, INK);
+    bar(c, IX + 64, IY + py + 86, 250, 2, '#8FA0B4', 1);
+
+    rr(c, IX + IW - 118, IY + py + 22, 108, 28, 14);
+    c.fillStyle = C_GREEN;
+    c.fill();
+    check(c, IX + IW - 100, IY + py + 36, 14, '#FFFFFF', 3);
+    bar(c, IX + IW - 84, IY + py + 32, 58, 8, 'rgba(255,255,255,0.92)', 4);
+
+    c.beginPath();
+    c.arc(IX + IW - 40, IY + py + 86, 15, 0, Math.PI * 2);
+    c.fillStyle = C_GREEN;
+    c.fill();
+    check(c, IX + IW - 40, IY + py + 86, 17, '#FFFFFF', 3);
+  });
+
+  /* audit strip, written */
+  auditBlock(c, IX, IY + 588, 62, '#101826', '#F4F8FC');
+  bar(c, IX + 76, IY + 596, 210, 11, '#2A3446');
+  bar(c, IX + 76, IY + 617, 268, 9, '#5A6779');
+  bar(c, IX + 76, IY + 634, 180, 9, '#5A6779');
+
+  /* the seal */
+  const scx = IX + IW - 44;
+  const scy = IY + 616;
+  c.save();
+  c.strokeStyle = '#0E9A8A';
+  c.lineWidth = 3;
+  c.beginPath();
+  c.arc(scx, scy, 36, 0, Math.PI * 2);
+  c.stroke();
+  c.lineWidth = 1.6;
+  c.beginPath();
+  c.arc(scx, scy, 29, 0, Math.PI * 2);
+  c.stroke();
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    c.beginPath();
+    c.moveTo(scx + Math.cos(a) * 31, scy + Math.sin(a) * 31);
+    c.lineTo(scx + Math.cos(a) * 34.5, scy + Math.sin(a) * 34.5);
+    c.stroke();
   }
-  bar(c, IX, base + 2, IW, 2, 'rgba(30,40,58,0.35)', 1);
-  padlock(c, IX + 442, base - 196, 30, C_RED, '#2A0A05');
+  c.restore();
+  check(c, scx, scy, 34, '#0E9A8A', 4.5);
 
   c.restore();
 
-  c.strokeStyle = 'rgba(60,76,100,0.6)';
+  c.strokeStyle = 'rgba(120,168,150,0.6)';
   c.lineWidth = 2;
   sheetPath(c);
   c.stroke();
@@ -1343,11 +1437,8 @@ export const Motion: React.FC = () => {
   const f = useCurrentFrame();
   const fontsReady = useEmbeddedFonts();
 
-  /* --- envelopes -------------------------------------------------------- */
-  const sweep = trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14);
-  const level = lerp(LEVEL_TOP, LEVEL_BOT, sweep);
+  const level = levelAt(f);
   const progress = clamp01((LEVEL_TOP - level) / (LEVEL_TOP - LEVEL_BOT));
-  const pct = Math.min(100, Math.round(progress * 100));
 
   const flare = 1 + 0.35 * (1 - ss(F_IGNITE, F_IGNITE + 52, f));
   const fire = ss(F_IGNITE, F_IGNITE + 14, f) * (1 - ss(F_OUT - 48, F_OUT, f)) * flare;
@@ -1358,10 +1449,15 @@ export const Motion: React.FC = () => {
   const brIn = ss(8, 70, f);
   const capIn = ss(34, 96, f);
 
-  const bx = beamX(level);
+  const fy = frontYAt(level);
   const beamOn = ss(F_IGNITE, F_IGNITE + 26, f) * (1 - ss(F_END + 6, F_END + 56, f));
 
-  /* --- the stamp -------------------------------------------------------- */
+  /* party counter — driven by the same numbers as the artwork */
+  const signed = TICK_F.filter((t) => f >= t).length;
+  const lastTick = signed > 0 ? TICK_F[signed - 1] : -999;
+  const pop = f >= lastTick ? Math.exp(-(f - lastTick) / 7) : 0;
+
+  /* the seal */
   const st = clamp01((f - F_STAMP) / 26);
   const stampScale = 3.2 - 2.2 * easeOutBack(st);
   const stampA = ss(F_STAMP, F_STAMP + 8, f);
@@ -1371,22 +1467,22 @@ export const Motion: React.FC = () => {
     f < F_ARM
       ? 'STATUS · STANDBY'
       : f < F_GO
-        ? 'STATUS · FIELD ARMED'
+        ? 'STATUS · KEY EXCHANGE'
         : f < F_END
-          ? 'STATUS · REDACTING'
-          : 'STATUS · COMPLETE';
+          ? 'STATUS · VERIFYING'
+          : 'STATUS · EXECUTED';
 
-  const hue = progress;
-  const accent = `rgb(${Math.round(lerp(41, 255, hue))},${Math.round(
-    lerp(212, 74, hue),
-  )},${Math.round(lerp(240, 51, hue))})`;
+  const hue = signed / 3;
+  const accent = `rgb(${Math.round(lerp(41, 43, hue))},${Math.round(
+    lerp(212, 208, hue),
+  )},${Math.round(lerp(240, 122, hue))})`;
 
   const idlePulse = 0.72 + 0.28 * Math.sin((f - F_STAMP) / 20);
 
   return (
     <AbsoluteFill
       style={{
-        background: '#04060B',
+        background: '#04070B',
         fontFamily: "'MxSans', system-ui, sans-serif",
         color: C_INK,
         opacity: fontsReady ? 1 : 0,
@@ -1396,14 +1492,14 @@ export const Motion: React.FC = () => {
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1100px 900px at 26% 52%, rgba(16,92,124,0.30), rgba(0,0,0,0) 70%)',
+            'radial-gradient(1150px 900px at 30% 46%, rgba(16,92,124,0.30), rgba(0,0,0,0) 70%)',
         }}
       />
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1100px 900px at 76% 52%, rgba(150,38,24,0.30), rgba(0,0,0,0) 70%)',
-          opacity: 0.14 + 0.86 * progress,
+            'radial-gradient(1150px 900px at 72% 58%, rgba(22,140,92,0.30), rgba(0,0,0,0) 70%)',
+          opacity: 0.12 + 0.88 * progress,
         }}
       />
 
@@ -1430,7 +1526,6 @@ export const Motion: React.FC = () => {
         </g>
       </svg>
 
-      {/* soft key light behind the sheet */}
       <div
         style={{
           position: 'absolute',
@@ -1444,43 +1539,44 @@ export const Motion: React.FC = () => {
         }}
       />
 
-      {/* the sweep column, behind the paper */}
+      {/* the pass, behind the paper */}
       {beamOn > 0.002 ? (
         <>
           <div
             style={{
               position: 'absolute',
-              left: bx - 150,
-              top: 0,
-              width: 300,
-              height: VH,
-              background: `linear-gradient(90deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.22) 50%, rgba(41,212,240,0) 100%)`,
-              opacity: beamOn,
+              left: 0,
+              top: fy - 150,
+              width: VW,
+              height: 300,
+              background:
+                'linear-gradient(180deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.20) 50%, rgba(41,212,240,0) 100%)',
+              opacity: beamOn * (1 + 0.9 * pop),
             }}
           />
           <div
             style={{
               position: 'absolute',
-              left: bx - 1,
-              top: 96,
-              width: 2,
-              height: VH - 192,
-              background: `linear-gradient(180deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.85) 22%, rgba(41,212,240,0.85) 78%, rgba(41,212,240,0) 100%)`,
+              left: 120,
+              top: fy - 1,
+              width: VW - 240,
+              height: 2,
+              background:
+                'linear-gradient(90deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.85) 22%, rgba(41,212,240,0.85) 78%, rgba(41,212,240,0) 100%)',
               opacity: beamOn * 0.9,
             }}
           />
         </>
       ) : null}
 
-      {/* ------------------------------------------------------- the paper */}
+      {/* ------------------------------------------------------ the agreement */}
       <FlameFront
         region={RGN}
         rect={RECT}
-        drawContent={drawClean}
-        drawConverted={drawRedacted}
-        contentKey="doc"
+        drawContent={drawDraft}
+        drawConverted={drawSealed}
+        contentKey="agreement"
         params={FIELD}
-        axis="x"
         frontOnly
         level={level}
         fire={fire}
@@ -1492,23 +1588,23 @@ export const Motion: React.FC = () => {
         }}
       />
 
-      {/* --------------------------------------------------------- stamp */}
+      {/* ---------------------------------------------------------- seal */}
       {st > 0 ? (
         <div
           style={{
             position: 'absolute',
-            left: CX - 192,
-            top: CY + 112,
-            width: 384,
-            height: 90,
+            left: CX - 210,
+            top: CY - 236,
+            width: 420,
+            height: 94,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `5px solid rgba(255,74,51,${0.88 * stampA})`,
+            border: `5px solid rgba(43,208,122,${0.9 * stampA})`,
             borderRadius: 8,
-            transform: `rotate(-8deg) scale(${stampScale})`,
+            transform: `rotate(-7deg) scale(${stampScale})`,
             opacity: stampA,
-            boxShadow: '0 0 40px rgba(255,74,51,0.35)',
+            boxShadow: '0 0 44px rgba(43,208,122,0.35)',
           }}
         >
           <span
@@ -1517,25 +1613,23 @@ export const Motion: React.FC = () => {
               fontWeight: 700,
               letterSpacing: 11,
               paddingLeft: 11,
-              color: `rgba(255,90,66,${0.95 * stampA})`,
+              color: `rgba(64,226,143,${0.96 * stampA})`,
             }}
           >
-            REDACTED
+            EXECUTED
           </span>
         </div>
       ) : null}
 
       {flash > 0.002 ? (
-        <AbsoluteFill
-          style={{background: 'rgba(255,120,96,0.11)', opacity: flash}}
-        />
+        <AbsoluteFill style={{background: 'rgba(96,255,180,0.10)', opacity: flash}} />
       ) : null}
 
       {/* ----------------------------------------------------------- HUD */}
       <Bracket x={56} y={56} sx={1} sy={1} col={C_CYAN} a={brIn} />
-      <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={C_RED} a={brIn} />
+      <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={accent} a={brIn} />
       <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_CYAN} a={brIn} />
-      <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={C_RED} a={brIn} />
+      <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={accent} a={brIn} />
 
       <div
         style={{
@@ -1549,19 +1643,14 @@ export const Motion: React.FC = () => {
         <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
           <div style={{width: 12, height: 12, background: C_CYAN}} />
           <span
-            style={{
-              fontSize: 31,
-              fontWeight: 700,
-              letterSpacing: 7,
-              color: C_CYAN,
-            }}
+            style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_CYAN}}
           >
-            REDACTION SWEEP
+            SIGNATURE VERIFICATION
           </span>
         </div>
         <div style={{marginTop: 13, marginLeft: 26}}>
           <Chrome
-            t="FILE · DOC-2291-A · SEC/LVL 4"
+            t="AGREEMENT · MSA-4471 · REV 2"
             s={17}
             l={3.4}
             o={0.55}
@@ -1588,6 +1677,23 @@ export const Motion: React.FC = () => {
               background: `linear-gradient(90deg, ${C_CYAN}, ${accent})`,
             }}
           />
+          {TICK_F.map((_, i) => {
+            const at = (SIG_SCREEN_Y[i] - frontYAt(LEVEL_TOP)) /
+              (frontYAt(LEVEL_BOT) - frontYAt(LEVEL_TOP));
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: 452 * at - 1,
+                  top: -4,
+                  width: 2,
+                  height: 12,
+                  background: i < signed ? C_GREEN : 'rgba(150,190,230,0.4)',
+                }}
+              />
+            );
+          })}
           <div
             style={{
               position: 'absolute',
@@ -1621,19 +1727,21 @@ export const Motion: React.FC = () => {
             fontSize: 96,
             fontWeight: 700,
             lineHeight: '96px',
-            letterSpacing: -2,
+            letterSpacing: -1,
             color: accent,
+            transform: `scale(${1 + 0.09 * pop})`,
+            transformOrigin: '100% 50%',
           }}
         >
-          {pct}%
+          {signed}/3
         </div>
         <div style={{marginTop: 8}}>
           <Chrome
-            t="REDACTED"
+            t="PARTIES SIGNED"
             s={17}
-            l={9}
-            o={0.55 + 0.45 * progress}
-            col={C_RED}
+            l={7}
+            o={0.55 + 0.45 * (signed / 3)}
+            col={signed === 3 ? C_GREEN : C_AMBER}
           />
         </div>
       </div>
@@ -1658,12 +1766,12 @@ export const Motion: React.FC = () => {
           }}
         />
         <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 15}}>
-          AUTOMATED DATA REDACTION
+          DIGITAL CONTRACT EXECUTION
         </span>
       </div>
 
       <div style={{position: 'absolute', left: 92, top: VH - 96, opacity: hudIn * 0.5}}>
-        <Chrome t="ENGINE v4.2 · POLICY PII-STRICT" s={15} l={3} o={1} col="#BFD4EC" />
+        <Chrome t="ESIGN ACT · eIDAS COMPLIANT" s={15} l={3} o={1} col="#BFD4EC" />
       </div>
       <div
         style={{
@@ -1674,15 +1782,14 @@ export const Motion: React.FC = () => {
         }}
       >
         <Chrome
-          t={f >= F_STAMP ? 'SANITIZED COPY · SHA-256 VERIFIED' : 'SHA-256 PENDING'}
+          t={f >= F_STAMP ? 'AUDIT TRAIL · SHA-256 SEALED' : 'AUDIT TRAIL · OPEN'}
           s={15}
           l={3}
           o={1}
-          col={f >= F_STAMP ? '#7BE8A8' : '#BFD4EC'}
+          col={f >= F_STAMP ? C_GREEN : '#BFD4EC'}
         />
       </div>
 
-      {/* vignette */}
       <AbsoluteFill
         style={{
           background:
