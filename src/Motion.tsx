@@ -1,18 +1,18 @@
 /* =============================================================================
-   MOTION32 — "DIGITAL CONTRACT EXECUTION"
-   An unsigned multi-party agreement is crossed top-to-bottom by a cyan
-   verification field. Everything the field passes is sealed in place: clauses
-   get green ticks, each signatory panel gains an avatar, a handwritten
-   signature and a SIGNED pill, and the footer resolves into an audit QR and a
-   notary seal. The HUD counts 0/3 -> 3/3 as each countersign mark is reached,
-   then an EXECUTED stamp slams on.
+   MOTION33 — "AUTOMATED PAYMENT SETTLEMENT"
+   An issued-but-unpaid invoice slip is crossed top-to-bottom by an emerald
+   settlement field. Everything the field passes clears in place: the UNPAID
+   pill flips to PAID, each line item ticks green, the remittance stub resolves
+   into a dark TOTAL PAID block with the settlement reference, card trace and a
+   printed barcode. The HUD counter rolls up in the four bursts the front
+   actually releases - $0.00 to $48,250.00 - then a PAID stamp slams on.
    1920 x 1080 - 60 fps - 900 frames (15 s) - ONE-SHOT (not a loop)
 
    The boundary is NOT a clip-path. It is a signed-distance-field front, so it
-   hugs the sheet's real silhouette - including the three punched binding holes,
-   which the field rings one by one - and the conversion happens under a live
-   flame edge with ember, rim glow and heat shimmer. Built on the
-   "remotion-flame" engine in CONVERT mode, axis 'y', front travelling down.
+   hugs the slip's real silhouette - the two perforation notches and the torn
+   sawtooth bottom edge included - and the conversion happens under a live flame
+   edge with ember, rim glow and heat shimmer. Built on the "remotion-flame"
+   engine in CONVERT mode, axis 'y', front travelling down.
 
    Shader adapted from the Canvas UI "FlameWrap" component
    (github.com/DavidHDev/canvas-ui) - MIT + Commons Clause.
@@ -934,33 +934,31 @@ const VH = 1080;
 /** durationInFrames — copy this into your <Composition/> */
 export const MOTION_FRAMES = 900; // 15 s @ 60 fps
 
-/* --- the agreement, in texture space ------------------------------------- */
-const SW = 560; // sheet width
-const SH = 740; // sheet height
-const BOX_W = 760; // content texture = sheet + 100 px SDF padding all round
-const BOX_H = 940;
+/* --- the invoice slip, in texture space ----------------------------------- */
+const SW = 460; // slip width
+const SH = 760; // slip height, torn edge included
+const BOX_W = 660; // content texture = slip + 100 px SDF padding all round
+const BOX_H = 960;
 const SX = 100;
 const SY = 100;
-const IX = SX + 44; // inner content origin
-const IY = SY + 44;
-const IW = SW - 88; // 472
-const IH = SH - 88; // 652
+const IX = SX + 36; // inner content origin
+const IY = SY + 36;
+const IW = SW - 72; // 388
+const IH = SH - 72; // 688
 
-/* three punched holes down the binding margin — real holes in the alpha, so
-   the baked SDF carries them and the front rings each one as it passes */
-const HOLE_R = 10;
-const HOLE_X = SX + 24;
-const HOLE_Y = [SY + 170, SY + 370, SY + 570];
+const TEETH = 14; // torn-edge amplitude
+const TEETH_N = 14; // segments across the width
+const NOTCH_R = 14;
+const NOTCH_Y = SY + 494; // the perforation, where the remittance stub starts
 
-/* --- where the sheet sits on screen -------------------------------------- */
+/* --- where the slip sits on screen ---------------------------------------- */
 const CX = 960;
-const CY = 530;
+const CY = 520;
 const RECT = {cx: CX, cy: CY, w: BOX_W, h: BOX_H};
-const RGN = {x: 550, y: 45, w: 820, h: 970};
+const RGN = {x: 620, y: 30, w: 680, h: 980};
+const BOX_TOP = CY - BOX_H / 2; // 40 — screen y of texture row 0
 
-/* --- the verification pass ------------------------------------------------ */
-/** axis 'y': level 1 = above the sheet, 0 = past its bottom edge. The front
- *  travels DOWN, so the pass finishes on the signature block. */
+/* --- the settlement pass --------------------------------------------------- */
 const LEVEL_TOP = 0.905;
 const LEVEL_BOT = 0.075;
 
@@ -972,31 +970,46 @@ const F_END = 640;
 const F_OUT = 676;
 const F_STAMP = 700;
 
-const C_CYAN = '#29D4F0';
-const C_GREEN = '#2BD07A';
+const C_GREEN = '#2ED97A';
 const C_AMBER = '#F2B33D';
+const C_RED = '#FF4A33';
 const C_INK = '#E9F2FF';
 
-/* --- signatory panels ----------------------------------------------------- */
-const PANEL_Y = [192, 322, 452]; // inner coords
-const PANEL_H = 116;
-/** screen y of each panel's countersign mark — used to tick the HUD counter */
-const SIG_SCREEN_Y = PANEL_Y.map((y) => CY - BOX_H / 2 + IY + y + 86);
+/* --- what settles, and where ---------------------------------------------- */
+const ROW_Y = [176, 226, 276, 326]; // inner y of each line item
+const ITEMS: Array<[string, number]> = [
+  ['DESIGN RETAINER', 18000],
+  ['API LICENSE — 12 MO', 21600],
+  ['SUPPORT PLAN', 5400],
+  ['ONBOARDING', 1800],
+];
+const SUBTOTAL = 46800;
+const TAX = 1404;
+const FEE = 46;
+const TOTAL = SUBTOTAL + TAX + FEE; // 48,250.00
+
+/** every checkpoint the front crosses, with the amount it releases */
+const CHECKPOINTS: Array<{y: number; v: number}> = [
+  ...ROW_Y.map((y, i) => ({y: BOX_TOP + IY + y + 13, v: ITEMS[i][1]})),
+  {y: BOX_TOP + IY + 409, v: TAX},
+  {y: BOX_TOP + IY + 433, v: FEE},
+];
 
 const levelAt = (f: number) =>
   lerp(LEVEL_TOP, LEVEL_BOT, trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14));
 const frontYAt = (lv: number) => CY - BOX_H * (lv - 0.5);
 
-/** the frame each party's mark is reached — resolved once, from the same
- *  timing function the front uses, so HUD and artwork can never drift apart */
-const TICK_F = SIG_SCREEN_Y.map((y) => {
-  for (let f = F_GO; f <= F_END + 2; f++) if (frontYAt(levelAt(f)) > y) return f;
+/** resolved once, from the same timing function the front uses, so the counter
+ *  can never drift away from the artwork it is reporting on */
+const TICK_F = CHECKPOINTS.map((cp) => {
+  for (let f = F_GO; f <= F_END + 2; f++) if (frontYAt(levelAt(f)) > cp.y) return f;
   return F_END;
 });
 
-/** the inspection field, scaled from the 300 px reference to the sheet */
+/** the settlement field — emerald rather than the usual cyan */
 const FIELD: FlameParams = {
   ...scalePreset(FIELD_PRESET, SW / 300),
+  color: [0.18, 0.85, 0.48],
   intensity: 1.0,
   ember: 1.5,
   rim: 1.6,
@@ -1011,6 +1024,19 @@ const easeOutBack = (x: number) => {
   const c1 = 1.70158;
   const t = clamp01(x);
   return 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+const money = (v: number) => {
+  const s = (Math.round(v * 100) / 100).toFixed(2);
+  const dot = s.indexOf('.');
+  const whole = s.slice(0, dot);
+  const cents = s.slice(dot + 1);
+  let out = '';
+  for (let i = 0; i < whole.length; i++) {
+    if (i > 0 && (whole.length - i) % 3 === 0) out += ',';
+    out += whole[i];
+  }
+  return '$' + out + '.' + cents;
 };
 
 /* ---------------------------------------------------------- canvas helpers */
@@ -1051,37 +1077,60 @@ const bar = (
   c.fill();
 };
 
-/** the sheet outline, holes included — identical in both versions, so the one
- *  baked SDF is valid for the sealed artwork too. Fill with 'evenodd': punching
- *  the holes with destination-out would tear real gaps in the alpha and the
- *  shader would light them as confetti mid-pass. */
-const sheetPath = (c: CanvasRenderingContext2D) => {
-  const r = 12;
+const setFont = (c: CanvasRenderingContext2D, weight: number, size: number) => {
+  c.font = `${weight} ${size}px MxSans, system-ui, sans-serif`;
+};
+
+/** letter-spaced text, drawn glyph by glyph — `ctx.letterSpacing` is not
+ *  available everywhere and silently does nothing when it is not */
+const tt = (
+  c: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  ls: number,
+  align: 'left' | 'right' | 'center',
+) => {
+  const g = text.split('');
+  let w = -ls;
+  for (let i = 0; i < g.length; i++) w += c.measureText(g[i]).width + ls;
+  let cx = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+  for (let i = 0; i < g.length; i++) {
+    c.fillText(g[i], cx, y);
+    cx += c.measureText(g[i]).width + ls;
+  }
+};
+
+/** the slip outline: rounded top, two perforation notches, torn bottom edge.
+ *  Identical in both versions, so the one baked SDF is valid for the settled
+ *  artwork too. */
+const slipPath = (c: CanvasRenderingContext2D) => {
+  const r = 10;
+  const P = SW / TEETH_N;
   c.beginPath();
   c.moveTo(SX + r, SY);
   c.lineTo(SX + SW - r, SY);
   c.quadraticCurveTo(SX + SW, SY, SX + SW, SY + r);
-  c.lineTo(SX + SW, SY + SH - r);
-  c.quadraticCurveTo(SX + SW, SY + SH, SX + SW - r, SY + SH);
-  c.lineTo(SX + r, SY + SH);
-  c.quadraticCurveTo(SX, SY + SH, SX, SY + SH - r);
+  c.lineTo(SX + SW, NOTCH_Y - NOTCH_R);
+  c.arc(SX + SW, NOTCH_Y, NOTCH_R, -Math.PI / 2, Math.PI / 2, true);
+  c.lineTo(SX + SW, SY + SH - TEETH);
+  for (let i = TEETH_N - 1; i >= 0; i--) {
+    c.lineTo(SX + i * P, SY + SH - (i % 2 === 0 ? TEETH : 0));
+  }
+  c.lineTo(SX, NOTCH_Y + NOTCH_R);
+  c.arc(SX, NOTCH_Y, NOTCH_R, Math.PI / 2, -Math.PI / 2, true);
   c.lineTo(SX, SY + r);
   c.quadraticCurveTo(SX, SY, SX + r, SY);
   c.closePath();
-  for (const hy of HOLE_Y) {
-    c.moveTo(HOLE_X + HOLE_R, hy);
-    c.arc(HOLE_X, hy, HOLE_R, 0, Math.PI * 2);
-    c.closePath();
-  }
 };
 
 const paperFill = (c: CanvasRenderingContext2D, a: string, b: string) => {
-  sheetPath(c);
-  const g = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
+  slipPath(c);
+  const g = c.createLinearGradient(SX, SY, SX + SW * 0.4, SY + SH);
   g.addColorStop(0, a);
   g.addColorStop(1, b);
   c.fillStyle = g;
-  c.fill('evenodd');
+  c.fill();
 };
 
 const check = (
@@ -1105,283 +1154,244 @@ const check = (
   c.restore();
 };
 
-/** three handwritten strokes, deterministic — no glyphs, so no font risk */
-const SIGN: number[][] = [
-  [0, -2, 14, -26, 34, 20, 52, -6, 66, -24, 78, 18, 100, -10, 120, -22, 134, 14, 156, -4],
-  [0, 6, 12, -22, 30, 22, 46, -2, 62, -26, 74, 16, 96, -6, 116, -24, 132, 10, 152, 2],
-  [0, -6, 16, -28, 36, 16, 54, -10, 70, -22, 82, 20, 104, -4, 122, -26, 136, 12, 158, -2],
-];
-
-const signature = (
+const barcode = (
   c: CanvasRenderingContext2D,
   x: number,
   y: number,
-  k: number,
+  w: number,
+  h: number,
   col: string,
 ) => {
-  const p = SIGN[k];
-  c.save();
-  c.strokeStyle = col;
-  c.lineWidth = 3.4;
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  c.beginPath();
-  c.moveTo(x + p[0], y + p[1]);
-  for (let i = 2; i + 5 < p.length; i += 6) {
-    c.bezierCurveTo(
-      x + p[i],
-      y + p[i + 1],
-      x + p[i + 2],
-      y + p[i + 3],
-      x + p[i + 4],
-      y + p[i + 5],
-    );
-  }
-  c.stroke();
-  c.lineWidth = 2;
-  c.beginPath();
-  c.moveTo(x + 132, y + 16);
-  c.lineTo(x + 176, y + 6);
-  c.stroke();
-  c.restore();
-};
-
-/** deterministic block grid that reads as an audit QR */
-const auditBlock = (
-  c: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  s: number,
-  dark: string,
-  light: string,
-) => {
-  const n = 9;
-  const u = s / n;
-  let r = 20250815;
+  let r = 4471821;
   const rnd = () => {
     r = (r * 1103515245 + 12345) & 0x7fffffff;
     return r / 0x7fffffff;
   };
-  c.fillStyle = dark;
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) if (rnd() > 0.47) c.fillRect(x + i * u, y + j * u, u, u);
+  c.fillStyle = col;
+  let cx = x;
+  while (cx < x + w - 2) {
+    const bw = 1.5 + Math.floor(rnd() * 3) * 1.5;
+    if (rnd() > 0.38) c.fillRect(cx, y, bw, h);
+    cx += bw + 1.5 + Math.floor(rnd() * 2) * 1.5;
   }
-  const finder = (fx: number, fy: number) => {
-    c.fillStyle = dark;
-    c.fillRect(fx, fy, u * 3, u * 3);
-    c.fillStyle = light;
-    c.fillRect(fx + u * 0.6, fy + u * 0.6, u * 1.8, u * 1.8);
-    c.fillStyle = dark;
-    c.fillRect(fx + u, fy + u, u, u);
-  };
-  finder(x, y);
-  finder(x + u * 6, y);
-  finder(x, y + u * 6);
 };
 
-/* ------------------------------------------------- content A — draft, unsigned */
+/** the perforation line + the shared body that does not change between states */
+const perforation = (c: CanvasRenderingContext2D, col: string) => {
+  c.save();
+  c.strokeStyle = col;
+  c.lineWidth = 2;
+  c.setLineDash([7, 7]);
+  c.beginPath();
+  c.moveTo(SX + NOTCH_R + 4, NOTCH_Y);
+  c.lineTo(SX + SW - NOTCH_R - 4, NOTCH_Y);
+  c.stroke();
+  c.restore();
+};
 
-const drawDraft = (c: CanvasRenderingContext2D, w: number, h: number) => {
+/* ------------------------------------------------ content A — issued, unpaid */
+
+const drawUnpaid = (c: CanvasRenderingContext2D, w: number, h: number) => {
   c.clearRect(0, 0, w, h);
-  paperFill(c, '#FBFCFE', '#E4EAF4');
+  paperFill(c, '#FBFCFE', '#E6EBF3');
 
   c.save();
-  sheetPath(c);
-  c.clip('evenodd');
+  slipPath(c);
+  c.clip();
 
-  /* letterhead */
-  rr(c, IX, IY, 36, 36, 9);
-  c.fillStyle = '#C6D0DE';
+  c.textBaseline = 'alphabetic';
+
+  /* brand */
+  rr(c, IX, IY, 32, 32, 8);
+  c.fillStyle = '#C7D1DF';
   c.fill();
-  bar(c, IX + 48, IY + 6, 250, 18, '#98A6B9', 5);
-  bar(c, IX + 48, IY + 30, 168, 10, '#BCC6D4', 4);
-  bar(c, IX, IY + 56, IW, 2, '#DCE3EC', 1);
+  bar(c, IX + 44, IY + 4, 150, 13, '#A2AFC0', 4);
+  bar(c, IX + 44, IY + 22, 96, 9, '#C2CBD8', 4);
+  bar(c, IX, IY + 46, IW, 2, '#DDE3EC', 1);
 
-  /* clauses */
-  const clause = (y: number, ws: number[]) => {
-    rr(c, IX, IY + y, 26, 26, 7);
-    c.fillStyle = '#DDE4EE';
-    c.fill();
-    bar(c, IX + 8, IY + y + 11, 10, 4, '#AAB6C6', 2);
-    ws.forEach((wd, i) => bar(c, IX + 36, IY + y + 4 + i * 18, wd, 10, '#B4BFCE'));
-  };
-  clause(72, [436, 402, 300]);
-  clause(136, [436, 352]);
+  c.fillStyle = '#8E9BAD';
+  setFont(c, 700, 27);
+  tt(c, 'INVOICE', IX, IY + 84, 3, 'left');
+  setFont(c, 700, 15);
+  c.fillStyle = '#A6B2C2';
+  tt(c, 'INV-8842', IX + IW, IY + 82, 1.5, 'right');
+  setFont(c, 400, 13);
+  c.fillStyle = '#AAB5C4';
+  tt(c, 'ISSUED 12 JUL 2026', IX, IY + 108, 1.2, 'left');
+  tt(c, 'DUE 11 AUG 2026', IX + IW, IY + 108, 1.2, 'right');
 
-  /* signatory panels, all pending */
-  PANEL_Y.forEach((py) => {
-    rr(c, IX, IY + py, IW, PANEL_H, 12);
-    c.fillStyle = '#EFF3F9';
-    c.fill();
-    c.save();
-    c.strokeStyle = '#C9D3E1';
+  /* status */
+  rr(c, IX, IY + 124, 144, 32, 16);
+  c.fillStyle = 'rgba(255,74,51,0.14)';
+  c.fill();
+  c.strokeStyle = 'rgba(255,74,51,0.5)';
+  c.lineWidth = 2;
+  c.stroke();
+  c.fillStyle = '#E2493A';
+  setFont(c, 700, 15);
+  tt(c, 'UNPAID', IX + 72, IY + 145, 3, 'center');
+
+  bar(c, IX, IY + 170, IW, 2, '#DDE3EC', 1);
+
+  /* line items */
+  ITEMS.forEach(([label, amt], i) => {
+    const y = IY + ROW_Y[i];
+    rr(c, IX, y + 3, 20, 20, 5);
+    c.strokeStyle = '#C6D0DE';
     c.lineWidth = 2;
-    c.setLineDash([9, 7]);
-    rr(c, IX + 1, IY + py + 1, IW - 2, PANEL_H - 2, 12);
     c.stroke();
-    c.restore();
-
-    c.beginPath();
-    c.arc(IX + 30, IY + py + 34, 20, 0, Math.PI * 2);
-    c.fillStyle = '#CFD8E4';
-    c.fill();
-    bar(c, IX + 64, IY + py + 22, 160, 13, '#AFBACA', 4);
-    bar(c, IX + 64, IY + py + 42, 104, 9, '#C6CFDB', 4);
-    bar(c, IX + 64, IY + py + 86, 250, 2, '#B4C0CF', 1);
-
-    rr(c, IX + IW - 118, IY + py + 22, 108, 28, 14);
-    c.fillStyle = '#E2E8F1';
-    c.fill();
-    bar(c, IX + IW - 100, IY + py + 32, 72, 8, '#B0BCCB', 4);
-
-    c.save();
-    c.strokeStyle = '#C4CEDC';
-    c.lineWidth = 2.4;
-    c.setLineDash([6, 5]);
-    c.beginPath();
-    c.arc(IX + IW - 40, IY + py + 86, 15, 0, Math.PI * 2);
-    c.stroke();
-    c.restore();
+    c.fillStyle = '#9AA6B7';
+    setFont(c, 400, 15);
+    tt(c, label, IX + 32, y + 19, 0.4, 'left');
+    c.fillStyle = '#A9B4C4';
+    setFont(c, 700, 16);
+    tt(c, money(amt), IX + IW, y + 19, 0.4, 'right');
   });
 
-  /* audit strip, empty */
-  c.save();
-  c.strokeStyle = '#C9D3E1';
-  c.lineWidth = 2;
-  c.setLineDash([8, 6]);
-  rr(c, IX, IY + 588, 62, 62, 8);
-  c.stroke();
-  c.restore();
-  bar(c, IX + 76, IY + 596, 210, 11, '#C3CDDA');
-  bar(c, IX + 76, IY + 617, 268, 9, '#D0D8E3');
-  bar(c, IX + 76, IY + 634, 180, 9, '#D0D8E3');
+  bar(c, IX, IY + 366, IW, 2, '#DDE3EC', 1);
+
+  const totRow = (y: number, label: string, amt: number) => {
+    c.fillStyle = '#AAB5C4';
+    setFont(c, 400, 13);
+    tt(c, label, IX + 150, IY + y, 1.2, 'left');
+    setFont(c, 700, 14);
+    tt(c, money(amt), IX + IW, IY + y, 0.4, 'right');
+  };
+  totRow(386, 'SUBTOTAL', SUBTOTAL);
+  totRow(410, 'VAT 3%', TAX);
+  totRow(434, 'PROCESSING', FEE);
+
+  perforation(c, '#C9D3E1');
+
+  /* remittance stub */
+  rr(c, IX, IY + 476, IW, 86, 10);
+  c.fillStyle = '#EDF1F7';
+  c.fill();
+  c.fillStyle = '#A2AEBF';
+  setFont(c, 700, 14);
+  tt(c, 'TOTAL DUE', IX + 18, IY + 510, 3.4, 'left');
+  c.fillStyle = '#96A2B4';
+  setFont(c, 700, 35);
+  tt(c, money(TOTAL), IX + IW - 18, IY + 548, 0.6, 'right');
 
   c.save();
-  c.strokeStyle = '#CBD4E1';
-  c.lineWidth = 2.4;
-  c.setLineDash([7, 6]);
-  c.beginPath();
-  c.arc(IX + IW - 44, IY + 616, 36, 0, Math.PI * 2);
+  c.strokeStyle = '#CCD5E2';
+  c.lineWidth = 2;
+  c.setLineDash([8, 6]);
+  rr(c, IX, IY + 578, IW, 26, 6);
+  c.stroke();
+  rr(c, IX, IY + 610, 250, 22, 6);
   c.stroke();
   c.restore();
+
+  barcode(c, IX, IY + 640, IW, 30, '#CBD4E1');
 
   c.restore();
 
   c.strokeStyle = 'rgba(126,152,188,0.55)';
   c.lineWidth = 2;
-  sheetPath(c);
+  slipPath(c);
   c.stroke();
 };
 
-/* ----------------------------------------------- content B — executed, sealed */
+/* --------------------------------------------------- content B — settled, paid */
 
-const INK = '#16295E';
-
-const drawSealed = (c: CanvasRenderingContext2D, w: number, h: number) => {
+const drawPaid = (c: CanvasRenderingContext2D, w: number, h: number) => {
   c.clearRect(0, 0, w, h);
-  paperFill(c, '#FDFEFF', '#E7F1EC');
+  paperFill(c, '#FDFFFE', '#E5F2EA');
 
   c.save();
-  sheetPath(c);
-  c.clip('evenodd');
+  slipPath(c);
+  c.clip();
 
-  /* letterhead, now official */
+  c.textBaseline = 'alphabetic';
+
   bar(c, SX, SY, SW, 7, C_GREEN, 0);
-  rr(c, IX, IY, 36, 36, 9);
-  c.fillStyle = '#1F49C0';
+
+  rr(c, IX, IY, 32, 32, 8);
+  c.fillStyle = '#146B4A';
   c.fill();
-  bar(c, IX + 9, IY + 10, 18, 4, 'rgba(255,255,255,0.9)', 2);
-  bar(c, IX + 9, IY + 18, 18, 4, 'rgba(255,255,255,0.65)', 2);
-  bar(c, IX + 9, IY + 26, 11, 4, 'rgba(255,255,255,0.5)', 2);
-  bar(c, IX + 48, IY + 6, 250, 18, '#1B2433', 5);
-  bar(c, IX + 48, IY + 30, 168, 10, '#5E6B7E', 4);
-  bar(c, IX, IY + 56, IW, 2, '#BFD8CB', 1);
+  bar(c, IX + 8, IY + 9, 16, 3.5, 'rgba(255,255,255,0.9)', 2);
+  bar(c, IX + 8, IY + 16, 16, 3.5, 'rgba(255,255,255,0.62)', 2);
+  bar(c, IX + 8, IY + 23, 10, 3.5, 'rgba(255,255,255,0.5)', 2);
+  bar(c, IX + 44, IY + 4, 150, 13, '#1B2433', 4);
+  bar(c, IX + 44, IY + 22, 96, 9, '#667484', 4);
+  bar(c, IX, IY + 46, IW, 2, '#BEDDCC', 1);
 
-  const clause = (y: number, ws: number[]) => {
-    c.beginPath();
-    c.arc(IX + 13, IY + y + 13, 13, 0, Math.PI * 2);
+  c.fillStyle = '#16202D';
+  setFont(c, 700, 27);
+  tt(c, 'INVOICE', IX, IY + 84, 3, 'left');
+  setFont(c, 700, 15);
+  c.fillStyle = '#5C6A7D';
+  tt(c, 'INV-8842', IX + IW, IY + 82, 1.5, 'right');
+  setFont(c, 400, 13);
+  c.fillStyle = '#6B7889';
+  tt(c, 'ISSUED 12 JUL 2026', IX, IY + 108, 1.2, 'left');
+  c.fillStyle = '#12965F';
+  tt(c, 'SETTLED 15 AUG 2026', IX + IW, IY + 108, 1.2, 'right');
+
+  rr(c, IX, IY + 124, 144, 32, 16);
+  c.fillStyle = C_GREEN;
+  c.fill();
+  check(c, IX + 24, IY + 140, 16, '#FFFFFF', 3);
+  c.fillStyle = '#06341F';
+  setFont(c, 700, 15);
+  tt(c, 'PAID', IX + 88, IY + 145, 3, 'center');
+
+  bar(c, IX, IY + 170, IW, 2, '#BEDDCC', 1);
+
+  ITEMS.forEach(([label, amt], i) => {
+    const y = IY + ROW_Y[i];
+    rr(c, IX, y + 3, 20, 20, 5);
     c.fillStyle = C_GREEN;
     c.fill();
-    check(c, IX + 13, IY + y + 13, 15, '#FFFFFF', 3);
-    ws.forEach((wd, i) => bar(c, IX + 36, IY + y + 4 + i * 18, wd, 10, '#414D60'));
-  };
-  clause(72, [436, 402, 300]);
-  clause(136, [436, 352]);
-
-  /* signatory panels, all executed */
-  PANEL_Y.forEach((py, k) => {
-    rr(c, IX, IY + py, IW, PANEL_H, 12);
-    c.fillStyle = '#F1FAF4';
-    c.fill();
-    c.strokeStyle = 'rgba(43,208,122,0.55)';
-    c.lineWidth = 2;
-    rr(c, IX + 1, IY + py + 1, IW - 2, PANEL_H - 2, 12);
-    c.stroke();
-
-    c.beginPath();
-    c.arc(IX + 30, IY + py + 34, 20, 0, Math.PI * 2);
-    c.fillStyle = ['#1F49C0', '#0E9A8A', '#7A3FCB'][k];
-    c.fill();
-    c.fillStyle = 'rgba(255,255,255,0.92)';
-    c.beginPath();
-    c.arc(IX + 30, IY + py + 28, 7, 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.arc(IX + 30, IY + py + 49, 12, Math.PI, 2 * Math.PI);
-    c.fill();
-
-    bar(c, IX + 64, IY + py + 22, 160, 13, '#1B2433', 4);
-    bar(c, IX + 64, IY + py + 42, 104, 9, '#6C7A8C', 4);
-    signature(c, IX + 70, IY + py + 74, k, INK);
-    bar(c, IX + 64, IY + py + 86, 250, 2, '#8FA0B4', 1);
-
-    rr(c, IX + IW - 118, IY + py + 22, 108, 28, 14);
-    c.fillStyle = C_GREEN;
-    c.fill();
-    check(c, IX + IW - 100, IY + py + 36, 14, '#FFFFFF', 3);
-    bar(c, IX + IW - 84, IY + py + 32, 58, 8, 'rgba(255,255,255,0.92)', 4);
-
-    c.beginPath();
-    c.arc(IX + IW - 40, IY + py + 86, 15, 0, Math.PI * 2);
-    c.fillStyle = C_GREEN;
-    c.fill();
-    check(c, IX + IW - 40, IY + py + 86, 17, '#FFFFFF', 3);
+    check(c, IX + 10, y + 13, 15, '#FFFFFF', 2.6);
+    c.fillStyle = '#26313F';
+    setFont(c, 400, 15);
+    tt(c, label, IX + 32, y + 19, 0.4, 'left');
+    c.fillStyle = '#0F1B27';
+    setFont(c, 700, 16);
+    tt(c, money(amt), IX + IW, y + 19, 0.4, 'right');
   });
 
-  /* audit strip, written */
-  auditBlock(c, IX, IY + 588, 62, '#101826', '#F4F8FC');
-  bar(c, IX + 76, IY + 596, 210, 11, '#2A3446');
-  bar(c, IX + 76, IY + 617, 268, 9, '#5A6779');
-  bar(c, IX + 76, IY + 634, 180, 9, '#5A6779');
+  bar(c, IX, IY + 366, IW, 2, '#BEDDCC', 1);
 
-  /* the seal */
-  const scx = IX + IW - 44;
-  const scy = IY + 616;
-  c.save();
-  c.strokeStyle = '#0E9A8A';
-  c.lineWidth = 3;
-  c.beginPath();
-  c.arc(scx, scy, 36, 0, Math.PI * 2);
-  c.stroke();
-  c.lineWidth = 1.6;
-  c.beginPath();
-  c.arc(scx, scy, 29, 0, Math.PI * 2);
-  c.stroke();
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    c.beginPath();
-    c.moveTo(scx + Math.cos(a) * 31, scy + Math.sin(a) * 31);
-    c.lineTo(scx + Math.cos(a) * 34.5, scy + Math.sin(a) * 34.5);
-    c.stroke();
-  }
+  const totRow = (y: number, label: string, amt: number) => {
+    c.fillStyle = '#5C6A7D';
+    setFont(c, 400, 13);
+    tt(c, label, IX + 150, IY + y, 1.2, 'left');
+    c.fillStyle = '#1B2433';
+    setFont(c, 700, 14);
+    tt(c, money(amt), IX + IW, IY + y, 0.4, 'right');
+  };
+  totRow(386, 'SUBTOTAL', SUBTOTAL);
+  totRow(410, 'VAT 3%', TAX);
+  totRow(434, 'PROCESSING', FEE);
+
+  perforation(c, '#9FC9B3');
+
+  rr(c, IX, IY + 476, IW, 86, 10);
+  c.fillStyle = '#0F2A1F';
+  c.fill();
+  c.fillStyle = C_GREEN;
+  setFont(c, 700, 14);
+  tt(c, 'TOTAL PAID', IX + 18, IY + 510, 3.4, 'left');
+  c.fillStyle = '#EAFFF3';
+  setFont(c, 700, 35);
+  tt(c, money(TOTAL), IX + IW - 18, IY + 548, 0.6, 'right');
+
+  c.fillStyle = '#33465C';
+  setFont(c, 400, 13);
+  tt(c, 'REF 4TX-90F2-8817 · ACH SETTLEMENT', IX, IY + 596, 0.8, 'left');
+  tt(c, 'VISA •••• 4417 · AUTH 15 AUG 14:32 UTC', IX, IY + 626, 0.8, 'left');
+
+  barcode(c, IX, IY + 640, IW, 30, '#101A26');
+
   c.restore();
-  check(c, scx, scy, 34, '#0E9A8A', 4.5);
 
-  c.restore();
-
-  c.strokeStyle = 'rgba(120,168,150,0.6)';
+  c.strokeStyle = 'rgba(110,168,140,0.6)';
   c.lineWidth = 2;
-  sheetPath(c);
+  slipPath(c);
   c.stroke();
 };
 
@@ -1452,12 +1462,17 @@ export const Motion: React.FC = () => {
   const fy = frontYAt(level);
   const beamOn = ss(F_IGNITE, F_IGNITE + 26, f) * (1 - ss(F_END + 6, F_END + 56, f));
 
-  /* party counter — driven by the same numbers as the artwork */
-  const signed = TICK_F.filter((t) => f >= t).length;
-  const lastTick = signed > 0 ? TICK_F[signed - 1] : -999;
+  /* the counter rolls up in the four bursts the front actually releases */
+  let settled = 0;
+  for (let i = 0; i < CHECKPOINTS.length; i++) {
+    settled += CHECKPOINTS[i].v * ss(TICK_F[i], TICK_F[i] + 16, f);
+  }
+  const cleared = TICK_F.filter((t) => f >= t).length;
+  const lastTick = cleared > 0 ? TICK_F[cleared - 1] : -999;
   const pop = f >= lastTick ? Math.exp(-(f - lastTick) / 7) : 0;
+  const itemsDone = Math.min(4, cleared);
 
-  /* the seal */
+  /* the stamp */
   const st = clamp01((f - F_STAMP) / 26);
   const stampScale = 3.2 - 2.2 * easeOutBack(st);
   const stampA = ss(F_STAMP, F_STAMP + 8, f);
@@ -1465,24 +1480,24 @@ export const Motion: React.FC = () => {
 
   const status =
     f < F_ARM
-      ? 'STATUS · STANDBY'
+      ? 'STATUS · AWAITING FUNDS'
       : f < F_GO
-        ? 'STATUS · KEY EXCHANGE'
+        ? 'STATUS · AUTHORISING'
         : f < F_END
-          ? 'STATUS · VERIFYING'
-          : 'STATUS · EXECUTED';
+          ? 'STATUS · SETTLING'
+          : 'STATUS · CLEARED';
 
-  const hue = signed / 3;
-  const accent = `rgb(${Math.round(lerp(41, 43, hue))},${Math.round(
-    lerp(212, 208, hue),
-  )},${Math.round(lerp(240, 122, hue))})`;
+  const hue = clamp01(settled / TOTAL);
+  const accent = `rgb(${Math.round(lerp(242, 46, hue))},${Math.round(
+    lerp(179, 217, hue),
+  )},${Math.round(lerp(61, 122, hue))})`;
 
   const idlePulse = 0.72 + 0.28 * Math.sin((f - F_STAMP) / 20);
 
   return (
     <AbsoluteFill
       style={{
-        background: '#04070B',
+        background: '#04070A',
         fontFamily: "'MxSans', system-ui, sans-serif",
         color: C_INK,
         opacity: fontsReady ? 1 : 0,
@@ -1492,23 +1507,24 @@ export const Motion: React.FC = () => {
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1150px 900px at 30% 46%, rgba(16,92,124,0.30), rgba(0,0,0,0) 70%)',
+            'radial-gradient(1150px 900px at 34% 30%, rgba(126,86,18,0.30), rgba(0,0,0,0) 70%)',
+          opacity: 1 - 0.82 * progress,
         }}
       />
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1150px 900px at 72% 58%, rgba(22,140,92,0.30), rgba(0,0,0,0) 70%)',
-          opacity: 0.12 + 0.88 * progress,
+            'radial-gradient(1200px 950px at 66% 70%, rgba(20,140,84,0.34), rgba(0,0,0,0) 70%)',
+          opacity: 0.1 + 0.9 * progress,
         }}
       />
 
       <svg width={VW} height={VH} style={{position: 'absolute', opacity: 0.9}}>
         <defs>
           <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#7FB6E0" stopOpacity="0.10" />
-            <stop offset="0.5" stopColor="#7FB6E0" stopOpacity="0.03" />
-            <stop offset="1" stopColor="#7FB6E0" stopOpacity="0.10" />
+            <stop offset="0" stopColor="#8FD8B4" stopOpacity="0.10" />
+            <stop offset="0.5" stopColor="#8FD8B4" stopOpacity="0.03" />
+            <stop offset="1" stopColor="#8FD8B4" stopOpacity="0.10" />
           </linearGradient>
         </defs>
         <g stroke="url(#fade)" strokeWidth="1">
@@ -1519,7 +1535,7 @@ export const Motion: React.FC = () => {
             <line key={`h${i}`} x1={0} y1={i * 60} x2={VW} y2={i * 60} />
           ))}
         </g>
-        <g fill="none" stroke="rgba(130,180,225,0.075)" strokeWidth="1.5">
+        <g fill="none" stroke="rgba(140,215,180,0.075)" strokeWidth="1.5">
           {[250, 400, 550, 700, 850].map((r) => (
             <circle key={r} cx={CX} cy={CY} r={r} />
           ))}
@@ -1529,17 +1545,17 @@ export const Motion: React.FC = () => {
       <div
         style={{
           position: 'absolute',
-          left: CX - 470,
+          left: CX - 420,
           top: CY - 560,
-          width: 940,
+          width: 840,
           height: 1120,
           background:
-            'radial-gradient(closest-side, rgba(58,118,168,0.32), rgba(0,0,0,0) 72%)',
+            'radial-gradient(closest-side, rgba(48,138,100,0.32), rgba(0,0,0,0) 72%)',
           opacity: sheetIn,
         }}
       />
 
-      {/* the pass, behind the paper */}
+      {/* the settlement pass, behind the paper */}
       {beamOn > 0.002 ? (
         <>
           <div
@@ -1550,7 +1566,7 @@ export const Motion: React.FC = () => {
               width: VW,
               height: 300,
               background:
-                'linear-gradient(180deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.20) 50%, rgba(41,212,240,0) 100%)',
+                'linear-gradient(180deg, rgba(46,217,122,0) 0%, rgba(46,217,122,0.20) 50%, rgba(46,217,122,0) 100%)',
               opacity: beamOn * (1 + 0.9 * pop),
             }}
           />
@@ -1562,20 +1578,20 @@ export const Motion: React.FC = () => {
               width: VW - 240,
               height: 2,
               background:
-                'linear-gradient(90deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.85) 22%, rgba(41,212,240,0.85) 78%, rgba(41,212,240,0) 100%)',
+                'linear-gradient(90deg, rgba(46,217,122,0) 0%, rgba(46,217,122,0.85) 22%, rgba(46,217,122,0.85) 78%, rgba(46,217,122,0) 100%)',
               opacity: beamOn * 0.9,
             }}
           />
         </>
       ) : null}
 
-      {/* ------------------------------------------------------ the agreement */}
+      {/* --------------------------------------------------------- the slip */}
       <FlameFront
         region={RGN}
         rect={RECT}
-        drawContent={drawDraft}
-        drawConverted={drawSealed}
-        contentKey="agreement"
+        drawContent={drawUnpaid}
+        drawConverted={drawPaid}
+        contentKey={fontsReady ? 'invoice-1' : 'invoice-0'}
         params={FIELD}
         frontOnly
         level={level}
@@ -1588,47 +1604,47 @@ export const Motion: React.FC = () => {
         }}
       />
 
-      {/* ---------------------------------------------------------- seal */}
+      {/* ---------------------------------------------------------- stamp */}
       {st > 0 ? (
         <div
           style={{
             position: 'absolute',
-            left: CX - 210,
-            top: CY - 236,
-            width: 420,
-            height: 94,
+            left: CX - 155,
+            top: CY - 105,
+            width: 310,
+            height: 88,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `5px solid rgba(43,208,122,${0.9 * stampA})`,
+            border: `5px solid rgba(46,217,122,${0.9 * stampA})`,
             borderRadius: 8,
-            transform: `rotate(-7deg) scale(${stampScale})`,
+            transform: `rotate(-11deg) scale(${stampScale})`,
             opacity: stampA,
-            boxShadow: '0 0 44px rgba(43,208,122,0.35)',
+            boxShadow: '0 0 44px rgba(46,217,122,0.35)',
           }}
         >
           <span
             style={{
-              fontSize: 50,
+              fontSize: 52,
               fontWeight: 700,
-              letterSpacing: 11,
-              paddingLeft: 11,
-              color: `rgba(64,226,143,${0.96 * stampA})`,
+              letterSpacing: 12,
+              paddingLeft: 12,
+              color: `rgba(74,236,150,${0.96 * stampA})`,
             }}
           >
-            EXECUTED
+            PAID
           </span>
         </div>
       ) : null}
 
       {flash > 0.002 ? (
-        <AbsoluteFill style={{background: 'rgba(96,255,180,0.10)', opacity: flash}} />
+        <AbsoluteFill style={{background: 'rgba(96,255,170,0.10)', opacity: flash}} />
       ) : null}
 
       {/* ----------------------------------------------------------- HUD */}
-      <Bracket x={56} y={56} sx={1} sy={1} col={C_CYAN} a={brIn} />
+      <Bracket x={56} y={56} sx={1} sy={1} col={C_AMBER} a={brIn} />
       <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={accent} a={brIn} />
-      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_CYAN} a={brIn} />
+      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_AMBER} a={brIn} />
       <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={accent} a={brIn} />
 
       <div
@@ -1641,21 +1657,15 @@ export const Motion: React.FC = () => {
         }}
       >
         <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-          <div style={{width: 12, height: 12, background: C_CYAN}} />
+          <div style={{width: 12, height: 12, background: C_GREEN}} />
           <span
-            style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_CYAN}}
+            style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_GREEN}}
           >
-            SIGNATURE VERIFICATION
+            PAYMENT SETTLEMENT
           </span>
         </div>
         <div style={{marginTop: 13, marginLeft: 26}}>
-          <Chrome
-            t="AGREEMENT · MSA-4471 · REV 2"
-            s={17}
-            l={3.4}
-            o={0.55}
-            col="#BFD4EC"
-          />
+          <Chrome t="INVOICE · INV-8842 · NET 30" s={17} l={3.4} o={0.55} col="#C6DCD2" />
         </div>
         <div
           style={{
@@ -1664,7 +1674,7 @@ export const Motion: React.FC = () => {
             marginLeft: 26,
             width: 452,
             height: 4,
-            background: 'rgba(150,190,230,0.16)',
+            background: 'rgba(160,220,190,0.16)',
           }}
         >
           <div
@@ -1674,12 +1684,12 @@ export const Motion: React.FC = () => {
               top: 0,
               height: 4,
               width: 452 * progress,
-              background: `linear-gradient(90deg, ${C_CYAN}, ${accent})`,
+              background: `linear-gradient(90deg, ${C_AMBER}, ${accent})`,
             }}
           />
-          {TICK_F.map((_, i) => {
-            const at = (SIG_SCREEN_Y[i] - frontYAt(LEVEL_TOP)) /
-              (frontYAt(LEVEL_BOT) - frontYAt(LEVEL_TOP));
+          {CHECKPOINTS.map((cp, i) => {
+            const at =
+              (cp.y - frontYAt(LEVEL_TOP)) / (frontYAt(LEVEL_BOT) - frontYAt(LEVEL_TOP));
             return (
               <div
                 key={i}
@@ -1689,7 +1699,7 @@ export const Motion: React.FC = () => {
                   top: -4,
                   width: 2,
                   height: 12,
-                  background: i < signed ? C_GREEN : 'rgba(150,190,230,0.4)',
+                  background: f >= TICK_F[i] ? C_GREEN : 'rgba(160,220,190,0.4)',
                 }}
               />
             );
@@ -1715,8 +1725,8 @@ export const Motion: React.FC = () => {
         style={{
           position: 'absolute',
           right: 92,
-          top: 74,
-          width: 420,
+          top: 78,
+          width: 760,
           textAlign: 'right',
           opacity: hudIn,
           transform: `translateX(${(1 - hudIn) * 18}px)`,
@@ -1724,24 +1734,24 @@ export const Motion: React.FC = () => {
       >
         <div
           style={{
-            fontSize: 96,
+            fontSize: 74,
             fontWeight: 700,
-            lineHeight: '96px',
-            letterSpacing: -1,
+            lineHeight: '80px',
+            letterSpacing: 0,
             color: accent,
-            transform: `scale(${1 + 0.09 * pop})`,
+            transform: `scale(${1 + 0.055 * pop})`,
             transformOrigin: '100% 50%',
           }}
         >
-          {signed}/3
+          {money(settled)}
         </div>
-        <div style={{marginTop: 8}}>
+        <div style={{marginTop: 6}}>
           <Chrome
-            t="PARTIES SIGNED"
-            s={17}
-            l={7}
-            o={0.55 + 0.45 * (signed / 3)}
-            col={signed === 3 ? C_GREEN : C_AMBER}
+            t={`SETTLED · ${itemsDone}/4 ITEMS CLEARED`}
+            s={16}
+            l={5}
+            o={0.6 + 0.4 * hue}
+            col={hue > 0.999 ? C_GREEN : C_AMBER}
           />
         </div>
       </div>
@@ -1761,17 +1771,17 @@ export const Motion: React.FC = () => {
           style={{
             width: 520,
             height: 1,
-            background: 'rgba(160,200,240,0.28)',
+            background: 'rgba(170,230,200,0.28)',
             margin: '0 auto 26px',
           }}
         />
         <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 15}}>
-          DIGITAL CONTRACT EXECUTION
+          AUTOMATED PAYMENT SETTLEMENT
         </span>
       </div>
 
       <div style={{position: 'absolute', left: 92, top: VH - 96, opacity: hudIn * 0.5}}>
-        <Chrome t="ESIGN ACT · eIDAS COMPLIANT" s={15} l={3} o={1} col="#BFD4EC" />
+        <Chrome t="PCI-DSS · 3-D SECURE" s={15} l={3} o={1} col="#C6DCD2" />
       </div>
       <div
         style={{
@@ -1782,11 +1792,11 @@ export const Motion: React.FC = () => {
         }}
       >
         <Chrome
-          t={f >= F_STAMP ? 'AUDIT TRAIL · SHA-256 SEALED' : 'AUDIT TRAIL · OPEN'}
+          t={f >= F_STAMP ? 'ACH SETTLEMENT · FUNDS CLEARED' : 'ACH SETTLEMENT · PENDING'}
           s={15}
           l={3}
           o={1}
-          col={f >= F_STAMP ? C_GREEN : '#BFD4EC'}
+          col={f >= F_STAMP ? C_GREEN : '#C6DCD2'}
         />
       </div>
 
