@@ -1,16 +1,19 @@
 /* =============================================================================
-   MOTION28 — "DELETE · FOLDER BURN"
-   Right-click a desktop folder, pick Delete from the context menu, and the
-   folder is consumed by fire until nothing is left.
-   1920 x 1080 · 60 fps · 900 frames (15 s) · ONE-SHOT (not a loop)
+   MOTION31 — "AUTOMATED DATA REDACTION"
+   A confidential document is swept right-to-left by a cyan inspection field.
+   Everything the field passes is converted in place into its redacted twin:
+   black bars over every line, padlocks on the sealed attachments, hatched
+   stock instead of white paper. HUD counts the sweep from 0 to 100 %, then a
+   REDACTED stamp slams on.
+   1920 x 1080 - 60 fps - 900 frames (15 s) - ONE-SHOT (not a loop)
 
-   Flame: WebGL2 fragment shader adapted from the Canvas UI "FlameWrap"
-   component with the supplied preset (colour [1, 0.3098, 0], intensity 1,
-   scale 0.94, sparkSize 1.05, distortion 13 …). Two extensions:
-     · uBurnEdge — a descending burn front instead of a fixed top edge
-     · uSdf      — a signed distance field baked from the folder's silhouette,
-                   replacing sdRoundRect, so the fire hugs the folder outline
-                   (tab, notch and all) instead of a bounding box.
+   The boundary is NOT a clip-path. It is a signed-distance-field front, so it
+   hugs the sheet's real silhouette - including the folded corner - and the
+   conversion happens under a live flame edge with ember, rim glow and heat
+   shimmer. Built on the "remotion-flame" engine in CONVERT mode, axis 'x'.
+
+   Shader adapted from the Canvas UI "FlameWrap" component
+   (github.com/DavidHDev/canvas-ui) - MIT + Commons Clause.
    ========================================================================== */
 
 import React, {
@@ -27,65 +30,6 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-
-/* ---------------------------------------------------------------- constants */
-
-const VW = 1920;
-const VH = 1080;
-
-/** durationInFrames — copy this into your <Composition/> */
-export const MOTION_FRAMES = 900; // 15 s @ 60 fps
-
-// ---- desktop icon grid -----------------------------------------------------
-const ICON = 184;            // folder artwork box (source SVG uses a 544 viewBox)
-const CELL_W = 280;
-const CELL_H = 240;
-const COLS = 5;
-const GRID_X = (1920 - COLS * CELL_W) / 2 + CELL_W / 2; // first column centre
-const GRID_Y = 290;                                     // first row centre
-const HERO = 7;              // centre cell — the one that gets deleted
-
-const cellCX = (i: number) => GRID_X + (i % COLS) * CELL_W;
-const cellCY = (i: number) => GRID_Y + Math.floor(i / COLS) * CELL_H;
-
-const LABELS = [
-  'Assets', 'Brand Kit', 'Client Work', 'Contracts', 'Design Files',
-  'Exports', 'Invoices', 'Project Files', 'Photos', 'Presentations',
-  'Raw Footage', 'Reports', 'Shared Drive', 'Templates', 'Vendors',
-];
-
-// content box around the hero icon + its label, padded so the SDF has room
-const BOX_W = 400;
-const BOX_H = 400;
-const BOX_X = 960 - BOX_W / 2;   // 760
-const BOX_Y = 530 - 190;         // 340
-
-// folder artwork inside the box
-const FOLD_S = ICON / 544;
-const FOLD_OX = 108;
-const FOLD_OY = 82;
-
-// burn front travel, expressed as level = (edge + H/2) / H
-const LEVEL_TOP = 0.75;
-const LEVEL_BOT = 0.27;
-
-// WebGL region
-const RGN_X = BOX_X - 110;
-const RGN_Y = BOX_Y - 130;
-const RGN_W = BOX_W + 220;
-const RGN_H = BOX_H + 240;
-
-const SDF_RANGE = 220;
-
-// context menu
-const MENU_X = 1038;
-const MENU_Y = 508;
-const MENU_W = 300;
-const ITEM_H = 40;
-const SEP_H = 9;
-const MENU_PAD = 8;
-
-const FIRE_RGB: [number, number, number] = [1, 0.3098, 0]; // #FF4F00
 
 /* -------------------------------------------------------------- embedded font */
 
@@ -113,7 +57,7 @@ const ensureFonts = () => {
 };
 
 const useEmbeddedFonts = () => {
-  const [handle] = useState(() => delayRender('motion28-fonts'));
+  const [handle] = useState(() => delayRender('motion31-fonts'));
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let done = false;
@@ -130,21 +74,174 @@ const useEmbeddedFonts = () => {
   return ready;
 };
 
-/* ------------------------------------------------------------------- helpers */
+
+/* ------------------------------------------------------------------ types */
+
+type FlameParams = {
+  /** flame colour, linear 0..1 */
+  color: [number, number, number];
+  /** overall brightness, 0..2 */
+  intensity: number;
+  /** reach of the flames past the front, in px — the master scale of the effect */
+  height: number;
+  /** reach of the rim glow around the silhouette, in px */
+  spread: number;
+  /** animation speed multiplier */
+  speed: number;
+  /** flame detail, 0 (broad licks) .. 1 (fine licks) */
+  scale: number;
+  /** amplitude of the turbulence shaping the flames, 0..1 */
+  turbulence: number;
+  /** frequency multiplier of the turbulence, 0.2..3 */
+  turbulenceScale: number;
+  /** how far from the front the heat warps the artwork, in px */
+  turbulenceReach: number;
+  /** brightness of spark highlights, 0 disables */
+  sparks: number;
+  /** size multiplier for individual sparks */
+  sparkSize: number;
+  /** how many sparks fly at once */
+  sparkDensity: number;
+  /** how fast sparks rise */
+  sparkSpeed: number;
+  /** strength of the molten glow hugging the silhouette, 0..3 */
+  rim: number;
+  /** how far the flames bite into the silhouette, in px */
+  melt: number;
+  /** heat shimmer displacement of the artwork near the front, in px */
+  distortion: number;
+  /** smoke drifting off the flames, 0..2 */
+  smoke: number;
+  /** brightness of the glowing ember line at the front, 0..2 */
+  ember: number;
+  /** darkness of the charred band behind the front, 0..2 */
+  scorch: number;
+};
+
+type FlameFrontProps = {
+  /** where the GL canvas sits on screen, in composition px */
+  region: {x: number; y: number; w: number; h: number};
+  /** the artwork rect, in composition px. Pad it ~100px around your shape so
+   *  the baked SDF has room to describe the space just outside the silhouette. */
+  rect: {cx: number; cy: number; w: number; h: number};
+  /** draws the artwork into a `rect.w` x `rect.h` canvas */
+  drawContent: (c: CanvasRenderingContext2D, w: number, h: number) => void;
+  /** optional second version the front converts the artwork INTO */
+  drawConverted?: (c: CanvasRenderingContext2D, w: number, h: number) => void;
+  /** re-rasterise the artwork only when this changes. Leave undefined for
+   *  artwork that animates every frame (costs one Canvas2D redraw per frame). */
+  contentKey?: string | number;
+
+  params?: Partial<FlameParams>;
+
+  /** front direction. 'y' = a horizontal line travelling down (default),
+   *  'x' = a vertical line travelling right-to-left */
+  axis?: 'y' | 'x';
+  /** front position, 1 = at the far edge of the rect, 0 = past the near edge.
+   *  Leave at 1 for the classic "flames on the top edge" wrap. */
+  level?: number;
+
+  /** master fire visibility, 0..1. At 0 the shader short-circuits to a plain
+   *  blit of the artwork, which makes non-burning frames essentially free. */
+  fire?: number;
+  /** how much of the artwork the front REMOVES behind it, 0..1.
+   *  This is a latched state flag, not a brightness envelope — see pitfalls. */
+  eat?: number;
+  /** how much of the artwork the front CONVERTS to `drawConverted`, 0..1.
+   *  Also a latched flag. */
+  convert?: number;
+  /** keep the fire at the travelling front instead of wrapping the whole
+   *  silhouette — the right choice for a scan sweeping a large object. */
+  frontOnly?: boolean;
+
+  /** cheap screen-blend bloom over the region, 0 disables */
+  bloom?: number;
+  style?: React.CSSProperties;
+};
+
+/* --------------------------------------------------------------- presets */
+
+/** The stock Canvas UI FlameWrap playground preset — a real fire, tuned for an
+ *  object roughly 300 px across. Length-based values (height, spread, melt,
+ *  distortion, turbulenceReach) scale with your object; everything else is
+ *  already relative to `height` inside the shader and can stay put. */
+const FIRE_PRESET: FlameParams = {
+  color: [1, 0.3098, 0], // #FF4F00
+  intensity: 1,
+  height: 190,
+  spread: 13,
+  speed: 0.5,
+  scale: 0.94,
+  turbulence: 0.63,
+  turbulenceScale: 0.65,
+  turbulenceReach: 16,
+  sparks: 1.5,
+  sparkSize: 1.05,
+  sparkDensity: 1,
+  sparkSpeed: 1,
+  rim: 2.25,
+  melt: 5,
+  distortion: 13,
+  smoke: 0.7,
+  ember: 2,
+  scorch: 0,
+};
+
+/** Cool, premium variant — reads as tech/fintech rather than literal fire. */
+const BLUE_FIRE_PRESET: FlameParams = {
+  ...FIRE_PRESET,
+  color: [0.31, 0.54, 1], // #4F8AFF
+  intensity: 0.6,
+  scale: 0.72,
+  turbulence: 0.52,
+  turbulenceScale: 0.5,
+  sparkSize: 0.34,
+  scorch: 0.55,
+};
+
+/** Height dialled right down and smoke off: a crackling inspection / containment
+ *  front rather than a plume. Pair with a `drawConverted` for scan effects. */
+const FIELD_PRESET: FlameParams = {
+  ...FIRE_PRESET,
+  color: [0.16, 0.83, 0.94], // #29D4F0
+  intensity: 0.9,
+  height: 34,
+  spread: 10,
+  speed: 1.0,
+  turbulenceReach: 7,
+  sparks: 1.0,
+  sparkSize: 0.8,
+  sparkDensity: 1.3,
+  sparkSpeed: 1.2,
+  rim: 1.7,
+  melt: 2,
+  distortion: 5,
+  smoke: 0,
+};
+
+/** Scale the length-based params of a preset to your object's size.
+ *  `factor` = yourObjectWidth / 300. */
+const scalePreset = (p: FlameParams, factor: number): FlameParams => ({
+  ...p,
+  height: p.height * factor,
+  spread: Math.max(8, p.spread * factor),
+  melt: p.melt * factor,
+  distortion: p.distortion * factor,
+  turbulenceReach: Math.max(4, p.turbulenceReach * factor),
+});
+
+/* -------------------------------------------------------------- SDF baker */
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** smoothstep ramp between two frame numbers */
 const ss = (a: number, b: number, x: number) => {
   const t = clamp01((x - a) / (b - a));
   return t * t * (3 - 2 * t);
 };
-const easeOutCubic = (x: number) => 1 - Math.pow(1 - clamp01(x), 3);
-const easeInOut = (x: number) => {
-  const t = clamp01(x);
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-};
-
-const trapezoid = (u: number, a: number, b: number) => {
+/** constant-speed traverse with soft ends — the right shape for a front,
+ *  which does not accelerate. `a`/`b` are the ease-in/ease-out fractions. */
+const trapezoid = (u: number, a = 0.12, b = 0.16) => {
   const x = clamp01(u);
   const area = 1 - a / 2 - b / 2;
   let s: number;
@@ -157,30 +254,91 @@ const trapezoid = (u: number, a: number, b: number) => {
   return s / area;
 };
 
-const lcg = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
+const SDF_RANGE = 220;
+
+/** Two-pass chamfer distance transform of the artwork's alpha. Negative inside
+ *  the silhouette, positive outside, packed into an 8-bit RGBA texture.
+ *  Run this once (useMemo) — it is the thing that makes the fire follow the
+ *  shape's real outline instead of its bounding box. */
+const bakeSdf = (
+  draw: (c: CanvasRenderingContext2D, w: number, h: number) => void,
+  W: number,
+  H: number,
+  range = SDF_RANGE,
+): Uint8Array => {
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const c = cv.getContext('2d', {willReadFrequently: true})!;
+  draw(c, W, H);
+  const img = c.getImageData(0, 0, W, H).data;
+
+  const N = W * H;
+  const INF = 1e9;
+  const dIn = new Float32Array(N);
+  const dOut = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const inside = img[i * 4 + 3] > 110;
+    dIn[i] = inside ? INF : 0;
+    dOut[i] = inside ? 0 : INF;
+  }
+  const DD = 1.41421356;
+  const pass = (d: Float32Array) => {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let v = d[i];
+        if (x > 0) v = Math.min(v, d[i - 1] + 1);
+        if (y > 0) {
+          v = Math.min(v, d[i - W] + 1);
+          if (x > 0) v = Math.min(v, d[i - W - 1] + DD);
+          if (x < W - 1) v = Math.min(v, d[i - W + 1] + DD);
+        }
+        d[i] = v;
+      }
+    }
+    for (let y = H - 1; y >= 0; y--) {
+      for (let x = W - 1; x >= 0; x--) {
+        const i = y * W + x;
+        let v = d[i];
+        if (x < W - 1) v = Math.min(v, d[i + 1] + 1);
+        if (y < H - 1) {
+          v = Math.min(v, d[i + W] + 1);
+          if (x < W - 1) v = Math.min(v, d[i + W + 1] + DD);
+          if (x > 0) v = Math.min(v, d[i + W - 1] + DD);
+        }
+        d[i] = v;
+      }
+    }
   };
+  pass(dIn);
+  pass(dOut);
+
+  const out = new Uint8Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    const v = Math.round(clamp01((dOut[i] - dIn[i]) / range / 2 + 0.5) * 255);
+    out[i * 4] = v;
+    out[i * 4 + 1] = v;
+    out[i * 4 + 2] = v;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
 };
 
-/* ---------------------------------------------------------------- shaders */
+/* --------------------------------------------------------------- shaders */
 
 const VERT = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;
 out vec2 vUv;
-void main () {
-  vUv = aPos * 0.5 + 0.5;
-  gl_Position = vec4(aPos, 0.0, 1.0);
-}`;
+void main () { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
 const FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uContent;
+uniform sampler2D uContentB;
 uniform sampler2D uSdf;
 uniform vec2 uResolution;
 uniform float uTime;
@@ -206,39 +364,32 @@ uniform float uEmber;
 uniform float uScorch;
 uniform float uFire;
 uniform float uEat;
+uniform float uConvert;
 uniform float uInnerCut;
 uniform float uOuterCut;
 uniform float uCullD;
 uniform float uBypass;
+uniform float uFrontOnly;
 uniform float uBurnEdge;
 uniform float uSdfRange;
+uniform float uAxis;      // 0 = front travels along Y, 1 = along X
 
 #define S(a, b, t) smoothstep(a, b, t)
 
-vec3 permute (vec3 x) {
-  return mod(((x * 34.0) + 1.0) * x, 289.0);
-}
+vec3 permute (vec3 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
 
 float snoise (vec2 v) {
-  const vec4 C = vec4(
-    0.211324865405187, 0.366025403784439,
-    -0.577350269189626, 0.024390243902439
-  );
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+    -0.577350269189626, 0.024390243902439);
   vec2 i = floor(v + dot(v, C.yy));
   vec2 x0 = v - i + dot(i, C.xx);
   vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
   vec4 x12 = x0.xyxy + C.xxzz;
   x12.xy -= i1;
   i = mod(i, 289.0);
-  vec3 p = permute(
-    permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0)
-  );
-  vec3 m = max(
-    0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)),
-    0.0
-  );
-  m = m * m;
-  m = m * m;
+  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+  m = m * m; m = m * m;
   vec3 x = 2.0 * fract(p * C.www) - 1.0;
   vec3 h = abs(x) - 0.5;
   vec3 ox = floor(x + 0.5);
@@ -253,12 +404,9 @@ float snoise (vec2 v) {
 float fbm (vec2 p) {
   mat2 m = mat2(0.8, -0.6, 0.6, 0.8);
   float v = 0.5 * snoise(p);
-  p = m * p * 2.03 + vec2(11.3, 7.1);
-  v += 0.27 * snoise(p);
-  p = m * p * 1.97 + vec2(3.7, 19.1);
-  v += 0.15 * snoise(p);
-  p = m * p * 2.01 + vec2(8.3, 2.9);
-  v += 0.08 * snoise(p);
+  p = m * p * 2.03 + vec2(11.3, 7.1); v += 0.27 * snoise(p);
+  p = m * p * 1.97 + vec2(3.7, 19.1); v += 0.15 * snoise(p);
+  p = m * p * 2.01 + vec2(8.3, 2.9);  v += 0.08 * snoise(p);
   return v * 0.5 + 0.5;
 }
 
@@ -281,24 +429,27 @@ vec2 turbulence (vec2 p) {
 }
 
 vec3 hash3 (vec2 p) {
-  vec3 q = vec3(
-    dot(p, vec2(127.1, 311.7)),
-    dot(p, vec2(269.5, 183.3)),
-    dot(p, vec2(419.2, 371.9))
-  );
+  vec3 q = vec3(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)),
+    dot(p, vec2(419.2, 371.9)));
   return fract(sin(q) * 43758.5453);
 }
 
-vec4 sampleContent (vec2 rel) {
-  vec2 c0 = (rel + uRectHalf) / (2.0 * uRectHalf);
-  if (c0.x < 0.0 || c0.x > 1.0 || c0.y < 0.0 || c0.y > 1.0) return vec4(0.0);
-  vec4 c = texture(uContent, vec2(c0.x, 1.0 - c0.y));
+vec4 sampleMix (vec2 uv, float m) {
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+  vec2 t = vec2(uv.x, 1.0 - uv.y);
+  vec4 c = mix(texture(uContent, t), texture(uContentB, t), clamp(m, 0.0, 1.0));
   return vec4(c.rgb * c.a, c.a);
 }
 
 void main () {
   vec2 frag = vUv * uResolution;
   vec2 rel = frag - uRectCenter;
+
+  /* the whole front is rotated when uAxis = 1, so relF.y always runs along the
+     direction of travel and the plume always licks back the way it came */
+  vec2 relF = (uAxis > 0.5) ? vec2(-rel.y, rel.x) : rel;
+  vec2 halfF = (uAxis > 0.5) ? vec2(uRectHalf.y, uRectHalf.x) : uRectHalf;
+
   float unit = max(uHeight, 24.0);
   float spreadPx = max(uSpread, 8.0);
   float t = uTime;
@@ -307,21 +458,25 @@ void main () {
   vec2 cUv = (rel + uRectHalf) / (2.0 * uRectHalf);
   vec2 cUvC = clamp(cUv, vec2(0.0), vec2(1.0));
 
-  // signed distance to the folder silhouette, baked on the CPU
   float d0 = (texture(uSdf, vec2(cUvC.x, 1.0 - cUvC.y)).r * 2.0 - 1.0) * uSdfRange;
-  float above = rel.y - uBurnEdge;
+  float above = relF.y - uBurnEdge;   // > 0 : the front has already passed here
+  float aheadG = mix(1.0,
+    1.0 - S(0.22 * unit, 0.75 * unit, max(-above, 0.0)), uFrontOnly);
 
-  /* ---- fast paths ------------------------------------------------------- */
-  if (uBypass > 0.5) { outColor = sampleContent(rel); return; }
-  if (above > uOuterCut) { outColor = vec4(0.0); return; }
+  /* ---- fast paths: these are what make idle frames nearly free ---------- */
+  if (uBypass > 0.5) { outColor = sampleMix(cUv, uConvert); return; }
   if (d0 > uCullD) { outColor = vec4(0.0); return; }
-  if (d0 < -uInnerCut && above < -uInnerCut) {
-    outColor = sampleContent(rel);
+  if (above > uOuterCut) {
+    outColor = (uEat > 0.5) ? vec4(0.0) : sampleMix(cUv, uConvert);
     return;
   }
+  if (d0 < -uInnerCut && above < -uInnerCut) { outColor = sampleMix(cUv, 0.0); return; }
+  if (uFrontOnly > 0.5 && uEat < 0.001 && above < -uOuterCut) {
+    outColor = sampleMix(cUv, 0.0); return;
+  }
 
-  float px = rel.x / unit;
-  float py = rel.y / unit;
+  float px = relF.x / unit;
+  float py = relF.y / unit;
 
   float yA = max(above, 0.0) / unit;
   float sway = snoise(vec2(px * 1.1, t * 0.5)) * 0.55
@@ -329,39 +484,36 @@ void main () {
   float sx = px + yA * sway;
   float env = fbm2(vec2(sx * 1.6 * detail + 3.7, t * 0.55 - yA * 0.4));
   float env2 = fbm2(vec2(sx * 3.6 * detail, t * 0.85 + 17.0 - yA * 0.6));
-  float tongue = clamp(
-    0.75 * S(0.3, 0.9, env) + 0.5 * S(0.4, 0.95, env2),
-    0.0,
-    1.0
-  );
+  float tongue = clamp(0.75 * S(0.3, 0.9, env) + 0.5 * S(0.4, 0.95, env2), 0.0, 1.0);
 
   float meltPx = max(uMelt, 1.0);
   float biteTop = (3.0 + meltPx * 1.4) * (0.35 + 0.65 * tongue)
     + 2.0 * snoise(vec2(px * 5.0 * detail, t * 1.1 + 5.0));
-  float yF = uBurnEdge - biteTop;
-  float frontTop = rel.y - yF;
+  float frontTop = relF.y - (uBurnEdge - biteTop);
 
-  float perim = fbm2(rel * (1.9 / unit) * detail + vec2(0.0, t * 0.4) + 31.0);
-  float biteSB = 3.0 + meltPx * (0.25 + 0.75 * perim);
-  float frontSB = d0 + biteSB;
+  float perim = fbm2(relF * (1.9 / unit) * detail + vec2(0.0, t * 0.4) + 31.0);
+  float frontSB = d0 + 3.0 + meltPx * (0.25 + 0.75 * perim);
 
-  /* Flames may only exist in columns where the folder still has material AT
-     the height of the burn front — otherwise the plume would rise out of the
-     empty padding to either side of the tab. */
-  float fv = clamp((uBurnEdge + uRectHalf.y) / (2.0 * uRectHalf.y), 0.0, 1.0);
-  float colA = max(
-    texture(uContent, vec2(cUvC.x, 1.0 - fv)).a,
-    max(
-      texture(uContent, vec2(cUvC.x, clamp(1.0 - fv + 0.014, 0.0, 1.0))).a,
-      texture(uContent, vec2(cUvC.x, clamp(1.0 - fv + 0.032, 0.0, 1.0))).a
-    )
-  );
-  float colMask = S(0.10, 0.55, colA);
+  /* the flame may only exist where the artwork still HAS material at the
+     front's own coordinate — otherwise the plume rises out of empty space */
+  float fu = clamp((uBurnEdge + halfF.y) / (2.0 * halfF.y), 0.0, 1.0);
+  vec2 sA, sB, sC;
+  if (uAxis > 0.5) {
+    sA = vec2(fu, 1.0 - cUvC.y);
+    sB = vec2(clamp(fu - 0.014, 0.0, 1.0), 1.0 - cUvC.y);
+    sC = vec2(clamp(fu - 0.032, 0.0, 1.0), 1.0 - cUvC.y);
+  } else {
+    sA = vec2(cUvC.x, 1.0 - fu);
+    sB = vec2(cUvC.x, clamp(1.0 - fu + 0.014, 0.0, 1.0));
+    sC = vec2(cUvC.x, clamp(1.0 - fu + 0.032, 0.0, 1.0));
+  }
+  float lineA = max(texture(uContent, sA).a,
+    max(texture(uContent, sB).a, texture(uContent, sC).a));
+  float lineMask = S(0.10, 0.55, lineA);
 
   float wCut = S(-0.62 * unit, -0.1 * unit, above);
-  float wTop = wCut * colMask;          // weight only — never geometry
-  float front = max(frontSB, frontTop); // SDF of shape INTERSECT below-the-line
-  float frontCut = front;
+  float wTop = wCut * lineMask;              // weight only, never geometry
+  float front = max(frontSB, frontTop);      // SDF of shape INTERSECT behind-front
 
   float reach = mix(spreadPx * 0.9, unit * (0.2 + 0.45 * tongue), wTop);
   float q = front / reach;
@@ -378,15 +530,14 @@ void main () {
   float shred = fbm2(np * 1.9 + 63.0);
   g *= 1.0 + 0.7 * (shred - 0.5) * S(0.2, 0.8, g);
   float dens = n * 0.95 + ridge * 0.45 - 0.18
-    + (1.0 - min(g, 1.0)) * 0.3
-    - g * (0.9 + 0.25 * n);
+    + (1.0 - min(g, 1.0)) * 0.3 - g * (0.9 + 0.25 * n);
   dens = clamp(dens * 2.4, 0.0, 1.0) * win;
   dens *= mix(1.0 - S(0.32, 1.05, q), 1.0 - S(0.9, 1.2, g), wTop);
   float body = dens * dens * (3.0 - 2.0 * dens);
   float emis = clamp(uIntensity, 0.0, 2.0);
   float e = body * (0.55 + 0.75 * root) * (0.45 + 0.55 * n)
     + win * root * (0.1 + 0.4 * n);
-  e *= mix(0.45, 1.0, wTop) * max(emis, 0.001);
+  e *= mix(0.45, 1.0, wTop) * max(emis, 0.001) * aheadG;
 
   vec3 hot = mix(uColor, vec3(1.0), 0.35);
   vec3 deep = mix(uColor, uColor * uColor, 0.5) * 0.9;
@@ -399,7 +550,8 @@ void main () {
 
   float halo = exp(-max(front, 0.0) / (spreadPx * 1.2)) * S(0.0, 3.0, front)
     * (0.5 + 0.5 * n) * 0.3 * clamp(uRim, 0.0, 2.0) * mix(1.0, 0.45, wTop);
-  halo *= 1.0 - S(0.15 * unit, 0.6 * unit, above);
+  halo *= 1.0 - S(0.15 * unit, 0.6 * unit, above);  // rim belongs to material
+  halo *= aheadG;
   vec3 glow = uColor * halo * clamp(uIntensity, 0.0, 2.0);
 
   if (uSparks > 0.001) {
@@ -429,12 +581,10 @@ void main () {
       vec2 pd = (fr - ppos) / cells * unit;
       pd.y *= 0.55 + 0.3 * rnd2.z;
       float dp = length(pd);
-      float r = (0.004 + 0.014 * rnd.y * rnd.y) * unit * sSize
-        * mix(1.15, 0.55, life);
+      float r = (0.004 + 0.014 * rnd.y * rnd.y) * unit * sSize * mix(1.15, 0.55, life);
       float bmask = S(0.5, 0.32, max(abs(fr.x - 0.5), abs(fr.y - 0.5)));
-      float sbody = exp(-dp * dp / (r * r));
-      float sbloom = exp(-dp * dp / (r * r * 6.0)) * 0.3;
-      spark += (sbody + sbloom) * tw * tw * on * bmask * (1.0 - 0.35 * L);
+      spark += (exp(-dp * dp / (r * r)) + exp(-dp * dp / (r * r * 6.0)) * 0.3)
+        * tw * tw * on * bmask * (1.0 - 0.35 * L);
     }
     spark *= gate * uSparks;
     fireCol += mix(uColor, vec3(1.0), 0.55) * spark * 1.6;
@@ -448,537 +598,88 @@ void main () {
   glow *= fade * uFire;
   halo *= fade * uFire;
 
-  float wisp = S(0.45, 0.9, fbm2(np * 0.55 + vec2(0.0, 17.0)));
   float rise = max(above, 0.0);
-  float smokeFall = exp(-rise / (unit * 0.7))
-    * (1.0 - S(uOuterCut * 0.5, uOuterCut * 0.96, rise));
-  float smoke = S(1.55, 1.05, g) * S(0.85, 1.15, g)
-    * (1.0 - body) * wCut * colMask * smokeFall
-    * wisp * 0.055 * clamp(uSmoke, 0.0, 2.0) * fade * uFire;
+  float smoke = S(1.55, 1.05, g) * S(0.85, 1.15, g) * (1.0 - body)
+    * wCut * lineMask
+    * exp(-rise / (unit * 0.7)) * (1.0 - S(uOuterCut * 0.5, uOuterCut * 0.96, rise))
+    * S(0.45, 0.9, fbm2(np * 0.55 + vec2(0.0, 17.0)))
+    * 0.055 * clamp(uSmoke, 0.0, 2.0) * fade * uFire;
   vec3 smokeCol = mix(vec3(0.5), uColor, 0.5);
 
   float inRect = step(abs(cUv.x - 0.5), 0.5) * step(abs(cUv.y - 0.5), 0.5);
 
-  float heatBand = exp(-abs(frontCut) / max(uTurbReach, 4.0));
+  float nearBand = 1.0 - S(0.5 * unit, 1.6 * unit, abs(above));
   vec2 wob = vec2(snoise(np * 1.7 + 9.0), snoise(np * 1.7 + 27.0));
-  vec2 disp = wob * min(uDistortion, 32.0) * heatBand;
+  vec2 disp = wob * min(uDistortion, 32.0)
+    * exp(-abs(front) / max(uTurbReach, 4.0)) * nearBand;
   vec2 cUvD = clamp(cUv + disp / (2.0 * uRectHalf), vec2(0.0015), vec2(0.9985));
-  vec4 content = texture(uContent, vec2(cUvD.x, 1.0 - cUvD.y));
 
-  float burn = clamp(uIntensity, 0.0, 1.0);
-  /* Material far BELOW the front is still cool. Without this, thin shapes
-     (the label glyphs) sit at depth ~0 from their own outline and glow hot
-     from the moment of ignition. */
+  float dn = fbm2(relF * (3.2 / unit) * detail + vec2(0.0, t * 0.5) + 91.0);
+  float dw = mix(2.0, 5.0, wCut);
+  float noff = (dn - 0.5) * dw * 2.5;
+  float eatMask = S(-dw, dw, front + noff);       // outline melt included
+  float convMask = S(-dw, dw, frontTop + noff);   // travelling front only
+  vec4 content = sampleMix(cUvD, convMask * uConvert);
+
+  /* gated by uFire as well as uIntensity: otherwise fading the fire out
+     leaves a permanent ember line painted into the artwork */
+  float burn = clamp(uIntensity, 0.0, 1.0) * uFire;
   float nearFront = 1.0 - S(0.10 * unit, 0.45 * unit, max(-above, 0.0));
-  float depth = max(-frontCut, 0.0);
-  float charPatch = 0.5 + 0.5 * fbm2(rel * (2.6 / unit) * detail + 57.0);
-  float charW = mix(4.0, 6.0 + meltPx * 1.6, wCut) * charPatch;
-  float charT = (1.0 - S(charW, charW * 2.4, depth)) * nearFront;
-  content.rgb = mix(
-    content.rgb,
-    content.rgb * vec3(0.22, 0.19, 0.17),
-    clamp(charT * 0.85 * burn * clamp(uScorch, 0.0, 2.0), 0.0, 1.0)
-  );
-
+  float depth = abs(front);   // a BAND around the front, not an inside-only depth
   float emberW = mix(2.5, 5.5, wCut);
   float emberN = 0.3 + 0.7 * fbm2(np * 2.2 + 73.0);
   float emberK = clamp(uEmber, 0.0, 2.0);
   float ember = exp(-depth / emberW) * emberN * emberK * nearFront;
   float whiteHot = exp(-depth / (emberW * 0.4)) * emberN * emberN * emberK * nearFront;
-  content.rgb = mix(content.rgb, uColor * 1.2, clamp(ember, 0.0, 1.0) * burn);
-  content.rgb = mix(
-    content.rgb,
-    mix(uColor, vec3(1.0), 0.3) * 1.2,
-    clamp(whiteHot, 0.0, 1.0) * burn
-  );
 
-  float dn = fbm2(rel * (3.2 / unit) * detail + vec2(0.0, t * 0.5) + 91.0);
-  float dw = mix(2.0, 5.0, wCut);
-  float dissolve = S(-dw, dw, frontCut + (dn - 0.5) * dw * 2.5) * uEat;
-  float cA = content.a * (1.0 - dissolve) * inRect;
+  float ca = content.a;
+  vec3 crgb = ca > 0.001 ? content.rgb / ca : content.rgb;
+  float charW = mix(4.0, 6.0 + meltPx * 1.6, wCut)
+    * (0.5 + 0.5 * fbm2(relF * (2.6 / unit) * detail + 57.0));
+  crgb = mix(crgb, crgb * vec3(0.22, 0.19, 0.17),
+    clamp((1.0 - S(charW, charW * 2.4, max(-front, 0.0))) * nearFront
+      * 0.85 * burn * clamp(uScorch, 0.0, 2.0), 0.0, 1.0));
+  crgb = mix(crgb, uColor * 1.2, clamp(ember, 0.0, 1.0) * burn);
+  crgb = mix(crgb, mix(uColor, vec3(1.0), 0.3) * 1.2, clamp(whiteHot, 0.0, 1.0) * burn);
+
+  float cA = ca * (1.0 - eatMask * uEat) * inRect;
   float smk = smoke * (1.0 - cA);
-  float baseA = min(cA + smk, 1.0);
-  vec3 base = content.rgb * cA + smokeCol * smk;
-  vec3 col = fireCol * fireA + base * (1.0 - fireA) + glow;
-  float alpha = clamp(fireA + baseA * (1.0 - fireA) + halo * 0.5, 0.0, 1.0);
-  outColor = vec4(col, alpha);
+  vec3 base = crgb * cA + smokeCol * smk;
+  float alpha = clamp(fireA + min(cA + smk, 1.0) * (1.0 - fireA) + halo * 0.5, 0.0, 1.0);
+  outColor = vec4(fireCol * fireA + base * (1.0 - fireA) + glow, alpha);
 }`;
 
-/* ------------------------------------------------------------- folder artwork */
+/* -------------------------------------------------------------- GL plumbing */
 
-const FOLDER_BACK =
-  'M16 98.5602V444.948C16 459.752 28.0016 471.754 42.8063 471.754H501.194C515.998 471.754 528 459.752 528 444.948V153.227C528 138.422 515.998 126.421 501.194 126.421H260.603C250.182 126.421 240.743 120.338 235.291 111.456C225.357 95.2712 207.444 71.7539 187.225 71.7539H42.7644C27.9597 71.7539 16 83.7555 16 98.5602Z';
-const FOLDER_FRONT =
-  'M528 163.561V435.948C528 450.752 515.998 462.754 501.194 462.754H42.8063C28.0016 462.754 16 450.752 16 435.948V190.699C16 175.895 27.962 163.893 42.7667 163.893H178.178C223.749 163.893 217.382 136.752 248.544 136.754C333.567 136.758 449.546 136.756 501.239 136.755C516.044 136.754 528 148.756 528 163.561Z';
-
-const setFont = (
-  c: CanvasRenderingContext2D,
-  weight: 400 | 700,
-  size: number,
-  track = 0,
-) => {
-  c.font = `${weight} ${size}px MxSans, system-ui, sans-serif`;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (c as any).letterSpacing = `${track}px`;
-};
-
-const rr = (
-  c: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) => {
-  const k = Math.min(r, w / 2, h / 2);
-  c.beginPath();
-  c.moveTo(x + k, y);
-  c.lineTo(x + w - k, y);
-  c.arcTo(x + w, y, x + w, y + k, k);
-  c.lineTo(x + w, y + h - k);
-  c.arcTo(x + w, y + h, x + w - k, y + h, k);
-  c.lineTo(x + k, y + h);
-  c.arcTo(x, y + h, x, y + h - k, k);
-  c.lineTo(x, y + k);
-  c.arcTo(x, y, x + k, y, k);
-  c.closePath();
-};
-
-/** folder + label — this is the texture the fire eats */
-const drawContent = (c: CanvasRenderingContext2D, selected: number) => {
-  c.clearRect(0, 0, BOX_W, BOX_H);
-  c.textBaseline = 'alphabetic';
-
-  c.save();
-  c.translate(FOLD_OX, FOLD_OY);
-  c.scale(FOLD_S, FOLD_S);
-
-  c.fillStyle = '#FFC531';
-  c.fill(new Path2D(FOLDER_BACK));
-
-  const g = c.createLinearGradient(528, 136.754, 27.1538, 479.073);
-  g.addColorStop(0.234375, '#FCF68D');
-  g.addColorStop(1, '#FFC531');
-  c.fillStyle = g;
-  c.fill(new Path2D(FOLDER_FRONT));
-
-  const sheen = c.createLinearGradient(0, 136, 0, 310);
-  sheen.addColorStop(0, 'rgba(255,255,255,0.16)');
-  sheen.addColorStop(1, 'rgba(255,255,255,0)');
-  c.save();
-  c.clip(new Path2D(FOLDER_FRONT));
-  c.fillStyle = sheen;
-  c.fillRect(0, 136, 544, 180);
-  c.restore();
-  c.restore();
-
-  const label = LABELS[HERO];
-  setFont(c, 400, 17, 0.15);
-  const lw = c.measureText(label).width;
-  const lx = BOX_W / 2 - lw / 2;
-  const ly = 272;
-  void selected;
-  c.save();
-  c.shadowColor = 'rgba(0,0,0,0.55)';
-  c.shadowBlur = 5;
-  c.shadowOffsetY = 1;
-  c.fillStyle = '#FFFFFF';
-  c.fillText(label, lx, ly);
-  c.restore();
-};
-
-/* --------------------------------------------------- signed distance field bake */
-
-const buildSdfTexture = () => {
-  const cv = document.createElement('canvas');
-  cv.width = BOX_W;
-  cv.height = BOX_H;
-  const c = cv.getContext('2d', {willReadFrequently: true})!;
-  drawContent(c, 0);
-  const img = c.getImageData(0, 0, BOX_W, BOX_H).data;
-
-  const W = BOX_W;
-  const H = BOX_H;
-  const N = W * H;
-  const INF = 1e9;
-  const dIn = new Float32Array(N);
-  const dOut = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    const inside = img[i * 4 + 3] > 110;
-    dIn[i] = inside ? INF : 0;
-    dOut[i] = inside ? 0 : INF;
-  }
-  const D = 1;
-  const DD = 1.41421356;
-  const pass = (d: Float32Array) => {
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x;
-        let v = d[i];
-        if (x > 0) v = Math.min(v, d[i - 1] + D);
-        if (y > 0) {
-          v = Math.min(v, d[i - W] + D);
-          if (x > 0) v = Math.min(v, d[i - W - 1] + DD);
-          if (x < W - 1) v = Math.min(v, d[i - W + 1] + DD);
-        }
-        d[i] = v;
-      }
-    }
-    for (let y = H - 1; y >= 0; y--) {
-      for (let x = W - 1; x >= 0; x--) {
-        const i = y * W + x;
-        let v = d[i];
-        if (x < W - 1) v = Math.min(v, d[i + 1] + D);
-        if (y < H - 1) {
-          v = Math.min(v, d[i + W] + D);
-          if (x < W - 1) v = Math.min(v, d[i + W + 1] + DD);
-          if (x > 0) v = Math.min(v, d[i + W - 1] + DD);
-        }
-        d[i] = v;
-      }
-    }
-  };
-  pass(dIn);
-  pass(dOut);
-
-  const out = new Uint8Array(N * 4);
-  for (let i = 0; i < N; i++) {
-    const d = dOut[i] - dIn[i];
-    const v = Math.round(clamp01(d / SDF_RANGE / 2 + 0.5) * 255);
-    out[i * 4] = v;
-    out[i * 4 + 1] = v;
-    out[i * 4 + 2] = v;
-    out[i * 4 + 3] = 255;
-  }
-  return out;
-};
-
-/* ---------------------------------------------------------------- context menu */
-
-type MenuItem = {label: string; key?: string; icon: string; danger?: boolean};
-
-const MENU: (MenuItem | 'sep')[] = [
-  {label: 'Open', icon: 'open'},
-  {label: 'Open in new window', icon: 'window'},
-  'sep',
-  {label: 'Cut', key: 'Ctrl+X', icon: 'cut'},
-  {label: 'Copy', key: 'Ctrl+C', icon: 'copy'},
-  {label: 'Rename', key: 'F2', icon: 'rename'},
-  'sep',
-  {label: 'Compress to archive', icon: 'zip'},
-  {label: 'Properties', key: 'Alt+Enter', icon: 'info'},
-  'sep',
-  {label: 'Delete', key: 'Del', icon: 'trash', danger: true},
-];
-
-const MENU_ROWS = (() => {
-  const rows: {y: number; h: number; item: MenuItem | 'sep'; idx: number}[] = [];
-  let y = MENU_PAD;
-  let idx = 0;
-  for (const it of MENU) {
-    const h = it === 'sep' ? SEP_H : ITEM_H;
-    rows.push({y, h, item: it, idx: it === 'sep' ? -1 : idx++});
-    y += h;
-  }
-  return rows;
-})();
-const LAST_ROW = MENU_ROWS[MENU_ROWS.length - 1];
-const MENU_H = LAST_ROW.y + LAST_ROW.h + MENU_PAD;
-const DELETE_ROW = MENU_ROWS.find(
-  (r) => r.item !== 'sep' && (r.item as MenuItem).label === 'Delete',
-)!;
-
-const drawIcon = (
-  c: CanvasRenderingContext2D,
-  kind: string,
-  x: number,
-  y: number,
-  col: string,
-) => {
-  c.save();
-  c.translate(x, y);
-  c.strokeStyle = col;
-  c.fillStyle = col;
-  c.lineWidth = 1.5;
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  switch (kind) {
-    case 'open':
-      c.beginPath();
-      c.moveTo(1, 15);
-      c.lineTo(1, 4);
-      c.lineTo(6.5, 4);
-      c.lineTo(8.5, 6.5);
-      c.lineTo(16, 6.5);
-      c.lineTo(16, 15);
-      c.closePath();
-      c.stroke();
-      break;
-    case 'window':
-      c.strokeRect(1.5, 3.5, 13, 11);
-      c.beginPath();
-      c.moveTo(1.5, 7);
-      c.lineTo(14.5, 7);
-      c.stroke();
-      break;
-    case 'cut':
-      c.beginPath();
-      c.arc(4.5, 14, 2.6, 0, Math.PI * 2);
-      c.stroke();
-      c.beginPath();
-      c.arc(13, 14, 2.6, 0, Math.PI * 2);
-      c.stroke();
-      c.beginPath();
-      c.moveTo(3.5, 2.5);
-      c.lineTo(12.2, 12.2);
-      c.moveTo(14, 2.5);
-      c.lineTo(5.4, 12.2);
-      c.stroke();
-      break;
-    case 'copy':
-      c.strokeRect(5.5, 2.5, 10, 10);
-      c.beginPath();
-      c.moveTo(11.5, 15.5);
-      c.lineTo(2.5, 15.5);
-      c.lineTo(2.5, 6.5);
-      c.stroke();
-      break;
-    case 'rename':
-      c.beginPath();
-      c.moveTo(2, 15);
-      c.lineTo(2.6, 11.6);
-      c.lineTo(11.8, 2.4);
-      c.lineTo(15.2, 5.8);
-      c.lineTo(6, 15);
-      c.closePath();
-      c.stroke();
-      break;
-    case 'zip':
-      c.strokeRect(1.5, 5, 15, 10);
-      c.beginPath();
-      c.moveTo(1.5, 5);
-      c.lineTo(4, 2.5);
-      c.lineTo(14, 2.5);
-      c.lineTo(16.5, 5);
-      c.moveTo(9, 8);
-      c.lineTo(9, 12);
-      c.stroke();
-      break;
-    case 'info':
-      c.beginPath();
-      c.arc(9, 9, 7, 0, Math.PI * 2);
-      c.moveTo(9, 8.2);
-      c.lineTo(9, 13);
-      c.stroke();
-      c.beginPath();
-      c.arc(9, 5.4, 1, 0, Math.PI * 2);
-      c.fill();
-      break;
-    case 'trash':
-      c.beginPath();
-      c.moveTo(2.5, 4.5);
-      c.lineTo(15.5, 4.5);
-      c.moveTo(6.5, 4.5);
-      c.lineTo(7, 2.4);
-      c.lineTo(11, 2.4);
-      c.lineTo(11.5, 4.5);
-      c.moveTo(4.4, 4.5);
-      c.lineTo(5.3, 15.6);
-      c.lineTo(12.7, 15.6);
-      c.lineTo(13.6, 4.5);
-      c.moveTo(7.6, 7.4);
-      c.lineTo(7.9, 12.9);
-      c.moveTo(10.4, 7.4);
-      c.lineTo(10.1, 12.9);
-      c.stroke();
-      break;
-  }
-  c.restore();
-};
-
-const drawMenu = (c: CanvasRenderingContext2D, hover: number, press: number) => {
-  c.clearRect(0, 0, MENU_W, MENU_H);
-  c.textBaseline = 'alphabetic';
-
-  rr(c, 0.5, 0.5, MENU_W - 1, MENU_H - 1, 12);
-  const mg = c.createLinearGradient(0, 0, 0, MENU_H);
-  mg.addColorStop(0, '#2E3034');
-  mg.addColorStop(1, '#26282C');
-  c.fillStyle = mg;
-  c.fill();
-  c.strokeStyle = 'rgba(255,255,255,0.10)';
-  c.lineWidth = 1;
-  c.stroke();
-
-  MENU_ROWS.forEach((row) => {
-    if (row.item === 'sep') {
-      c.fillStyle = 'rgba(255,255,255,0.10)';
-      c.fillRect(14, row.y + 4, MENU_W - 28, 1);
-      return;
-    }
-    const it = row.item;
-    const on = row.idx === hover;
-    if (on) {
-      const flash = it.danger ? 0.16 + 0.22 * press : 0.09 + 0.1 * press;
-      rr(c, 4, row.y + 1, MENU_W - 8, row.h - 2, 6);
-      c.fillStyle = it.danger
-        ? `rgba(255,90,70,${flash})`
-        : `rgba(255,255,255,${flash})`;
-      c.fill();
-    }
-    const col = it.danger ? '#FF7A63' : on ? '#FFFFFF' : '#E6E6E9';
-    drawIcon(c, it.icon, 16, row.y + 11, col);
-    setFont(c, 400, 15, 0.1);
-    c.fillStyle = col;
-    c.fillText(it.label, 48, row.y + 26);
-    if (it.key) {
-      setFont(c, 400, 13, 0.2);
-      c.fillStyle = it.danger ? 'rgba(255,140,120,0.75)' : 'rgba(190,192,198,0.7)';
-      const kw = c.measureText(it.key).width;
-      c.fillText(it.key, MENU_W - 18 - kw, row.y + 26);
-    }
-  });
-};
-
-/* ---------------------------------------------------------------- timeline */
-
-type Beat = {
-  f: number;
-  t: number;
-  cx: number;
-  cy: number;
-  clickR: number;
-  clickL: number;
-  menu: number;
-  hover: number;
-  press: number;
-  selected: number;
-  level: number;
-  ignite: number;
-  burn: number;
-  burst: number;
-  ash: number;
-};
-
-const CLICK_X = 1030;
-const CLICK_Y = 500;
-const DEL_X = MENU_X + 70;
-const DEL_Y = MENU_Y + DELETE_ROW.y + ITEM_H / 2;
-
-/*   0- 40  idle desktop
-    40-108  cursor travels to the folder
-   112-126  right-click (ripple + selection)
-   120-152  context menu opens
-   168-288  cursor walks down the menu, rows highlight under it
-   288-318  resting on Delete
-   318-332  click
-   334-356  menu dismisses
-   400-452  ignition
-   428-812  burn front descends through folder and label
-   796-866  flames die out, embers and scorch remain                        */
-const timeline = (f: number, fps: number): Beat => {
-  const t = f / fps;
-
-  let cx: number;
-  let cy: number;
-  if (f < 40) {
-    cx = 1790;
-    cy = 990;
-  } else if (f < 108) {
-    const u = easeOutCubic((f - 40) / 68);
-    cx = lerp(1790, CLICK_X, u);
-    cy = lerp(990, CLICK_Y, u);
-  } else if (f < 168) {
-    cx = CLICK_X;
-    cy = CLICK_Y;
-  } else if (f < 288) {
-    const u = easeInOut((f - 168) / 120);
-    cx = lerp(CLICK_X, DEL_X, u);
-    cy = lerp(CLICK_Y, DEL_Y, u);
-  } else if (f < 360) {
-    cx = DEL_X;
-    cy = DEL_Y;
-  } else if (f < 430) {
-    const u = easeInOut((f - 360) / 70);
-    cx = lerp(DEL_X, DEL_X + 130, u);
-    cy = lerp(DEL_Y, DEL_Y + 90, u);
-  } else {
-    cx = DEL_X + 130;
-    cy = DEL_Y + 90;
-  }
-  if ((f >= 112 && f < 126) || (f >= 318 && f < 332)) cy += 1.5;
-
-  const clickR = f >= 112 ? clamp01((f - 112) / 34) : 0;
-  const clickL = f >= 318 ? clamp01((f - 318) / 30) : 0;
-
-  const menu = ss(120, 152, f) * (1 - ss(334, 356, f));
-
-  let hover = -1;
-  if (menu > 0.6 && cx > MENU_X && cx < MENU_X + MENU_W) {
-    const my = cy - MENU_Y;
-    for (const row of MENU_ROWS) {
-      if (row.item !== 'sep' && my >= row.y && my < row.y + row.h) hover = row.idx;
-    }
-  }
-  const press = f >= 318 && f < 340 ? 1 - clamp01((f - 318) / 22) : 0;
-  const selected = ss(112, 128, f);
-
-  const ignite = ss(400, 452, f);
-  const burnP = trapezoid(clamp01((f - 428) / 362), 0.12, 0.16);
-  const level = lerp(LEVEL_TOP, LEVEL_BOT, burnP);
-  const burn = ignite * (1 - ss(762, 832, f));
-  const burst = f > 392 ? Math.exp(-Math.pow((f - 426) / 26, 2)) : 0;
-  const ash = ss(766, 846, f);
-
-  return {
-    f,
-    t,
-    cx,
-    cy,
-    clickR,
-    clickL,
-    menu,
-    hover,
-    press,
-    selected,
-    level,
-    ignite,
-    burn,
-    burst,
-    ash,
-  };
-};
-
-/* ---------------------------------------------------------------- WebGL glue */
-
-type GLKit = {
+type Kit = {
   gl: WebGL2RenderingContext;
   prog: WebGLProgram;
-  tex: WebGLTexture;
+  texA: WebGLTexture;
+  texB: WebGLTexture;
   sdf: WebGLTexture;
   buf: WebGLBuffer;
   u: Record<string, WebGLUniformLocation | null>;
 };
 
-const initGL = (canvas: HTMLCanvasElement, sdfData: Uint8Array): GLKit | null => {
+const initGL = (canvas: HTMLCanvasElement, sdfData: Uint8Array, w: number, h: number) => {
   const gl = canvas.getContext('webgl2', {
     alpha: true,
     depth: false,
     stencil: false,
     antialias: false,
     premultipliedAlpha: true,
+    // Without this the headless screenshot can catch an empty buffer, and
+    // drawImage(glCanvas, …) for the bloom pass fails outright.
     preserveDrawingBuffer: true,
-    powerPreference: 'high-performance',
   });
   if (!gl) return null;
-
   const compile = (type: number, src: string) => {
     const sh = gl.createShader(type)!;
     gl.shaderSource(sh, src);
     gl.compileShader(sh);
     if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
       // eslint-disable-next-line no-console
-      console.error('Motion28 shader:', gl.getShaderInfoLog(sh));
+      console.error('FlameFront shader:', gl.getShaderInfoLog(sh));
     }
     return sh;
   };
@@ -996,11 +697,8 @@ const initGL = (canvas: HTMLCanvasElement, sdfData: Uint8Array): GLKit | null =>
 
   const buf = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-    gl.STATIC_DRAW,
-  );
+  gl.bufferData(gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
@@ -1013,627 +711,985 @@ const initGL = (canvas: HTMLCanvasElement, sdfData: Uint8Array): GLKit | null =>
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return tx;
   };
-  const tex = mkTex();
+  const texA = mkTex();
+  const texB = mkTex();
   const sdf = mkTex();
   gl.bindTexture(gl.TEXTURE_2D, sdf);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    BOX_W,
-    BOX_H,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    sdfData,
-  );
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, sdfData);
 
-  return {gl, prog, tex, sdf, buf, u};
+  return {gl, prog, texA, texB, sdf, buf, u} as Kit;
 };
 
-/* Preset supplied by the brief (Canvas UI playground values) */
-const P = {
-  intensity: 1,
-  /* Length-based values are scaled to this icon (173 px wide instead of the
-     ~300 px card the preset was tuned on); the dimensionless ones — intensity,
-     scale, turbulence, spark size/density, rim, ember — are untouched. */
-  height: 105,   // preset 190
-  spread: 8,     // preset 13
-  speed: 0.5,
-  scale: 0.94,
-  turbulence: 0.63,
-  turbScale: 0.65,
-  turbReach: 9,   // preset 16
-  sparks: 1.5,
-  sparkSize: 1.05,
-  sparkDensity: 1,
-  sparkSpeed: 1,
-  rim: 2.25,
-  melt: 2.8, // preset 5
-  distortion: 7.5, // preset 13
-  smoke: 0.7, // preset 1.5 — a wide burn front needs far less
-  ember: 2,
-  scorch: 0,
-};
+/* ------------------------------------------------------------- component */
 
-type FireParams = {
-  time: number;
-  intensity: number;
-  height: number;
-  spread: number;
-  melt: number;
-  distortion: number;
-  smoke: number;
-  ember: number;
-  scorch: number;
-  sparks: number;
-  rim: number;
-  fire: number;
-  eat: number;
-  level: number;
-};
-
-const drawGL = (
-  kit: GLKit,
-  content: HTMLCanvasElement,
-  p: FireParams,
-  w: number,
-  h: number,
-) => {
-  const {gl, prog, tex, sdf, u} = kit;
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, content);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, sdf);
-
-  gl.useProgram(prog);
-  const set1 = (k: string, v: number) => gl.uniform1f(u[k]!, v);
-  gl.uniform1i(u.uContent!, 0);
-  gl.uniform1i(u.uSdf!, 1);
-  gl.uniform2f(u.uResolution!, w, h);
-  gl.uniform2f(
-    u.uRectCenter!,
-    BOX_X + BOX_W / 2 - RGN_X,
-    h - (BOX_Y + BOX_H / 2 - RGN_Y),
-  );
-  gl.uniform2f(u.uRectHalf!, BOX_W / 2, BOX_H / 2);
-  gl.uniform3f(u.uColor!, FIRE_RGB[0], FIRE_RGB[1], FIRE_RGB[2]);
-  set1('uSdfRange', SDF_RANGE);
-  set1('uTime', p.time);
-  set1('uIntensity', p.intensity);
-  set1('uHeight', p.height);
-  set1('uSpread', p.spread);
-  set1('uScale', P.scale);
-  set1('uTurbulence', P.turbulence);
-  set1('uTurbScale', P.turbScale);
-  set1('uTurbReach', P.turbReach);
-  set1('uSparks', p.sparks);
-  set1('uSparkSize', P.sparkSize);
-  set1('uSparkDensity', P.sparkDensity);
-  set1('uSparkSpeed', P.sparkSpeed);
-  set1('uRim', p.rim);
-  set1('uMelt', p.melt);
-  set1('uDistortion', p.distortion);
-  set1('uSmoke', p.smoke);
-  set1('uEmber', p.ember);
-  set1('uScorch', p.scorch);
-  set1('uFire', p.fire);
-  set1('uEat', p.eat);
-  set1('uBurnEdge', BOX_H * (p.level - 0.5));
-
-  const bypass = p.fire <= 0.0004 && p.intensity <= 0.0004 && p.eat <= 0.0004;
-  set1('uBypass', bypass ? 1 : 0);
-
-  const innerCut =
-    40 +
-    (p.distortion > 0.02 ? P.turbReach * 5 : 0) +
-    (p.eat > 0.002 ? p.melt * 4 + 30 : 12) +
-    (p.ember * p.intensity > 0.002 ? 45 : 0);
-  set1('uInnerCut', innerCut);
-  const outer = Math.max(p.height, 24) * 1.25 + p.spread * 5 + 24;
-  set1('uOuterCut', outer);
-  set1('uCullD', Math.min(outer, SDF_RANGE * 0.9));
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, w, h);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-};
-
-/* ------------------------------------------------------------ background DOM */
-
-const useEmbers = () =>
-  useMemo(() => {
-    const r = lcg(80808);
-    return Array.from({length: 54}, (_, i) => {
-      const front = i % 7 === 0;
-      return {
-        x: 0.465 + r() * 0.07,
-        y0: r(),
-        size: 2 + r() * (front ? 12 : 5.5),
-        period: 2.6 + r() * 4.4,
-        drift: (r() - 0.5) * 0.1,
-        phase: r(),
-        blink: 0.6 + r() * 3,
-        front,
-        op: 0.3 + r() * 0.7,
-      };
-    });
-  }, []);
-
-const Embers: React.FC<{t: number; burn: number; front: boolean; topY: number}> =
-  ({t, burn, front, topY}) => {
-    const items = useEmbers();
-    if (burn <= 0.001) return null;
-    return (
-      <AbsoluteFill style={{pointerEvents: 'none'}}>
-        {items
-          .filter((p) => p.front === front)
-          .map((p, i) => {
-            const yy = ((p.y0 - t / p.period) % 1 + 1) % 1;
-            const x =
-              (p.x + p.drift * Math.sin(2 * Math.PI * (t / 6 + p.phase))) * VW;
-            const y = topY + 30 - yy * (topY + 90);
-            const blink =
-              0.5 + 0.5 * Math.sin(2 * Math.PI * p.blink * t + p.phase * 7);
-            const a =
-              p.op *
-              blink *
-              burn *
-              (front ? 0.5 : 1) *
-              ss(0, 0.1, yy) *
-              (1 - ss(0.7, 1, yy));
-            return (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: x - p.size,
-                  top: y - p.size,
-                  width: p.size * 2,
-                  height: p.size * 2,
-                  borderRadius: '50%',
-                  background:
-                    'radial-gradient(circle, rgba(255,240,220,0.95) 0%, rgba(255,130,40,0.62) 40%, rgba(220,70,0,0) 72%)',
-                  opacity: a,
-                  filter: front ? 'blur(7px)' : 'blur(1.2px)',
-                }}
-              />
-            );
-          })}
-      </AbsoluteFill>
-    );
-  };
-
-const Cursor: React.FC<{x: number; y: number}> = ({x, y}) => (
-  <svg
-    width={30}
-    height={44}
-    viewBox="0 0 15 22"
-    style={{
-      position: 'absolute',
-      left: x,
-      top: y,
-      pointerEvents: 'none',
-      filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.55))',
-    }}
-  >
-    <path
-      d="M0.6 0.6 L0.6 17.4 L4.8 13.3 L7.5 19.5 L10.3 18.2 L7.6 12.2 L13.1 12.2 Z"
-      fill="#FFFFFF"
-      stroke="#1A1A1A"
-      strokeWidth="1"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-/* --------------------------------------------------------------- main scene */
-
-export const Motion: React.FC = () => {
+const FlameFront: React.FC<FlameFrontProps> = ({
+  region,
+  rect,
+  drawContent,
+  drawConverted,
+  contentKey,
+  params,
+  axis = 'y',
+  level = 1,
+  fire = 1,
+  eat = 0,
+  convert = 0,
+  frontOnly = false,
+  bloom = 0,
+  style,
+}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const fontsReady = useEmbeddedFonts();
-  const b = useMemo(() => timeline(frame, fps), [frame, fps]);
-  const sdfData = useMemo(() => buildSdfTexture(), []);
+  const p: FlameParams = useMemo(() => ({...FIRE_PRESET, ...params}), [params]);
 
   const outRef = useRef<HTMLCanvasElement>(null);
   const bloomRef = useRef<HTMLCanvasElement>(null);
-  const menuRef = useRef<HTMLCanvasElement>(null);
-  const contentRef = useRef<HTMLCanvasElement | null>(null);
-  const kitRef = useRef<GLKit | null>(null);
+  const kitRef = useRef<Kit | null>(null);
+  const aRef = useRef<HTMLCanvasElement | null>(null);
+  const bRef = useRef<HTMLCanvasElement | null>(null);
+  const bakedRef = useRef<string | number | undefined>(undefined);
 
-  const fire: FireParams = useMemo(() => {
-    const e = b.burn;
-    const breathe = 0.9 + 0.1 * Math.sin(2 * Math.PI * b.t * 0.5);
-    const kick = b.burst;
-    const master = clamp01(e + kick * 0.9);
-    // once the front has passed the folder body only the thin label is left —
-    // a 190 px plume over 24 px of text is out of scale, so shrink it
-    const small = ss(0.44, 0.36, b.level);
-    return {
-      time: b.t * P.speed,
-      intensity: e * P.intensity * breathe + kick * 0.3,
-      height: (34 + (P.height - 34) * e + kick * 30) * (1 - 0.52 * small),
-      spread: 8 + (P.spread - 8) * e + kick * 4,
-      melt: P.melt * b.ignite,
-      distortion: P.distortion * master,
-      smoke: P.smoke * e,
-      ember: P.ember * master,
-      scorch: P.scorch * e,
-      sparks: (P.sparks * e * breathe + kick * 1.6) * (1 - 0.35 * small),
-      rim: P.rim * e + kick,
-      fire: master,
-      eat: b.ignite,
-      level: b.level,
-    };
-  }, [b]);
+  // The SDF describes a static silhouette — bake it once.
+  const sdfData = useMemo(
+    () => bakeSdf(drawContent, rect.w, rect.h),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rect.w, rect.h],
+  );
 
-  const burnY = BOX_Y + BOX_H * (1 - b.level);
-
-  useLayoutEffect(() => {
-    return () => {
-      const k = kitRef.current;
-      if (k) {
-        k.gl.deleteTexture(k.tex);
-        k.gl.deleteTexture(k.sdf);
-        k.gl.deleteProgram(k.prog);
-        k.gl.deleteBuffer(k.buf);
-        kitRef.current = null;
-      }
-    };
+  useLayoutEffect(() => () => {
+    const k = kitRef.current;
+    if (k) {
+      k.gl.deleteTexture(k.texA);
+      k.gl.deleteTexture(k.texB);
+      k.gl.deleteTexture(k.sdf);
+      k.gl.deleteProgram(k.prog);
+      k.gl.deleteBuffer(k.buf);
+      kitRef.current = null;
+    }
   }, []);
 
+  // useLayoutEffect (not useEffect) so the draw lands before the browser paints,
+  // and no dependency array so it re-runs on every frame Remotion seeks to.
   useLayoutEffect(() => {
     const out = outRef.current;
     if (!out) return;
     let kit = kitRef.current;
     if (!kit) {
-      kit = initGL(out, sdfData);
+      kit = initGL(out, sdfData, rect.w, rect.h);
       kitRef.current = kit;
     }
     if (!kit) return;
 
-    let cc = contentRef.current;
-    if (!cc) {
-      cc = document.createElement('canvas');
-      cc.width = BOX_W;
-      cc.height = BOX_H;
-      contentRef.current = cc;
+    const need = contentKey === undefined || bakedRef.current !== contentKey;
+    if (!aRef.current) {
+      const cv = document.createElement('canvas');
+      cv.width = rect.w;
+      cv.height = rect.h;
+      aRef.current = cv;
     }
-    const c2 = cc.getContext('2d');
-    if (!c2) return;
-    c2.setTransform(1, 0, 0, 1, 0, 0);
-    drawContent(c2, b.selected * (1 - b.ignite));
+    if (!bRef.current && drawConverted) {
+      const cv = document.createElement('canvas');
+      cv.width = rect.w;
+      cv.height = rect.h;
+      bRef.current = cv;
+    }
+    if (need) {
+      const ca = aRef.current.getContext('2d')!;
+      ca.setTransform(1, 0, 0, 1, 0, 0);
+      drawContent(ca, rect.w, rect.h);
+      if (drawConverted && bRef.current) {
+        const cb = bRef.current.getContext('2d')!;
+        cb.setTransform(1, 0, 0, 1, 0, 0);
+        drawConverted(cb, rect.w, rect.h);
+      }
+      bakedRef.current = contentKey;
+    }
 
-    drawGL(kit, cc, fire, RGN_W, RGN_H);
+    const {gl, prog, texA, texB, sdf, u} = kit;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    if (need) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, aRef.current);
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    if (need) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,
+        bRef.current ?? aRef.current);
+    }
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, sdf);
+
+    gl.useProgram(prog);
+    const f1 = (k: string, v: number) => gl.uniform1f(u[k]!, v);
+    gl.uniform1i(u.uContent!, 0);
+    gl.uniform1i(u.uContentB!, 1);
+    gl.uniform1i(u.uSdf!, 2);
+    gl.uniform2f(u.uResolution!, region.w, region.h);
+    gl.uniform2f(u.uRectCenter!, rect.cx - region.x, region.h - (rect.cy - region.y));
+    gl.uniform2f(u.uRectHalf!, rect.w / 2, rect.h / 2);
+    gl.uniform3f(u.uColor!, p.color[0], p.color[1], p.color[2]);
+    f1('uSdfRange', SDF_RANGE);
+    f1('uTime', (frame / fps) * p.speed);
+    f1('uIntensity', p.intensity);
+    f1('uHeight', p.height);
+    f1('uSpread', p.spread);
+    f1('uScale', p.scale);
+    f1('uTurbulence', p.turbulence);
+    f1('uTurbScale', p.turbulenceScale);
+    f1('uTurbReach', p.turbulenceReach);
+    f1('uSparks', p.sparks);
+    f1('uSparkSize', p.sparkSize);
+    f1('uSparkDensity', p.sparkDensity);
+    f1('uSparkSpeed', p.sparkSpeed);
+    f1('uRim', p.rim);
+    f1('uMelt', p.melt);
+    f1('uDistortion', p.distortion);
+    f1('uSmoke', p.smoke);
+    f1('uEmber', p.ember);
+    f1('uScorch', p.scorch);
+    f1('uFire', fire);
+    f1('uEat', eat);
+    f1('uConvert', convert);
+    f1('uAxis', axis === 'x' ? 1 : 0);
+    f1('uFrontOnly', frontOnly ? 1 : 0);
+    f1('uBurnEdge', (axis === 'x' ? rect.w : rect.h) * (level - 0.5));
+
+    // At zero fire there is nothing left to compute but the artwork itself.
+    // `eat` has to be zero too: once material has been removed the fast path
+    // can no longer reproduce the result, and the object would pop back.
+    const bypass = fire <= 0.0004 && eat <= 0.0004;
+    f1('uBypass', bypass ? 1 : 0);
+
+    const innerCut =
+      40 +
+      (p.distortion > 0.02 ? p.turbulenceReach * 5 : 0) +
+      (eat + convert > 0.002 ? p.melt * 4 + 30 : 12) +
+      (p.scorch * p.intensity > 0.002 ? (6 + 1.6 * p.melt) * 2.4 : 0) +
+      (p.ember * p.intensity > 0.002 ? 45 : 0);
+    f1('uInnerCut', innerCut);
+    const outer = Math.max(p.height, 24) * 1.25 + p.spread * 5 + 24;
+    f1('uOuterCut', outer);
+    f1('uCullD', Math.min(outer, SDF_RANGE * 0.9));
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, region.w, region.h);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     const bl = bloomRef.current;
-    if (bl) {
-      const bctx = bl.getContext('2d');
-      if (bctx) {
-        bctx.clearRect(0, 0, bl.width, bl.height);
-        bctx.drawImage(out, 0, 0, bl.width, bl.height);
-      }
-    }
-
-    const mn = menuRef.current;
-    if (mn && b.menu > 0.001) {
-      const mctx = mn.getContext('2d');
-      if (mctx) {
-        mctx.setTransform(1, 0, 0, 1, 0, 0);
-        drawMenu(mctx, b.hover, b.press);
+    if (bl && bloom > 0) {
+      const bc = bl.getContext('2d');
+      if (bc) {
+        bc.clearRect(0, 0, bl.width, bl.height);
+        bc.drawImage(out, 0, 0, bl.width, bl.height);
       }
     }
   });
 
-  const heat = b.burn;
-
   return (
-    <AbsoluteFill style={{background: '#0A1220'}}>
-      {/* ---------- wallpaper ---------- */}
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(125% 105% at 30% 18%, #1C3E4E 0%, #16304A 34%, #0D1D30 68%, #060D18 100%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(50% 44% at 78% 82%, rgba(46,132,152,0.22) 0%, rgba(0,0,0,0) 70%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(32% 48% at 14% 90%, rgba(30,74,130,0.26) 0%, rgba(0,0,0,0) 72%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            'linear-gradient(115deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 44%)',
-        }}
-      />
-
-      {/* fire lighting the wallpaper */}
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(26% 24% at 960px ${burnY}px, rgba(255,110,45,${
-            0.44 * heat
-          }) 0%, rgba(190,60,10,${0.17 * heat}) 40%, rgba(0,0,0,0) 74%)`,
-        }}
-      />
-
-      {/* ---------- desktop icon grid (hero cell is drawn by the shader) ---- */}
-      {LABELS.map((label, i) =>
-        i === HERO ? null : (
-          <div
-            key={label}
-            style={{
-              position: 'absolute',
-              left: cellCX(i) - CELL_W / 2,
-              top: cellCY(i) - 108,
-              width: CELL_W,
-              textAlign: 'center',
-              fontFamily: 'MxSans, system-ui, sans-serif',
-            }}
-          >
-            {/* block + auto margins: `text-align: center` on an inline <svg>
-                is not honoured identically by every engine, which left the
-                icons ~48 px off-centre in some browsers while the render was
-                fine. This centres deterministically. */}
-            <svg
-              width={ICON}
-              height={ICON}
-              viewBox="0 0 544 544"
-              style={{display: 'block', margin: '0 auto'}}
-            >
-              <path d={FOLDER_BACK} fill="#FFC531" />
-              <path d={FOLDER_FRONT} fill="url(#fgrad)" />
-            </svg>
-            <div
-              style={{
-                marginTop: -11,
-                fontSize: 17,
-                letterSpacing: 0.15,
-                color: '#FFFFFF',
-                textShadow: '0 1px 4px rgba(0,0,0,0.75)',
-              }}
-            >
-              {label}
-            </div>
-          </div>
-        ),
-      )}
-      <svg width={0} height={0} style={{position: 'absolute'}}>
-        <defs>
-          <linearGradient
-            id="fgrad"
-            x1="528"
-            y1="136.754"
-            x2="27.1538"
-            y2="479.073"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0.234375" stopColor="#FCF68D" />
-            <stop offset="1" stopColor="#FFC531" />
-          </linearGradient>
-        </defs>
-      </svg>
-
-      {/* ---------- selection halo over the hero cell ---------- */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 960 - 110,
-          top: 436,
-          width: 220,
-          height: 198,
-          borderRadius: 10,
-          background: 'rgba(0,120,215,0.20)',
-          border: '1px solid rgba(120,190,255,0.45)',
-          opacity: b.selected * (1 - b.ignite),
-        }}
-      />
-
-      {/* ---------- hero: the folder ---------- */}
+    <>
       <canvas
         ref={outRef}
-        width={RGN_W}
-        height={RGN_H}
+        width={region.w}
+        height={region.h}
         style={{
           position: 'absolute',
-          left: RGN_X,
-          top: RGN_Y,
-          width: RGN_W,
-          height: RGN_H,
+          left: region.x,
+          top: region.y,
+          width: region.w,
+          height: region.h,
+          ...style,
         }}
       />
-      <canvas
-        ref={bloomRef}
-        width={Math.round(RGN_W / 4)}
-        height={Math.round(RGN_H / 4)}
-        style={{
-          position: 'absolute',
-          left: RGN_X,
-          top: RGN_Y,
-          width: RGN_W,
-          height: RGN_H,
-          filter: 'blur(20px)',
-          mixBlendMode: 'screen',
-          opacity: 0.44 * heat,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* smoke plume */}
-      <div
-        style={{
-          position: 'absolute',
-          left: BOX_X - 20,
-          top: 0,
-          width: BOX_W + 40,
-          height: Math.max(0, burnY - 40),
-          background:
-            'linear-gradient(0deg, rgba(150,125,110,0.20) 0%, rgba(120,98,86,0.09) 46%, rgba(90,74,66,0) 100%)',
-          filter: 'blur(26px)',
-          opacity: 0.6 * heat,
-          pointerEvents: 'none',
-        }}
-      />
-
-      <Embers t={b.t} burn={b.burn} front={false} topY={burnY} />
-
-      {/* ---------- scorch mark left behind ---------- */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 960 - 108,
-          top: 486,
-          width: 216,
-          height: 84,
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(28,14,6,0.55) 0%, rgba(28,14,6,0) 70%)',
-          filter: 'blur(10px)',
-          opacity: b.ash * (1 - ss(852, 900, b.f)) * 0.9,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* ---------- right-click ripple ---------- */}
-      {b.clickR > 0 && b.clickR < 1 ? (
-        <div
+      {bloom > 0 ? (
+        <canvas
+          ref={bloomRef}
+          width={Math.max(1, Math.round(region.w / 4))}
+          height={Math.max(1, Math.round(region.h / 4))}
           style={{
             position: 'absolute',
-            left: CLICK_X - 60,
-            top: CLICK_Y - 60,
-            width: 120,
-            height: 120,
-            borderRadius: '50%',
-            border: '2px solid rgba(180,220,255,0.9)',
-            transform: `scale(${0.1 + 0.9 * easeOutCubic(b.clickR)})`,
-            opacity: (1 - b.clickR) * 0.8,
-            pointerEvents: 'none',
-          }}
-        />
-      ) : null}
-
-      {/* ---------- context menu ---------- */}
-      <canvas
-        ref={menuRef}
-        width={MENU_W}
-        height={MENU_H}
-        style={{
-          position: 'absolute',
-          left: MENU_X,
-          top: MENU_Y,
-          width: MENU_W,
-          height: MENU_H,
-          opacity: b.menu,
-          transform: `scale(${0.94 + 0.06 * b.menu})`,
-          transformOrigin: '0% 0%',
-          filter: `drop-shadow(0 18px 40px rgba(0,0,0,${0.55 * b.menu}))`,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* ---------- click ripple on Delete ---------- */}
-      {b.clickL > 0 && b.clickL < 1 ? (
-        <div
-          style={{
-            position: 'absolute',
-            left: DEL_X - 70,
-            top: DEL_Y - 70,
-            width: 140,
-            height: 140,
-            borderRadius: '50%',
-            border: '2px solid rgba(255,140,110,0.9)',
-            transform: `scale(${0.1 + 0.9 * easeOutCubic(b.clickL)})`,
-            opacity: (1 - b.clickL) * 0.85,
-            pointerEvents: 'none',
-          }}
-        />
-      ) : null}
-
-      <Cursor x={b.cx} y={b.cy} />
-
-      <Embers t={b.t} burn={b.burn} front topY={burnY} />
-
-      {/* ---------- ignition flash ---------- */}
-      {b.burst > 0.002 ? (
-        <AbsoluteFill
-          style={{
-            background: `radial-gradient(18% 16% at 960px 460px, rgba(255,215,180,${
-              0.5 * b.burst
-            }) 0%, rgba(255,110,40,${0.28 * b.burst}) 34%, rgba(0,0,0,0) 72%)`,
+            left: region.x,
+            top: region.y,
+            width: region.w,
+            height: region.h,
+            filter: 'blur(20px)',
             mixBlendMode: 'screen',
+            opacity: bloom,
             pointerEvents: 'none',
           }}
         />
       ) : null}
+    </>
+  );
+};
 
-      {/* ---------- taskbar ---------- */}
+
+/* ------------------------------------------------------------------- stage */
+
+const VW = 1920;
+const VH = 1080;
+
+/** durationInFrames — copy this into your <Composition/> */
+export const MOTION_FRAMES = 900; // 15 s @ 60 fps
+
+/* --- the document sheet, in texture space -------------------------------- */
+const SW = 560; // sheet width
+const SH = 740; // sheet height
+const FOLD = 78; // dog-ear
+const BOX_W = 760; // content texture = sheet + 100 px SDF padding all round
+const BOX_H = 940;
+const SX = 100;
+const SY = 100;
+const IX = SX + 44; // inner content origin
+const IY = SY + 44;
+const IW = SW - 88; // 472
+const IH = SH - 88; // 652
+
+/* --- where the sheet sits on screen -------------------------------------- */
+const CX = 960;
+const CY = 530;
+const RECT = {cx: CX, cy: CY, w: BOX_W, h: BOX_H};
+const RGN = {x: 550, y: 45, w: 820, h: 970};
+
+/* --- the sweep ------------------------------------------------------------ */
+/** level 1 = far right edge of the padded box, 0 = past its left edge.
+ *  The sheet itself spans 0.868 .. 0.132, so the front starts and finishes
+ *  just clear of the paper. */
+const LEVEL_TOP = 0.885;
+const LEVEL_BOT = 0.09;
+
+const F_IN = 4; // sheet fades up
+const F_ARM = 116; // status flips to SCANNING
+const F_IGNITE = 138; // field lights up at the right edge
+const F_GO = 150; // front starts travelling
+const F_END = 640; // front clears the left edge
+const F_OUT = 676; // field fades out
+const F_STAMP = 700; // REDACTED slams on
+
+const C_CYAN = '#29D4F0';
+const C_RED = '#FF4A33';
+const C_INK = '#E9F2FF';
+
+const beamX = (lv: number) => CX + BOX_W * (lv - 0.5);
+
+/** the inspection field, scaled from the 300 px reference to the sheet */
+const FIELD: FlameParams = {
+  ...scalePreset(FIELD_PRESET, SW / 300),
+  intensity: 1.0,
+  ember: 1.5,
+  rim: 1.6,
+  sparks: 1.2,
+  sparkSize: 0.7,
+  sparkDensity: 1.35,
+  smoke: 0,
+  scorch: 0,
+};
+
+const easeOutBack = (x: number) => {
+  const c1 = 1.70158;
+  const t = clamp01(x);
+  return 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+/* ---------------------------------------------------------- canvas helpers */
+
+const rr = (
+  c: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) => {
+  const k = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + k, y);
+  c.lineTo(x + w - k, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + k);
+  c.lineTo(x + w, y + h - k);
+  c.quadraticCurveTo(x + w, y + h, x + w - k, y + h);
+  c.lineTo(x + k, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - k);
+  c.lineTo(x, y + k);
+  c.quadraticCurveTo(x, y, x + k, y);
+  c.closePath();
+};
+
+const bar = (
+  c: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  col: string,
+  r = 4,
+) => {
+  rr(c, x, y, w, h, r);
+  c.fillStyle = col;
+  c.fill();
+};
+
+/** the sheet outline — identical in both versions, so the baked SDF is valid
+ *  for the converted artwork too */
+const sheetPath = (c: CanvasRenderingContext2D) => {
+  const r = 12;
+  c.beginPath();
+  c.moveTo(SX + r, SY);
+  c.lineTo(SX + SW - FOLD, SY);
+  c.lineTo(SX + SW, SY + FOLD);
+  c.lineTo(SX + SW, SY + SH - r);
+  c.quadraticCurveTo(SX + SW, SY + SH, SX + SW - r, SY + SH);
+  c.lineTo(SX + r, SY + SH);
+  c.quadraticCurveTo(SX, SY + SH, SX, SY + SH - r);
+  c.lineTo(SX, SY + r);
+  c.quadraticCurveTo(SX, SY, SX + r, SY);
+  c.closePath();
+};
+
+const padlock = (
+  c: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  col: string,
+  keyhole: string,
+) => {
+  const bw = s * 0.9;
+  const bh = s * 0.68;
+  const bx = cx - bw / 2;
+  const by = cy - bh / 2 + s * 0.16;
+  c.save();
+  c.strokeStyle = col;
+  c.lineWidth = Math.max(2, s * 0.13);
+  c.lineCap = 'round';
+  c.beginPath();
+  c.arc(cx, by + s * 0.02, s * 0.29, Math.PI, 2 * Math.PI);
+  c.stroke();
+  c.restore();
+  rr(c, bx, by, bw, bh, s * 0.13);
+  c.fillStyle = col;
+  c.fill();
+  c.beginPath();
+  c.arc(cx, by + bh * 0.4, s * 0.09, 0, Math.PI * 2);
+  c.fillStyle = keyhole;
+  c.fill();
+  c.fillRect(cx - s * 0.035, by + bh * 0.4, s * 0.07, bh * 0.3);
+};
+
+/* -------------------------------------------------------- content A — clean */
+
+const drawClean = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.clearRect(0, 0, w, h);
+
+  sheetPath(c);
+  const paper = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
+  paper.addColorStop(0, '#FCFDFF');
+  paper.addColorStop(1, '#E4EBF5');
+  c.fillStyle = paper;
+  c.fill();
+
+  c.save();
+  sheetPath(c);
+  c.clip();
+
+  /* the underside of the folded corner */
+  c.beginPath();
+  c.moveTo(SX + SW - FOLD, SY);
+  c.lineTo(SX + SW, SY + FOLD);
+  c.lineTo(SX + SW - FOLD, SY + FOLD);
+  c.closePath();
+  const gf = c.createLinearGradient(SX + SW - FOLD, SY, SX + SW, SY + FOLD);
+  gf.addColorStop(0, '#C4CFDE');
+  gf.addColorStop(1, '#EFF3F9');
+  c.fillStyle = gf;
+  c.fill();
+
+  /* header — avatar + name */
+  c.save();
+  c.beginPath();
+  c.arc(IX + 24, IY + 24, 24, 0, Math.PI * 2);
+  c.clip();
+  c.fillStyle = '#2E6BE6';
+  c.fillRect(IX, IY, 60, 60);
+  c.fillStyle = 'rgba(255,255,255,0.92)';
+  c.beginPath();
+  c.arc(IX + 24, IY + 18, 8.5, 0, Math.PI * 2);
+  c.fill();
+  c.beginPath();
+  c.arc(IX + 24, IY + 43, 14, Math.PI, 2 * Math.PI);
+  c.fill();
+  c.restore();
+
+  bar(c, IX + 62, IY + 10, 210, 16, '#2A3243', 5);
+  bar(c, IX + 62, IY + 36, 138, 11, '#9FADC1', 4);
+
+  bar(c, IX, IY + 76, IW, 2, '#D6DEEA', 1);
+
+  /* body copy */
+  bar(c, IX, IY + 100, IW, 12, '#3B4757');
+  bar(c, IX, IY + 124, 432, 12, '#5C6A7D');
+  bar(c, IX, IY + 148, 358, 12, '#8794A6');
+
+  /* tagged fields */
+  bar(c, IX, IY + 178, 160, 28, '#17B8D8', 7);
+  bar(c, IX + 16, IY + 189, 92, 6, 'rgba(255,255,255,0.85)', 3);
+  bar(c, IX + 172, IY + 178, 128, 28, '#2E6BE6', 7);
+  bar(c, IX + 188, IY + 189, 72, 6, 'rgba(255,255,255,0.85)', 3);
+  bar(c, IX + 312, IY + 178, 96, 28, '#2BB673', 7);
+  bar(c, IX + 328, IY + 189, 52, 6, 'rgba(255,255,255,0.85)', 3);
+
+  /* attached image */
+  rr(c, IX, IY + 224, IW, 196, 12);
+  const gi = c.createLinearGradient(IX, IY + 224, IX + IW, IY + 420);
+  gi.addColorStop(0, '#2C63DE');
+  gi.addColorStop(1, '#14C0E6');
+  c.fillStyle = gi;
+  c.fill();
+  c.save();
+  rr(c, IX, IY + 224, IW, 196, 12);
+  c.clip();
+  c.fillStyle = '#FFD46B';
+  c.beginPath();
+  c.arc(IX + 78, IY + 282, 24, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = '#1746A8';
+  c.beginPath();
+  c.moveTo(IX + 40, IY + 420);
+  c.lineTo(IX + 176, IY + 292);
+  c.lineTo(IX + 300, IY + 420);
+  c.closePath();
+  c.fill();
+  c.fillStyle = 'rgba(20,90,180,0.85)';
+  c.beginPath();
+  c.moveTo(IX + 214, IY + 420);
+  c.lineTo(IX + 330, IY + 318);
+  c.lineTo(IX + 452, IY + 420);
+  c.closePath();
+  c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.16)';
+  c.fillRect(IX, IY + 402, IW, 18);
+  c.restore();
+
+  bar(c, IX, IY + 440, IW, 12, '#48546A');
+  bar(c, IX, IY + 464, 398, 12, '#8794A6');
+
+  /* chart */
+  const base = IY + 640;
+  const hs = [78, 132, 96, 160, 116];
+  const cols = ['#17B8D8', '#2E6BE6', '#2BB673', '#2E6BE6', '#17B8D8'];
+  for (let i = 0; i < 5; i++) {
+    rr(c, IX + i * 101, base - hs[i], 68, hs[i], 7);
+    c.fillStyle = cols[i];
+    c.fill();
+  }
+  bar(c, IX, base + 2, IW, 2, '#D0D9E6', 1);
+
+  c.restore();
+
+  c.strokeStyle = 'rgba(126,152,188,0.55)';
+  c.lineWidth = 2;
+  sheetPath(c);
+  c.stroke();
+};
+
+/* --------------------------------------------------- content B — redacted */
+
+const BLACK = '#0A0D14';
+
+const drawRedacted = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.clearRect(0, 0, w, h);
+
+  sheetPath(c);
+  const paper = c.createLinearGradient(SX, SY, SX + SW * 0.35, SY + SH);
+  paper.addColorStop(0, '#BCC4D0');
+  paper.addColorStop(1, '#98A1AE');
+  c.fillStyle = paper;
+  c.fill();
+
+  c.save();
+  sheetPath(c);
+  c.clip();
+
+  /* hatched stock */
+  c.strokeStyle = 'rgba(255,255,255,0.20)';
+  c.lineWidth = 3;
+  for (let i = -SH; i < SW + SH; i += 15) {
+    c.beginPath();
+    c.moveTo(SX + i, SY);
+    c.lineTo(SX + i - SH, SY + SH);
+    c.stroke();
+  }
+  c.strokeStyle = 'rgba(40,52,72,0.10)';
+  c.lineWidth = 3;
+  for (let i = -SH; i < SW + SH; i += 15) {
+    c.beginPath();
+    c.moveTo(SX + i + 7, SY);
+    c.lineTo(SX + i + 7 - SH, SY + SH);
+    c.stroke();
+  }
+
+  c.beginPath();
+  c.moveTo(SX + SW - FOLD, SY);
+  c.lineTo(SX + SW, SY + FOLD);
+  c.lineTo(SX + SW - FOLD, SY + FOLD);
+  c.closePath();
+  c.fillStyle = '#7E8795';
+  c.fill();
+
+  /* header — identity struck out */
+  c.beginPath();
+  c.arc(IX + 24, IY + 24, 24, 0, Math.PI * 2);
+  c.fillStyle = BLACK;
+  c.fill();
+  bar(c, IX + 58, IY + 6, 218, 24, BLACK, 3);
+  bar(c, IX + 58, IY + 34, 146, 15, BLACK, 3);
+
+  bar(c, IX, IY + 76, IW, 2, 'rgba(30,40,58,0.35)', 1);
+
+  bar(c, IX - 4, IY + 96, IW + 8, 20, BLACK, 3);
+  bar(c, IX - 4, IY + 120, 440, 20, BLACK, 3);
+  bar(c, IX - 4, IY + 144, 366, 20, BLACK, 3);
+
+  bar(c, IX - 4, IY + 176, 168, 32, BLACK, 5);
+  bar(c, IX + 168, IY + 176, 136, 32, BLACK, 5);
+  bar(c, IX + 308, IY + 176, 104, 32, BLACK, 5);
+  padlock(c, IX + 442, IY + 192, 30, C_RED, '#2A0A05');
+
+  /* attached image sealed */
+  rr(c, IX, IY + 224, IW, 196, 12);
+  c.fillStyle = '#20262F';
+  c.fill();
+  c.save();
+  rr(c, IX + 4, IY + 228, IW - 8, 188, 10);
+  c.strokeStyle = 'rgba(255,74,51,0.55)';
+  c.lineWidth = 3;
+  c.setLineDash([14, 10]);
+  c.stroke();
+  c.restore();
+  padlock(c, IX + IW / 2, IY + 322, 66, C_RED, '#20262F');
+
+  bar(c, IX - 4, IY + 436, IW + 8, 20, BLACK, 3);
+  bar(c, IX - 4, IY + 460, 406, 20, BLACK, 3);
+
+  /* chart flattened */
+  const base = IY + 640;
+  const hs = [78, 132, 96, 160, 116];
+  for (let i = 0; i < 5; i++) {
+    rr(c, IX + i * 101, base - hs[i], 68, hs[i], 7);
+    c.fillStyle = '#39414F';
+    c.fill();
+    bar(c, IX + i * 101, base - hs[i], 68, 18, BLACK, 6);
+  }
+  bar(c, IX, base + 2, IW, 2, 'rgba(30,40,58,0.35)', 1);
+  padlock(c, IX + 442, base - 196, 30, C_RED, '#2A0A05');
+
+  c.restore();
+
+  c.strokeStyle = 'rgba(60,76,100,0.6)';
+  c.lineWidth = 2;
+  sheetPath(c);
+  c.stroke();
+};
+
+/* ------------------------------------------------------------------- HUD */
+
+const Bracket: React.FC<{
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  col: string;
+  a: number;
+}> = ({x, y, sx, sy, col, a}) => {
+  const L = 66;
+  return (
+    <svg
+      width={L + 8}
+      height={L + 8}
+      viewBox={`0 0 ${L + 8} ${L + 8}`}
+      style={{
+        position: 'absolute',
+        left: x,
+        top: y,
+        transform: `scale(${sx},${sy})`,
+        transformOrigin: '50% 50%',
+        opacity: a,
+      }}
+    >
+      <path
+        d={`M4 ${L} L4 4 L${L} 4`}
+        fill="none"
+        stroke={col}
+        strokeWidth={4}
+        strokeLinecap="square"
+      />
+    </svg>
+  );
+};
+
+const Chrome: React.FC<{t: string; s: number; l: number; o: number; col: string}> = ({
+  t,
+  s,
+  l,
+  o,
+  col,
+}) => (
+  <span style={{fontSize: s, letterSpacing: l, opacity: o, color: col}}>{t}</span>
+);
+
+/* ------------------------------------------------------------------- scene */
+
+export const Motion: React.FC = () => {
+  const f = useCurrentFrame();
+  const fontsReady = useEmbeddedFonts();
+
+  /* --- envelopes -------------------------------------------------------- */
+  const sweep = trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14);
+  const level = lerp(LEVEL_TOP, LEVEL_BOT, sweep);
+  const progress = clamp01((LEVEL_TOP - level) / (LEVEL_TOP - LEVEL_BOT));
+  const pct = Math.min(100, Math.round(progress * 100));
+
+  const flare = 1 + 0.35 * (1 - ss(F_IGNITE, F_IGNITE + 52, f));
+  const fire = ss(F_IGNITE, F_IGNITE + 14, f) * (1 - ss(F_OUT - 48, F_OUT, f)) * flare;
+  const convert = f >= F_GO ? 1 : 0;
+
+  const sheetIn = ss(F_IN, F_IN + 54, f);
+  const hudIn = ss(16, 76, f);
+  const brIn = ss(8, 70, f);
+  const capIn = ss(34, 96, f);
+
+  const bx = beamX(level);
+  const beamOn = ss(F_IGNITE, F_IGNITE + 26, f) * (1 - ss(F_END + 6, F_END + 56, f));
+
+  /* --- the stamp -------------------------------------------------------- */
+  const st = clamp01((f - F_STAMP) / 26);
+  const stampScale = 3.2 - 2.2 * easeOutBack(st);
+  const stampA = ss(F_STAMP, F_STAMP + 8, f);
+  const flash = (1 - ss(F_STAMP + 2, F_STAMP + 26, f)) * ss(F_STAMP, F_STAMP + 3, f);
+
+  const status =
+    f < F_ARM
+      ? 'STATUS · STANDBY'
+      : f < F_GO
+        ? 'STATUS · FIELD ARMED'
+        : f < F_END
+          ? 'STATUS · REDACTING'
+          : 'STATUS · COMPLETE';
+
+  const hue = progress;
+  const accent = `rgb(${Math.round(lerp(41, 255, hue))},${Math.round(
+    lerp(212, 74, hue),
+  )},${Math.round(lerp(240, 51, hue))})`;
+
+  const idlePulse = 0.72 + 0.28 * Math.sin((f - F_STAMP) / 20);
+
+  return (
+    <AbsoluteFill
+      style={{
+        background: '#04060B',
+        fontFamily: "'MxSans', system-ui, sans-serif",
+        color: C_INK,
+        opacity: fontsReady ? 1 : 0,
+      }}
+    >
+      {/* ------------------------------------------------------ backdrop */}
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(1100px 900px at 26% 52%, rgba(16,92,124,0.30), rgba(0,0,0,0) 70%)',
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(1100px 900px at 76% 52%, rgba(150,38,24,0.30), rgba(0,0,0,0) 70%)',
+          opacity: 0.14 + 0.86 * progress,
+        }}
+      />
+
+      <svg width={VW} height={VH} style={{position: 'absolute', opacity: 0.9}}>
+        <defs>
+          <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#7FB6E0" stopOpacity="0.10" />
+            <stop offset="0.5" stopColor="#7FB6E0" stopOpacity="0.03" />
+            <stop offset="1" stopColor="#7FB6E0" stopOpacity="0.10" />
+          </linearGradient>
+        </defs>
+        <g stroke="url(#fade)" strokeWidth="1">
+          {Array.from({length: 33}, (_, i) => (
+            <line key={`v${i}`} x1={i * 60} y1={0} x2={i * 60} y2={VH} />
+          ))}
+          {Array.from({length: 19}, (_, i) => (
+            <line key={`h${i}`} x1={0} y1={i * 60} x2={VW} y2={i * 60} />
+          ))}
+        </g>
+        <g fill="none" stroke="rgba(130,180,225,0.075)" strokeWidth="1.5">
+          {[250, 400, 550, 700, 850].map((r) => (
+            <circle key={r} cx={CX} cy={CY} r={r} />
+          ))}
+        </g>
+      </svg>
+
+      {/* soft key light behind the sheet */}
+      <div
+        style={{
+          position: 'absolute',
+          left: CX - 470,
+          top: CY - 560,
+          width: 940,
+          height: 1120,
+          background:
+            'radial-gradient(closest-side, rgba(58,118,168,0.32), rgba(0,0,0,0) 72%)',
+          opacity: sheetIn,
+        }}
+      />
+
+      {/* the sweep column, behind the paper */}
+      {beamOn > 0.002 ? (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              left: bx - 150,
+              top: 0,
+              width: 300,
+              height: VH,
+              background: `linear-gradient(90deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.22) 50%, rgba(41,212,240,0) 100%)`,
+              opacity: beamOn,
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: bx - 1,
+              top: 96,
+              width: 2,
+              height: VH - 192,
+              background: `linear-gradient(180deg, rgba(41,212,240,0) 0%, rgba(41,212,240,0.85) 22%, rgba(41,212,240,0.85) 78%, rgba(41,212,240,0) 100%)`,
+              opacity: beamOn * 0.9,
+            }}
+          />
+        </>
+      ) : null}
+
+      {/* ------------------------------------------------------- the paper */}
+      <FlameFront
+        region={RGN}
+        rect={RECT}
+        drawContent={drawClean}
+        drawConverted={drawRedacted}
+        contentKey="doc"
+        params={FIELD}
+        axis="x"
+        frontOnly
+        level={level}
+        fire={fire}
+        convert={convert}
+        bloom={0.11 * clamp01(fire)}
+        style={{
+          opacity: sheetIn,
+          transform: `translateY(${(1 - sheetIn) * 26}px)`,
+        }}
+      />
+
+      {/* --------------------------------------------------------- stamp */}
+      {st > 0 ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: CX - 192,
+            top: CY + 112,
+            width: 384,
+            height: 90,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: `5px solid rgba(255,74,51,${0.88 * stampA})`,
+            borderRadius: 8,
+            transform: `rotate(-8deg) scale(${stampScale})`,
+            opacity: stampA,
+            boxShadow: '0 0 40px rgba(255,74,51,0.35)',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 50,
+              fontWeight: 700,
+              letterSpacing: 11,
+              paddingLeft: 11,
+              color: `rgba(255,90,66,${0.95 * stampA})`,
+            }}
+          >
+            REDACTED
+          </span>
+        </div>
+      ) : null}
+
+      {flash > 0.002 ? (
+        <AbsoluteFill
+          style={{background: 'rgba(255,120,96,0.11)', opacity: flash}}
+        />
+      ) : null}
+
+      {/* ----------------------------------------------------------- HUD */}
+      <Bracket x={56} y={56} sx={1} sy={1} col={C_CYAN} a={brIn} />
+      <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={C_RED} a={brIn} />
+      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_CYAN} a={brIn} />
+      <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={C_RED} a={brIn} />
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 92,
+          top: 82,
+          opacity: hudIn,
+          transform: `translateX(${(1 - hudIn) * -18}px)`,
+        }}
+      >
+        <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
+          <div style={{width: 12, height: 12, background: C_CYAN}} />
+          <span
+            style={{
+              fontSize: 31,
+              fontWeight: 700,
+              letterSpacing: 7,
+              color: C_CYAN,
+            }}
+          >
+            REDACTION SWEEP
+          </span>
+        </div>
+        <div style={{marginTop: 13, marginLeft: 26}}>
+          <Chrome
+            t="FILE · DOC-2291-A · SEC/LVL 4"
+            s={17}
+            l={3.4}
+            o={0.55}
+            col="#BFD4EC"
+          />
+        </div>
+        <div
+          style={{
+            position: 'relative',
+            marginTop: 20,
+            marginLeft: 26,
+            width: 452,
+            height: 4,
+            background: 'rgba(150,190,230,0.16)',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              height: 4,
+              width: 452 * progress,
+              background: `linear-gradient(90deg, ${C_CYAN}, ${accent})`,
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: 452 * progress - 1,
+              top: -5,
+              width: 2,
+              height: 14,
+              background: accent,
+              opacity: beamOn > 0.01 ? 1 : 0.35,
+            }}
+          />
+        </div>
+        <div style={{marginTop: 16, marginLeft: 26}}>
+          <Chrome t={status} s={16} l={3.6} o={0.75} col={accent} />
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          right: 92,
+          top: 74,
+          width: 420,
+          textAlign: 'right',
+          opacity: hudIn,
+          transform: `translateX(${(1 - hudIn) * 18}px)`,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 96,
+            fontWeight: 700,
+            lineHeight: '96px',
+            letterSpacing: -2,
+            color: accent,
+          }}
+        >
+          {pct}%
+        </div>
+        <div style={{marginTop: 8}}>
+          <Chrome
+            t="REDACTED"
+            s={17}
+            l={9}
+            o={0.55 + 0.45 * progress}
+            col={C_RED}
+          />
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------- caption */}
       <div
         style={{
           position: 'absolute',
           left: 0,
-          top: VH - 58,
+          top: 928,
           width: VW,
-          height: 58,
-          background: 'rgba(18,24,36,0.82)',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
+          textAlign: 'center',
+          opacity: capIn,
         }}
-      />
-      {[0, 1, 2, 3, 4].map((i) => (
+      >
         <div
-          key={i}
           style={{
-            position: 'absolute',
-            left: VW / 2 - 122 + i * 58,
-            top: VH - 45,
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background:
-              i === 2
-                ? 'linear-gradient(150deg, rgba(255,197,49,0.9), rgba(230,160,30,0.9))'
-                : 'rgba(255,255,255,0.16)',
+            width: 520,
+            height: 1,
+            background: 'rgba(160,200,240,0.28)',
+            margin: '0 auto 26px',
           }}
         />
-      ))}
+        <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 15}}>
+          AUTOMATED DATA REDACTION
+        </span>
+      </div>
+
+      <div style={{position: 'absolute', left: 92, top: VH - 96, opacity: hudIn * 0.5}}>
+        <Chrome t="ENGINE v4.2 · POLICY PII-STRICT" s={15} l={3} o={1} col="#BFD4EC" />
+      </div>
       <div
         style={{
           position: 'absolute',
-          right: 34,
-          top: VH - 47,
-          textAlign: 'right',
-          fontFamily: 'MxSans, system-ui, sans-serif',
-          color: 'rgba(255,255,255,0.72)',
-          fontSize: 14,
-          lineHeight: '17px',
+          right: 92,
+          top: VH - 96,
+          opacity: hudIn * (f >= F_STAMP ? idlePulse : 0.5),
         }}
       >
-        <div>10:24</div>
-        <div style={{opacity: 0.75}}>14/08/2026</div>
+        <Chrome
+          t={f >= F_STAMP ? 'SANITIZED COPY · SHA-256 VERIFIED' : 'SHA-256 PENDING'}
+          s={15}
+          l={3}
+          o={1}
+          col={f >= F_STAMP ? '#7BE8A8' : '#BFD4EC'}
+        />
       </div>
 
-      {/* ---------- vignette ---------- */}
+      {/* vignette */}
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(78% 70% at 50% 46%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.5) 100%)',
+            'radial-gradient(1500px 1000px at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.62) 100%)',
           pointerEvents: 'none',
         }}
       />
-
-      <div
-        style={{position: 'absolute', opacity: 0, fontFamily: 'MxSans', fontWeight: 700}}
-      >
-        {fontsReady ? '.' : '.'}
-      </div>
     </AbsoluteFill>
   );
 };
