@@ -1,18 +1,19 @@
 /* =============================================================================
-   MOTION33 — "AUTOMATED PAYMENT SETTLEMENT"
-   An issued-but-unpaid invoice slip is crossed top-to-bottom by an emerald
-   settlement field. Everything the field passes clears in place: the UNPAID
-   pill flips to PAID, each line item ticks green, the remittance stub resolves
-   into a dark TOTAL PAID block with the settlement reference, card trace and a
-   printed barcode. The HUD counter rolls up in the four bursts the front
-   actually releases - $0.00 to $48,250.00 - then a PAID stamp slams on.
+   MOTION34 — "KYC IDENTITY VERIFICATION"
+   A captured but unverified ID card is crossed by a DIAGONAL biometric field.
+   Everything the field passes resolves in place: the pixelated portrait sharpens
+   behind a green face-match reticle, the blanked fields fill with real data, the
+   chip and hologram come alive and the machine-readable zone becomes legible.
+   The HUD score hunts, then locks on 98.7 %, four gates tick DOCUMENT / DATA /
+   FACE / MRZ, and an IDENTITY VERIFIED badge slams on.
    1920 x 1080 - 60 fps - 900 frames (15 s) - ONE-SHOT (not a loop)
 
-   The boundary is NOT a clip-path. It is a signed-distance-field front, so it
-   hugs the slip's real silhouette - the two perforation notches and the torn
-   sawtooth bottom edge included - and the conversion happens under a live flame
-   edge with ember, rim glow and heat shimmer. Built on the "remotion-flame"
-   engine in CONVERT mode, axis 'y', front travelling down.
+   The diagonal is not a shader change: the card is drawn ROTATED inside the
+   texture and the GL canvas is rotated back on screen, so the engine's
+   axis-aligned front reads as a 16-degree sweep across an upright card. The
+   boundary is a signed-distance-field front, so it hugs the card's real rounded
+   silhouette and the conversion happens under a live flame edge with ember, rim
+   glow and heat shimmer. "remotion-flame" engine, CONVERT mode, axis 'y'.
 
    Shader adapted from the Canvas UI "FlameWrap" component
    (github.com/DavidHDev/canvas-ui) - MIT + Commons Clause.
@@ -934,33 +935,39 @@ const VH = 1080;
 /** durationInFrames — copy this into your <Composition/> */
 export const MOTION_FRAMES = 900; // 15 s @ 60 fps
 
-/* --- the invoice slip, in texture space ----------------------------------- */
-const SW = 460; // slip width
-const SH = 760; // slip height, torn edge included
-const BOX_W = 660; // content texture = slip + 100 px SDF padding all round
-const BOX_H = 960;
-const SX = 100;
-const SY = 100;
-const IX = SX + 36; // inner content origin
-const IY = SY + 36;
-const IW = SW - 72; // 388
-const IH = SH - 72; // 688
+/* --- the ID card, in texture space ---------------------------------------- */
+const DW = 620; // design width  (ID-1 ratio) — all card coordinates use this
+const DH = 392; // design height
+const K = 1.16; // presentation scale
+const CW = DW * K;
+const CH = DH * K;
+/** the card is drawn ROTATED inside the texture and the canvas is rotated back
+ *  on screen, so the shader's axis-aligned front reads as a diagonal sweep
+ *  across an upright card. */
+const TH_DEG = 16;
+const TH = (TH_DEG * Math.PI) / 180;
+const COS = Math.cos(TH);
+const SIN = Math.sin(TH);
 
-const TEETH = 14; // torn-edge amplitude
-const TEETH_N = 14; // segments across the width
-const NOTCH_R = 14;
-const NOTCH_Y = SY + 494; // the perforation, where the remittance stub starts
+const PAD = 100; // SDF headroom around the rotated bounding box
+const even = (n: number) => (Math.round(n) % 2 === 0 ? Math.round(n) : Math.round(n) + 1);
+const BOX_W = even(CW * COS + CH * SIN) + 2 * PAD; // 1018
+const BOX_H = even(CW * SIN + CH * COS) + 2 * PAD; // 836
 
-/* --- where the slip sits on screen ---------------------------------------- */
 const CX = 960;
 const CY = 520;
+/** region must be centred on the rect so the CSS rotation about the canvas
+ *  centre and the shader's rect centre stay the same point */
 const RECT = {cx: CX, cy: CY, w: BOX_W, h: BOX_H};
-const RGN = {x: 620, y: 30, w: 680, h: 980};
-const BOX_TOP = CY - BOX_H / 2; // 40 — screen y of texture row 0
+const RGN = {x: CX - BOX_W / 2, y: CY - BOX_H / 2, w: BOX_W, h: BOX_H};
 
-/* --- the settlement pass --------------------------------------------------- */
-const LEVEL_TOP = 0.905;
-const LEVEL_BOT = 0.075;
+/** card-local (px,py) -> texture row it lands on */
+const texY = (px: number, py: number) =>
+  -SIN * K * (px - DW / 2) + COS * K * (py - DH / 2) + BOX_H / 2;
+
+/* --- the verification pass -------------------------------------------------- */
+const LEVEL_TOP = 0.89;
+const LEVEL_BOT = 0.09;
 
 const F_IN = 4;
 const F_ARM = 116;
@@ -970,50 +977,40 @@ const F_END = 640;
 const F_OUT = 676;
 const F_STAMP = 700;
 
+const C_BLUE = '#38A0FF';
 const C_GREEN = '#2ED97A';
 const C_AMBER = '#F2B33D';
-const C_RED = '#FF4A33';
 const C_INK = '#E9F2FF';
 
-/* --- what settles, and where ---------------------------------------------- */
-const ROW_Y = [176, 226, 276, 326]; // inner y of each line item
-const ITEMS: Array<[string, number]> = [
-  ['DESIGN RETAINER', 18000],
-  ['API LICENSE — 12 MO', 21600],
-  ['SUPPORT PLAN', 5400],
-  ['ONBOARDING', 1800],
-];
-const SUBTOTAL = 46800;
-const TAX = 1404;
-const FEE = 46;
-const TOTAL = SUBTOTAL + TAX + FEE; // 48,250.00
+const SCORE = 98.7;
 
-/** every checkpoint the front crosses, with the amount it releases */
-const CHECKPOINTS: Array<{y: number; v: number}> = [
-  ...ROW_Y.map((y, i) => ({y: BOX_TOP + IY + y + 13, v: ITEMS[i][1]})),
-  {y: BOX_TOP + IY + 409, v: TAX},
-  {y: BOX_TOP + IY + 433, v: FEE},
+/* --- what the pass clears, in card-local coordinates ---------------------- */
+const CHECKS: Array<{k: string; px: number; py: number}> = [
+  {k: 'DOCUMENT', px: 110, py: 46},
+  {k: 'DATA', px: 400, py: 234},
+  {k: 'FACE', px: 108, py: 230},
+  {k: 'MRZ', px: 300, py: 350},
 ];
 
 const levelAt = (f: number) =>
   lerp(LEVEL_TOP, LEVEL_BOT, trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14));
-const frontYAt = (lv: number) => CY - BOX_H * (lv - 0.5);
+/** texture row the front is sitting on */
+const frontTexY = (lv: number) => BOX_H * (1 - lv);
 
-/** resolved once, from the same timing function the front uses, so the counter
- *  can never drift away from the artwork it is reporting on */
-const TICK_F = CHECKPOINTS.map((cp) => {
-  for (let f = F_GO; f <= F_END + 2; f++) if (frontYAt(levelAt(f)) > cp.y) return f;
+const CHECK_Y = CHECKS.map((c) => texY(c.px, c.py));
+const TICK_F = CHECK_Y.map((y) => {
+  for (let f = F_GO; f <= F_END + 2; f++) if (frontTexY(levelAt(f)) > y) return f;
   return F_END;
 });
 
-/** the settlement field — emerald rather than the usual cyan */
+/** the biometric field — a cool document-scanner blue */
 const FIELD: FlameParams = {
-  ...scalePreset(FIELD_PRESET, SW / 300),
-  color: [0.18, 0.85, 0.48],
+  ...scalePreset(FIELD_PRESET, 1.7),
+  color: [0.22, 0.62, 1.0],
   intensity: 1.0,
   ember: 1.5,
   rim: 1.6,
-  sparks: 1.2,
+  sparks: 1.25,
   sparkSize: 0.7,
   sparkDensity: 1.35,
   smoke: 0,
@@ -1024,19 +1021,6 @@ const easeOutBack = (x: number) => {
   const c1 = 1.70158;
   const t = clamp01(x);
   return 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-};
-
-const money = (v: number) => {
-  const s = (Math.round(v * 100) / 100).toFixed(2);
-  const dot = s.indexOf('.');
-  const whole = s.slice(0, dot);
-  const cents = s.slice(dot + 1);
-  let out = '';
-  for (let i = 0; i < whole.length; i++) {
-    if (i > 0 && (whole.length - i) % 3 === 0) out += ',';
-    out += whole[i];
-  }
-  return '$' + out + '.' + cents;
 };
 
 /* ---------------------------------------------------------- canvas helpers */
@@ -1081,8 +1065,6 @@ const setFont = (c: CanvasRenderingContext2D, weight: number, size: number) => {
   c.font = `${weight} ${size}px MxSans, system-ui, sans-serif`;
 };
 
-/** letter-spaced text, drawn glyph by glyph — `ctx.letterSpacing` is not
- *  available everywhere and silently does nothing when it is not */
 const tt = (
   c: CanvasRenderingContext2D,
   text: string,
@@ -1099,38 +1081,6 @@ const tt = (
     c.fillText(g[i], cx, y);
     cx += c.measureText(g[i]).width + ls;
   }
-};
-
-/** the slip outline: rounded top, two perforation notches, torn bottom edge.
- *  Identical in both versions, so the one baked SDF is valid for the settled
- *  artwork too. */
-const slipPath = (c: CanvasRenderingContext2D) => {
-  const r = 10;
-  const P = SW / TEETH_N;
-  c.beginPath();
-  c.moveTo(SX + r, SY);
-  c.lineTo(SX + SW - r, SY);
-  c.quadraticCurveTo(SX + SW, SY, SX + SW, SY + r);
-  c.lineTo(SX + SW, NOTCH_Y - NOTCH_R);
-  c.arc(SX + SW, NOTCH_Y, NOTCH_R, -Math.PI / 2, Math.PI / 2, true);
-  c.lineTo(SX + SW, SY + SH - TEETH);
-  for (let i = TEETH_N - 1; i >= 0; i--) {
-    c.lineTo(SX + i * P, SY + SH - (i % 2 === 0 ? TEETH : 0));
-  }
-  c.lineTo(SX, NOTCH_Y + NOTCH_R);
-  c.arc(SX, NOTCH_Y, NOTCH_R, Math.PI / 2, -Math.PI / 2, true);
-  c.lineTo(SX, SY + r);
-  c.quadraticCurveTo(SX, SY, SX + r, SY);
-  c.closePath();
-};
-
-const paperFill = (c: CanvasRenderingContext2D, a: string, b: string) => {
-  slipPath(c);
-  const g = c.createLinearGradient(SX, SY, SX + SW * 0.4, SY + SH);
-  g.addColorStop(0, a);
-  g.addColorStop(1, b);
-  c.fillStyle = g;
-  c.fill();
 };
 
 const check = (
@@ -1154,245 +1104,259 @@ const check = (
   c.restore();
 };
 
-const barcode = (
-  c: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  col: string,
-) => {
-  let r = 4471821;
+/** the card outline — identical in both versions, so the one baked SDF stays
+ *  valid for the verified artwork. Drawn pre-rotated; the CSS transform on the
+ *  canvas puts it back upright. */
+const cardPath = (c: CanvasRenderingContext2D) => {
+  rr(c, 0, 0, DW, DH, 26);
+};
+
+const inCard = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.clearRect(0, 0, w, h);
+  c.save();
+  c.translate(w / 2, h / 2);
+  c.rotate(-TH);
+  c.scale(K, K);
+  c.translate(-DW / 2, -DH / 2);
+  c.textBaseline = 'alphabetic';
+};
+
+const CHIP = (c: CanvasRenderingContext2D, x: number, y: number, live: boolean) => {
+  rr(c, x, y, 58, 44, 7);
+  if (live) {
+    const g = c.createLinearGradient(x, y, x + 58, y + 44);
+    g.addColorStop(0, '#F2D07A');
+    g.addColorStop(1, '#B98B2E');
+    c.fillStyle = g;
+  } else {
+    c.fillStyle = '#C6CEDA';
+  }
+  c.fill();
+  c.strokeStyle = live ? 'rgba(120,86,20,0.5)' : 'rgba(140,152,170,0.6)';
+  c.lineWidth = 1.6;
+  c.beginPath();
+  c.moveTo(x + 4, y + 15);
+  c.lineTo(x + 54, y + 15);
+  c.moveTo(x + 4, y + 29);
+  c.lineTo(x + 54, y + 29);
+  c.moveTo(x + 21, y + 2);
+  c.lineTo(x + 21, y + 42);
+  c.moveTo(x + 37, y + 2);
+  c.lineTo(x + 37, y + 42);
+  c.stroke();
+};
+
+const MRZ1 = 'IDANDHARLOW<<DANIEL<R<<<<<<<<<<';
+const MRZ2 = '4471889212AND9103144M3108157<<8';
+
+/* ------------------------------------------- content A — captured, unverified */
+
+const drawRaw = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  inCard(c, w, h);
+
+  cardPath(c);
+  const g = c.createLinearGradient(0, 0, DW * 0.4, DH);
+  g.addColorStop(0, '#EDF1F7');
+  g.addColorStop(1, '#D3DBE7');
+  c.fillStyle = g;
+  c.fill();
+
+  c.save();
+  cardPath(c);
+  c.clip();
+
+  c.fillStyle = '#95A2B4';
+  setFont(c, 700, 18);
+  tt(c, 'IDENTITY CARD', 34, 46, 4, 'left');
+  c.fillStyle = '#A7B2C2';
+  setFont(c, 400, 13);
+  tt(c, 'REPUBLIC OF ANDARA', DW - 34, 44, 2, 'right');
+
+  /* the captured portrait, still unresolved */
+  rr(c, 34, 66, 148, 182, 8);
+  c.fillStyle = '#B9C2D0';
+  c.fill();
+  c.save();
+  rr(c, 34, 66, 148, 182, 8);
+  c.clip();
+  let r = 991177;
   const rnd = () => {
     r = (r * 1103515245 + 12345) & 0x7fffffff;
     return r / 0x7fffffff;
   };
-  c.fillStyle = col;
-  let cx = x;
-  while (cx < x + w - 2) {
-    const bw = 1.5 + Math.floor(rnd() * 3) * 1.5;
-    if (rnd() > 0.38) c.fillRect(cx, y, bw, h);
-    cx += bw + 1.5 + Math.floor(rnd() * 2) * 1.5;
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 10; j++) {
+      const v = 150 + Math.floor(rnd() * 70);
+      c.fillStyle = `rgb(${v},${v + 6},${v + 14})`;
+      c.fillRect(34 + i * 18.5, 66 + j * 18.2, 18.5, 18.2);
+    }
   }
-};
-
-/** the perforation line + the shared body that does not change between states */
-const perforation = (c: CanvasRenderingContext2D, col: string) => {
-  c.save();
-  c.strokeStyle = col;
+  c.restore();
+  c.strokeStyle = 'rgba(140,152,170,0.7)';
   c.lineWidth = 2;
-  c.setLineDash([7, 7]);
+  rr(c, 34, 66, 148, 182, 8);
+  c.stroke();
+
+  CHIP(c, 34, 262, false);
+
+  /* hologram patch, dead */
+  c.save();
+  c.strokeStyle = '#BFC8D6';
+  c.lineWidth = 2.4;
+  c.setLineDash([7, 6]);
   c.beginPath();
-  c.moveTo(SX + NOTCH_R + 4, NOTCH_Y);
-  c.lineTo(SX + SW - NOTCH_R - 4, NOTCH_Y);
+  c.arc(DW - 77, 109, 42, 0, Math.PI * 2);
   c.stroke();
   c.restore();
-};
 
-/* ------------------------------------------------ content A — issued, unpaid */
-
-const drawUnpaid = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  c.clearRect(0, 0, w, h);
-  paperFill(c, '#FBFCFE', '#E6EBF3');
-
-  c.save();
-  slipPath(c);
-  c.clip();
-
-  c.textBaseline = 'alphabetic';
-
-  /* brand */
-  rr(c, IX, IY, 32, 32, 8);
-  c.fillStyle = '#C7D1DF';
-  c.fill();
-  bar(c, IX + 44, IY + 4, 150, 13, '#A2AFC0', 4);
-  bar(c, IX + 44, IY + 22, 96, 9, '#C2CBD8', 4);
-  bar(c, IX, IY + 46, IW, 2, '#DDE3EC', 1);
-
-  c.fillStyle = '#8E9BAD';
-  setFont(c, 700, 27);
-  tt(c, 'INVOICE', IX, IY + 84, 3, 'left');
-  setFont(c, 700, 15);
-  c.fillStyle = '#A6B2C2';
-  tt(c, 'INV-8842', IX + IW, IY + 82, 1.5, 'right');
-  setFont(c, 400, 13);
-  c.fillStyle = '#AAB5C4';
-  tt(c, 'ISSUED 12 JUL 2026', IX, IY + 108, 1.2, 'left');
-  tt(c, 'DUE 11 AUG 2026', IX + IW, IY + 108, 1.2, 'right');
-
-  /* status */
-  rr(c, IX, IY + 124, 144, 32, 16);
-  c.fillStyle = 'rgba(255,74,51,0.14)';
-  c.fill();
-  c.strokeStyle = 'rgba(255,74,51,0.5)';
-  c.lineWidth = 2;
-  c.stroke();
-  c.fillStyle = '#E2493A';
-  setFont(c, 700, 15);
-  tt(c, 'UNPAID', IX + 72, IY + 145, 3, 'center');
-
-  bar(c, IX, IY + 170, IW, 2, '#DDE3EC', 1);
-
-  /* line items */
-  ITEMS.forEach(([label, amt], i) => {
-    const y = IY + ROW_Y[i];
-    rr(c, IX, y + 3, 20, 20, 5);
-    c.strokeStyle = '#C6D0DE';
-    c.lineWidth = 2;
-    c.stroke();
-    c.fillStyle = '#9AA6B7';
-    setFont(c, 400, 15);
-    tt(c, label, IX + 32, y + 19, 0.4, 'left');
-    c.fillStyle = '#A9B4C4';
-    setFont(c, 700, 16);
-    tt(c, money(amt), IX + IW, y + 19, 0.4, 'right');
-  });
-
-  bar(c, IX, IY + 366, IW, 2, '#DDE3EC', 1);
-
-  const totRow = (y: number, label: string, amt: number) => {
-    c.fillStyle = '#AAB5C4';
-    setFont(c, 400, 13);
-    tt(c, label, IX + 150, IY + y, 1.2, 'left');
-    setFont(c, 700, 14);
-    tt(c, money(amt), IX + IW, IY + y, 0.4, 'right');
+  /* fields, unread */
+  const field = (y: number, lw: number, vw: number) => {
+    bar(c, 208, y, lw, 9, '#B2BCCA', 4);
+    bar(c, 208, y + 18, vw, 17, '#C3CBD8', 5);
   };
-  totRow(386, 'SUBTOTAL', SUBTOTAL);
-  totRow(410, 'VAT 3%', TAX);
-  totRow(434, 'PROCESSING', FEE);
+  field(84, 88, 190);
+  field(142, 110, 158);
+  field(200, 96, 236);
+  field(258, 104, 174);
 
-  perforation(c, '#C9D3E1');
-
-  /* remittance stub */
-  rr(c, IX, IY + 476, IW, 86, 10);
-  c.fillStyle = '#EDF1F7';
-  c.fill();
-  c.fillStyle = '#A2AEBF';
-  setFont(c, 700, 14);
-  tt(c, 'TOTAL DUE', IX + 18, IY + 510, 3.4, 'left');
-  c.fillStyle = '#96A2B4';
-  setFont(c, 700, 35);
-  tt(c, money(TOTAL), IX + IW - 18, IY + 548, 0.6, 'right');
-
-  c.save();
-  c.strokeStyle = '#CCD5E2';
-  c.lineWidth = 2;
-  c.setLineDash([8, 6]);
-  rr(c, IX, IY + 578, IW, 26, 6);
-  c.stroke();
-  rr(c, IX, IY + 610, 250, 22, 6);
-  c.stroke();
-  c.restore();
-
-  barcode(c, IX, IY + 640, IW, 30, '#CBD4E1');
+  /* machine-readable zone, unreadable */
+  bar(c, 34, 322, DW - 68, 20, '#C3CBD8', 3);
+  bar(c, 34, 348, DW - 68, 20, '#C3CBD8', 3);
 
   c.restore();
 
   c.strokeStyle = 'rgba(126,152,188,0.55)';
   c.lineWidth = 2;
-  slipPath(c);
+  cardPath(c);
   c.stroke();
+  c.restore();
 };
 
-/* --------------------------------------------------- content B — settled, paid */
+/* ---------------------------------------------- content B — resolved, verified */
 
-const drawPaid = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  c.clearRect(0, 0, w, h);
-  paperFill(c, '#FDFFFE', '#E5F2EA');
+const drawVerified = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  inCard(c, w, h);
+
+  cardPath(c);
+  const g = c.createLinearGradient(0, 0, DW * 0.4, DH);
+  g.addColorStop(0, '#F7FAFF');
+  g.addColorStop(1, '#DCE8F8');
+  c.fillStyle = g;
+  c.fill();
 
   c.save();
-  slipPath(c);
+  cardPath(c);
   c.clip();
 
-  c.textBaseline = 'alphabetic';
-
-  bar(c, SX, SY, SW, 7, C_GREEN, 0);
-
-  rr(c, IX, IY, 32, 32, 8);
-  c.fillStyle = '#146B4A';
-  c.fill();
-  bar(c, IX + 8, IY + 9, 16, 3.5, 'rgba(255,255,255,0.9)', 2);
-  bar(c, IX + 8, IY + 16, 16, 3.5, 'rgba(255,255,255,0.62)', 2);
-  bar(c, IX + 8, IY + 23, 10, 3.5, 'rgba(255,255,255,0.5)', 2);
-  bar(c, IX + 44, IY + 4, 150, 13, '#1B2433', 4);
-  bar(c, IX + 44, IY + 22, 96, 9, '#667484', 4);
-  bar(c, IX, IY + 46, IW, 2, '#BEDDCC', 1);
+  bar(c, 0, 0, DW, 8, C_BLUE, 0);
+  c.fillStyle = 'rgba(56,160,255,0.07)';
+  for (let i = -DH; i < DW + DH; i += 26) {
+    c.beginPath();
+    c.moveTo(i, 0);
+    c.lineTo(i + 14, 0);
+    c.lineTo(i + 14 - DH, DH);
+    c.lineTo(i - DH, DH);
+    c.closePath();
+    c.fill();
+  }
 
   c.fillStyle = '#16202D';
-  setFont(c, 700, 27);
-  tt(c, 'INVOICE', IX, IY + 84, 3, 'left');
-  setFont(c, 700, 15);
-  c.fillStyle = '#5C6A7D';
-  tt(c, 'INV-8842', IX + IW, IY + 82, 1.5, 'right');
+  setFont(c, 700, 18);
+  tt(c, 'IDENTITY CARD', 34, 46, 4, 'left');
+  c.fillStyle = '#4E6076';
   setFont(c, 400, 13);
-  c.fillStyle = '#6B7889';
-  tt(c, 'ISSUED 12 JUL 2026', IX, IY + 108, 1.2, 'left');
-  c.fillStyle = '#12965F';
-  tt(c, 'SETTLED 15 AUG 2026', IX + IW, IY + 108, 1.2, 'right');
+  tt(c, 'REPUBLIC OF ANDARA', DW - 34, 44, 2, 'right');
 
-  rr(c, IX, IY + 124, 144, 32, 16);
-  c.fillStyle = C_GREEN;
+  /* the resolved portrait */
+  rr(c, 34, 66, 148, 182, 8);
+  const gp = c.createLinearGradient(34, 66, 182, 248);
+  gp.addColorStop(0, '#C9DDF5');
+  gp.addColorStop(1, '#8FB4DC');
+  c.fillStyle = gp;
   c.fill();
-  check(c, IX + 24, IY + 140, 16, '#FFFFFF', 3);
-  c.fillStyle = '#06341F';
-  setFont(c, 700, 15);
-  tt(c, 'PAID', IX + 88, IY + 145, 3, 'center');
-
-  bar(c, IX, IY + 170, IW, 2, '#BEDDCC', 1);
-
-  ITEMS.forEach(([label, amt], i) => {
-    const y = IY + ROW_Y[i];
-    rr(c, IX, y + 3, 20, 20, 5);
-    c.fillStyle = C_GREEN;
-    c.fill();
-    check(c, IX + 10, y + 13, 15, '#FFFFFF', 2.6);
-    c.fillStyle = '#26313F';
-    setFont(c, 400, 15);
-    tt(c, label, IX + 32, y + 19, 0.4, 'left');
-    c.fillStyle = '#0F1B27';
-    setFont(c, 700, 16);
-    tt(c, money(amt), IX + IW, y + 19, 0.4, 'right');
-  });
-
-  bar(c, IX, IY + 366, IW, 2, '#BEDDCC', 1);
-
-  const totRow = (y: number, label: string, amt: number) => {
-    c.fillStyle = '#5C6A7D';
-    setFont(c, 400, 13);
-    tt(c, label, IX + 150, IY + y, 1.2, 'left');
-    c.fillStyle = '#1B2433';
-    setFont(c, 700, 14);
-    tt(c, money(amt), IX + IW, IY + y, 0.4, 'right');
+  c.save();
+  rr(c, 34, 66, 148, 182, 8);
+  c.clip();
+  c.fillStyle = '#2A4664';
+  c.beginPath();
+  c.arc(108, 140, 36, 0, Math.PI * 2);
+  c.fill();
+  c.beginPath();
+  c.arc(108, 268, 66, Math.PI, 2 * Math.PI);
+  c.fill();
+  c.restore();
+  c.strokeStyle = 'rgba(56,160,255,0.85)';
+  c.lineWidth = 2;
+  rr(c, 34, 66, 148, 182, 8);
+  c.stroke();
+  /* face-match reticle */
+  c.strokeStyle = C_GREEN;
+  c.lineWidth = 3;
+  const br = (x: number, y: number, sx: number, sy: number) => {
+    c.beginPath();
+    c.moveTo(x, y + sy * 20);
+    c.lineTo(x, y);
+    c.lineTo(x + sx * 20, y);
+    c.stroke();
   };
-  totRow(386, 'SUBTOTAL', SUBTOTAL);
-  totRow(410, 'VAT 3%', TAX);
-  totRow(434, 'PROCESSING', FEE);
+  br(44, 76, 1, 1);
+  br(172, 76, -1, 1);
+  br(44, 238, 1, -1);
+  br(172, 238, -1, -1);
 
-  perforation(c, '#9FC9B3');
+  CHIP(c, 34, 262, true);
 
-  rr(c, IX, IY + 476, IW, 86, 10);
-  c.fillStyle = '#0F2A1F';
-  c.fill();
-  c.fillStyle = C_GREEN;
-  setFont(c, 700, 14);
-  tt(c, 'TOTAL PAID', IX + 18, IY + 510, 3.4, 'left');
-  c.fillStyle = '#EAFFF3';
-  setFont(c, 700, 35);
-  tt(c, money(TOTAL), IX + IW - 18, IY + 548, 0.6, 'right');
+  /* hologram, live */
+  c.save();
+  c.strokeStyle = 'rgba(56,160,255,0.85)';
+  c.lineWidth = 2.4;
+  c.beginPath();
+  c.arc(DW - 77, 109, 42, 0, Math.PI * 2);
+  c.stroke();
+  c.lineWidth = 1.4;
+  c.beginPath();
+  c.arc(DW - 77, 109, 33, 0, Math.PI * 2);
+  c.stroke();
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    c.beginPath();
+    c.moveTo(DW - 77 + Math.cos(a) * 35, 109 + Math.sin(a) * 35);
+    c.lineTo(DW - 77 + Math.cos(a) * 40, 109 + Math.sin(a) * 40);
+    c.stroke();
+  }
+  c.restore();
+  check(c, DW - 77, 109, 36, C_BLUE, 4);
 
-  c.fillStyle = '#33465C';
-  setFont(c, 400, 13);
-  tt(c, 'REF 4TX-90F2-8817 · ACH SETTLEMENT', IX, IY + 596, 0.8, 'left');
-  tt(c, 'VISA •••• 4417 · AUTH 15 AUG 14:32 UTC', IX, IY + 626, 0.8, 'left');
+  /* fields, resolved */
+  const field = (y: number, label: string, value: string) => {
+    c.fillStyle = C_GREEN;
+    c.fillRect(190, y - 8, 8, 8);
+    c.fillStyle = '#5D7089';
+    setFont(c, 400, 11);
+    tt(c, label, 208, y, 2.4, 'left');
+    c.fillStyle = '#101B29';
+    setFont(c, 700, 21);
+    tt(c, value, 208, y + 30, 0.6, 'left');
+  };
+  field(92, 'SURNAME', 'HARLOW');
+  field(150, 'GIVEN NAMES', 'DANIEL R.');
+  field(208, 'DOCUMENT NO', 'ID-4471-8892');
+  field(266, 'DATE OF BIRTH', '14 MAR 1991');
 
-  barcode(c, IX, IY + 640, IW, 30, '#101A26');
+  /* machine-readable zone, resolved */
+  bar(c, 34, 316, DW - 68, 60, 'rgba(16,27,41,0.05)', 5);
+  c.fillStyle = '#16202D';
+  setFont(c, 700, 17);
+  tt(c, MRZ1, 44, 342, 2.1, 'left');
+  tt(c, MRZ2, 44, 366, 2.1, 'left');
 
   c.restore();
 
-  c.strokeStyle = 'rgba(110,168,140,0.6)';
+  c.strokeStyle = 'rgba(90,150,210,0.7)';
   c.lineWidth = 2;
-  slipPath(c);
+  cardPath(c);
   c.stroke();
+  c.restore();
 };
 
 /* ------------------------------------------------------------------- HUD */
@@ -1454,25 +1418,28 @@ export const Motion: React.FC = () => {
   const fire = ss(F_IGNITE, F_IGNITE + 14, f) * (1 - ss(F_OUT - 48, F_OUT, f)) * flare;
   const convert = f >= F_GO ? 1 : 0;
 
-  const sheetIn = ss(F_IN, F_IN + 54, f);
+  const cardIn = ss(F_IN, F_IN + 54, f);
   const hudIn = ss(16, 76, f);
   const brIn = ss(8, 70, f);
   const capIn = ss(34, 96, f);
 
-  const fy = frontYAt(level);
   const beamOn = ss(F_IGNITE, F_IGNITE + 26, f) * (1 - ss(F_END + 6, F_END + 56, f));
 
-  /* the counter rolls up in the four bursts the front actually releases */
-  let settled = 0;
-  for (let i = 0; i < CHECKPOINTS.length; i++) {
-    settled += CHECKPOINTS[i].v * ss(TICK_F[i], TICK_F[i] + 16, f);
-  }
+  /* where the diagonal front crosses the screen */
+  const d = frontTexY(level) - BOX_H / 2;
+  const bx = CX - SIN * d;
+  const by = CY + COS * d;
+
   const cleared = TICK_F.filter((t) => f >= t).length;
   const lastTick = cleared > 0 ? TICK_F[cleared - 1] : -999;
   const pop = f >= lastTick ? Math.exp(-(f - lastTick) / 7) : 0;
-  const itemsDone = Math.min(4, cleared);
 
-  /* the stamp */
+  /* a biometric score settles rather than ramps — it hunts, then locks */
+  const lock = clamp01(progress / 0.9);
+  const hunt =
+    (f >= F_GO ? 1 : 0) * (1 - lock) * 7 * Math.sin(f * 0.83) * Math.sin(f * 0.31 + 1.3);
+  const score = Math.max(0, Math.min(SCORE, SCORE * lock + hunt));
+
   const st = clamp01((f - F_STAMP) / 26);
   const stampScale = 3.2 - 2.2 * easeOutBack(st);
   const stampA = ss(F_STAMP, F_STAMP + 8, f);
@@ -1480,24 +1447,24 @@ export const Motion: React.FC = () => {
 
   const status =
     f < F_ARM
-      ? 'STATUS · AWAITING FUNDS'
+      ? 'STATUS · DOCUMENT CAPTURED'
       : f < F_GO
-        ? 'STATUS · AUTHORISING'
+        ? 'STATUS · LIVENESS PROBE'
         : f < F_END
-          ? 'STATUS · SETTLING'
-          : 'STATUS · CLEARED';
+          ? 'STATUS · MATCHING'
+          : 'STATUS · IDENTITY CONFIRMED';
 
-  const hue = clamp01(settled / TOTAL);
-  const accent = `rgb(${Math.round(lerp(242, 46, hue))},${Math.round(
-    lerp(179, 217, hue),
-  )},${Math.round(lerp(61, 122, hue))})`;
+  const hue = lock;
+  const accent = `rgb(${Math.round(lerp(56, 46, hue))},${Math.round(
+    lerp(160, 217, hue),
+  )},${Math.round(lerp(255, 122, hue))})`;
 
   const idlePulse = 0.72 + 0.28 * Math.sin((f - F_STAMP) / 20);
 
   return (
     <AbsoluteFill
       style={{
-        background: '#04070A',
+        background: '#04060B',
         fontFamily: "'MxSans', system-ui, sans-serif",
         color: C_INK,
         opacity: fontsReady ? 1 : 0,
@@ -1507,24 +1474,23 @@ export const Motion: React.FC = () => {
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1150px 900px at 34% 30%, rgba(126,86,18,0.30), rgba(0,0,0,0) 70%)',
-          opacity: 1 - 0.82 * progress,
+            'radial-gradient(1200px 900px at 30% 40%, rgba(20,74,150,0.34), rgba(0,0,0,0) 70%)',
         }}
       />
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1200px 950px at 66% 70%, rgba(20,140,84,0.34), rgba(0,0,0,0) 70%)',
-          opacity: 0.1 + 0.9 * progress,
+            'radial-gradient(1200px 950px at 70% 62%, rgba(20,140,96,0.30), rgba(0,0,0,0) 70%)',
+          opacity: 0.08 + 0.92 * progress,
         }}
       />
 
       <svg width={VW} height={VH} style={{position: 'absolute', opacity: 0.9}}>
         <defs>
           <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#8FD8B4" stopOpacity="0.10" />
-            <stop offset="0.5" stopColor="#8FD8B4" stopOpacity="0.03" />
-            <stop offset="1" stopColor="#8FD8B4" stopOpacity="0.10" />
+            <stop offset="0" stopColor="#8FC4E8" stopOpacity="0.10" />
+            <stop offset="0.5" stopColor="#8FC4E8" stopOpacity="0.03" />
+            <stop offset="1" stopColor="#8FC4E8" stopOpacity="0.10" />
           </linearGradient>
         </defs>
         <g stroke="url(#fade)" strokeWidth="1">
@@ -1535,7 +1501,7 @@ export const Motion: React.FC = () => {
             <line key={`h${i}`} x1={0} y1={i * 60} x2={VW} y2={i * 60} />
           ))}
         </g>
-        <g fill="none" stroke="rgba(140,215,180,0.075)" strokeWidth="1.5">
+        <g fill="none" stroke="rgba(140,190,235,0.075)" strokeWidth="1.5">
           {[250, 400, 550, 700, 850].map((r) => (
             <circle key={r} cx={CX} cy={CY} r={r} />
           ))}
@@ -1545,62 +1511,64 @@ export const Motion: React.FC = () => {
       <div
         style={{
           position: 'absolute',
-          left: CX - 420,
-          top: CY - 560,
-          width: 840,
-          height: 1120,
+          left: CX - 520,
+          top: CY - 420,
+          width: 1040,
+          height: 840,
           background:
-            'radial-gradient(closest-side, rgba(48,138,100,0.32), rgba(0,0,0,0) 72%)',
-          opacity: sheetIn,
+            'radial-gradient(closest-side, rgba(46,110,180,0.34), rgba(0,0,0,0) 72%)',
+          opacity: cardIn,
         }}
       />
 
-      {/* the settlement pass, behind the paper */}
+      {/* the diagonal pass, behind the card */}
       {beamOn > 0.002 ? (
         <>
           <div
             style={{
               position: 'absolute',
-              left: 0,
-              top: fy - 150,
-              width: VW,
+              left: bx - 1400,
+              top: by - 150,
+              width: 2800,
               height: 300,
+              transform: `rotate(${TH_DEG}deg)`,
               background:
-                'linear-gradient(180deg, rgba(46,217,122,0) 0%, rgba(46,217,122,0.20) 50%, rgba(46,217,122,0) 100%)',
+                'linear-gradient(180deg, rgba(56,160,255,0) 0%, rgba(56,160,255,0.20) 50%, rgba(56,160,255,0) 100%)',
               opacity: beamOn * (1 + 0.9 * pop),
             }}
           />
           <div
             style={{
               position: 'absolute',
-              left: 120,
-              top: fy - 1,
-              width: VW - 240,
+              left: bx - 1200,
+              top: by - 1,
+              width: 2400,
               height: 2,
+              transform: `rotate(${TH_DEG}deg)`,
               background:
-                'linear-gradient(90deg, rgba(46,217,122,0) 0%, rgba(46,217,122,0.85) 22%, rgba(46,217,122,0.85) 78%, rgba(46,217,122,0) 100%)',
+                'linear-gradient(90deg, rgba(56,160,255,0) 0%, rgba(56,160,255,0.85) 28%, rgba(56,160,255,0.85) 72%, rgba(56,160,255,0) 100%)',
               opacity: beamOn * 0.9,
             }}
           />
         </>
       ) : null}
 
-      {/* --------------------------------------------------------- the slip */}
+      {/* --------------------------------------------------------- the card */}
       <FlameFront
         region={RGN}
         rect={RECT}
-        drawContent={drawUnpaid}
-        drawConverted={drawPaid}
-        contentKey={fontsReady ? 'invoice-1' : 'invoice-0'}
+        drawContent={drawRaw}
+        drawConverted={drawVerified}
+        contentKey={fontsReady ? 'id-1' : 'id-0'}
         params={FIELD}
         frontOnly
         level={level}
         fire={fire}
         convert={convert}
-        bloom={0.11 * clamp01(fire)}
+        bloom={0}
         style={{
-          opacity: sheetIn,
-          transform: `translateY(${(1 - sheetIn) * 26}px)`,
+          opacity: cardIn,
+          transform: `translateY(${(1 - cardIn) * 26}px) rotate(${TH_DEG}deg)`,
         }}
       />
 
@@ -1609,42 +1577,42 @@ export const Motion: React.FC = () => {
         <div
           style={{
             position: 'absolute',
-            left: CX - 155,
-            top: CY - 105,
-            width: 310,
-            height: 88,
+            left: CX - 240,
+            top: 790,
+            width: 480,
+            height: 84,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `5px solid rgba(46,217,122,${0.9 * stampA})`,
+            border: `5px solid rgba(56,160,255,${0.9 * stampA})`,
             borderRadius: 8,
-            transform: `rotate(-11deg) scale(${stampScale})`,
+            transform: `rotate(-3deg) scale(${stampScale})`,
             opacity: stampA,
-            boxShadow: '0 0 44px rgba(46,217,122,0.35)',
+            boxShadow: '0 0 44px rgba(56,160,255,0.4)',
           }}
         >
           <span
             style={{
-              fontSize: 52,
+              fontSize: 30,
               fontWeight: 700,
-              letterSpacing: 12,
-              paddingLeft: 12,
-              color: `rgba(74,236,150,${0.96 * stampA})`,
+              letterSpacing: 7,
+              paddingLeft: 7,
+              color: `rgba(120,200,255,${0.96 * stampA})`,
             }}
           >
-            PAID
+            IDENTITY VERIFIED
           </span>
         </div>
       ) : null}
 
       {flash > 0.002 ? (
-        <AbsoluteFill style={{background: 'rgba(96,255,170,0.10)', opacity: flash}} />
+        <AbsoluteFill style={{background: 'rgba(120,200,255,0.11)', opacity: flash}} />
       ) : null}
 
       {/* ----------------------------------------------------------- HUD */}
-      <Bracket x={56} y={56} sx={1} sy={1} col={C_AMBER} a={brIn} />
+      <Bracket x={56} y={56} sx={1} sy={1} col={C_BLUE} a={brIn} />
       <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={accent} a={brIn} />
-      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_AMBER} a={brIn} />
+      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_BLUE} a={brIn} />
       <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={accent} a={brIn} />
 
       <div
@@ -1657,15 +1625,13 @@ export const Motion: React.FC = () => {
         }}
       >
         <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-          <div style={{width: 12, height: 12, background: C_GREEN}} />
-          <span
-            style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_GREEN}}
-          >
-            PAYMENT SETTLEMENT
+          <div style={{width: 12, height: 12, background: C_BLUE}} />
+          <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_BLUE}}>
+            IDENTITY VERIFICATION
           </span>
         </div>
         <div style={{marginTop: 13, marginLeft: 26}}>
-          <Chrome t="INVOICE · INV-8842 · NET 30" s={17} l={3.4} o={0.55} col="#C6DCD2" />
+          <Chrome t="KYC · TIER 2 · ID-4471-8892" s={17} l={3.4} o={0.55} col="#C3D8EE" />
         </div>
         <div
           style={{
@@ -1674,7 +1640,7 @@ export const Motion: React.FC = () => {
             marginLeft: 26,
             width: 452,
             height: 4,
-            background: 'rgba(160,220,190,0.16)',
+            background: 'rgba(150,200,240,0.16)',
           }}
         >
           <div
@@ -1684,26 +1650,9 @@ export const Motion: React.FC = () => {
               top: 0,
               height: 4,
               width: 452 * progress,
-              background: `linear-gradient(90deg, ${C_AMBER}, ${accent})`,
+              background: `linear-gradient(90deg, ${C_BLUE}, ${accent})`,
             }}
           />
-          {CHECKPOINTS.map((cp, i) => {
-            const at =
-              (cp.y - frontYAt(LEVEL_TOP)) / (frontYAt(LEVEL_BOT) - frontYAt(LEVEL_TOP));
-            return (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: 452 * at - 1,
-                  top: -4,
-                  width: 2,
-                  height: 12,
-                  background: f >= TICK_F[i] ? C_GREEN : 'rgba(160,220,190,0.4)',
-                }}
-              />
-            );
-          })}
           <div
             style={{
               position: 'absolute',
@@ -1719,14 +1668,53 @@ export const Motion: React.FC = () => {
         <div style={{marginTop: 16, marginLeft: 26}}>
           <Chrome t={status} s={16} l={3.6} o={0.75} col={accent} />
         </div>
+
+        {/* the four gates, ticking as the diagonal front reaches each zone */}
+        <div style={{marginTop: 26, marginLeft: 26, display: 'flex', gap: 10}}>
+          {CHECKS.map((ck, i) => {
+            const on = f >= TICK_F[i];
+            return (
+              <div
+                key={ck.k}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 14px',
+                  borderRadius: 15,
+                  border: `2px solid ${on ? 'rgba(46,217,122,0.65)' : 'rgba(150,200,240,0.22)'}`,
+                  background: on ? 'rgba(46,217,122,0.14)' : 'rgba(150,200,240,0.05)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    background: on ? C_GREEN : 'rgba(150,200,240,0.35)',
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 13,
+                    letterSpacing: 2.6,
+                    color: on ? C_GREEN : 'rgba(195,216,238,0.55)',
+                  }}
+                >
+                  {ck.k}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div
         style={{
           position: 'absolute',
           right: 92,
-          top: 78,
-          width: 760,
+          top: 76,
+          width: 560,
           textAlign: 'right',
           opacity: hudIn,
           transform: `translateX(${(1 - hudIn) * 18}px)`,
@@ -1734,24 +1722,24 @@ export const Motion: React.FC = () => {
       >
         <div
           style={{
-            fontSize: 74,
+            fontSize: 92,
             fontWeight: 700,
-            lineHeight: '80px',
-            letterSpacing: 0,
+            lineHeight: '96px',
+            letterSpacing: -1,
             color: accent,
-            transform: `scale(${1 + 0.055 * pop})`,
+            transform: `scale(${1 + 0.05 * pop})`,
             transformOrigin: '100% 50%',
           }}
         >
-          {money(settled)}
+          {score.toFixed(1)}%
         </div>
         <div style={{marginTop: 6}}>
           <Chrome
-            t={`SETTLED · ${itemsDone}/4 ITEMS CLEARED`}
+            t={lock > 0.999 ? 'FACE MATCH · LOCKED' : 'FACE MATCH · SEARCHING'}
             s={16}
-            l={5}
-            o={0.6 + 0.4 * hue}
-            col={hue > 0.999 ? C_GREEN : C_AMBER}
+            l={6}
+            o={0.6 + 0.4 * lock}
+            col={lock > 0.999 ? C_GREEN : C_AMBER}
           />
         </div>
       </div>
@@ -1771,17 +1759,17 @@ export const Motion: React.FC = () => {
           style={{
             width: 520,
             height: 1,
-            background: 'rgba(170,230,200,0.28)',
+            background: 'rgba(160,210,245,0.28)',
             margin: '0 auto 26px',
           }}
         />
         <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 15}}>
-          AUTOMATED PAYMENT SETTLEMENT
+          KYC IDENTITY VERIFICATION
         </span>
       </div>
 
       <div style={{position: 'absolute', left: 92, top: VH - 96, opacity: hudIn * 0.5}}>
-        <Chrome t="PCI-DSS · 3-D SECURE" s={15} l={3} o={1} col="#C6DCD2" />
+        <Chrome t="eKYC · AML SCREENED" s={15} l={3} o={1} col="#C3D8EE" />
       </div>
       <div
         style={{
@@ -1792,11 +1780,11 @@ export const Motion: React.FC = () => {
         }}
       >
         <Chrome
-          t={f >= F_STAMP ? 'ACH SETTLEMENT · FUNDS CLEARED' : 'ACH SETTLEMENT · PENDING'}
+          t={f >= F_STAMP ? 'DOCUMENT · AUTHENTIC' : 'DOCUMENT · UNVERIFIED'}
           s={15}
           l={3}
           o={1}
-          col={f >= F_STAMP ? C_GREEN : '#C6DCD2'}
+          col={f >= F_STAMP ? C_GREEN : '#C3D8EE'}
         />
       </div>
 
