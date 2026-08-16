@@ -1,1802 +1,651 @@
-/* =============================================================================
-   MOTION34 — "KYC IDENTITY VERIFICATION"
-   A captured but unverified ID card is crossed by a DIAGONAL biometric field.
-   Everything the field passes resolves in place: the pixelated portrait sharpens
-   behind a green face-match reticle, the blanked fields fill with real data, the
-   chip and hologram come alive and the machine-readable zone becomes legible.
-   The HUD score hunts, then locks on 98.7 %, four gates tick DOCUMENT / DATA /
-   FACE / MRZ, and an IDENTITY VERIFIED badge slams on.
-   1920 x 1080 - 60 fps - 900 frames (15 s) - ONE-SHOT (not a loop)
+import React, { useMemo } from 'react';
+import { AbsoluteFill, random, useCurrentFrame } from 'remotion';
 
-   The diagonal is not a shader change: the card is drawn ROTATED inside the
-   texture and the GL canvas is rotated back on screen, so the engine's
-   axis-aligned front reads as a 16-degree sweep across an upright card. The
-   boundary is a signed-distance-field front, so it hugs the card's real rounded
-   silhouette and the conversion happens under a live flame edge with ember, rim
-   glow and heat shimmer. "remotion-flame" engine, CONVERT mode, axis 'y'.
+/* ══════════════════════════════════════════════════════════════════════════
+   NEON BLUE PARTICLE DRIFT — abstract background loop
+   1920×1080 · 60 fps · 1200 frames (20 s) · perfect loop
+   Every cycle (drift, sway, wobble, twinkle, beam, clouds) has an INTEGER
+   frequency per loop, so frame 1200 ≡ frame 0 by construction.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-   Shader adapted from the Canvas UI "FlameWrap" component
-   (github.com/DavidHDev/canvas-ui) - MIT + Commons Clause.
-   ========================================================================== */
+const W = 1920;
+const H = 1080;
+const DUR = 1200;
 
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import {
-  AbsoluteFill,
-  continueRender,
-  delayRender,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
-
-/* -------------------------------------------------------------- embedded font */
-
-const FONT_400_B64 = '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';
-const FONT_700_B64 = 'd09GMgABAAAAACE4ABAAAAAATfQAACDXAAQAQgAAAAAAAAAAAAAAAAAAAAAAAAAAGjobvmAcgSwGYD9TVEFUWgCBVhEICsocvD4BNgIkA4QgC4ISAAQgBYQOByAMBxvqREUHYo8DqMgLiKKCMiH5/5CgjRGC/U60JorORDG0wkY3O7YZdIVuksxTJ29brXTxyFriKa5Rj1FQ94ecUPFrTQa19YTixtsgFP8Cx/hmZ0pwxDEcA5w8oSM0OUUrBLTWZvfuxQSzTrNEJkRCwzseqaKl0TIpMP7zddaf+6paRtqVlkcI1ZnqyANgJa2+oB24nO0M8Xr+GbvG2kFiJOwMgiyEsJ8kVggaIsKO3aKlZbc7xk4HOkInrb860jlUx0a39oOnnL69lTe2XLp+qW14AkORAgA5dATfH+m+HMcJFs1EQ5kAh9L7HC9RgYq1AnYKWLxFPlH9wVvvvt2fLxrSgAYwEAmmPHRwDId2lnqDKlwEcYgneg91pi5hne5d5g1wItiALDkEz2BFpaz5tcQr4Aw0AtlOCdRNn/sWVC8HYzGJ7eP8//2prrpB+R/lpAqqU6UgDVMBcCaYe/X+//m6epL1/F3Qt5IKgnLAcogl+1eKHBWYz66wabAKgBMgDWsn3pux2TrmdOoydljLe8fakqF5UO22RG05Er+R47YblU20zzfgMlhJJZVgg3hu8MR57jlH26tgJ1UHPVehBKAMAEQJSA3SYBAZMoxISZEp08g22xENLUJA0QgZfrVe2obiD69oQf2nqDWj/kvpsKEeD+AmQeHsIF4ciTYw6Wvj+cAQAEpAuslCRzErkHHGhEG48W12MCquMKv9P9h8ncvINSn2vQeX2kfFztV7QMwpb98/JM2gMeMEcgaiTR4+YRFR8UbznmCFyCNkTCtv8MJXDAnTZXIsERAjtpnncSJEHoIlzowne4tnSzWYiUtibbi6RtJqlMaUJgACGXRmSyCR8ESNMy4KDw8GKcUDBbt0m7PFLjIGBj4kicRoEYWZWTg4hcWRABe5zqmuSL6qIWkKFxHlJAaSf5irw1iylzfH8EazDpOXFHnlcM4jZtNYNoKH5HUi5crnXH7NgAPHS+BNO488O0GRrX/FDitwkxwCvQAktQCGdr24Q/IlqUxcr7cccAyECmQMYT/Gn0H2PnsuYQKShaRGF2GqJuv46P6dBSisVFrNb5e3wDXu2F0A/q9X0116hRg8iZzUxziZtzX4rD/NcfAxgMsaFZt7PVf2p/CjwyjRgBFgjyCekkESE6ssdnZ5RB75/ELKRERVIQMWZUrHyZEqA4CGVOlcRUWylG3+RKCJEy/XALkKccAD1DHuAEAo8lQ5lFcPmmlAWY5sJ5RA2+LxQFvbZyJIw3mJEv0kuoLwyPApqjHx/LtyzOeccmWgh63wV33Ot/zLU/BLKpXyq7Sqq7EGq7u81qRBj/yoiO7ai5Th8OIlS5EqQ6YsufLkK1CoSLFKDTp16dajj5yFh09QGOOMWDhijCdC3vDwrOnliUAoItGIJkTAOXma82QKYoYgyltj9l5x2Mgwt3siguwQhK1uouXhrSztBTyGm6CyOIi5wNKya+8N1X4J4yKhnLIzDMSFQRLkplV+BAoiUpRs3UI9Bn3EBUhEqZdAL+S7CiNURPFzgoSy05Q9gdYQXrEExmsk4zZKMMiALBahPD94fiD1PqKb+mT5pBMPtOzheQop6CrNxY65cyGHnHDJDTfdR3KQREnSpMtt1PLK1ajXqN1ogyDEaVqia+8JBOLmofZh4HU0EC29E4jys1dBmstgaZw44oWZkhcwpvEGcRAPiZAEKZAKaZAOmZANpVDNazSEnhoFmqAZWqH9I7HuH3ho/XP/6NPB2aa25o4cV0akRLvIB2GD6FH/JZ/uGK97rniRGxBhUPySidGqn+u6PwJ92xrP0uufA7xlbYrMFONpxUnczMTQnhYei3Ye6WxNnZM948rcNzH9S73Of+vLswTg3Th7E3mExOJSb8+kMB8gIuTLE3SwHw8s1XsenknvP9q/lWzsZPXdXdxjwFjzr3PX0ncA2PBPiWeEwzrHrD7uJPBu46qtjp81M26eKzKaPKwxL1BVl7hBkmxUsf4Z4d3aAFBQq0YL59tn0oOePDV5T+J3mQg2Rqua4QodTaC8OsvVoiONlArCdfp28oBmKrud4aORpj9M8YqSzFwNGpBea2cj5FZO2UVPni0b7Coj8HWEgJAII/cL/Cz4Rg/NwNKE0HtLgNXsqmNZhZo5Dj/TTGlsjJWlhZ2nwD6QJIzXuMybY9o76thVM3VUHgM5i68eqZ+yPcMCq+YkeMX91LvtBHin19NotOJPJ367qmwBmKbJjcyYEs2wQQBkyjiu3quKC5KqZ9mqQQ2SCwqr/Vaq2bzaL/US2NlMXdHHedrbq1SWlBr1zLRewBvAvOR4YOlztvLHSfmck0vwS0LgXTolfCUqCiNTqv9ScAr8f60Po5kbBlyIqWGyCtLvdsBe20TTKT2nWseZ92q/lZQwmunubOtMuvpZ8iabdmqnufCBpIrbsgBlzlbi3+iKUxE0bpORhVdGzbYn+U1nxaTI3CYm8EKLWTYaa6IaJ9jsUfqW7O90V2IFm9lY4eeqoC+DQs5NO6nTHk4gwldfT1LPXT/Myu+9rs+ZCmrZ1FzYrCVVJxVPcUy5dT1+Vv9NEiq5V/LTvhgLvtwK3jqaogxpPoaan9jm/36oHLXSaqp9/bCCDTYXbGAuw5IX8yuIBx/nDWu+Xqz2ufOOBZow7QBn3u2EfxFpuvYdUbDX+ihjzKrSuZKvbM3DL+nIsst6w69YgaXmJX0nT8Ffv/8yq/8FgR0XL9YLWj+vGYo0f+TRgcV137wa/q6iZKQGWCVRY9iIAeMEEkoGI0ysptjZzRF5zPMLMcEaEWqIgYg/5DT6VGRvDMDqGABQa8qp5ayVhZ7MhCEEiKkRIwYQ6wJD+PpyJFEIBVJzM6nW090SXD0AvFzdbcXN2WVb2hG8Le2UAEM6VNjCRolQ5fkwpJOqtYgRajQ/PCOYsrFa9B7rG2vsHRE3HzQXLqztoUeB+I25camQlRgZSHSdbO3F2Xdg8tPqKjZW1pZPKl1X66gA4MCiwhSGSoQqz11IS1X+x9517cnw9P+rrzs9CEIdZcNpRaKCHIL3UV7tzIQyUpOmTJsxa868BYvWrNtmuy222mHJshWrdtpltz322mc/GSbBIAE4oZfMyiqTg1sWr5A8UVElDjusFJ9PZm+Kg8x8vgJeobf44e0+8G8nLgsQ8U+QAHMAgOP35a24qfL1fO7c7YD8Z3cCASDd5iXAXCpCEnFAGwdsYze3mz7yhutPg4OkQGePSguhMfGylSMghkQ6EBCERb8JJBgWAgABgAjsnODJ5L0PGMvESdVBYsIeCkY+Ia/4Ze4qq6vOuwnmOg0R7KVk4ie0bn35Y/FX0NPNgedz/7JPKY+/klIK7AKHABwtq+57CpuMBsTIiVTUogIcrJxMXNy8/HyUDDQstCLCDtIx0wshlDaVADwBhBbwAsUp1N+AAIQeABBxCEM3P2c5C4GlMMCYpwbWtCmDlspuik1pNNAysNuWTJtWZwZVxzJgXbDTT1URy4yNVCWRf0W8rAUX6pJk29Us2WfaJJGG13FV9a0l6st2i+28uBu7b3rV9neGvdbbqqd5DKvneIe9+xJ0Z3Vji/V4lCWQzmDnnyTcrWqPI1a0uFrnFCV8q1hm9Tf1nee3aWf387AsSRaWccQ2TfF2z++yNkhVMaRFIQiFnu1cBqYixW9NLp95eDa7tczPKzQpqDPgAnBl8wTOdeN+EyP/I0fcl+IWSTyNKpgnbjq87MvppmGJML+C2XPD/1fm/aemhUEzFenMummvufCSy2GfAEsKpmagiBUlLaK7xzhh+rLlAMQElDNCkhKnT0e4edXpdNDoKk85hVIyYnU7mtVIWOwhmL+6xLGUC6UvLory1jm8aHbCgtyWwjWqXaFfwnRu7XpRIvlnL6gt7ibIZCYrzvkz/mp2awENcwHB+KDgiRGSMi2UsmWMtbqpqy8fDRT5hOovoZShx5HBh8sCS7FPmixo1j8GpiM1USTZR0GcYsDKzxioz6pR3t+SN9MpkksfmOssOAsXXzPcogmiYVGQ9vX8uMeZ1wpaZF4y2IAT8HamrOgPT3PjYslGIwjmhUufgtPh8cJWbBwSY5yw3/0bfw55D2EwPiyofJTzQTDNCP5g8TomJ8CZ6r1eYZWeM1/8Pu4513CwxU8RvM9xKczbU2AyUga2r5lduyld46fY5+bicvoVyubSV2PEDeB3NFdb4DSMKmhuoxgqVEb9GKZGOhldaQ91qqUwe6DBQFUvvvkqqyD+cQHNESlKnObZCke9J+KlnyO8KY3WvwtMJrjZlHEOQuvrCGMHdfJOQ5rana72cNOVpnkwWSpSSkl68Zh3Rp+SbEGXa/wK7znShhj8nMfl2GSLpMO1iHq8nm/Z3Fk5JompkIxqK0NDxnErbNxHWerZLpUeuZEu5VoJvDNLidMlNmbLBZ0EMlj76pHTC2q+TJEQGfRQ5gypRe9Pt0Bm9sXjPmdVz8bDXOtSKj12N0m+KR3qhC6hCN6ibaedzR/p8/Llgrnn9OczwgS0wFQ4oI48P2rVvtn6+sX6qTdttEjyUriKMNL86c8E68ybGWLqCOfR6KZ6JXs0rs5LxB3cVAM+kSwYDPFOpomGc5KkBWFa31oZ5KFd+EoCwyx7ZJzKt4xUS3I5qX2vErTAdFYypmRQdAfASW1WaghSFpxipoqOxp83GkgGorJPxqayfQLCVPigFkV4YAHmjoc1Yju81tINEpxKOYRB4HFZ42EMmV+ZroyWN2PGDkvbZd/HVW9/j6EKvc/1x6QW45IWTGl4f+nN3xFXjklGmyRbIzfVIEZhe28H26IcirL3jfokjqYU6/ndIc9fmN9fpQgi3bztFerxTZEfY952w78vKXuRJRAaDqSDsTHRFKVwWTduQljes4MPaTzmMj404+tRCiMVr+wZ1o/ngO7/fX8aW+TSOJ3bMujWnOnbSh5j5a4w3TJWrpEeIGigdS5l1NGAPMEUKWcKyCxDVngWTGhwNvJPpY0bHplBuqKMLsJUeGY3YSMJE8MwHX6fo11lZDboxOLJ3EZIoe9LUD193O2AnIrMUI5MWdODXTyDqZ6sraoVRz7jr7Bl09PGIg2r7QPgRsRQLpqGeZzHZChtJsZs5c+UxI3AkH20hrxyAlvEPHTi5nVy/5hy7373Eea3JO0Wg5Loj1ecmuMJ8Is4twUqyaFp5YpWwifjT6AJyEkiBu4zc8c58SG1JVSSpnq0dGd88v78Yu6p5zmjuF+KR8qzaEH+9K1Issb1VUyWq2+sf1RhBvs7QFjoXPI+Pk1bW5+J9Tm+UH0fP9rEXtCo9NrnDcVg86zQRVNc+sP9hxgPJrdy0blWsVjv1AkvlSzmvLDrGQ101Cpw2y9kMG4NDzFvnstoq1DY+RR7bJL0+s0kOfiY8YoEyEkQN9nOpaz8mWYJfgr4s3/ePUNu/hEeZPxk+APEEZ3rviePxL5bOxHrM7NQdTdspCFnVj0f+dU7JtIvyyyQKypkPNi/n/5QxC3J7SNT2xk/6l/nnl4YNLDsFhdHJG5PdH+c3r18ezkwbtB8/yK1Xyuv/RGHSGaz8hISsvJy9Vw1nyusIStSz4Ua15LdiqPmjvOK7myz65ABfI30yJbLdjrlnTpwbtnOul78IbfqTC5wdfyTXY+9yGpwwm/casBeZNf36cP47cVt8ziDkN4lOyIzBojaWlSXI66Djs0fvs1L/Xrrg+O2m/xuR3Ri9EGozKjsmPTuuCywoJjbqz7hTaRB2yxzeaqyWGHc/x/v9W2njY+7kiLaY6f8Su3l2CqL8gc9JgEiUmfR9/gsbW19NhbCOxYv+RwX62sMMeOiWtEEJ/XhgUOGcBRxJwscBw+kPpDzfN0SMvZBUPG8o7Pq6eeqieJvIVAJ2reASPTllAZCD26D2c09fqSs7Yev6egNKq/52VIwv+JeR0fVzc+ciebvCRDf3S+dQPLLLPEqL94tOYPEgkEwontcMa/jjsw+RzkCOb0GQaWWuOJoPh7+wQWIKC2hw5zLrYXDTe1//d56ePArZ/uSVK29QsI2RiE5z9mb7I7ChOXBHjdapOgcCi1lYdugpqYlqTwgO33rz/k/l2+53wLvdU7qbOtdF15GTMWRGptJKZCgJMZNuV8W9q1PdeDXP5YPS2iKw8PPY90uRgcviVHmKxJw3nC5LeSJhzpJVtcsJep0pCbdWmJ7TS9p5mHA9EO9pF7YSO5n9NagW0hsrmknPf6fCsVQV5K8+NO8CmZvvJdk1mtnbdW48BN42HHZr625EczDP13wvhw4607UHUSWX4ELfvBnotWNwEe2HQU5V1A73eMcKAfhBxwpHvH7b6FAAtyq7nDGxlW7EL/t5qk4M7rPdpvg9avpluuH4YB7wvYiDUVu2Isj6THTFJek01/9yTtpq433jWo+jI/UY7IUr0mzbv8BJ3RzRgj0zq0pwZXFxG57qgJdqVgj3UYObo+hWHn70qwSLmrBTBgNTZdCKxNHnRoTKO0ZqyZ7lIUJlCoXKUloDsov1a/0r1SMys9YVrT1fVfn00RTsKqVVBlASSSpHbcHchIYXIlISqkMSq34r7ps8+xpPviv/uFnSg4N2cNkIruyaRFkNhXVmZnh3c2OBlzd0S/t9dITU/XSX86Npg171KRGb1en6Xm02AZH4g2dI3NpyL6MNGRfblykc6hRoW1ohZ67enx0c03aiAfQ1xJcqeeD02fLN/8LV6RWBpFTnJXhMCAnsT+u7k9JrAwAn0nsaFR3Riayk00lR+TQvLqYTGRPDg2U6I5/b6mXOjpZJ7N6Xpg/H9LWGnmjPWZ8zqAFEecpYOHJlNxQVFlEAwNdV4SheNFM//6l3m2U1NC8RASuL6CV+ytbYqBpPrRPSGGFFukNez2zcTQL9kb7jQHOqdar+JpyA4pU6OMxhm0Yt5a19Yq+PzG6zDOp6j9e2eqp+Yo/V6oroOpACuSnOmdP62m+vJ7WO0nOIaJ2pqehOnKiyBE5McgOOhO5k00G441NMCAnsWsxcG451ruzaCI9da7usksHK4eXGsREIrOAAIJBQOGLzKVHkLb/dHhtwHsHkj8aDdrw2S55k0nP4aEPYEBOsi1vZ8SbpZuvzgCjRQnq/ocnT09NV88wM72mKYBY2tFrdcDaIIfT3I+lZR1MSB4pW4OdSs1MInpT4bA4vyNW56l0Otkrxg2ejBuQNxEyltXTegBo3bBRXN2Rr21Gz0daLk1N1D7yLpId79XPSPPqY8dFRubEQaQx2NudEw+qDwF50DCnpiZfzf12vpRob6rvq8nCjh6G0ZQVUEPyPXI9qc/ZW6YJ7oynqgCyurjFLKs9G9KP8dyCJCpYBef5+rPwFcBPt+kqqW63Vpaemy45j5wcy0S7w/CoMLVz9ocsDuyvzOX1X4/eWX8+jN+gnajkqkgPoxLSAjyd0D4U9aVnj9i+zpL86oGnScBpGlrpWelTgll6PUdp3l13emrGVHEZOSrsAyAvmqygk82D0IzbzCI0uUAmMnqazq3TPUBsuAAFiXGWue6PjIrRhsWIR/1tPYXzM7wJgWydAciPvtcg30dWf5+VYV+AvBEnY69OGs3LCZA12mOl34+UNSx41NQgnQUIUT6libbea3lYE++lgbc6bL3PHE88cDpyDLzp6wxOF7nFkkbsIwodKMRRRCxLFHio59XRCWz5dTiNMupA5tqRCaNutPLrgN8S/CzsbIrqjrhyo2DGj8uf5/TAmI834ns9tM69WO4P0+nnlgnZdftCOf5ZGqBk1m5SUW+t5rLCXkXjNcBeAgrpJbam+R77zX+fHNWeU5reEbO2uiNWaWZuTnl2B211rTVGeXrud3IVH7ssHMCu+IaSk6pLMC8GhJjlaj5wvXUg+M9wUTlm1SDsJah4qP4Rh0nOgWf64/xSszxwIVkoVFa4za762++K+ve/49Qu1kSjDw0t9bY8faRSvAF2ax/+ld++KCXwsMdSC1zwhK3uQUkBgdiUcs+45uXm8Dz3wHh/Xy8aHY7BsF0x0Up2UlWtF1fzevpWtlbNF1X2D5frq7BVO1OIu1Kqdi0CDkhXXK1fv3s1snxn8Zaib48VqXJsHXMgJwFc7b6PnOZFmSonR3R8NjyIWIjF8CMisGVFODKuzNNE002Wq9b4e7ttiSJvbwg9Yyy0sjbkOLu7+dWPejCuXXCDODTC0P9vLtp+39VH7O0dzwqbL6iWwbQoxYnxzEYu7maHsiWak7ILHlV/pYx/r7Wn5c33+qFVAhePKyERMXwunoBKccSH26WiwjElRWHgqN3Cv8qS35rA7oUE9GkPS+Xtni9JidnbzkpUU3IZdJwo4zZMv8nq7nqb1TjNLes6wTVQildrZ8XuTSnpmJfOG3pGLkAGMdFYTHqhL4FQ6INJx6EDGVwUcQ+a6eGd5OePSmAiMBgmApXg74dKSvMA5bodz7nbF9XKXDUjeCkJzMai4NsdyuaclHZ3av218mLhs7392TggVXCdVLBjPsZhb5NzK7+gIKeQMPtU7zAsnxtGDC/C40qIxLH2Qjzo0p77M11NW10VxP6emStFs1Vo+X9Pz/1O5HF8n49P+i57R2JiMUdMjjPENYOj3z99185Qz31hUt7NS07niOoxh8qoY6as5bLo9Nz7KCsWM+ok3OJGB2vMhObBHGyY4iRn8Lq7dsGkzmtF3WNHZ5YdQml81wBw94ruVsSIEvdz800qW2aNmpZRsYfqRZyk9GInG8fnZfEg+x4qIhjUaKS7mwe+OTlTDdiDL9lRE2uh8Xeg8R2AH93+J1v5Ym4ivqmqkOptLF7W+tvKIzQUB8NYBjgh4HRaNgoN03b2J7T747ltxMN0dvrYDLOUPw6l7GeEwEvjsv51u/9vYLyft1d0KgxN7Q+tqiec5Gw0+93N2odBkBBR2OtB4L87Umm/cNZr81sKM4VIslIirCTiYwoa/jKohu2Kib2JdU7KCPeEE6McPeA0R2QUzEKqrXbuXkpt+4PUiuNVAv5opn8NIdg6Kcyg/iElLYVIsl4oEYwUEvG+AyPQEDaDG07g64f2Z0Uiid11rooZLlFi/SpJ7QWA1aPOp7u6KNR0T0VmZCioR+THbz4mc/B53YXKa2BGDygEv35xGchVXH4BMvQCejOZBLSUd1cyflVLwB+qo86a5i/Xxi312bJYUQtwq+WO/FmTumj8MpaRUdl9qJaxqLbgiMusvWJRHuuBrTi4qHqUDWB+ltrl/BnTOioenMz0CtgLqTYOI5jGaPnB7grAsHnwB+uiZ0zsZIyVCij93jAmXmZW/lwVQM/uVtDXNzOPv74XL1h7Ve19stLlDvPQ3kQOhmtFJvQqGhH2JhdvP1uZ/rSrI+/pQlUNszXkkkrmFSH8hGtQeKT5UO3u6I/D4xvJI0fVmCfEyWrjU9CW07NaKTPULv1yawHlqsIel3mTtv5oNsazJpWO5LG9KKQcHIofEeNexyKCY+o0ybIloFZ5ds+2LfGgAp56CEVJ0Fwus32+TWYCcHkDM/kfPAaDxfAxoLTb5HCw8eSLGT2sHn0e+gzQ0qcFgKBEAPZ8LzTjd9Fou+ITaO0LbqKdBpEQzxBfPlCOzoxjw06wgVpHphnb0pQNaFrhaczwrUlg8Pb3oKOXLOdN22x2zJuYA1LNHVnMgvkZkx02bWdMLef3GVhY2FjZCIx68nvlN0BFSf/PQts+Sz0F+loI0pp+SozUTkNqnDp18rgtaSfFYG+nzDaSuA2ih5SjIvAD3XZemCgQ++YLUGqHwqv8CejXOFtPHFkqEVx99c4LTBs8PCM9d0+7C76ujlf/XlfNBx60aBl/2E8fBhUQ9NEBSck5zZ8INPp/hQpoGKi1APN1FVN7QnhXPCWR2Nl5WW/WzkQLocnxrFkcPAFFQbomh2DdIU8Kyj0Bj3uYHfIRvtN1V0IWu81NFbAlIoOIFK9uZkQi7tw+tJzkqtUB9L68/w+p14wEW4SGN6+mCQdevaYVtWc2myQX62xV57vv/LzT/cQ+TzGpIJwZk0fLCHk0I9BK/xycmoBGW2HBwfR4DJqeAKTtgA0AhODoZzC2tGWrNKQlDf+WRh5JozrS2B9pHCtNbJBAG4rAgc2ODXXEA+dZALZgiabYPCv9EtjHZQxuxuWB6n8gktpM0ljq2o2UmBXMAET3rhnJ94/kfyIFHjcPNg/p0YRc0ipDNFKsaTIsEiur5wS0gRYSq2xfx2jWHohDANAEaunqLzD6qQNwCuHtYZMrd+vXIQrpy74kz/tZKiQw1/9KiHQEsJeuz+A0PMNukggC3jb+luRe1rw/0OdDXagQWzrOQHcw+IP7xpx9uFBCaebPmIXQYEnjw3nVj1yTMxenE+DC/XvHv+m2c85lW6Z7Yhw3PQPD4C5u7vjx8Uz61MD3e58nmdkDpT735dWGZzzKh5bhW0C0HhDW1n+YOJtb876xBWsEpKR/509r8qb//zyXCAB/V03PMPfH5VwL9zh/93+5UwII8P980fkOFP2qZwOu0KdFR1j+J8QuOrrvyPayo/PQLMdKHlLM8quog+KTpva8jzc6+lI0J0Mlpwi5KaAsmDwbYPvGWdwHYLziuWyV9n89+5vWtsY+g6ZWBZGZsV4Q1lmodNzkbvqYuEHQzg6AWT1XQJ8Bi7C+kBmldF6nUkQQhGWTl1vpj3LjY/9V8fhK3Tmjeb7zocs8kgrLIDtc+1cZtnWi3mza+cXyuZPNsMX1IhvdZofZB89BFOQggAh74TTsdu1tO5KWepfkVHoASl+ZL/kZ46Kk0sY1uAOX4Ti46Vm+bmR2rfe0R1Nm9cjiEWASXnbpzjmn6tc9LckWIf+UKO1nPvoFnLedGgDyQPLuXlfAOevzNGftOMHd/JHvTBjdfPcBX8FH8Ao8ub+vn6uQfJmeUjefFl7v924BP7UCuaXPATcIeLJHsg0chwB4gpVV3A7myiUBPMNzd5LsXHcm0Y0wpzmlOy/Xl93j9Pu9W7zcyp+KCKnRDLyPS4Hugwqrv7tEYqzQhLbccfsFyaEyaYOdl8hIz8ChUrdOXforbaOgjc+zcaAhUaU1og0mWuoEQ+D0ZOCGaJPZGxlQyV6NIR3vkJ6RtHQnlXZqG6w6LFkNJWDMkNmUjaTR2S00erXrFFV52BZbLVvmMATayBreViXfgdk3GU9pU8moSAu16b/h1D5ATSpUmSG8k7ZOda+yczBSU7KotFWH8NHq0qv9PAcj8S0lT6Zkw3G79z/P2yb9rc2GzQ4AAAA=';
-
-const FONT_CSS = `
-@font-face{font-family:'MxSans';font-style:normal;font-weight:400;font-display:block;
-src:url(data:font/woff2;base64,${FONT_400_B64}) format('woff2');}
-@font-face{font-family:'MxSans';font-style:normal;font-weight:700;font-display:block;
-src:url(data:font/woff2;base64,${FONT_700_B64}) format('woff2');}
-`;
-
-let fontsPromise: Promise<unknown> | null = null;
-const ensureFonts = () => {
-  if (fontsPromise) return fontsPromise;
-  const st = document.createElement('style');
-  st.textContent = FONT_CSS;
-  document.head.appendChild(st);
-  fontsPromise = Promise.all([
-    document.fonts.load("400 24px 'MxSans'"),
-    document.fonts.load("700 24px 'MxSans'"),
-  ]).catch(() => null);
-  return fontsPromise;
+/* ── palette ──────────────────────────────────────────────────────────── */
+const C = {
+  bg: '#00030f',
+  ice: '#c8e8ff',
+  hot: '#ffffff',
 };
 
-const useEmbeddedFonts = () => {
-  const [handle] = useState(() => delayRender('motion31-fonts'));
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      setReady(true);
-      continueRender(handle);
-    };
-    const timer = setTimeout(finish, 2500);
-    ensureFonts().then(finish, finish);
-    return () => clearTimeout(timer);
-  }, [handle]);
-  return ready;
-};
+const LAYER = [
+  /* 0 far  */ {
+    cols: ['#1546f0', '#2a7bff', '#4a5cff'],
+    corridor: 430, wid: [1.3, 2.2], len: [10, 30], op: [0.26, 0.5], blur: 1.6,
+  },
+  /* 1 mid  */ {
+    cols: ['#1f6cff', '#2f9dff', '#5f6cff'],
+    corridor: 720, wid: [2.0, 3.2], len: [20, 62], op: [0.42, 0.78], blur: 0.95,
+  },
+  /* 2 near */ {
+    cols: ['#4fc4ff', '#9fdcff', '#6f8cff'],
+    corridor: 1180, wid: [2.9, 5.0], len: [40, 122], op: [0.6, 1.0], blur: 1.15,
+  },
+];
+const COUNT = [340, 285, 155];
 
-
-/* ------------------------------------------------------------------ types */
-
-type FlameParams = {
-  /** flame colour, linear 0..1 */
-  color: [number, number, number];
-  /** overall brightness, 0..2 */
-  intensity: number;
-  /** reach of the flames past the front, in px — the master scale of the effect */
-  height: number;
-  /** reach of the rim glow around the silhouette, in px */
-  spread: number;
-  /** animation speed multiplier */
-  speed: number;
-  /** flame detail, 0 (broad licks) .. 1 (fine licks) */
-  scale: number;
-  /** amplitude of the turbulence shaping the flames, 0..1 */
-  turbulence: number;
-  /** frequency multiplier of the turbulence, 0.2..3 */
-  turbulenceScale: number;
-  /** how far from the front the heat warps the artwork, in px */
-  turbulenceReach: number;
-  /** brightness of spark highlights, 0 disables */
-  sparks: number;
-  /** size multiplier for individual sparks */
-  sparkSize: number;
-  /** how many sparks fly at once */
-  sparkDensity: number;
-  /** how fast sparks rise */
-  sparkSpeed: number;
-  /** strength of the molten glow hugging the silhouette, 0..3 */
-  rim: number;
-  /** how far the flames bite into the silhouette, in px */
-  melt: number;
-  /** heat shimmer displacement of the artwork near the front, in px */
-  distortion: number;
-  /** smoke drifting off the flames, 0..2 */
-  smoke: number;
-  /** brightness of the glowing ember line at the front, 0..2 */
-  ember: number;
-  /** darkness of the charred band behind the front, 0..2 */
-  scorch: number;
-};
-
-type FlameFrontProps = {
-  /** where the GL canvas sits on screen, in composition px */
-  region: {x: number; y: number; w: number; h: number};
-  /** the artwork rect, in composition px. Pad it ~100px around your shape so
-   *  the baked SDF has room to describe the space just outside the silhouette. */
-  rect: {cx: number; cy: number; w: number; h: number};
-  /** draws the artwork into a `rect.w` x `rect.h` canvas */
-  drawContent: (c: CanvasRenderingContext2D, w: number, h: number) => void;
-  /** optional second version the front converts the artwork INTO */
-  drawConverted?: (c: CanvasRenderingContext2D, w: number, h: number) => void;
-  /** re-rasterise the artwork only when this changes. Leave undefined for
-   *  artwork that animates every frame (costs one Canvas2D redraw per frame). */
-  contentKey?: string | number;
-
-  params?: Partial<FlameParams>;
-
-  /** front direction. 'y' = a horizontal line travelling down (default),
-   *  'x' = a vertical line travelling right-to-left */
-  axis?: 'y' | 'x';
-  /** front position, 1 = at the far edge of the rect, 0 = past the near edge.
-   *  Leave at 1 for the classic "flames on the top edge" wrap. */
-  level?: number;
-
-  /** master fire visibility, 0..1. At 0 the shader short-circuits to a plain
-   *  blit of the artwork, which makes non-burning frames essentially free. */
-  fire?: number;
-  /** how much of the artwork the front REMOVES behind it, 0..1.
-   *  This is a latched state flag, not a brightness envelope — see pitfalls. */
-  eat?: number;
-  /** how much of the artwork the front CONVERTS to `drawConverted`, 0..1.
-   *  Also a latched flag. */
-  convert?: number;
-  /** keep the fire at the travelling front instead of wrapping the whole
-   *  silhouette — the right choice for a scan sweeping a large object. */
-  frontOnly?: boolean;
-
-  /** cheap screen-blend bloom over the region, 0 disables */
-  bloom?: number;
-  style?: React.CSSProperties;
-};
-
-/* --------------------------------------------------------------- presets */
-
-/** The stock Canvas UI FlameWrap playground preset — a real fire, tuned for an
- *  object roughly 300 px across. Length-based values (height, spread, melt,
- *  distortion, turbulenceReach) scale with your object; everything else is
- *  already relative to `height` inside the shader and can stay put. */
-const FIRE_PRESET: FlameParams = {
-  color: [1, 0.3098, 0], // #FF4F00
-  intensity: 1,
-  height: 190,
-  spread: 13,
-  speed: 0.5,
-  scale: 0.94,
-  turbulence: 0.63,
-  turbulenceScale: 0.65,
-  turbulenceReach: 16,
-  sparks: 1.5,
-  sparkSize: 1.05,
-  sparkDensity: 1,
-  sparkSpeed: 1,
-  rim: 2.25,
-  melt: 5,
-  distortion: 13,
-  smoke: 0.7,
-  ember: 2,
-  scorch: 0,
-};
-
-/** Cool, premium variant — reads as tech/fintech rather than literal fire. */
-const BLUE_FIRE_PRESET: FlameParams = {
-  ...FIRE_PRESET,
-  color: [0.31, 0.54, 1], // #4F8AFF
-  intensity: 0.6,
-  scale: 0.72,
-  turbulence: 0.52,
-  turbulenceScale: 0.5,
-  sparkSize: 0.34,
-  scorch: 0.55,
-};
-
-/** Height dialled right down and smoke off: a crackling inspection / containment
- *  front rather than a plume. Pair with a `drawConverted` for scan effects. */
-const FIELD_PRESET: FlameParams = {
-  ...FIRE_PRESET,
-  color: [0.16, 0.83, 0.94], // #29D4F0
-  intensity: 0.9,
-  height: 34,
-  spread: 10,
-  speed: 1.0,
-  turbulenceReach: 7,
-  sparks: 1.0,
-  sparkSize: 0.8,
-  sparkDensity: 1.3,
-  sparkSpeed: 1.2,
-  rim: 1.7,
-  melt: 2,
-  distortion: 5,
-  smoke: 0,
-};
-
-/** Scale the length-based params of a preset to your object's size.
- *  `factor` = yourObjectWidth / 300. */
-const scalePreset = (p: FlameParams, factor: number): FlameParams => ({
-  ...p,
-  height: p.height * factor,
-  spread: Math.max(8, p.spread * factor),
-  melt: p.melt * factor,
-  distortion: p.distortion * factor,
-  turbulenceReach: Math.max(4, p.turbulenceReach * factor),
-});
-
-/* -------------------------------------------------------------- SDF baker */
-
+/* ── helpers ──────────────────────────────────────────────────────────── */
+const TAU = Math.PI * 2;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-/** smoothstep ramp between two frame numbers */
-const ss = (a: number, b: number, x: number) => {
-  const t = clamp01((x - a) / (b - a));
+const smooth = (x: number) => {
+  const t = clamp01(x);
   return t * t * (3 - 2 * t);
 };
-/** constant-speed traverse with soft ends — the right shape for a front,
- *  which does not accelerate. `a`/`b` are the ease-in/ease-out fractions. */
-const trapezoid = (u: number, a = 0.12, b = 0.16) => {
-  const x = clamp01(u);
-  const area = 1 - a / 2 - b / 2;
-  let s: number;
-  if (x < a) s = (x * x) / (2 * a);
-  else if (x < 1 - b) s = a / 2 + (x - a);
-  else {
-    const r = (1 - x) / b;
-    s = area - (r * r * b) / 2;
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const rr = (seed: string, a: number, b: number) => lerp(a, b, random(seed));
+const pick = <T,>(seed: string, arr: T[]) => arr[Math.floor(random(seed) * arr.length)];
+
+/* 8-point sparkle: long cardinal spikes, short diagonals */
+const starPath = (R: number, dR: number, r: number) => {
+  let d = '';
+  for (let i = 0; i < 16; i++) {
+    const a = (i * Math.PI) / 8 - Math.PI / 2;
+    const rad = i % 2 === 1 ? r : i % 4 === 0 ? R : dR;
+    const x = Math.cos(a) * rad;
+    const y = Math.sin(a) * rad;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2);
   }
-  return s / area;
+  return d + 'Z';
 };
 
-const SDF_RANGE = 220;
+/* ── particle model ───────────────────────────────────────────────────── */
+type Rod = {
+  L: number;
+  x0: number;
+  y0: number;
+  u0: number;
+  k: number;
+  len: number;
+  w: number;
+  op: number;
+  ci: number;
+  swA: number;
+  swK: number;
+  swP: number;
+  wbA: number;
+  wbK: number;
+  wbP: number;
+  twK: number;
+  twP: number;
+  tipUp: boolean;
+};
 
-/** Two-pass chamfer distance transform of the artwork's alpha. Negative inside
- *  the silhouette, positive outside, packed into an 8-bit RGBA texture.
- *  Run this once (useMemo) — it is the thing that makes the fire follow the
- *  shape's real outline instead of its bounding box. */
-const bakeSdf = (
-  draw: (c: CanvasRenderingContext2D, w: number, h: number) => void,
-  W: number,
-  H: number,
-  range = SDF_RANGE,
-): Uint8Array => {
-  const cv = document.createElement('canvas');
-  cv.width = W;
-  cv.height = H;
-  const c = cv.getContext('2d', {willReadFrequently: true})!;
-  draw(c, W, H);
-  const img = c.getImageData(0, 0, W, H).data;
-
-  const N = W * H;
-  const INF = 1e9;
-  const dIn = new Float32Array(N);
-  const dOut = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    const inside = img[i * 4 + 3] > 110;
-    dIn[i] = inside ? INF : 0;
-    dOut[i] = inside ? 0 : INF;
-  }
-  const DD = 1.41421356;
-  const pass = (d: Float32Array) => {
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x;
-        let v = d[i];
-        if (x > 0) v = Math.min(v, d[i - 1] + 1);
-        if (y > 0) {
-          v = Math.min(v, d[i - W] + 1);
-          if (x > 0) v = Math.min(v, d[i - W - 1] + DD);
-          if (x < W - 1) v = Math.min(v, d[i - W + 1] + DD);
-        }
-        d[i] = v;
+const useRods = () =>
+  useMemo(() => {
+    const out: Rod[] = [];
+    let n = 0;
+    for (let L = 0; L < 3; L++) {
+      const cfg = LAYER[L];
+      for (let i = 0; i < COUNT[L]; i++, n++) {
+        const s = `r${L}_${i}`;
+        const acc = random(s + 'ac') > 0.84;
+        out.push({
+          L,
+          x0: rr(s + 'x', -60, W + 60),
+          y0: rr(s + 'y', -120, H + 120),
+          u0: random(s + 'u'),
+          k: random(s + 'k') > 0.72 ? 2 : 1,
+          len: lerp(cfg.len[0], cfg.len[1], Math.pow(random(s + 'l'), 2.1)),
+          w: rr(s + 'w', cfg.wid[0], cfg.wid[1]),
+          op: rr(s + 'o', cfg.op[0], cfg.op[1]) * (acc ? 1.2 : 1),
+          ci: acc ? 2 : Math.floor(random(s + 'ci') * 2),
+          swA: rr(s + 'sa', 5, 8 + L * 11),
+          swK: pick(s + 'sk', [1, 1, 2, 3]),
+          swP: random(s + 'sp'),
+          wbA: rr(s + 'wa', 3, 6 + L * 5),
+          wbK: pick(s + 'wk', [1, 2, 2, 3]),
+          wbP: random(s + 'wp'),
+          twK: pick(s + 'tk', [2, 3, 3, 4, 5, 6]),
+          twP: random(s + 'tp'),
+          tipUp: random(s + 'tu') > 0.55,
+        });
       }
     }
-    for (let y = H - 1; y >= 0; y--) {
-      for (let x = W - 1; x >= 0; x--) {
-        const i = y * W + x;
-        let v = d[i];
-        if (x < W - 1) v = Math.min(v, d[i + 1] + 1);
-        if (y < H - 1) {
-          v = Math.min(v, d[i + W] + 1);
-          if (x < W - 1) v = Math.min(v, d[i + W + 1] + DD);
-          if (x > 0) v = Math.min(v, d[i + W - 1] + DD);
-        }
-        d[i] = v;
-      }
-    }
-  };
-  pass(dIn);
-  pass(dOut);
-
-  const out = new Uint8Array(N * 4);
-  for (let i = 0; i < N; i++) {
-    const v = Math.round(clamp01((dOut[i] - dIn[i]) / range / 2 + 0.5) * 255);
-    out[i * 4] = v;
-    out[i * 4 + 1] = v;
-    out[i * 4 + 2] = v;
-    out[i * 4 + 3] = 255;
-  }
-  return out;
-};
-
-/* --------------------------------------------------------------- shaders */
-
-const VERT = `#version 300 es
-precision highp float;
-layout(location = 0) in vec2 aPos;
-out vec2 vUv;
-void main () { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
-
-const FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 outColor;
-uniform sampler2D uContent;
-uniform sampler2D uContentB;
-uniform sampler2D uSdf;
-uniform vec2 uResolution;
-uniform float uTime;
-uniform vec2 uRectCenter;
-uniform vec2 uRectHalf;
-uniform vec3 uColor;
-uniform float uIntensity;
-uniform float uHeight;
-uniform float uSpread;
-uniform float uScale;
-uniform float uTurbulence;
-uniform float uTurbScale;
-uniform float uTurbReach;
-uniform float uSparks;
-uniform float uSparkSize;
-uniform float uSparkDensity;
-uniform float uSparkSpeed;
-uniform float uRim;
-uniform float uMelt;
-uniform float uDistortion;
-uniform float uSmoke;
-uniform float uEmber;
-uniform float uScorch;
-uniform float uFire;
-uniform float uEat;
-uniform float uConvert;
-uniform float uInnerCut;
-uniform float uOuterCut;
-uniform float uCullD;
-uniform float uBypass;
-uniform float uFrontOnly;
-uniform float uBurnEdge;
-uniform float uSdfRange;
-uniform float uAxis;      // 0 = front travels along Y, 1 = along X
-
-#define S(a, b, t) smoothstep(a, b, t)
-
-vec3 permute (vec3 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
-
-float snoise (vec2 v) {
-  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
-    -0.577350269189626, 0.024390243902439);
-  vec2 i = floor(v + dot(v, C.yy));
-  vec2 x0 = v - i + dot(i, C.xx);
-  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  vec4 x12 = x0.xyxy + C.xxzz;
-  x12.xy -= i1;
-  i = mod(i, 289.0);
-  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-  m = m * m; m = m * m;
-  vec3 x = 2.0 * fract(p * C.www) - 1.0;
-  vec3 h = abs(x) - 0.5;
-  vec3 ox = floor(x + 0.5);
-  vec3 a0 = x - ox;
-  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
-  vec3 g;
-  g.x = a0.x * x0.x + h.x * x0.y;
-  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-  return 130.0 * dot(m, g);
-}
-
-float fbm (vec2 p) {
-  mat2 m = mat2(0.8, -0.6, 0.6, 0.8);
-  float v = 0.5 * snoise(p);
-  p = m * p * 2.03 + vec2(11.3, 7.1); v += 0.27 * snoise(p);
-  p = m * p * 1.97 + vec2(3.7, 19.1); v += 0.15 * snoise(p);
-  p = m * p * 2.01 + vec2(8.3, 2.9);  v += 0.08 * snoise(p);
-  return v * 0.5 + 0.5;
-}
-
-float fbm2 (vec2 p) {
-  float v = 0.62 * snoise(p);
-  v += 0.31 * snoise(mat2(0.8, -0.6, 0.6, 0.8) * p * 2.13 + vec2(5.2, 1.3));
-  return v * 0.54 + 0.5;
-}
-
-vec2 turbulence (vec2 p) {
-  float freq = 12.0 * clamp(uScale, 0.05, 1.0) * clamp(uTurbScale, 0.2, 3.0);
-  mat2 rot = mat2(0.6, -0.8, 0.8, 0.6);
-  for (float i = 0.0; i < 7.0; i++) {
-    float phase = freq * (p * rot).y + 6.0 * uTime + i;
-    p += uTurbulence * rot[0] * sin(phase) / freq;
-    rot *= mat2(0.6, -0.8, 0.8, 0.6);
-    freq *= 1.2;
-  }
-  return p;
-}
-
-vec3 hash3 (vec2 p) {
-  vec3 q = vec3(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)),
-    dot(p, vec2(419.2, 371.9)));
-  return fract(sin(q) * 43758.5453);
-}
-
-vec4 sampleMix (vec2 uv, float m) {
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
-  vec2 t = vec2(uv.x, 1.0 - uv.y);
-  vec4 c = mix(texture(uContent, t), texture(uContentB, t), clamp(m, 0.0, 1.0));
-  return vec4(c.rgb * c.a, c.a);
-}
-
-void main () {
-  vec2 frag = vUv * uResolution;
-  vec2 rel = frag - uRectCenter;
-
-  /* the whole front is rotated when uAxis = 1, so relF.y always runs along the
-     direction of travel and the plume always licks back the way it came */
-  vec2 relF = (uAxis > 0.5) ? vec2(-rel.y, rel.x) : rel;
-  vec2 halfF = (uAxis > 0.5) ? vec2(uRectHalf.y, uRectHalf.x) : uRectHalf;
-
-  float unit = max(uHeight, 24.0);
-  float spreadPx = max(uSpread, 8.0);
-  float t = uTime;
-  float detail = clamp(uScale, 0.05, 1.0);
-
-  vec2 cUv = (rel + uRectHalf) / (2.0 * uRectHalf);
-  vec2 cUvC = clamp(cUv, vec2(0.0), vec2(1.0));
-
-  float d0 = (texture(uSdf, vec2(cUvC.x, 1.0 - cUvC.y)).r * 2.0 - 1.0) * uSdfRange;
-  float above = relF.y - uBurnEdge;   // > 0 : the front has already passed here
-  float aheadG = mix(1.0,
-    1.0 - S(0.22 * unit, 0.75 * unit, max(-above, 0.0)), uFrontOnly);
-
-  /* ---- fast paths: these are what make idle frames nearly free ---------- */
-  if (uBypass > 0.5) { outColor = sampleMix(cUv, uConvert); return; }
-  if (d0 > uCullD) { outColor = vec4(0.0); return; }
-  if (above > uOuterCut) {
-    outColor = (uEat > 0.5) ? vec4(0.0) : sampleMix(cUv, uConvert);
-    return;
-  }
-  if (d0 < -uInnerCut && above < -uInnerCut) { outColor = sampleMix(cUv, 0.0); return; }
-  if (uFrontOnly > 0.5 && uEat < 0.001 && above < -uOuterCut) {
-    outColor = sampleMix(cUv, 0.0); return;
-  }
-
-  float px = relF.x / unit;
-  float py = relF.y / unit;
-
-  float yA = max(above, 0.0) / unit;
-  float sway = snoise(vec2(px * 1.1, t * 0.5)) * 0.55
-    + snoise(vec2(px * 2.4, t * 0.9 + 41.0)) * 0.25;
-  float sx = px + yA * sway;
-  float env = fbm2(vec2(sx * 1.6 * detail + 3.7, t * 0.55 - yA * 0.4));
-  float env2 = fbm2(vec2(sx * 3.6 * detail, t * 0.85 + 17.0 - yA * 0.6));
-  float tongue = clamp(0.75 * S(0.3, 0.9, env) + 0.5 * S(0.4, 0.95, env2), 0.0, 1.0);
-
-  float meltPx = max(uMelt, 1.0);
-  float biteTop = (3.0 + meltPx * 1.4) * (0.35 + 0.65 * tongue)
-    + 2.0 * snoise(vec2(px * 5.0 * detail, t * 1.1 + 5.0));
-  float frontTop = relF.y - (uBurnEdge - biteTop);
-
-  float perim = fbm2(relF * (1.9 / unit) * detail + vec2(0.0, t * 0.4) + 31.0);
-  float frontSB = d0 + 3.0 + meltPx * (0.25 + 0.75 * perim);
-
-  /* the flame may only exist where the artwork still HAS material at the
-     front's own coordinate — otherwise the plume rises out of empty space */
-  float fu = clamp((uBurnEdge + halfF.y) / (2.0 * halfF.y), 0.0, 1.0);
-  vec2 sA, sB, sC;
-  if (uAxis > 0.5) {
-    sA = vec2(fu, 1.0 - cUvC.y);
-    sB = vec2(clamp(fu - 0.014, 0.0, 1.0), 1.0 - cUvC.y);
-    sC = vec2(clamp(fu - 0.032, 0.0, 1.0), 1.0 - cUvC.y);
-  } else {
-    sA = vec2(cUvC.x, 1.0 - fu);
-    sB = vec2(cUvC.x, clamp(1.0 - fu + 0.014, 0.0, 1.0));
-    sC = vec2(cUvC.x, clamp(1.0 - fu + 0.032, 0.0, 1.0));
-  }
-  float lineA = max(texture(uContent, sA).a,
-    max(texture(uContent, sB).a, texture(uContent, sC).a));
-  float lineMask = S(0.10, 0.55, lineA);
-
-  float wCut = S(-0.62 * unit, -0.1 * unit, above);
-  float wTop = wCut * lineMask;              // weight only, never geometry
-  float front = max(frontSB, frontTop);      // SDF of shape INTERSECT behind-front
-
-  float reach = mix(spreadPx * 0.9, unit * (0.2 + 0.45 * tongue), wTop);
-  float q = front / reach;
-
-  vec2 np = vec2(px * 2.3, py * 1.25 - t * 1.85) * detail;
-  np = turbulence(np);
-  float n = fbm(np);
-
-  float win = S(-0.08, 0.02, q);
-  float root = exp(-abs(q) * 5.0);
-  float ridge = 1.0 - abs(2.0 * n - 1.0);
-  float flameH = mix(1.0, 0.5 + 0.6 * tongue, wTop);
-  float g = max(q, 0.0) / flameH;
-  float shred = fbm2(np * 1.9 + 63.0);
-  g *= 1.0 + 0.7 * (shred - 0.5) * S(0.2, 0.8, g);
-  float dens = n * 0.95 + ridge * 0.45 - 0.18
-    + (1.0 - min(g, 1.0)) * 0.3 - g * (0.9 + 0.25 * n);
-  dens = clamp(dens * 2.4, 0.0, 1.0) * win;
-  dens *= mix(1.0 - S(0.32, 1.05, q), 1.0 - S(0.9, 1.2, g), wTop);
-  float body = dens * dens * (3.0 - 2.0 * dens);
-  float emis = clamp(uIntensity, 0.0, 2.0);
-  float e = body * (0.55 + 0.75 * root) * (0.45 + 0.55 * n)
-    + win * root * (0.1 + 0.4 * n);
-  e *= mix(0.45, 1.0, wTop) * max(emis, 0.001) * aheadG;
-
-  vec3 hot = mix(uColor, vec3(1.0), 0.35);
-  vec3 deep = mix(uColor, uColor * uColor, 0.5) * 0.9;
-  float ramp = 1.0 - exp(-e * 2.4);
-  vec3 fireCol = mix(deep, uColor, S(0.0, 0.55, ramp));
-  float core = ramp * (0.45 + 0.55 * exp(-g * 2.2)) * (0.5 + 0.5 * n);
-  fireCol = mix(fireCol, hot, S(0.7, 1.05, core));
-  fireCol *= 0.8 + 0.4 * ramp;
-  float fireA = clamp(1.0 - exp(-e * 3.4), 0.0, 1.0);
-
-  float halo = exp(-max(front, 0.0) / (spreadPx * 1.2)) * S(0.0, 3.0, front)
-    * (0.5 + 0.5 * n) * 0.3 * clamp(uRim, 0.0, 2.0) * mix(1.0, 0.45, wTop);
-  halo *= 1.0 - S(0.15 * unit, 0.6 * unit, above);  // rim belongs to material
-  halo *= aheadG;
-  vec3 glow = uColor * halo * clamp(uIntensity, 0.0, 2.0);
-
-  if (uSparks > 0.001) {
-    float sSpeed = max(uSparkSpeed, 0.05);
-    float sCells = 5.0 * clamp(uSparkDensity, 0.3, 2.5);
-    float sSize = clamp(uSparkSize, 0.2, 3.0);
-    float gate = S(-0.05, 0.1, q) * (1.0 - S(1.3, 2.2, q)) * wTop;
-    float spark = 0.0;
-    for (float L = 0.0; L < 2.0; L++) {
-      float speed = 1.5 * sSpeed * (0.75 + 0.5 * L);
-      vec2 ps = vec2(px, py - t * speed);
-      ps.x += 0.08 * snoise(vec2(py * 0.9 + L * 5.0, t * 0.5));
-      float cells = sCells * (1.0 + 0.6 * L);
-      vec2 cl = floor(ps * cells) + L * 19.0;
-      vec2 fr = fract(ps * cells);
-      vec3 rnd = hash3(cl);
-      vec3 rnd2 = hash3(cl + 7.3);
-      float on = step(rnd2.x, 0.42);
-      float life = fract(rnd.z + t * sSpeed * (0.3 + 0.5 * rnd2.x));
-      vec2 ppos = vec2(0.5) + 0.56 * (rnd.xy - 0.5);
-      ppos.x += 0.14 * sin(t * (0.7 + rnd.z * 2.8) + rnd.y * 6.2832)
-        + 0.1 * snoise(vec2(t * 0.6 + rnd.x * 9.0, cl.y * 0.7))
-        + (life - 0.5) * 0.5 * (rnd2.y - 0.5);
-      ppos.y += (life - 0.5) * 0.3 * rnd2.y;
-      float tw = S(0.02, 0.2, life) * S(1.0, 0.55, life);
-      tw *= 0.75 + 0.25 * sin(t * (6.0 + rnd2.z * 9.0) + rnd.x * 6.2832);
-      vec2 pd = (fr - ppos) / cells * unit;
-      pd.y *= 0.55 + 0.3 * rnd2.z;
-      float dp = length(pd);
-      float r = (0.004 + 0.014 * rnd.y * rnd.y) * unit * sSize * mix(1.15, 0.55, life);
-      float bmask = S(0.5, 0.32, max(abs(fr.x - 0.5), abs(fr.y - 0.5)));
-      spark += (exp(-dp * dp / (r * r)) + exp(-dp * dp / (r * r * 6.0)) * 0.3)
-        * tw * tw * on * bmask * (1.0 - 0.35 * L);
-    }
-    spark *= gate * uSparks;
-    fireCol += mix(uColor, vec3(1.0), 0.55) * spark * 1.6;
-    fireA = clamp(fireA + spark * 0.85, 0.0, 1.0);
-  }
-
-  vec2 edgePx = min(frag, uResolution - frag);
-  float fadeW = max(24.0, spreadPx * 0.75);
-  float fade = S(0.0, fadeW, edgePx.x) * S(0.0, fadeW, edgePx.y);
-  fireA *= fade * uFire;
-  glow *= fade * uFire;
-  halo *= fade * uFire;
-
-  float rise = max(above, 0.0);
-  float smoke = S(1.55, 1.05, g) * S(0.85, 1.15, g) * (1.0 - body)
-    * wCut * lineMask
-    * exp(-rise / (unit * 0.7)) * (1.0 - S(uOuterCut * 0.5, uOuterCut * 0.96, rise))
-    * S(0.45, 0.9, fbm2(np * 0.55 + vec2(0.0, 17.0)))
-    * 0.055 * clamp(uSmoke, 0.0, 2.0) * fade * uFire;
-  vec3 smokeCol = mix(vec3(0.5), uColor, 0.5);
-
-  float inRect = step(abs(cUv.x - 0.5), 0.5) * step(abs(cUv.y - 0.5), 0.5);
-
-  float nearBand = 1.0 - S(0.5 * unit, 1.6 * unit, abs(above));
-  vec2 wob = vec2(snoise(np * 1.7 + 9.0), snoise(np * 1.7 + 27.0));
-  vec2 disp = wob * min(uDistortion, 32.0)
-    * exp(-abs(front) / max(uTurbReach, 4.0)) * nearBand;
-  vec2 cUvD = clamp(cUv + disp / (2.0 * uRectHalf), vec2(0.0015), vec2(0.9985));
-
-  float dn = fbm2(relF * (3.2 / unit) * detail + vec2(0.0, t * 0.5) + 91.0);
-  float dw = mix(2.0, 5.0, wCut);
-  float noff = (dn - 0.5) * dw * 2.5;
-  float eatMask = S(-dw, dw, front + noff);       // outline melt included
-  float convMask = S(-dw, dw, frontTop + noff);   // travelling front only
-  vec4 content = sampleMix(cUvD, convMask * uConvert);
-
-  /* gated by uFire as well as uIntensity: otherwise fading the fire out
-     leaves a permanent ember line painted into the artwork */
-  float burn = clamp(uIntensity, 0.0, 1.0) * uFire;
-  float nearFront = 1.0 - S(0.10 * unit, 0.45 * unit, max(-above, 0.0));
-  float depth = abs(front);   // a BAND around the front, not an inside-only depth
-  float emberW = mix(2.5, 5.5, wCut);
-  float emberN = 0.3 + 0.7 * fbm2(np * 2.2 + 73.0);
-  float emberK = clamp(uEmber, 0.0, 2.0);
-  float ember = exp(-depth / emberW) * emberN * emberK * nearFront;
-  float whiteHot = exp(-depth / (emberW * 0.4)) * emberN * emberN * emberK * nearFront;
-
-  float ca = content.a;
-  vec3 crgb = ca > 0.001 ? content.rgb / ca : content.rgb;
-  float charW = mix(4.0, 6.0 + meltPx * 1.6, wCut)
-    * (0.5 + 0.5 * fbm2(relF * (2.6 / unit) * detail + 57.0));
-  crgb = mix(crgb, crgb * vec3(0.22, 0.19, 0.17),
-    clamp((1.0 - S(charW, charW * 2.4, max(-front, 0.0))) * nearFront
-      * 0.85 * burn * clamp(uScorch, 0.0, 2.0), 0.0, 1.0));
-  crgb = mix(crgb, uColor * 1.2, clamp(ember, 0.0, 1.0) * burn);
-  crgb = mix(crgb, mix(uColor, vec3(1.0), 0.3) * 1.2, clamp(whiteHot, 0.0, 1.0) * burn);
-
-  float cA = ca * (1.0 - eatMask * uEat) * inRect;
-  float smk = smoke * (1.0 - cA);
-  vec3 base = crgb * cA + smokeCol * smk;
-  float alpha = clamp(fireA + min(cA + smk, 1.0) * (1.0 - fireA) + halo * 0.5, 0.0, 1.0);
-  outColor = vec4(fireCol * fireA + base * (1.0 - fireA) + glow, alpha);
-}`;
-
-/* -------------------------------------------------------------- GL plumbing */
-
-type Kit = {
-  gl: WebGL2RenderingContext;
-  prog: WebGLProgram;
-  texA: WebGLTexture;
-  texB: WebGLTexture;
-  sdf: WebGLTexture;
-  buf: WebGLBuffer;
-  u: Record<string, WebGLUniformLocation | null>;
-};
-
-const initGL = (canvas: HTMLCanvasElement, sdfData: Uint8Array, w: number, h: number) => {
-  const gl = canvas.getContext('webgl2', {
-    alpha: true,
-    depth: false,
-    stencil: false,
-    antialias: false,
-    premultipliedAlpha: true,
-    // Without this the headless screenshot can catch an empty buffer, and
-    // drawImage(glCanvas, …) for the bloom pass fails outright.
-    preserveDrawingBuffer: true,
-  });
-  if (!gl) return null;
-  const compile = (type: number, src: string) => {
-    const sh = gl.createShader(type)!;
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-      // eslint-disable-next-line no-console
-      console.error('FlameFront shader:', gl.getShaderInfoLog(sh));
-    }
-    return sh;
-  };
-  const prog = gl.createProgram()!;
-  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog);
-
-  const u: Record<string, WebGLUniformLocation | null> = {};
-  const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS) as number;
-  for (let i = 0; i < n; i++) {
-    const info = gl.getActiveUniform(prog, i)!;
-    u[info.name] = gl.getUniformLocation(prog, info.name);
-  }
-
-  const buf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER,
-    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-
-  const mkTex = () => {
-    const tx = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, tx);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return tx;
-  };
-  const texA = mkTex();
-  const texB = mkTex();
-  const sdf = mkTex();
-  gl.bindTexture(gl.TEXTURE_2D, sdf);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, sdfData);
-
-  return {gl, prog, texA, texB, sdf, buf, u} as Kit;
-};
-
-/* ------------------------------------------------------------- component */
-
-const FlameFront: React.FC<FlameFrontProps> = ({
-  region,
-  rect,
-  drawContent,
-  drawConverted,
-  contentKey,
-  params,
-  axis = 'y',
-  level = 1,
-  fire = 1,
-  eat = 0,
-  convert = 0,
-  frontOnly = false,
-  bloom = 0,
-  style,
-}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const p: FlameParams = useMemo(() => ({...FIRE_PRESET, ...params}), [params]);
-
-  const outRef = useRef<HTMLCanvasElement>(null);
-  const bloomRef = useRef<HTMLCanvasElement>(null);
-  const kitRef = useRef<Kit | null>(null);
-  const aRef = useRef<HTMLCanvasElement | null>(null);
-  const bRef = useRef<HTMLCanvasElement | null>(null);
-  const bakedRef = useRef<string | number | undefined>(undefined);
-
-  // The SDF describes a static silhouette — bake it once.
-  const sdfData = useMemo(
-    () => bakeSdf(drawContent, rect.w, rect.h),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rect.w, rect.h],
-  );
-
-  useLayoutEffect(() => () => {
-    const k = kitRef.current;
-    if (k) {
-      k.gl.deleteTexture(k.texA);
-      k.gl.deleteTexture(k.texB);
-      k.gl.deleteTexture(k.sdf);
-      k.gl.deleteProgram(k.prog);
-      k.gl.deleteBuffer(k.buf);
-      kitRef.current = null;
-    }
+    return out;
   }, []);
 
-  // useLayoutEffect (not useEffect) so the draw lands before the browser paints,
-  // and no dependency array so it re-runs on every frame Remotion seeks to.
-  useLayoutEffect(() => {
-    const out = outRef.current;
-    if (!out) return;
-    let kit = kitRef.current;
-    if (!kit) {
-      kit = initGL(out, sdfData, rect.w, rect.h);
-      kitRef.current = kit;
-    }
-    if (!kit) return;
+/* envelope: fade in / plateau / fade out across one cycle */
+const env = (u: number) => smooth(u / 0.15) * (1 - smooth((u - 0.85) / 0.15));
 
-    const need = contentKey === undefined || bakedRef.current !== contentKey;
-    if (!aRef.current) {
-      const cv = document.createElement('canvas');
-      cv.width = rect.w;
-      cv.height = rect.h;
-      aRef.current = cv;
-    }
-    if (!bRef.current && drawConverted) {
-      const cv = document.createElement('canvas');
-      cv.width = rect.w;
-      cv.height = rect.h;
-      bRef.current = cv;
-    }
-    if (need) {
-      const ca = aRef.current.getContext('2d')!;
-      ca.setTransform(1, 0, 0, 1, 0, 0);
-      drawContent(ca, rect.w, rect.h);
-      if (drawConverted && bRef.current) {
-        const cb = bRef.current.getContext('2d')!;
-        cb.setTransform(1, 0, 0, 1, 0, 0);
-        drawConverted(cb, rect.w, rect.h);
-      }
-      bakedRef.current = contentKey;
-    }
-
-    const {gl, prog, texA, texB, sdf, u} = kit;
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texA);
-    if (need) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, aRef.current);
-    }
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, texB);
-    if (need) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,
-        bRef.current ?? aRef.current);
-    }
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, sdf);
-
-    gl.useProgram(prog);
-    const f1 = (k: string, v: number) => gl.uniform1f(u[k]!, v);
-    gl.uniform1i(u.uContent!, 0);
-    gl.uniform1i(u.uContentB!, 1);
-    gl.uniform1i(u.uSdf!, 2);
-    gl.uniform2f(u.uResolution!, region.w, region.h);
-    gl.uniform2f(u.uRectCenter!, rect.cx - region.x, region.h - (rect.cy - region.y));
-    gl.uniform2f(u.uRectHalf!, rect.w / 2, rect.h / 2);
-    gl.uniform3f(u.uColor!, p.color[0], p.color[1], p.color[2]);
-    f1('uSdfRange', SDF_RANGE);
-    f1('uTime', (frame / fps) * p.speed);
-    f1('uIntensity', p.intensity);
-    f1('uHeight', p.height);
-    f1('uSpread', p.spread);
-    f1('uScale', p.scale);
-    f1('uTurbulence', p.turbulence);
-    f1('uTurbScale', p.turbulenceScale);
-    f1('uTurbReach', p.turbulenceReach);
-    f1('uSparks', p.sparks);
-    f1('uSparkSize', p.sparkSize);
-    f1('uSparkDensity', p.sparkDensity);
-    f1('uSparkSpeed', p.sparkSpeed);
-    f1('uRim', p.rim);
-    f1('uMelt', p.melt);
-    f1('uDistortion', p.distortion);
-    f1('uSmoke', p.smoke);
-    f1('uEmber', p.ember);
-    f1('uScorch', p.scorch);
-    f1('uFire', fire);
-    f1('uEat', eat);
-    f1('uConvert', convert);
-    f1('uAxis', axis === 'x' ? 1 : 0);
-    f1('uFrontOnly', frontOnly ? 1 : 0);
-    f1('uBurnEdge', (axis === 'x' ? rect.w : rect.h) * (level - 0.5));
-
-    // At zero fire there is nothing left to compute but the artwork itself.
-    // `eat` has to be zero too: once material has been removed the fast path
-    // can no longer reproduce the result, and the object would pop back.
-    const bypass = fire <= 0.0004 && eat <= 0.0004;
-    f1('uBypass', bypass ? 1 : 0);
-
-    const innerCut =
-      40 +
-      (p.distortion > 0.02 ? p.turbulenceReach * 5 : 0) +
-      (eat + convert > 0.002 ? p.melt * 4 + 30 : 12) +
-      (p.scorch * p.intensity > 0.002 ? (6 + 1.6 * p.melt) * 2.4 : 0) +
-      (p.ember * p.intensity > 0.002 ? 45 : 0);
-    f1('uInnerCut', innerCut);
-    const outer = Math.max(p.height, 24) * 1.25 + p.spread * 5 + 24;
-    f1('uOuterCut', outer);
-    f1('uCullD', Math.min(outer, SDF_RANGE * 0.9));
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, region.w, region.h);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-    const bl = bloomRef.current;
-    if (bl && bloom > 0) {
-      const bc = bl.getContext('2d');
-      if (bc) {
-        bc.clearRect(0, 0, bl.width, bl.height);
-        bc.drawImage(out, 0, 0, bl.width, bl.height);
-      }
-    }
-  });
-
-  return (
-    <>
-      <canvas
-        ref={outRef}
-        width={region.w}
-        height={region.h}
-        style={{
-          position: 'absolute',
-          left: region.x,
-          top: region.y,
-          width: region.w,
-          height: region.h,
-          ...style,
-        }}
-      />
-      {bloom > 0 ? (
-        <canvas
-          ref={bloomRef}
-          width={Math.max(1, Math.round(region.w / 4))}
-          height={Math.max(1, Math.round(region.h / 4))}
-          style={{
-            position: 'absolute',
-            left: region.x,
-            top: region.y,
-            width: region.w,
-            height: region.h,
-            filter: 'blur(20px)',
-            mixBlendMode: 'screen',
-            opacity: bloom,
-            pointerEvents: 'none',
-          }}
-        />
-      ) : null}
-    </>
-  );
-};
-
-
-/* ------------------------------------------------------------------- stage */
-
-const VW = 1920;
-const VH = 1080;
-
-/** durationInFrames — copy this into your <Composition/> */
-export const MOTION_FRAMES = 900; // 15 s @ 60 fps
-
-/* --- the ID card, in texture space ---------------------------------------- */
-const DW = 620; // design width  (ID-1 ratio) — all card coordinates use this
-const DH = 392; // design height
-const K = 1.16; // presentation scale
-const CW = DW * K;
-const CH = DH * K;
-/** the card is drawn ROTATED inside the texture and the canvas is rotated back
- *  on screen, so the shader's axis-aligned front reads as a diagonal sweep
- *  across an upright card. */
-const TH_DEG = 16;
-const TH = (TH_DEG * Math.PI) / 180;
-const COS = Math.cos(TH);
-const SIN = Math.sin(TH);
-
-const PAD = 100; // SDF headroom around the rotated bounding box
-const even = (n: number) => (Math.round(n) % 2 === 0 ? Math.round(n) : Math.round(n) + 1);
-const BOX_W = even(CW * COS + CH * SIN) + 2 * PAD; // 1018
-const BOX_H = even(CW * SIN + CH * COS) + 2 * PAD; // 836
-
-const CX = 960;
-const CY = 520;
-/** region must be centred on the rect so the CSS rotation about the canvas
- *  centre and the shader's rect centre stay the same point */
-const RECT = {cx: CX, cy: CY, w: BOX_W, h: BOX_H};
-const RGN = {x: CX - BOX_W / 2, y: CY - BOX_H / 2, w: BOX_W, h: BOX_H};
-
-/** card-local (px,py) -> texture row it lands on */
-const texY = (px: number, py: number) =>
-  -SIN * K * (px - DW / 2) + COS * K * (py - DH / 2) + BOX_H / 2;
-
-/* --- the verification pass -------------------------------------------------- */
-const LEVEL_TOP = 0.89;
-const LEVEL_BOT = 0.09;
-
-const F_IN = 4;
-const F_ARM = 116;
-const F_IGNITE = 138;
-const F_GO = 150;
-const F_END = 640;
-const F_OUT = 676;
-const F_STAMP = 700;
-
-const C_BLUE = '#38A0FF';
-const C_GREEN = '#2ED97A';
-const C_AMBER = '#F2B33D';
-const C_INK = '#E9F2FF';
-
-const SCORE = 98.7;
-
-/* --- what the pass clears, in card-local coordinates ---------------------- */
-const CHECKS: Array<{k: string; px: number; py: number}> = [
-  {k: 'DOCUMENT', px: 110, py: 46},
-  {k: 'DATA', px: 400, py: 234},
-  {k: 'FACE', px: 108, py: 230},
-  {k: 'MRZ', px: 300, py: 350},
+/* soft glow falloff: [widthMultiplier, alpha] — many gentle steps read as
+   light, three hard steps read as an outlined capsule */
+const FALLOFF: [number, number][] = [
+  [6.4, 0.045],
+  [4.0, 0.07],
+  [2.5, 0.1],
+  [1.6, 0.19],
+  [1.05, 0.42],
+  [0.62, 0.9],
 ];
 
-const levelAt = (f: number) =>
-  lerp(LEVEL_TOP, LEVEL_BOT, trapezoid((f - F_GO) / (F_END - F_GO), 0.1, 0.14));
-/** texture row the front is sitting on */
-const frontTexY = (lv: number) => BOX_H * (1 - lv);
+const NLV = 8;   // opacity quantisation levels
+const NWB = 3;   // width bins
+const NCB = 3;   // colour bins
 
-const CHECK_Y = CHECKS.map((c) => texY(c.px, c.py));
-const TICK_F = CHECK_Y.map((y) => {
-  for (let f = F_GO; f <= F_END + 2; f++) if (frontTexY(levelAt(f)) > y) return f;
-  return F_END;
-});
+const Rods: React.FC<{ t: number; layer: number }> = ({ t, layer }) => {
+  const rods = useRods();
+  const cfg = LAYER[layer];
 
-/** the biometric field — a cool document-scanner blue */
-const FIELD: FlameParams = {
-  ...scalePreset(FIELD_PRESET, 1.7),
-  color: [0.22, 0.62, 1.0],
-  intensity: 1.0,
-  ember: 1.5,
-  rim: 1.6,
-  sparks: 1.25,
-  sparkSize: 0.7,
-  sparkDensity: 1.35,
-  smoke: 0,
-  scorch: 0,
-};
-
-const easeOutBack = (x: number) => {
-  const c1 = 1.70158;
-  const t = clamp01(x);
-  return 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-};
-
-/* ---------------------------------------------------------- canvas helpers */
-
-const rr = (
-  c: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) => {
-  const k = Math.min(r, w / 2, h / 2);
-  c.beginPath();
-  c.moveTo(x + k, y);
-  c.lineTo(x + w - k, y);
-  c.quadraticCurveTo(x + w, y, x + w, y + k);
-  c.lineTo(x + w, y + h - k);
-  c.quadraticCurveTo(x + w, y + h, x + w - k, y + h);
-  c.lineTo(x + k, y + h);
-  c.quadraticCurveTo(x, y + h, x, y + h - k);
-  c.lineTo(x, y + k);
-  c.quadraticCurveTo(x, y, x + k, y);
-  c.closePath();
-};
-
-const bar = (
-  c: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  col: string,
-  r = 4,
-) => {
-  rr(c, x, y, w, h, r);
-  c.fillStyle = col;
-  c.fill();
-};
-
-const setFont = (c: CanvasRenderingContext2D, weight: number, size: number) => {
-  c.font = `${weight} ${size}px MxSans, system-ui, sans-serif`;
-};
-
-const tt = (
-  c: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  ls: number,
-  align: 'left' | 'right' | 'center',
-) => {
-  const g = text.split('');
-  let w = -ls;
-  for (let i = 0; i < g.length; i++) w += c.measureText(g[i]).width + ls;
-  let cx = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
-  for (let i = 0; i < g.length; i++) {
-    c.fillText(g[i], cx, y);
-    cx += c.measureText(g[i]).width + ls;
-  }
-};
-
-const check = (
-  c: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  s: number,
-  col: string,
-  w: number,
-) => {
-  c.save();
-  c.strokeStyle = col;
-  c.lineWidth = w;
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  c.beginPath();
-  c.moveTo(cx - s * 0.42, cy + s * 0.04);
-  c.lineTo(cx - s * 0.1, cy + s * 0.36);
-  c.lineTo(cx + s * 0.46, cy - s * 0.34);
-  c.stroke();
-  c.restore();
-};
-
-/** the card outline — identical in both versions, so the one baked SDF stays
- *  valid for the verified artwork. Drawn pre-rotated; the CSS transform on the
- *  canvas puts it back upright. */
-const cardPath = (c: CanvasRenderingContext2D) => {
-  rr(c, 0, 0, DW, DH, 26);
-};
-
-const inCard = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  c.clearRect(0, 0, w, h);
-  c.save();
-  c.translate(w / 2, h / 2);
-  c.rotate(-TH);
-  c.scale(K, K);
-  c.translate(-DW / 2, -DH / 2);
-  c.textBaseline = 'alphabetic';
-};
-
-const CHIP = (c: CanvasRenderingContext2D, x: number, y: number, live: boolean) => {
-  rr(c, x, y, 58, 44, 7);
-  if (live) {
-    const g = c.createLinearGradient(x, y, x + 58, y + 44);
-    g.addColorStop(0, '#F2D07A');
-    g.addColorStop(1, '#B98B2E');
-    c.fillStyle = g;
-  } else {
-    c.fillStyle = '#C6CEDA';
-  }
-  c.fill();
-  c.strokeStyle = live ? 'rgba(120,86,20,0.5)' : 'rgba(140,152,170,0.6)';
-  c.lineWidth = 1.6;
-  c.beginPath();
-  c.moveTo(x + 4, y + 15);
-  c.lineTo(x + 54, y + 15);
-  c.moveTo(x + 4, y + 29);
-  c.lineTo(x + 54, y + 29);
-  c.moveTo(x + 21, y + 2);
-  c.lineTo(x + 21, y + 42);
-  c.moveTo(x + 37, y + 2);
-  c.lineTo(x + 37, y + 42);
-  c.stroke();
-};
-
-const MRZ1 = 'IDANDHARLOW<<DANIEL<R<<<<<<<<<<';
-const MRZ2 = '4471889212AND9103144M3108157<<8';
-
-/* ------------------------------------------- content A — captured, unverified */
-
-const drawRaw = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  inCard(c, w, h);
-
-  cardPath(c);
-  const g = c.createLinearGradient(0, 0, DW * 0.4, DH);
-  g.addColorStop(0, '#EDF1F7');
-  g.addColorStop(1, '#D3DBE7');
-  c.fillStyle = g;
-  c.fill();
-
-  c.save();
-  cardPath(c);
-  c.clip();
-
-  c.fillStyle = '#95A2B4';
-  setFont(c, 700, 18);
-  tt(c, 'IDENTITY CARD', 34, 46, 4, 'left');
-  c.fillStyle = '#A7B2C2';
-  setFont(c, 400, 13);
-  tt(c, 'REPUBLIC OF ANDARA', DW - 34, 44, 2, 'right');
-
-  /* the captured portrait, still unresolved */
-  rr(c, 34, 66, 148, 182, 8);
-  c.fillStyle = '#B9C2D0';
-  c.fill();
-  c.save();
-  rr(c, 34, 66, 148, 182, 8);
-  c.clip();
-  let r = 991177;
-  const rnd = () => {
-    r = (r * 1103515245 + 12345) & 0x7fffffff;
-    return r / 0x7fffffff;
-  };
-  for (let i = 0; i < 8; i++) {
-    for (let j = 0; j < 10; j++) {
-      const v = 150 + Math.floor(rnd() * 70);
-      c.fillStyle = `rgb(${v},${v + 6},${v + 14})`;
-      c.fillRect(34 + i * 18.5, 66 + j * 18.2, 18.5, 18.2);
+  const buckets = useMemo(() => {
+    const N = NCB * NWB * NLV;
+    const core: string[] = new Array(N).fill('');
+    const tip: string[] = new Array(N).fill('');
+    const wSpan = cfg.wid[1] - cfg.wid[0];
+    for (const p of rods) {
+      if (p.L !== layer) continue;
+      const u = (p.u0 + t * p.k) % 1;
+      const e = env(u);
+      if (e <= 0.002) continue;
+      const tw = 0.6 + 0.4 * Math.sin(TAU * (p.twK * t + p.twP));
+      const o = p.op * e * tw;
+      if (o <= 0.014) continue;
+      const x = p.x0 + p.swA * Math.sin(TAU * (p.swK * t + p.swP));
+      const y = p.y0 - u * cfg.corridor + p.wbA * Math.sin(TAU * (p.wbK * t + p.wbP));
+      const lv = Math.min(NLV - 1, Math.floor(o * NLV));
+      const wb = Math.min(NWB - 1, Math.floor(((p.w - cfg.wid[0]) / wSpan) * NWB));
+      const b = (p.ci * NWB + wb) * NLV + lv;
+      const xs = x.toFixed(1);
+      const half = p.len / 2;
+      core[b] += `M${xs} ${(y - half).toFixed(1)}V${(y + half).toFixed(1)}`;
+      tip[b] += p.tipUp
+        ? `M${xs} ${(y - half).toFixed(1)}V${(y - half * 0.3).toFixed(1)}`
+        : `M${xs} ${(y + half * 0.3).toFixed(1)}V${(y + half).toFixed(1)}`;
     }
-  }
-  c.restore();
-  c.strokeStyle = 'rgba(140,152,170,0.7)';
-  c.lineWidth = 2;
-  rr(c, 34, 66, 148, 182, 8);
-  c.stroke();
+    return { core, tip };
+  }, [rods, t, layer, cfg]);
 
-  CHIP(c, 34, 262, false);
+  const wOf = (wb: number) => lerp(cfg.wid[0], cfg.wid[1], (wb + 0.5) / NWB);
+  const colOf = (b: number) => cfg.cols[Math.floor(b / (NWB * NLV))];
+  const wbOf = (b: number) => Math.floor(b / NLV) % NWB;
+  const opOf = (b: number) => ((b % NLV) + 0.6) / NLV;
 
-  /* hologram patch, dead */
-  c.save();
-  c.strokeStyle = '#BFC8D6';
-  c.lineWidth = 2.4;
-  c.setLineDash([7, 6]);
-  c.beginPath();
-  c.arc(DW - 77, 109, 42, 0, Math.PI * 2);
-  c.stroke();
-  c.restore();
-
-  /* fields, unread */
-  const field = (y: number, lw: number, vw: number) => {
-    bar(c, 208, y, lw, 9, '#B2BCCA', 4);
-    bar(c, 208, y + 18, vw, 17, '#C3CBD8', 5);
-  };
-  field(84, 88, 190);
-  field(142, 110, 158);
-  field(200, 96, 236);
-  field(258, 104, 174);
-
-  /* machine-readable zone, unreadable */
-  bar(c, 34, 322, DW - 68, 20, '#C3CBD8', 3);
-  bar(c, 34, 348, DW - 68, 20, '#C3CBD8', 3);
-
-  c.restore();
-
-  c.strokeStyle = 'rgba(126,152,188,0.55)';
-  c.lineWidth = 2;
-  cardPath(c);
-  c.stroke();
-  c.restore();
-};
-
-/* ---------------------------------------------- content B — resolved, verified */
-
-const drawVerified = (c: CanvasRenderingContext2D, w: number, h: number) => {
-  inCard(c, w, h);
-
-  cardPath(c);
-  const g = c.createLinearGradient(0, 0, DW * 0.4, DH);
-  g.addColorStop(0, '#F7FAFF');
-  g.addColorStop(1, '#DCE8F8');
-  c.fillStyle = g;
-  c.fill();
-
-  c.save();
-  cardPath(c);
-  c.clip();
-
-  bar(c, 0, 0, DW, 8, C_BLUE, 0);
-  c.fillStyle = 'rgba(56,160,255,0.07)';
-  for (let i = -DH; i < DW + DH; i += 26) {
-    c.beginPath();
-    c.moveTo(i, 0);
-    c.lineTo(i + 14, 0);
-    c.lineTo(i + 14 - DH, DH);
-    c.lineTo(i - DH, DH);
-    c.closePath();
-    c.fill();
-  }
-
-  c.fillStyle = '#16202D';
-  setFont(c, 700, 18);
-  tt(c, 'IDENTITY CARD', 34, 46, 4, 'left');
-  c.fillStyle = '#4E6076';
-  setFont(c, 400, 13);
-  tt(c, 'REPUBLIC OF ANDARA', DW - 34, 44, 2, 'right');
-
-  /* the resolved portrait */
-  rr(c, 34, 66, 148, 182, 8);
-  const gp = c.createLinearGradient(34, 66, 182, 248);
-  gp.addColorStop(0, '#C9DDF5');
-  gp.addColorStop(1, '#8FB4DC');
-  c.fillStyle = gp;
-  c.fill();
-  c.save();
-  rr(c, 34, 66, 148, 182, 8);
-  c.clip();
-  c.fillStyle = '#2A4664';
-  c.beginPath();
-  c.arc(108, 140, 36, 0, Math.PI * 2);
-  c.fill();
-  c.beginPath();
-  c.arc(108, 268, 66, Math.PI, 2 * Math.PI);
-  c.fill();
-  c.restore();
-  c.strokeStyle = 'rgba(56,160,255,0.85)';
-  c.lineWidth = 2;
-  rr(c, 34, 66, 148, 182, 8);
-  c.stroke();
-  /* face-match reticle */
-  c.strokeStyle = C_GREEN;
-  c.lineWidth = 3;
-  const br = (x: number, y: number, sx: number, sy: number) => {
-    c.beginPath();
-    c.moveTo(x, y + sy * 20);
-    c.lineTo(x, y);
-    c.lineTo(x + sx * 20, y);
-    c.stroke();
-  };
-  br(44, 76, 1, 1);
-  br(172, 76, -1, 1);
-  br(44, 238, 1, -1);
-  br(172, 238, -1, -1);
-
-  CHIP(c, 34, 262, true);
-
-  /* hologram, live */
-  c.save();
-  c.strokeStyle = 'rgba(56,160,255,0.85)';
-  c.lineWidth = 2.4;
-  c.beginPath();
-  c.arc(DW - 77, 109, 42, 0, Math.PI * 2);
-  c.stroke();
-  c.lineWidth = 1.4;
-  c.beginPath();
-  c.arc(DW - 77, 109, 33, 0, Math.PI * 2);
-  c.stroke();
-  for (let i = 0; i < 20; i++) {
-    const a = (i / 20) * Math.PI * 2;
-    c.beginPath();
-    c.moveTo(DW - 77 + Math.cos(a) * 35, 109 + Math.sin(a) * 35);
-    c.lineTo(DW - 77 + Math.cos(a) * 40, 109 + Math.sin(a) * 40);
-    c.stroke();
-  }
-  c.restore();
-  check(c, DW - 77, 109, 36, C_BLUE, 4);
-
-  /* fields, resolved */
-  const field = (y: number, label: string, value: string) => {
-    c.fillStyle = C_GREEN;
-    c.fillRect(190, y - 8, 8, 8);
-    c.fillStyle = '#5D7089';
-    setFont(c, 400, 11);
-    tt(c, label, 208, y, 2.4, 'left');
-    c.fillStyle = '#101B29';
-    setFont(c, 700, 21);
-    tt(c, value, 208, y + 30, 0.6, 'left');
-  };
-  field(92, 'SURNAME', 'HARLOW');
-  field(150, 'GIVEN NAMES', 'DANIEL R.');
-  field(208, 'DOCUMENT NO', 'ID-4471-8892');
-  field(266, 'DATE OF BIRTH', '14 MAR 1991');
-
-  /* machine-readable zone, resolved */
-  bar(c, 34, 316, DW - 68, 60, 'rgba(16,27,41,0.05)', 5);
-  c.fillStyle = '#16202D';
-  setFont(c, 700, 17);
-  tt(c, MRZ1, 44, 342, 2.1, 'left');
-  tt(c, MRZ2, 44, 366, 2.1, 'left');
-
-  c.restore();
-
-  c.strokeStyle = 'rgba(90,150,210,0.7)';
-  c.lineWidth = 2;
-  cardPath(c);
-  c.stroke();
-  c.restore();
-};
-
-/* ------------------------------------------------------------------- HUD */
-
-const Bracket: React.FC<{
-  x: number;
-  y: number;
-  sx: number;
-  sy: number;
-  col: string;
-  a: number;
-}> = ({x, y, sx, sy, col, a}) => {
-  const L = 66;
   return (
-    <svg
-      width={L + 8}
-      height={L + 8}
-      viewBox={`0 0 ${L + 8} ${L + 8}`}
-      style={{
-        position: 'absolute',
-        left: x,
-        top: y,
-        transform: `scale(${sx},${sy})`,
-        transformOrigin: '50% 50%',
-        opacity: a,
-      }}
-    >
-      <path
-        d={`M4 ${L} L4 4 L${L} 4`}
-        fill="none"
-        stroke={col}
-        strokeWidth={4}
-        strokeLinecap="square"
-      />
-    </svg>
+    <g style={cfg.blur ? { filter: `blur(${cfg.blur}px)` } : undefined}>
+      {FALLOFF.map(([mul, alpha], si) =>
+        buckets.core.map((d, b) =>
+          d ? (
+            <path
+              key={`s${si}_${b}`}
+              d={d}
+              stroke={colOf(b)}
+              strokeWidth={wOf(wbOf(b)) * mul}
+              strokeLinecap="round"
+              fill="none"
+              opacity={opOf(b) * alpha}
+            />
+          ) : null
+        )
+      )}
+      {buckets.tip.map((d, b) =>
+        d ? (
+          <path key={`t${b}`} d={d} stroke={C.ice} strokeWidth={wOf(wbOf(b)) * 0.7} strokeLinecap="round" fill="none" opacity={opOf(b) * 0.78} />
+        ) : null
+      )}
+    </g>
   );
 };
 
-const Chrome: React.FC<{t: string; s: number; l: number; o: number; col: string}> = ({
-  t,
-  s,
-  l,
-  o,
-  col,
-}) => (
-  <span style={{fontSize: s, letterSpacing: l, opacity: o, color: col}}>{t}</span>
-);
+/* ── dust: tiny twinkling points ──────────────────────────────────────── */
+type Dust = { x0: number; y0: number; u0: number; r: number; op: number; ci: number; swA: number; swK: number; swP: number; twK: number; twP: number };
+const DUST_COLS = ['#2a7bff', '#5fc8ff', '#cfeaff'];
+const useDust = () =>
+  useMemo<Dust[]>(
+    () =>
+      Array.from({ length: 420 }, (_, i) => {
+        const s = `du${i}`;
+        return {
+          x0: rr(s + 'x', -40, W + 40),
+          y0: rr(s + 'y', -120, H + 120),
+          u0: random(s + 'u'),
+          r: rr(s + 'r', 0.9, 2.6),
+          op: rr(s + 'o', 0.3, 0.95),
+          ci: Math.floor(random(s + 'c') * 3),
+          swA: rr(s + 'sa', 6, 26),
+          swK: pick(s + 'sk', [1, 2, 3]),
+          swP: random(s + 'sp'),
+          twK: pick(s + 'tk', [2, 3, 4, 5, 6, 7]),
+          twP: random(s + 'tp'),
+        };
+      }),
+    []
+  );
 
-/* ------------------------------------------------------------------- scene */
-
-export const Motion: React.FC = () => {
-  const f = useCurrentFrame();
-  const fontsReady = useEmbeddedFonts();
-
-  const level = levelAt(f);
-  const progress = clamp01((LEVEL_TOP - level) / (LEVEL_TOP - LEVEL_BOT));
-
-  const flare = 1 + 0.35 * (1 - ss(F_IGNITE, F_IGNITE + 52, f));
-  const fire = ss(F_IGNITE, F_IGNITE + 14, f) * (1 - ss(F_OUT - 48, F_OUT, f)) * flare;
-  const convert = f >= F_GO ? 1 : 0;
-
-  const cardIn = ss(F_IN, F_IN + 54, f);
-  const hudIn = ss(16, 76, f);
-  const brIn = ss(8, 70, f);
-  const capIn = ss(34, 96, f);
-
-  const beamOn = ss(F_IGNITE, F_IGNITE + 26, f) * (1 - ss(F_END + 6, F_END + 56, f));
-
-  /* where the diagonal front crosses the screen */
-  const d = frontTexY(level) - BOX_H / 2;
-  const bx = CX - SIN * d;
-  const by = CY + COS * d;
-
-  const cleared = TICK_F.filter((t) => f >= t).length;
-  const lastTick = cleared > 0 ? TICK_F[cleared - 1] : -999;
-  const pop = f >= lastTick ? Math.exp(-(f - lastTick) / 7) : 0;
-
-  /* a biometric score settles rather than ramps — it hunts, then locks */
-  const lock = clamp01(progress / 0.9);
-  const hunt =
-    (f >= F_GO ? 1 : 0) * (1 - lock) * 7 * Math.sin(f * 0.83) * Math.sin(f * 0.31 + 1.3);
-  const score = Math.max(0, Math.min(SCORE, SCORE * lock + hunt));
-
-  const st = clamp01((f - F_STAMP) / 26);
-  const stampScale = 3.2 - 2.2 * easeOutBack(st);
-  const stampA = ss(F_STAMP, F_STAMP + 8, f);
-  const flash = (1 - ss(F_STAMP + 2, F_STAMP + 26, f)) * ss(F_STAMP, F_STAMP + 3, f);
-
-  const status =
-    f < F_ARM
-      ? 'STATUS · DOCUMENT CAPTURED'
-      : f < F_GO
-        ? 'STATUS · LIVENESS PROBE'
-        : f < F_END
-          ? 'STATUS · MATCHING'
-          : 'STATUS · IDENTITY CONFIRMED';
-
-  const hue = lock;
-  const accent = `rgb(${Math.round(lerp(56, 46, hue))},${Math.round(
-    lerp(160, 217, hue),
-  )},${Math.round(lerp(255, 122, hue))})`;
-
-  const idlePulse = 0.72 + 0.28 * Math.sin((f - F_STAMP) / 20);
+const DustField: React.FC<{ t: number }> = ({ t }) => {
+  const dust = useDust();
+  const buckets = useMemo(() => {
+    const N = 3 * NLV;
+    const out: string[] = new Array(N).fill('');
+    for (const p of dust) {
+      const u = (p.u0 + t) % 1;
+      const e = env(u);
+      if (e <= 0.004) continue;
+      const tw = 0.45 + 0.55 * Math.pow(0.5 + 0.5 * Math.sin(TAU * (p.twK * t + p.twP)), 1.6);
+      const o = p.op * e * tw;
+      if (o <= 0.02) continue;
+      const x = p.x0 + p.swA * Math.sin(TAU * (p.swK * t + p.swP));
+      const y = p.y0 - u * 560;
+      const lv = Math.min(NLV - 1, Math.floor(o * NLV));
+      out[p.ci * NLV + lv] += `M${x.toFixed(1)} ${y.toFixed(1)}h.01`;
+    }
+    return out;
+  }, [dust, t]);
 
   return (
+    <g>
+      {buckets.map((d, b) =>
+        d ? (
+          <path
+            key={b}
+            d={d}
+            stroke={DUST_COLS[Math.floor(b / NLV)]}
+            strokeWidth={3.4}
+            strokeLinecap="round"
+            fill="none"
+            opacity={(((b % NLV) + 0.6) / NLV) * 0.85}
+          />
+        ) : null
+      )}
+      {buckets.map((d, b) =>
+        d ? (
+          <path
+            key={`g${b}`}
+            d={d}
+            stroke={DUST_COLS[Math.floor(b / NLV)]}
+            strokeWidth={9}
+            strokeLinecap="round"
+            fill="none"
+            opacity={(((b % NLV) + 0.6) / NLV) * 0.12}
+          />
+        ) : null
+      )}
+    </g>
+  );
+};
+
+/* ── accent rods (bright, individually coloured) ──────────────────────── */
+type Accent = { x0: number; y0: number; u0: number; k: number; len: number; w: number; col: string; op: number; swA: number; swK: number; swP: number; twK: number; twP: number };
+const useAccents = () =>
+  useMemo<Accent[]>(() => {
+    const cols = ['#cfeaff', '#5fcaff', '#ffffff', '#7f9cff'];
+    return Array.from({ length: 34 }, (_, i) => {
+      const s = `a${i}`;
+      return {
+        x0: rr(s + 'x', -40, W + 40),
+        y0: rr(s + 'y', -100, H + 100),
+        u0: random(s + 'u'),
+        k: 1,
+        len: rr(s + 'l', 60, 190),
+        w: rr(s + 'w', 2.6, 5.4),
+        col: pick(s + 'c', cols),
+        op: rr(s + 'o', 0.55, 1),
+        swA: rr(s + 'sa', 8, 30),
+        swK: pick(s + 'sk', [1, 2]),
+        swP: random(s + 'sp'),
+        twK: pick(s + 'tk', [2, 3, 4]),
+        twP: random(s + 'tp'),
+      };
+    });
+  }, []);
+
+const Accents: React.FC<{ t: number }> = ({ t }) => {
+  const acc = useAccents();
+  return (
+    <g>
+      {acc.map((p, i) => {
+        const u = (p.u0 + t * p.k) % 1;
+        const e = env(u);
+        if (e <= 0.004) return null;
+        const tw = 0.6 + 0.4 * Math.sin(TAU * (p.twK * t + p.twP));
+        const o = p.op * e * tw;
+        const x = p.x0 + p.swA * Math.sin(TAU * (p.swK * t + p.swP));
+        const y = p.y0 - u * 1180;
+        return (
+          <g key={i} opacity={o} style={{ filter: 'blur(0.9px)' }}>
+            {FALLOFF.map(([mul, alpha], si) => (
+              <line
+                key={si}
+                x1={x}
+                y1={y - p.len / 2}
+                x2={x}
+                y2={y + p.len / 2}
+                stroke={p.col}
+                strokeWidth={p.w * mul}
+                strokeLinecap="round"
+                opacity={alpha}
+              />
+            ))}
+            <line
+              x1={x}
+              y1={y + p.len * 0.16}
+              x2={x}
+              y2={y + p.len / 2}
+              stroke={C.hot}
+              strokeWidth={p.w * 0.55}
+              strokeLinecap="round"
+              opacity={0.75}
+            />
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
+/* ── sparkle glints ───────────────────────────────────────────────────── */
+const STAR = starPath(100, 30, 8);
+type Star = { x0: number; y0: number; u0: number; s: number; rot: number; twK: number; twP: number; swA: number; swK: number; swP: number };
+const useStars = () =>
+  useMemo<Star[]>(
+    () =>
+      Array.from({ length: 78 }, (_, i) => {
+        const s = `s${i}`;
+        return {
+          x0: rr(s + 'x', 40, W - 40),
+          y0: rr(s + 'y', -80, H + 80),
+          u0: random(s + 'u'),
+          s: lerp(0.11, 0.92, Math.pow(random(s + 's'), 2.3)),
+          rot: rr(s + 'r', -14, 14),
+          twK: pick(s + 'tk', [2, 3, 4, 5]),
+          twP: random(s + 'tp'),
+          swA: rr(s + 'sa', 8, 26),
+          swK: pick(s + 'sk', [1, 2]),
+          swP: random(s + 'sp'),
+        };
+      }),
+    []
+  );
+
+const Stars: React.FC<{ t: number }> = ({ t }) => {
+  const stars = useStars();
+  return (
+    <g>
+      {stars.map((p, i) => {
+        const u = (p.u0 + t) % 1;
+        const e = env(u);
+        if (e <= 0.004) return null;
+        const tw = 0.46 + 0.54 * Math.pow(0.5 + 0.5 * Math.sin(TAU * (p.twK * t + p.twP)), 1.6);
+        const x = p.x0 + p.swA * Math.sin(TAU * (p.swK * t + p.swP));
+        const y = p.y0 - u * 1180;
+        const sc = p.s * (0.78 + 0.22 * tw);
+        return (
+          <g key={i} transform={`translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.rot}) scale(${sc.toFixed(3)})`} opacity={e * tw}>
+            <circle r={68} fill="url(#glintHalo)" />
+            <path d={STAR} fill="url(#glintCore)" />
+            <circle r={5.5} fill={C.hot} />
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
+/* ── bokeh (out-of-focus depth) ───────────────────────────────────────── */
+type Bok = { x0: number; y0: number; u0: number; r: number; op: number; swA: number; swK: number; swP: number; brK: number; brP: number };
+const useBokeh = () =>
+  useMemo<Bok[]>(
+    () =>
+      Array.from({ length: 18 }, (_, i) => {
+        const s = `b${i}`;
+        return {
+          x0: rr(s + 'x', -80, W + 80),
+          y0: rr(s + 'y', -140, H + 140),
+          u0: random(s + 'u'),
+          r: rr(s + 'r', 16, 62),
+          op: rr(s + 'o', 0.25, 0.7),
+          swA: rr(s + 'sa', 10, 40),
+          swK: pick(s + 'sk', [1, 2]),
+          swP: random(s + 'sp'),
+          brK: pick(s + 'bk', [1, 2, 3]),
+          brP: random(s + 'bp'),
+        };
+      }),
+    []
+  );
+
+const Bokeh: React.FC<{ t: number }> = ({ t }) => {
+  const bok = useBokeh();
+  return (
+    <g>
+      {bok.map((p, i) => {
+        const u = (p.u0 + t) % 1;
+        const e = env(u);
+        if (e <= 0.004) return null;
+        const br = 0.6 + 0.4 * Math.sin(TAU * (p.brK * t + p.brP));
+        const x = p.x0 + p.swA * Math.sin(TAU * (p.swK * t + p.swP));
+        const y = p.y0 - u * 620;
+        const r = p.r * (0.92 + 0.08 * br);
+        return (
+          <g key={i} opacity={p.op * e * br}>
+            <circle cx={x} cy={y} r={r} fill="url(#bokehFill)" />
+            <circle cx={x} cy={y} r={r * 0.97} fill="url(#bokehRing)" opacity={0.45} />
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
+/* ── nebula clouds ────────────────────────────────────────────────────── */
+type Cloud = { x: number; y: number; rx: number; ry: number; op: number; dxA: number; dxK: number; dxP: number; dyA: number; dyK: number; dyP: number; bK: number; bP: number; g: string };
+const useClouds = () =>
+  useMemo<Cloud[]>(
+    () =>
+      Array.from({ length: 7 }, (_, i) => {
+        const s = `c${i}`;
+        return {
+          x: rr(s + 'x', 180, W - 180),
+          y: rr(s + 'y', 120, H - 60),
+          rx: rr(s + 'rx', 320, 720),
+          ry: rr(s + 'ry', 180, 380),
+          op: rr(s + 'o', 0.3, 0.85),
+          dxA: rr(s + 'dxa', 26, 90),
+          dxK: pick(s + 'dxk', [1, 2]),
+          dxP: random(s + 'dxp'),
+          dyA: rr(s + 'dya', 18, 60),
+          dyK: pick(s + 'dyk', [1, 2]),
+          dyP: random(s + 'dyp'),
+          bK: pick(s + 'bk', [1, 2]),
+          bP: random(s + 'bp'),
+          g: random(s + 'g') > 0.6 ? 'cloudB' : 'cloudA',
+        };
+      }),
+    []
+  );
+
+const Clouds: React.FC<{ t: number }> = ({ t }) => {
+  const cl = useClouds();
+  return (
+    <g>
+      {cl.map((c, i) => {
+        const x = c.x + c.dxA * Math.sin(TAU * (c.dxK * t + c.dxP));
+        const y = c.y + c.dyA * Math.sin(TAU * (c.dyK * t + c.dyP));
+        const b = 0.62 + 0.38 * Math.sin(TAU * (c.bK * t + c.bP));
+        return <ellipse key={i} cx={x} cy={y} rx={c.rx} ry={c.ry} fill={`url(#${c.g})`} opacity={c.op * b} />;
+      })}
+    </g>
+  );
+};
+
+/* ── anamorphic light beam ────────────────────────────────────────────── */
+const BEAM_Y = 824;
+
+const Beam: React.FC<{ t: number }> = ({ t }) => {
+  const p1 = 0.5 + 0.5 * Math.sin(TAU * (2 * t + 0.12));
+  const p2 = 0.5 + 0.5 * Math.sin(TAU * (3 * t + 0.61));
+  const breathe = 0.72 + 0.28 * p1;
+  const coreW = 330 + 110 * p2;
+  const hotX = 960 + 120 * Math.sin(TAU * (1 * t + 0.3));
+
+  return (
+    <g>
+      <ellipse cx={960} cy={BEAM_Y} rx={980} ry={118} fill="url(#beamHalo)" opacity={0.5 * breathe} />
+      <ellipse cx={960} cy={BEAM_Y} rx={660} ry={22} fill="url(#beamMid)" opacity={0.72 * breathe} />
+      <rect x={0} y={BEAM_Y - 1} width={W} height={2} fill="url(#beamLine)" opacity={0.2 * breathe} />
+      <ellipse cx={hotX} cy={BEAM_Y} rx={coreW * 0.78} ry={4} fill="url(#beamCore)" opacity={0.88} />
+      <ellipse cx={hotX} cy={BEAM_Y} rx={coreW * 0.3} ry={1.6} fill={C.hot} opacity={0.8 * breathe} />
+      <ellipse cx={hotX} cy={BEAM_Y} rx={74} ry={30} fill="url(#beamSpot)" opacity={0.8 * breathe} />
+      <ellipse cx={hotX} cy={BEAM_Y} rx={26} ry={3.2} fill={C.hot} opacity={0.55 + 0.35 * p2} />
+    </g>
+  );
+};
+
+/* ── SVG defs ─────────────────────────────────────────────────────────── */
+const Defs: React.FC = () => (
+  <defs>
+    <radialGradient id="glintCore">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+      <stop offset="10%" stopColor="#eaf7ff" stopOpacity="0.95" />
+      <stop offset="30%" stopColor="#7fd2ff" stopOpacity="0.6" />
+      <stop offset="62%" stopColor="#2f86ff" stopOpacity="0.26" />
+      <stop offset="100%" stopColor="#123ce0" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="glintHalo">
+      <stop offset="0%" stopColor="#7fd2ff" stopOpacity="0.44" />
+      <stop offset="42%" stopColor="#2270ff" stopOpacity="0.18" />
+      <stop offset="100%" stopColor="#0e2ec0" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="bokehFill">
+      <stop offset="0%" stopColor="#2a7bff" stopOpacity="0.075" />
+      <stop offset="68%" stopColor="#1450e8" stopOpacity="0.035" />
+      <stop offset="100%" stopColor="#0a2a9f" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="bokehRing">
+      <stop offset="0%" stopColor="#7fd0ff" stopOpacity="0" />
+      <stop offset="66%" stopColor="#3f9cff" stopOpacity="0.03" />
+      <stop offset="91%" stopColor="#7fd2ff" stopOpacity="0.055" />
+      <stop offset="100%" stopColor="#7fd2ff" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="cloudA">
+      <stop offset="0%" stopColor="#0f45e8" stopOpacity="0.34" />
+      <stop offset="52%" stopColor="#0a2fb4" stopOpacity="0.16" />
+      <stop offset="100%" stopColor="#04166e" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="cloudB">
+      <stop offset="0%" stopColor="#2a8cff" stopOpacity="0.24" />
+      <stop offset="46%" stopColor="#1050ee" stopOpacity="0.11" />
+      <stop offset="100%" stopColor="#06197e" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="beamHalo">
+      <stop offset="0%" stopColor="#63b0ff" stopOpacity="0.52" />
+      <stop offset="34%" stopColor="#1f74ff" stopOpacity="0.26" />
+      <stop offset="70%" stopColor="#0e40e0" stopOpacity="0.09" />
+      <stop offset="100%" stopColor="#061c96" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="beamMid">
+      <stop offset="0%" stopColor="#cfe6ff" stopOpacity="0.85" />
+      <stop offset="30%" stopColor="#6aa8ff" stopOpacity="0.5" />
+      <stop offset="72%" stopColor="#3160ee" stopOpacity="0.18" />
+      <stop offset="100%" stopColor="#1a35a8" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="beamCore">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+      <stop offset="26%" stopColor="#dcefff" stopOpacity="0.85" />
+      <stop offset="66%" stopColor="#7fb6ff" stopOpacity="0.35" />
+      <stop offset="100%" stopColor="#4f8dff" stopOpacity="0" />
+    </radialGradient>
+    <radialGradient id="beamSpot">
+      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+      <stop offset="24%" stopColor="#d6ecff" stopOpacity="0.5" />
+      <stop offset="60%" stopColor="#69a6ff" stopOpacity="0.16" />
+      <stop offset="100%" stopColor="#3f7dff" stopOpacity="0" />
+    </radialGradient>
+    <linearGradient id="beamLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stopColor="#3f8dff" stopOpacity="0" />
+      <stop offset="18%" stopColor="#6aa8ff" stopOpacity="0.5" />
+      <stop offset="50%" stopColor="#dcefff" stopOpacity="0.95" />
+      <stop offset="82%" stopColor="#6aa8ff" stopOpacity="0.5" />
+      <stop offset="100%" stopColor="#3f8dff" stopOpacity="0" />
+    </linearGradient>
+  </defs>
+);
+
+/* ══════════════════════════════════════════════════════════════════════
+   SCENE
+   ══════════════════════════════════════════════════════════════════════ */
+const Scene: React.FC<{ t: number; bloom?: boolean }> = ({ t, bloom }) => (
+  <AbsoluteFill>
+    {!bloom && (
+      <>
+        <AbsoluteFill style={{ background: C.bg }} />
+        <AbsoluteFill
+          style={{
+            background:
+              'radial-gradient(86% 66% at 50% 78%, rgba(20,84,255,0.66) 0%, rgba(10,44,205,0.4) 34%, rgba(2,6,46,0) 76%)',
+          }}
+        />
+        <AbsoluteFill
+          style={{
+            background:
+              'radial-gradient(80% 70% at 50% 42%, rgba(16,60,235,0.46) 0%, rgba(8,28,150,0.22) 48%, rgba(1,3,30,0) 82%)',
+          }}
+        />
+        <AbsoluteFill
+          style={{
+            background: 'linear-gradient(180deg, rgba(0,1,10,0.34) 0%, rgba(0,1,10,0.08) 28%, rgba(0,1,10,0) 54%)',
+          }}
+        />
+      </>
+    )}
+
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+      <Defs />
+      {!bloom && <Clouds t={t} />}
+      <Rods t={t} layer={0} />
+      <DustField t={t} />
+      <Bokeh t={t} />
+      <Rods t={t} layer={1} />
+      <Beam t={t} />
+      <Rods t={t} layer={2} />
+      <Accents t={t} />
+      <Stars t={t} />
+    </svg>
+  </AbsoluteFill>
+);
+
+/* ── film grain + vignette ────────────────────────────────────────────── */
+const Fx: React.FC<{ f: number }> = ({ f }) => (
+  <AbsoluteFill style={{ pointerEvents: 'none' }}>
+    <svg width={W} height={H} style={{ position: 'absolute', opacity: 0.05, mixBlendMode: 'overlay' }}>
+      <filter id="grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={1} seed={f % 8} stitchTiles="stitch" />
+      </filter>
+      <rect width={W} height={H} filter="url(#grain)" />
+    </svg>
     <AbsoluteFill
       style={{
-        background: '#04060B',
-        fontFamily: "'MxSans', system-ui, sans-serif",
-        color: C_INK,
-        opacity: fontsReady ? 1 : 0,
+        background:
+          'radial-gradient(132% 108% at 50% 58%, rgba(0,0,0,0) 48%, rgba(0,1,10,0.26) 80%, rgba(0,0,6,0.62) 100%)',
       }}
-    >
-      {/* ------------------------------------------------------ backdrop */}
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(1200px 900px at 30% 40%, rgba(20,74,150,0.34), rgba(0,0,0,0) 70%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(1200px 950px at 70% 62%, rgba(20,140,96,0.30), rgba(0,0,0,0) 70%)',
-          opacity: 0.08 + 0.92 * progress,
-        }}
-      />
+    />
+  </AbsoluteFill>
+);
 
-      <svg width={VW} height={VH} style={{position: 'absolute', opacity: 0.9}}>
-        <defs>
-          <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#8FC4E8" stopOpacity="0.10" />
-            <stop offset="0.5" stopColor="#8FC4E8" stopOpacity="0.03" />
-            <stop offset="1" stopColor="#8FC4E8" stopOpacity="0.10" />
-          </linearGradient>
-        </defs>
-        <g stroke="url(#fade)" strokeWidth="1">
-          {Array.from({length: 33}, (_, i) => (
-            <line key={`v${i}`} x1={i * 60} y1={0} x2={i * 60} y2={VH} />
-          ))}
-          {Array.from({length: 19}, (_, i) => (
-            <line key={`h${i}`} x1={0} y1={i * 60} x2={VW} y2={i * 60} />
-          ))}
-        </g>
-        <g fill="none" stroke="rgba(140,190,235,0.075)" strokeWidth="1.5">
-          {[250, 400, 550, 700, 850].map((r) => (
-            <circle key={r} cx={CX} cy={CY} r={r} />
-          ))}
-        </g>
-      </svg>
+export const Motion: React.FC = () => {
+  const frame = useCurrentFrame();
+  const f = ((frame % DUR) + DUR) % DUR;
+  const t = f / DUR;
 
-      <div
-        style={{
-          position: 'absolute',
-          left: CX - 520,
-          top: CY - 420,
-          width: 1040,
-          height: 840,
-          background:
-            'radial-gradient(closest-side, rgba(46,110,180,0.34), rgba(0,0,0,0) 72%)',
-          opacity: cardIn,
-        }}
-      />
-
-      {/* the diagonal pass, behind the card */}
-      {beamOn > 0.002 ? (
-        <>
-          <div
-            style={{
-              position: 'absolute',
-              left: bx - 1400,
-              top: by - 150,
-              width: 2800,
-              height: 300,
-              transform: `rotate(${TH_DEG}deg)`,
-              background:
-                'linear-gradient(180deg, rgba(56,160,255,0) 0%, rgba(56,160,255,0.20) 50%, rgba(56,160,255,0) 100%)',
-              opacity: beamOn * (1 + 0.9 * pop),
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: bx - 1200,
-              top: by - 1,
-              width: 2400,
-              height: 2,
-              transform: `rotate(${TH_DEG}deg)`,
-              background:
-                'linear-gradient(90deg, rgba(56,160,255,0) 0%, rgba(56,160,255,0.85) 28%, rgba(56,160,255,0.85) 72%, rgba(56,160,255,0) 100%)',
-              opacity: beamOn * 0.9,
-            }}
-          />
-        </>
-      ) : null}
-
-      {/* --------------------------------------------------------- the card */}
-      <FlameFront
-        region={RGN}
-        rect={RECT}
-        drawContent={drawRaw}
-        drawConverted={drawVerified}
-        contentKey={fontsReady ? 'id-1' : 'id-0'}
-        params={FIELD}
-        frontOnly
-        level={level}
-        fire={fire}
-        convert={convert}
-        bloom={0}
-        style={{
-          opacity: cardIn,
-          transform: `translateY(${(1 - cardIn) * 26}px) rotate(${TH_DEG}deg)`,
-        }}
-      />
-
-      {/* ---------------------------------------------------------- stamp */}
-      {st > 0 ? (
-        <div
-          style={{
-            position: 'absolute',
-            left: CX - 240,
-            top: 790,
-            width: 480,
-            height: 84,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: `5px solid rgba(56,160,255,${0.9 * stampA})`,
-            borderRadius: 8,
-            transform: `rotate(-3deg) scale(${stampScale})`,
-            opacity: stampA,
-            boxShadow: '0 0 44px rgba(56,160,255,0.4)',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 30,
-              fontWeight: 700,
-              letterSpacing: 7,
-              paddingLeft: 7,
-              color: `rgba(120,200,255,${0.96 * stampA})`,
-            }}
-          >
-            IDENTITY VERIFIED
-          </span>
-        </div>
-      ) : null}
-
-      {flash > 0.002 ? (
-        <AbsoluteFill style={{background: 'rgba(120,200,255,0.11)', opacity: flash}} />
-      ) : null}
-
-      {/* ----------------------------------------------------------- HUD */}
-      <Bracket x={56} y={56} sx={1} sy={1} col={C_BLUE} a={brIn} />
-      <Bracket x={VW - 130} y={56} sx={-1} sy={1} col={accent} a={brIn} />
-      <Bracket x={56} y={VH - 130} sx={1} sy={-1} col={C_BLUE} a={brIn} />
-      <Bracket x={VW - 130} y={VH - 130} sx={-1} sy={-1} col={accent} a={brIn} />
-
-      <div
-        style={{
-          position: 'absolute',
-          left: 92,
-          top: 82,
-          opacity: hudIn,
-          transform: `translateX(${(1 - hudIn) * -18}px)`,
-        }}
-      >
-        <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-          <div style={{width: 12, height: 12, background: C_BLUE}} />
-          <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 7, color: C_BLUE}}>
-            IDENTITY VERIFICATION
-          </span>
-        </div>
-        <div style={{marginTop: 13, marginLeft: 26}}>
-          <Chrome t="KYC · TIER 2 · ID-4471-8892" s={17} l={3.4} o={0.55} col="#C3D8EE" />
-        </div>
-        <div
-          style={{
-            position: 'relative',
-            marginTop: 20,
-            marginLeft: 26,
-            width: 452,
-            height: 4,
-            background: 'rgba(150,200,240,0.16)',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              height: 4,
-              width: 452 * progress,
-              background: `linear-gradient(90deg, ${C_BLUE}, ${accent})`,
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: 452 * progress - 1,
-              top: -5,
-              width: 2,
-              height: 14,
-              background: accent,
-              opacity: beamOn > 0.01 ? 1 : 0.35,
-            }}
-          />
-        </div>
-        <div style={{marginTop: 16, marginLeft: 26}}>
-          <Chrome t={status} s={16} l={3.6} o={0.75} col={accent} />
-        </div>
-
-        {/* the four gates, ticking as the diagonal front reaches each zone */}
-        <div style={{marginTop: 26, marginLeft: 26, display: 'flex', gap: 10}}>
-          {CHECKS.map((ck, i) => {
-            const on = f >= TICK_F[i];
-            return (
-              <div
-                key={ck.k}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '7px 14px',
-                  borderRadius: 15,
-                  border: `2px solid ${on ? 'rgba(46,217,122,0.65)' : 'rgba(150,200,240,0.22)'}`,
-                  background: on ? 'rgba(46,217,122,0.14)' : 'rgba(150,200,240,0.05)',
-                }}
-              >
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    background: on ? C_GREEN : 'rgba(150,200,240,0.35)',
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 13,
-                    letterSpacing: 2.6,
-                    color: on ? C_GREEN : 'rgba(195,216,238,0.55)',
-                  }}
-                >
-                  {ck.k}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 92,
-          top: 76,
-          width: 560,
-          textAlign: 'right',
-          opacity: hudIn,
-          transform: `translateX(${(1 - hudIn) * 18}px)`,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 92,
-            fontWeight: 700,
-            lineHeight: '96px',
-            letterSpacing: -1,
-            color: accent,
-            transform: `scale(${1 + 0.05 * pop})`,
-            transformOrigin: '100% 50%',
-          }}
-        >
-          {score.toFixed(1)}%
-        </div>
-        <div style={{marginTop: 6}}>
-          <Chrome
-            t={lock > 0.999 ? 'FACE MATCH · LOCKED' : 'FACE MATCH · SEARCHING'}
-            s={16}
-            l={6}
-            o={0.6 + 0.4 * lock}
-            col={lock > 0.999 ? C_GREEN : C_AMBER}
-          />
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------- caption */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 928,
-          width: VW,
-          textAlign: 'center',
-          opacity: capIn,
-        }}
-      >
-        <div
-          style={{
-            width: 520,
-            height: 1,
-            background: 'rgba(160,210,245,0.28)',
-            margin: '0 auto 26px',
-          }}
-        />
-        <span style={{fontSize: 31, fontWeight: 700, letterSpacing: 15}}>
-          KYC IDENTITY VERIFICATION
-        </span>
-      </div>
-
-      <div style={{position: 'absolute', left: 92, top: VH - 96, opacity: hudIn * 0.5}}>
-        <Chrome t="eKYC · AML SCREENED" s={15} l={3} o={1} col="#C3D8EE" />
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          right: 92,
-          top: VH - 96,
-          opacity: hudIn * (f >= F_STAMP ? idlePulse : 0.5),
-        }}
-      >
-        <Chrome
-          t={f >= F_STAMP ? 'DOCUMENT · AUTHENTIC' : 'DOCUMENT · UNVERIFIED'}
-          s={15}
-          l={3}
-          o={1}
-          col={f >= F_STAMP ? C_GREEN : '#C3D8EE'}
-        />
-      </div>
-
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(1500px 1000px at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.62) 100%)',
-          pointerEvents: 'none',
-        }}
-      />
+  return (
+    <AbsoluteFill style={{ backgroundColor: C.bg, overflow: 'hidden' }}>
+      <Scene t={t} />
+      <AbsoluteFill style={{ filter: 'blur(8px)', mixBlendMode: 'screen', opacity: 0.56, pointerEvents: 'none' }}>
+        <Scene t={t} bloom />
+      </AbsoluteFill>
+      <AbsoluteFill style={{ filter: 'blur(38px)', mixBlendMode: 'screen', opacity: 0.4, pointerEvents: 'none' }}>
+        <Scene t={t} bloom />
+      </AbsoluteFill>
+      <Fx f={f} />
     </AbsoluteFill>
   );
 };
-
-export default Motion;
