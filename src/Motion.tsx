@@ -8,16 +8,14 @@ import {
 } from 'remotion';
 
 // ============================================================================
-// MOTION 27 — "INCOMING CALL · GLASS UI"
-// 1920×1080 · 60 fps · 1200 frames (20 s) · PERFECT LOOP (frame 1200 ≡ 0)
+// MOTION 28 — "AI VOICE ASSISTANT ORB"
+// 1920×1080 · 60 fps · 1440 frames (24 s) · PERFECT LOOP (frame 1440 ≡ 0)
 //
-// Struktur ritme (semua periode membagi 20 s):
-//   1 s   — pulse dering: wiggle handset + pump + 2 kereta ripple avatar
-//   1 s   — pulse tombol Accept (fase +0,5 s, berselang-seling dgn avatar)
-//   2 s   — titik "Incoming call…" (3 titik muncul berurutan, lalu pudar)
-//   4 s   — napas halo avatar & napas tombol Decline
-//   10/20 — sapuan specular cincin, drift blob ambient, partikel bokeh,
-//           napas kamera global
+// Siklus naratif dalam satu loop:
+//   idle → LISTENING (suara user, burst tak beraturan) → THINKING (riak
+//   berputar + partikel menyala) → SPEAKING (suara asisten, ritmis) → idle
+//
+// Semua sinyal = jumlah sinus dengan SIKLUS BULAT per 24 s → periodik murni.
 // ============================================================================
 
 // ---------------------------------------------------------------- fonts ----
@@ -64,162 +62,455 @@ const smooth = (a: number, b: number, x: number) => {
   const u = clamp01((x - a) / (b - a));
   return u * u * (3 - 2 * u);
 };
-const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
 const mod = (a: number, n: number) => ((a % n) + n) % n;
 const rnd = (i: number) => {
   const s = Math.sin(i * 127.1 + 311.7) * 43758.5453;
   return s - Math.floor(s);
 };
 
-const DUR = 20; // detik
+const DUR = 24; // detik — SEMUA frekuensi temporal = k/DUR dengan k bulat
 const TAU = Math.PI * 2;
 
-// Glyph handset klasik (Material Symbols "call", Apache-2.0), viewBox 24×24.
-const PHONE_PATH =
-  'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.21c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z';
-
-// ----------------------------------------------------------- geometry -------
 const W = 1920;
 const H = 1080;
 const CX = 960;
-const AV_Y = 468; // pusat avatar
-const AV_R = 150; // radius cincin avatar
-const BTN_Y = 872; // pusat tombol
-const BTN_DX = 272; // offset tombol dari tengah
-const BTN_R = 86; // radius tombol
+const OY = 452; // pusat orb
+const ORB_R = 180;
+const BAR_IN = 224; // radius dalam ring equalizer
+const NBARS = 96;
+const FLOOR = 792; // garis lantai glossy (sumbu refleksi)
+
+// ---- envelope suara (periodik murni atas DUR) ------------------------------
+// suara USER saat listening: frasa tak beraturan + silabel ~3,3 Hz
+const burstEnv = (T: number) => {
+  const a = 0.5 + 0.5 * Math.sin((TAU * (7 * T)) / DUR + 1.3);
+  const b = 0.5 + 0.5 * Math.sin((TAU * (11 * T)) / DUR + 4.1);
+  const c = 0.5 + 0.5 * Math.sin((TAU * (17 * T)) / DUR + 2.2);
+  const gate = smooth(0.3, 0.62, a * 0.5 + b * 0.3 + c * 0.2);
+  const syll = 0.55 + 0.45 * Math.sin((TAU * (79 * T)) / DUR + 0.7);
+  return 0.22 + 0.78 * gate * syll;
+};
+// suara ASISTEN saat speaking: lebih halus & ritmis, silabel 4 Hz
+const voiceEnv = (T: number) => {
+  const phrase = smooth(0.28, 0.5, 0.5 + 0.5 * Math.sin((TAU * (5 * T)) / DUR + 0.9));
+  const syll = 0.6 + 0.4 * Math.sin((TAU * (96 * T)) / DUR);
+  const sub = 0.85 + 0.15 * Math.sin((TAU * (48 * T)) / DUR + 2.0);
+  return 0.25 + 0.75 * phrase * syll * sub;
+};
+
+// ---- bobot state (transisi berurutan, frame 0 & 1440 = idle) ---------------
+const stateWeights = (T: number) => {
+  const wL = smooth(0.6, 1.7, T) * (1 - smooth(8.4, 9.9, T));
+  const wT = smooth(8.4, 9.9, T) * (1 - smooth(13.4, 15.1, T));
+  const wS = smooth(13.4, 15.1, T) * (1 - smooth(21.2, 23.1, T));
+  return {wL, wT, wS};
+};
+
+// ---- mode spektrum bar (spasial bulat per lingkaran, temporal bulat/DUR) ---
+const MODES: [number, number, number, number][] = [
+  // [freq spasial, siklus temporal per DUR, amplitudo, fase]
+  [2, 67, 0.32, 0.4],
+  [3, 103, 0.26, 2.1],
+  [5, 149, 0.2, 4.4],
+  [7, 191, 0.14, 1.6],
+  [9, 233, 0.1, 5.2],
+];
 
 // ============================================================================
-// SCENE — seluruh konten digambar dua kali (base + bloom copy)
+// HERO — orb + ring equalizer + partikel (dipakai 2×: normal & refleksi)
 // ============================================================================
-const Scene: React.FC<{T: number}> = ({T}) => {
-  // ---- ritme dering (periode 1 s) — cadence terukur dari referensi ----
-  const rc = mod(T, 1);
-  const wigWin = 1 - smooth(0.5, 0.78, rc);
-  const wiggle = 16 * Math.sin(TAU * 5 * rc) * Math.exp(-5.0 * rc) * wigWin;
-  const pump =
-    rc < 0.5 ? Math.pow(Math.sin((Math.PI * rc) / 0.5), 0.8) * Math.exp(-2.2 * rc) : 0;
-  const heroScale = 1 + 0.045 * pump;
+const Hero: React.FC<{T: number}> = ({T}) => {
+  const {wL, wT, wS} = stateWeights(T);
+  const burst = burstEnv(T);
+  const voice = voiceEnv(T);
+  const energy = clamp01(wL * burst + wS * voice + 0.35 * wT + 0.1);
 
-  // ---- ripple avatar: 2 kereta (delay 0 & 0,18 s), umur 1,5 s ----
-  const ripples: {r: number; op: number; sw: number}[] = [];
-  const trains: [number, number][] = [
-    [0, 1],
-    [0.18, 0.55],
-  ];
-  for (const [delay, amp] of trains) {
-    const ph = mod(T - delay, 1);
-    for (let j = 0; j < 2; j++) {
-      const age = ph + j;
-      if (age >= 1.5) continue;
-      const p = age / 1.5;
-      ripples.push({
-        r: AV_R + 8 + 320 * easeOutCubic(p),
-        op: amp * 0.5 * Math.pow(1 - p, 1.7) * smooth(0, 0.05, p),
-        sw: 3.2 * (1 - p) + 0.6,
-      });
+  // napas + denyut suara
+  const breathe = 0.012 * Math.sin((TAU * (6 * T)) / DUR + 1.0);
+  const orbScale = 1 + breathe + 0.035 * (wS * voice + 0.6 * wL * burst);
+
+  // ---- bar equalizer ----
+  const bars: {x1: number; y1: number; x2: number; y2: number; c: string; op: number}[] = [];
+  for (let i = 0; i < NBARS; i++) {
+    let spat = 0;
+    for (const [m, k, A, ph] of MODES) {
+      spat += A * Math.sin(TAU * ((m * i) / NBARS) + (TAU * (k * T)) / DUR + ph);
     }
-  }
-
-  // ---- pulse tombol Accept (fase +0,5 s) ----
-  const ac = mod(T + 0.5, 1);
-  const acPump =
-    ac < 0.5 ? Math.pow(Math.sin((Math.PI * ac) / 0.5), 0.8) * Math.exp(-2.0 * ac) : 0;
-  const acScale = 1 + 0.05 * acPump;
-  const acRipples: {r: number; op: number; sw: number}[] = [];
-  for (let j = 0; j < 2; j++) {
-    const age = ac + j;
-    if (age >= 1.1) continue;
-    const p = age / 1.1;
-    acRipples.push({
-      r: BTN_R + 6 + 96 * easeOutCubic(p),
-      op: 0.5 * Math.pow(1 - p, 1.6) * smooth(0, 0.06, p),
-      sw: 2.6 * (1 - p) + 0.6,
+    const val = Math.pow(Math.abs(spat), 1.15);
+    const kJ = 150 + Math.floor(rnd(i + 11) * 100);
+    const jit = 0.5 + 0.5 * Math.sin((TAU * (kJ * T)) / DUR + rnd(i + 71) * TAU);
+    const ripple = 0.5 + 0.5 * Math.sin(TAU * ((3 * i) / NBARS) - (TAU * (23 * T)) / DUR);
+    const total = clamp01(
+      0.1 +
+        val * (0.3 * (1 - 0.55 * wT) + 0.85 * (wL * burst + wS * voice)) +
+        0.32 * wT * ripple * ripple +
+        jit * 0.13 * (0.3 + energy)
+    );
+    const L = 8 + 92 * total;
+    const ang = (TAU * i) / NBARS - Math.PI / 2;
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const hue = 195 + 165 * (0.5 + 0.5 * Math.sin((TAU * i) / NBARS + 1.0));
+    bars.push({
+      x1: CX + BAR_IN * ca,
+      y1: OY + BAR_IN * sa,
+      x2: CX + (BAR_IN + L) * ca,
+      y2: OY + (BAR_IN + L) * sa,
+      c: `hsl(${hue.toFixed(1)} 90% 66%)`,
+      op: 0.42 + 0.55 * total,
     });
   }
 
-  // ---- napas (periode 4 s → 5 siklus/loop) ----
-  const haloBreath = 0.16 + 0.05 * Math.sin(TAU * (5 * T) / DUR);
-  const declineScale = 1 + 0.012 * Math.sin(TAU * (5 * T) / DUR + Math.PI);
-
-  // ---- sapuan specular cincin: 2 putaran/loop ----
-  const specRot = (720 * T) / DUR;
-
-  // ---- titik "Incoming call…" (periode 2 s) ----
-  const dph = mod(T, 2) / 2;
-  const dotOp = (i: number) =>
-    smooth(0.06 + 0.2 * i, 0.16 + 0.2 * i, dph) * (1 - smooth(0.8, 0.96, dph));
-
-  // ---- blob ambient (k bulat per loop) ----
-  const blobs = [
-    {
-      x: 420 + 130 * Math.sin(TAU * (1 * T) / DUR),
-      y: 330 + 90 * Math.sin(TAU * (2 * T) / DUR + 1.2),
-      r: 620,
-      c: '61,90,254',
-      a: 0.16,
-    },
-    {
-      x: 1560 + 110 * Math.sin(TAU * (2 * T) / DUR + 3.9),
-      y: 430 + 120 * Math.sin(TAU * (1 * T) / DUR + 5.1),
-      r: 560,
-      c: '0,191,165',
-      a: 0.1,
-    },
-    {
-      x: 1180 + 150 * Math.sin(TAU * (1 * T) / DUR + 2.4),
-      y: 940 + 70 * Math.sin(TAU * (3 * T) / DUR + 0.7),
-      r: 640,
-      c: '124,77,255',
-      a: 0.12,
-    },
-  ];
-
-  // ---- partikel bokeh (hash-based, sinusoid periodik) ----
-  const parts: {x: number; y: number; r: number; op: number}[] = [];
-  for (let i = 0; i < 18; i++) {
-    const a = rnd(i + 1);
-    const b = rnd(i + 31);
-    const c = rnd(i + 77);
-    const d = rnd(i + 113);
-    const kx = 1 + Math.floor(rnd(i + 151) * 2); // 1..2
-    const ky = 1 + Math.floor(rnd(i + 197) * 2);
-    const kt = 3 + Math.floor(rnd(i + 251) * 4); // 3..6
-    const x =
-      120 + a * 1680 + (28 + 44 * rnd(i + 201)) * Math.sin(TAU * (kx * T) / DUR + c * TAU);
-    const y =
-      100 + b * 880 + (22 + 36 * rnd(i + 301)) * Math.sin(TAU * (ky * T) / DUR + d * TAU);
-    const tw = 0.7 + 0.3 * Math.sin(TAU * (kt * T) / DUR + a * TAU);
+  // ---- partikel orbit (hash-based, revolusi bulat per loop) ----
+  type P = {x: number; y: number; r: number; op: number; front: boolean};
+  const parts: P[] = [];
+  for (let i = 0; i < 26; i++) {
+    const tl = (rnd(i + 5) - 0.5) * 0.55;
+    const rx = 250 + rnd(i + 21) * 190;
+    const ry = 56 + rnd(i + 47) * 84;
+    const k = 1 + Math.floor(rnd(i + 91) * 2); // 1..2 rev / loop
+    const dir = rnd(i + 131) > 0.5 ? 1 : -1;
+    const th = TAU * ((dir * k * T) / DUR) + rnd(i + 171) * TAU;
+    const x0 = rx * Math.cos(th);
+    const y0 = ry * Math.sin(th);
+    const x = CX + x0 * Math.cos(tl) - y0 * Math.sin(tl);
+    const y = OY + x0 * Math.sin(tl) + y0 * Math.cos(tl);
+    const front = Math.sin(th) > 0;
+    const tw = 0.7 + 0.3 * Math.sin((TAU * ((3 + Math.floor(rnd(i + 211) * 4)) * T)) / DUR + rnd(i + 251) * TAU);
     parts.push({
       x,
       y,
-      r: 1.6 + 3.2 * rnd(i + 401),
-      op: (0.05 + 0.15 * rnd(i + 501)) * tw,
+      r: (1.4 + 2.2 * rnd(i + 301)) * (front ? 1.25 : 0.85),
+      op: (0.16 + 0.3 * rnd(i + 351)) * tw * (0.55 + 0.55 * energy + 0.8 * wT) * (front ? 1 : 0.55),
+      front,
     });
   }
 
-  // ---- napas kamera global (1 siklus/loop) ----
-  const camScale = 1 + 0.006 * Math.sin(TAU * T / DUR);
+  // ---- waveform kecil di dalam orb ----
+  const NW = 56;
+  const vAmp = 4 + 32 * clamp01(wL * burst + wS * voice + 0.12 * wT + 0.08);
+  const wavePts: string[] = [];
+  for (let j = 0; j <= NW; j++) {
+    const xw = 180 - 88 + (176 * j) / NW;
+    const win = Math.pow(Math.sin((Math.PI * j) / NW), 0.9);
+    const yw =
+      180 +
+      win *
+        vAmp *
+        (Math.sin(TAU * ((1.6 * j) / NW) + (TAU * (120 * T)) / DUR + 0.5) +
+          0.6 * Math.sin(TAU * ((2.7 * j) / NW) + (TAU * (168 * T)) / DUR + 2.3) +
+          0.35 * Math.sin(TAU * ((4.3 * j) / NW) + (TAU * (216 * T)) / DUR + 4.1)) *
+        0.5;
+    wavePts.push(`${xw.toFixed(1)},${yw.toFixed(1)}`);
+  }
+  const waveStr = wavePts.join(' ');
 
-  const textBase: React.CSSProperties = {
+  // ---- blob plasma interior (Lissajous, k bulat) ----
+  const blobs = [
+    {c: '#2BE0FF', s: 236, blur: 40, a: 0.95, x: 150 + 74 * Math.sin((TAU * (3 * T)) / DUR + 0.7), y: 148 + 60 * Math.sin((TAU * (2 * T)) / DUR + 2.4)},
+    {c: '#8A5CFF', s: 258, blur: 44, a: 0.9, x: 226 + 66 * Math.sin((TAU * (2 * T)) / DUR + 3.8), y: 214 + 66 * Math.sin((TAU * (4 * T)) / DUR + 1.1)},
+    {c: '#FF54D7', s: 196, blur: 38, a: 0.75, x: 196 + 84 * Math.sin((TAU * (4 * T)) / DUR + 5.3), y: 254 + 48 * Math.sin((TAU * (3 * T)) / DUR + 0.2)},
+    {c: '#3D7BFF', s: 226, blur: 42, a: 0.85, x: 118 + 56 * Math.sin((TAU * (5 * T)) / DUR + 1.9), y: 226 + 62 * Math.sin((TAU * (2 * T)) / DUR + 4.6)},
+    {c: '#64FFE8', s: 132, blur: 30, a: 0.7, x: 214 + 88 * Math.sin((TAU * (6 * T)) / DUR + 2.9), y: 132 + 54 * Math.sin((TAU * (5 * T)) / DUR + 5.7)},
+  ];
+  // shimmer cepat khusus THINKING (12 rev/loop = 0,5 Hz)
+  const shTh = TAU * ((12 * T) / DUR);
+  const shimmer = {x: 180 + 92 * Math.cos(shTh), y: 180 + 92 * Math.sin(shTh)};
+
+  const blobBright = 0.85 + 0.45 * energy;
+
+  return (
+    <AbsoluteFill>
+      {/* halo di belakang orb */}
+      <div
+        style={{
+          position: 'absolute',
+          left: CX - 430,
+          top: OY - 430,
+          width: 860,
+          height: 860,
+          background:
+            'radial-gradient(circle, rgba(96,140,255,0.34) 0%, rgba(120,90,255,0.14) 38%, rgba(120,90,255,0) 70%)',
+          opacity: 0.35 + 0.6 * energy,
+        }}
+      />
+
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{position: 'absolute'}}>
+        <defs>
+          <linearGradient id="orbRing" x1={CX - ORB_R} y1={OY - ORB_R} x2={CX + ORB_R} y2={OY + ORB_R} gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#7DF3FF" />
+            <stop offset="55%" stopColor="#8B8CFB" />
+            <stop offset="100%" stopColor="#F470E4" />
+          </linearGradient>
+        </defs>
+
+        {/* partikel belakang */}
+        {parts.filter((p) => !p.front).map((p, i) => (
+          <circle key={`pb${i}`} cx={p.x} cy={p.y} r={p.r} fill="#BFD8FF" opacity={p.op} />
+        ))}
+
+        {/* cincin panduan + HUD arcs */}
+        <circle cx={CX} cy={OY} r={BAR_IN - 6} fill="none" stroke="#FFFFFF" strokeWidth={1} opacity={0.07} />
+        <g transform={`rotate(${(360 * T) / DUR} ${CX} ${OY})`}>
+          <circle cx={CX} cy={OY} r={338} fill="none" stroke="#9FC4FF" strokeWidth={1.4} strokeDasharray="2 11" opacity={0.13} />
+        </g>
+        <g transform={`rotate(${(-720 * T) / DUR} ${CX} ${OY})`}>
+          <circle cx={CX} cy={OY} r={354} fill="none" stroke="#9FC4FF" strokeWidth={1.2} strokeDasharray="150 2075" strokeLinecap="round" opacity={0.12} />
+        </g>
+
+        {/* ring equalizer */}
+        {bars.map((b, i) => (
+          <line
+            key={`b${i}`}
+            x1={b.x1}
+            y1={b.y1}
+            x2={b.x2}
+            y2={b.y2}
+            stroke={b.c}
+            strokeWidth={5.4}
+            strokeLinecap="round"
+            opacity={b.op}
+          />
+        ))}
+      </svg>
+
+      {/* ---- ORB ---- */}
+      <div
+        style={{
+          position: 'absolute',
+          left: CX - ORB_R,
+          top: OY - ORB_R,
+          width: ORB_R * 2,
+          height: ORB_R * 2,
+          transform: `scale(${orbScale})`,
+        }}
+      >
+        {/* cangkang + interior */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            overflow: 'hidden',
+            background:
+              'radial-gradient(circle at 38% 32%, #2E3A6E 0%, #17204A 52%, #0B1130 100%)',
+            boxShadow:
+              'inset 0 0 46px rgba(140,190,255,0.3), inset 0 -20px 44px rgba(255,84,215,0.14)',
+          }}
+        >
+          {/* core light pusat */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 180 - 115,
+              top: 180 - 115,
+              width: 230,
+              height: 230,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(159,216,255,0.9) 0%, rgba(159,216,255,0) 62%)',
+              filter: 'blur(26px)',
+              opacity: 0.32 + 0.45 * energy,
+              mixBlendMode: 'screen',
+            }}
+          />
+          {blobs.map((bl, i) => (
+            <div
+              key={`bl${i}`}
+              style={{
+                position: 'absolute',
+                left: bl.x - bl.s / 2,
+                top: bl.y - bl.s / 2,
+                width: bl.s,
+                height: bl.s,
+                borderRadius: '50%',
+                background: `radial-gradient(circle, ${bl.c} 0%, transparent 62%)`,
+                filter: `blur(${bl.blur}px)`,
+                opacity: bl.a * blobBright,
+                mixBlendMode: 'screen',
+              }}
+            />
+          ))}
+          {/* shimmer THINKING */}
+          <div
+            style={{
+              position: 'absolute',
+              left: shimmer.x - 60,
+              top: shimmer.y - 60,
+              width: 120,
+              height: 120,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, #E8F6FF 0%, transparent 60%)',
+              filter: 'blur(22px)',
+              opacity: 0.75 * wT,
+              mixBlendMode: 'screen',
+            }}
+          />
+          {/* waveform suara di pusat orb */}
+          <svg width={360} height={360} viewBox="0 0 360 360" style={{position: 'absolute', left: 0, top: 0}}>
+            <polyline points={waveStr} fill="none" stroke="#EAF6FF" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" opacity={0.18} />
+            <polyline points={waveStr} fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" opacity={0.32 + 0.4 * energy} />
+          </svg>
+          {/* specular */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 62,
+              top: 34,
+              width: 168,
+              height: 96,
+              borderRadius: '50%',
+              background: 'radial-gradient(ellipse, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 62%)',
+              transform: 'rotate(-16deg)',
+              opacity: 0.5,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* cincin luar orb (di atas scale supaya stroke stabil) */}
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{position: 'absolute'}}>
+        <circle cx={CX} cy={OY} r={ORB_R * orbScale + 3} fill="none" stroke="url(#orbRing)" strokeWidth={2.6} opacity={0.85} />
+        <circle cx={CX} cy={OY} r={ORB_R * orbScale + 3} fill="none" stroke="#CFEFFF" strokeWidth={7} opacity={0.1} />
+        {/* partikel depan */}
+        {parts.filter((p) => p.front).map((p, i) => (
+          <g key={`pf${i}`}>
+            <circle cx={p.x} cy={p.y} r={p.r * 2.6} fill="#9FD0FF" opacity={p.op * 0.25} />
+            <circle cx={p.x} cy={p.y} r={p.r} fill="#E6F3FF" opacity={p.op} />
+          </g>
+        ))}
+      </svg>
+    </AbsoluteFill>
+  );
+};
+
+// ============================================================================
+// SCENE — latar + hero + refleksi + label (dirender 2×: base + bloom)
+// ============================================================================
+const Scene: React.FC<{T: number}> = ({T}) => {
+  const {wL, wT, wS} = stateWeights(T);
+  const energy = clamp01(wL * burstEnv(T) + wS * voiceEnv(T) + 0.35 * wT + 0.1);
+
+  // blob ambient latar (k bulat per loop)
+  const ambBlobs = [
+    {
+      x: 360 + 120 * Math.sin((TAU * (1 * T)) / DUR + 0.8),
+      y: 320 + 80 * Math.sin((TAU * (2 * T)) / DUR + 2.0),
+      r: 600,
+      c: '104,68,255',
+      a: 0.13,
+    },
+    {
+      x: 1580 + 110 * Math.sin((TAU * (2 * T)) / DUR + 4.2),
+      y: 380 + 100 * Math.sin((TAU * (1 * T)) / DUR + 1.1),
+      r: 560,
+      c: '32,196,255',
+      a: 0.1,
+    },
+    {
+      x: 1150 + 140 * Math.sin((TAU * (1 * T)) / DUR + 3.1),
+      y: 950 + 60 * Math.sin((TAU * (3 * T)) / DUR + 5.0),
+      r: 620,
+      c: '255,74,196',
+      a: 0.07,
+    },
+  ];
+
+  // titik-titik "…" THINKING (periode 0,75 s = 32 siklus/loop)
+  const dph = mod(T, 0.75) / 0.75;
+  const dotOp = (i: number) =>
+    smooth(0.05 + 0.2 * i, 0.18 + 0.2 * i, dph) * (1 - smooth(0.78, 0.96, dph));
+
+  const camScale = 1 + 0.006 * Math.sin((TAU * T) / DUR);
+
+  const labelBase: React.CSSProperties = {
     fontFamily: "'MxInter', sans-serif",
     position: 'absolute',
     width: '100%',
     textAlign: 'center',
-    color: '#E8EEF9',
+    left: 0,
   };
+
+  // label TIDAK memakai bobot state langsung: fade-out selesai dulu baru
+  // fade-in label baru (mencegah dua teks bertumpuk saat transisi)
+  const opL = smooth(0.8, 1.7, T) * (1 - smooth(8.4, 9.1, T));
+  const opT = smooth(9.3, 10.0, T) * (1 - smooth(13.4, 14.05, T));
+  const opS = smooth(14.45, 15.15, T) * (1 - smooth(21.2, 23.0, T));
+  const slideL = 10 * (1 - smooth(0.8, 1.7, T));
+  const slideT = 10 * (1 - smooth(9.3, 10.0, T));
+  const slideS = 10 * (1 - smooth(14.45, 15.15, T));
+
+  const stateLabel = (
+    text: string,
+    weight: number,
+    ty: number,
+    dotColor: string,
+    withDots?: boolean
+  ) => (
+    <div
+      style={{
+        ...labelBase,
+        top: 872,
+        opacity: weight,
+        transform: `translateY(${ty}px)`,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 14,
+      }}
+    >
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: 6,
+          background: dotColor,
+          boxShadow: `0 0 14px ${dotColor}`,
+          display: 'inline-block',
+        }}
+      />
+      <span
+        style={{
+          fontWeight: 700,
+          fontSize: 30,
+          letterSpacing: '0.4em',
+          color: '#E6F0FF',
+          textShadow: '0 0 24px rgba(140,200,255,0.4)',
+        }}
+      >
+        {text}
+      </span>
+      {withDots ? (
+        <span style={{display: 'inline-flex', gap: 7, marginLeft: 2}}>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={`td${i}`}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                background: '#CBB2FF',
+                opacity: dotOp(i),
+                display: 'inline-block',
+              }}
+            />
+          ))}
+        </span>
+      ) : null}
+    </div>
+  );
 
   return (
     <AbsoluteFill style={{background: 'transparent'}}>
-      {/* ------------------------------------------------ latar ------- */}
+      {/* latar */}
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1400px 900px at 50% 38%, #0B1226 0%, #070B18 52%, #04060D 100%)',
+            'radial-gradient(1400px 900px at 50% 40%, #0A0F22 0%, #060A18 52%, #03050D 100%)',
         }}
       />
-      {blobs.map((bl, i) => (
+      {ambBlobs.map((bl, i) => (
         <div
-          key={`bl${i}`}
+          key={`ab${i}`}
           style={{
             position: 'absolute',
             left: bl.x - bl.r,
@@ -233,275 +524,109 @@ const Scene: React.FC<{T: number}> = ({T}) => {
         />
       ))}
 
-      {/* ------------------------------------- konten (napas kamera) --- */}
       <AbsoluteFill style={{transform: `scale(${camScale})`}}>
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{position: 'absolute'}}>
-          <defs>
-            <linearGradient id="ringGrad" x1={CX - AV_R} y1={AV_Y - AV_R} x2={CX + AV_R} y2={AV_Y + AV_R} gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#7DF3FF" />
-              <stop offset="50%" stopColor="#8B9CFB" />
-              <stop offset="100%" stopColor="#C08BFC" />
-            </linearGradient>
-            <linearGradient id="specGrad" x1={CX} y1={AV_Y - AV_R} x2={CX + AV_R} y2={AV_Y} gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0" />
-              <stop offset="50%" stopColor="#EAF6FF" stopOpacity="0.95" />
-              <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
-            </linearGradient>
-            <radialGradient id="haloGrad">
-              <stop offset="0%" stopColor="#67E8F9" stopOpacity="0.5" />
-              <stop offset="45%" stopColor="#5B7CFA" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#5B7CFA" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="glassGrad">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.1" />
-              <stop offset="62%" stopColor="#FFFFFF" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.015" />
-            </radialGradient>
-            <linearGradient id="phoneGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="100%" stopColor="#CFE0FA" />
-            </linearGradient>
-            <radialGradient id="btnShadow">
-              <stop offset="0%" stopColor="#000000" stopOpacity="0.5" />
-              <stop offset="60%" stopColor="#000000" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="greenGlow">
-              <stop offset="0%" stopColor="#3EE07A" stopOpacity="0.4" />
-              <stop offset="55%" stopColor="#3EE07A" stopOpacity="0.14" />
-              <stop offset="100%" stopColor="#3EE07A" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="redGrad" cx="0.35" cy="0.3" r="1">
-              <stop offset="0%" stopColor="#FF7A66" />
-              <stop offset="55%" stopColor="#F5473A" />
-              <stop offset="100%" stopColor="#C92A22" />
-            </radialGradient>
-            <radialGradient id="greenGrad" cx="0.35" cy="0.3" r="1">
-              <stop offset="0%" stopColor="#5CEF92" />
-              <stop offset="55%" stopColor="#2BCE66" />
-              <stop offset="100%" stopColor="#149A4A" />
-            </radialGradient>
-            <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-              <feDropShadow dx="0" dy="0" stdDeviation="9" floodColor="#9BE9FF" floodOpacity="0.55" />
-            </filter>
-          </defs>
-
-          {/* partikel bokeh */}
-          <g>
-            {parts.map((p, i) => (
-              <circle key={`p${i}`} cx={p.x} cy={p.y} r={p.r} fill="#AFC8FF" opacity={p.op} />
-            ))}
-          </g>
-
-          {/* halo avatar (napas) */}
-          <circle cx={CX} cy={AV_Y} r={295} fill="url(#haloGrad)" opacity={haloBreath / 0.16 * 0.5} />
-
-          {/* ripple dering avatar */}
-          {ripples.map((rp, i) => (
-            <circle
-              key={`r${i}`}
-              cx={CX}
-              cy={AV_Y}
-              r={rp.r}
-              fill="none"
-              stroke="#8FD8FF"
-              strokeWidth={rp.sw}
-              opacity={rp.op}
-            />
-          ))}
-
-          {/* piringan kaca + cincin gradien */}
-          <g transform={`translate(${CX} ${AV_Y}) scale(${heroScale}) translate(${-CX} ${-AV_Y})`}>
-            <circle cx={CX} cy={AV_Y} r={AV_R} fill="url(#glassGrad)" />
-            <circle cx={CX} cy={AV_Y} r={AV_R} fill="none" stroke="url(#ringGrad)" strokeWidth={3} opacity={0.9} />
-            <circle cx={CX} cy={AV_Y} r={AV_R - 7} fill="none" stroke="#FFFFFF" strokeWidth={1} opacity={0.1} />
-            {/* sapuan specular berputar */}
-            <g transform={`rotate(${specRot} ${CX} ${AV_Y})`}>
-              <circle
-                cx={CX}
-                cy={AV_Y}
-                r={AV_R}
-                fill="none"
-                stroke="url(#specGrad)"
-                strokeWidth={7}
-                strokeLinecap="round"
-                strokeDasharray={`${AV_R * TAU * 0.22} ${AV_R * TAU * 0.78}`}
-                opacity={0.28}
-              />
-              <circle
-                cx={CX}
-                cy={AV_Y}
-                r={AV_R}
-                fill="none"
-                stroke="url(#specGrad)"
-                strokeWidth={3.2}
-                strokeLinecap="round"
-                strokeDasharray={`${AV_R * TAU * 0.22} ${AV_R * TAU * 0.78}`}
-                opacity={0.85}
-              />
-            </g>
-            {/* handset — wiggle dering */}
-            <g filter="url(#softGlow)">
-              <g
-                transform={`translate(${CX} ${AV_Y}) rotate(${wiggle}) scale(6.3) translate(-12 -12)`}
-              >
-                <path d={PHONE_PATH} fill="url(#phoneGrad)" />
-              </g>
-            </g>
-          </g>
-
-          {/* ---------------- tombol ---------------- */}
-          {/* bayangan lantai */}
-          <ellipse cx={CX - BTN_DX} cy={BTN_Y + BTN_R + 26} rx={92} ry={20} fill="url(#btnShadow)" />
-          <ellipse cx={CX + BTN_DX} cy={BTN_Y + BTN_R + 26} rx={92} ry={20} fill="url(#btnShadow)" />
-
-          {/* glow hijau + ripple accept */}
-          <circle cx={CX + BTN_DX} cy={BTN_Y} r={150} fill="url(#greenGlow)" opacity={0.5 + 0.5 * acPump} />
-          {acRipples.map((rp, i) => (
-            <circle
-              key={`ar${i}`}
-              cx={CX + BTN_DX}
-              cy={BTN_Y}
-              r={rp.r}
-              fill="none"
-              stroke="#5CEF92"
-              strokeWidth={rp.sw}
-              opacity={rp.op}
-            />
-          ))}
-
-          {/* tombol decline */}
-          <g
-            transform={`translate(${CX - BTN_DX} ${BTN_Y}) scale(${declineScale}) translate(${-(
-              CX - BTN_DX
-            )} ${-BTN_Y})`}
-          >
-            <circle cx={CX - BTN_DX} cy={BTN_Y} r={BTN_R} fill="url(#redGrad)" />
-            <circle cx={CX - BTN_DX} cy={BTN_Y} r={BTN_R} fill="none" stroke="#FFFFFF" strokeWidth={1.6} opacity={0.28} />
-            <path
-              d={`M ${CX - BTN_DX - 54} ${BTN_Y - 44} A ${BTN_R - 14} ${BTN_R - 14} 0 0 1 ${
-                CX - BTN_DX + 54
-              } ${BTN_Y - 44}`}
-              fill="none"
-              stroke="#FFFFFF"
-              strokeWidth={7}
-              strokeLinecap="round"
-              opacity={0.22}
-            />
-            <g
-              transform={`translate(${CX - BTN_DX} ${BTN_Y}) rotate(135) scale(2.55) translate(-12 -12)`}
-            >
-              <path d={PHONE_PATH} fill="#FFFFFF" />
-            </g>
-          </g>
-
-          {/* tombol accept */}
-          <g
-            transform={`translate(${CX + BTN_DX} ${BTN_Y}) scale(${acScale}) translate(${-(
-              CX + BTN_DX
-            )} ${-BTN_Y})`}
-          >
-            <circle cx={CX + BTN_DX} cy={BTN_Y} r={BTN_R} fill="url(#greenGrad)" />
-            <circle cx={CX + BTN_DX} cy={BTN_Y} r={BTN_R} fill="none" stroke="#FFFFFF" strokeWidth={1.6} opacity={0.32} />
-            <path
-              d={`M ${CX + BTN_DX - 54} ${BTN_Y - 44} A ${BTN_R - 14} ${BTN_R - 14} 0 0 1 ${
-                CX + BTN_DX + 54
-              } ${BTN_Y - 44}`}
-              fill="none"
-              stroke="#FFFFFF"
-              strokeWidth={7}
-              strokeLinecap="round"
-              opacity={0.28}
-            />
-            <g
-              transform={`translate(${CX + BTN_DX} ${BTN_Y}) scale(2.55) translate(-12 -12)`}
-            >
-              <path d={PHONE_PATH} fill="#FFFFFF" />
-            </g>
-          </g>
-        </svg>
-
-        {/* ------------------------------------------------ teks ------- */}
+        {/* streak anamorfik di belakang orb */}
         <div
           style={{
-            ...textBase,
-            top: 176,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'baseline',
-            gap: 10,
+            position: 'absolute',
+            left: CX - 760,
+            top: OY - 60,
+            width: 1520,
+            height: 120,
+            background:
+              'radial-gradient(ellipse 50% 50% at 50% 50%, rgba(140,210,255,0.22) 0%, rgba(140,210,255,0) 70%)',
+            opacity: 0.6 + 0.4 * energy,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: CX - 560,
+            top: OY - 1.5,
+            width: 1120,
+            height: 3,
+            background:
+              'linear-gradient(90deg, rgba(190,230,255,0) 0%, rgba(190,230,255,0.5) 50%, rgba(190,230,255,0) 100%)',
+            filter: 'blur(1px)',
+            opacity: 0.3 + 0.5 * energy,
+          }}
+        />
+
+        {/* refleksi lantai */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: 0.42,
+            filter: 'blur(2px)',
+            WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) ${FLOOR}px, rgba(0,0,0,0.5) ${
+              FLOOR + 14
+            }px, rgba(0,0,0,0.24) ${FLOOR + 100}px, rgba(0,0,0,0) ${FLOOR + 250}px)`,
+            maskImage: `linear-gradient(180deg, rgba(0,0,0,0) ${FLOOR}px, rgba(0,0,0,0.5) ${
+              FLOOR + 14
+            }px, rgba(0,0,0,0.24) ${FLOOR + 100}px, rgba(0,0,0,0) ${FLOOR + 250}px)`,
           }}
         >
-          <span
+          <div
             style={{
-              fontWeight: 700,
-              fontSize: 34,
-              letterSpacing: '0.42em',
-              paddingLeft: '0.42em', // kompensasi letterSpacing agar center optik
-              textShadow: '0 0 26px rgba(125,211,252,0.35)',
+              position: 'absolute',
+              inset: 0,
+              transform: 'scaleY(-1)',
+              transformOrigin: `${CX}px ${FLOOR}px`,
             }}
           >
-            INCOMING CALL
-          </span>
-          <span style={{display: 'inline-flex', gap: 7, marginLeft: 2}}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={`d${i}`}
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 4,
-                  background: '#9FD8FF',
-                  opacity: dotOp(i),
-                  display: 'inline-block',
-                }}
-              />
-            ))}
-          </span>
+            <Hero T={T} />
+          </div>
         </div>
 
+        {/* garis lantai + contact glow */}
         <div
           style={{
-            ...textBase,
-            top: 666,
-            fontWeight: 400,
-            fontSize: 31,
-            letterSpacing: '0.14em',
-            paddingLeft: '0.14em',
-            color: '#93A7CC',
+            position: 'absolute',
+            left: CX - 470,
+            top: FLOOR - 0.5,
+            width: 940,
+            height: 1,
+            background:
+              'linear-gradient(90deg, rgba(160,200,255,0) 0%, rgba(160,200,255,0.14) 50%, rgba(160,200,255,0) 100%)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: CX - 420,
+            top: FLOOR - 46,
+            width: 840,
+            height: 110,
+            background:
+              'radial-gradient(ellipse 50% 50% at 50% 50%, rgba(110,190,255,0.16) 0%, rgba(110,190,255,0) 70%)',
+            opacity: 0.4 + 0.6 * energy,
+          }}
+        />
+
+        {/* hero utama */}
+        <Hero T={T} />
+
+        {/* caption atas */}
+        <div
+          style={{
+            ...labelBase,
+            top: 74,
+            fontWeight: 700,
+            fontSize: 24,
+            letterSpacing: '0.52em',
+            paddingLeft: '0.52em',
+            color: '#9DB2D8',
+            opacity: 0.6 + 0.06 * Math.sin((TAU * (5 * T)) / DUR),
           }}
         >
-          Unknown number
+          AI ASSISTANT
         </div>
 
-        <div
-          style={{
-            ...textBase,
-            top: 986,
-            left: CX - BTN_DX - 960,
-            fontWeight: 400,
-            fontSize: 26,
-            letterSpacing: '0.1em',
-            paddingLeft: '0.1em',
-            color: '#97A6C5',
-          }}
-        >
-          Decline
-        </div>
-        <div
-          style={{
-            ...textBase,
-            top: 986,
-            left: CX + BTN_DX - 960,
-            fontWeight: 400,
-            fontSize: 26,
-            letterSpacing: '0.1em',
-            paddingLeft: '0.1em',
-            color: '#9FE8BC',
-          }}
-        >
-          Accept
-        </div>
+        {/* label state (crossfade) */}
+        {stateLabel('LISTENING', opL, slideL, '#35E1FF')}
+        {stateLabel('THINKING', opT, slideT, '#B08CFF', true)}
+        {stateLabel('SPEAKING', opS, slideS, '#FF6BD8')}
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -516,14 +641,13 @@ export const Motion: React.FC = () => {
   const T = mod(frame, durationInFrames) / fps;
 
   return (
-    <AbsoluteFill style={{background: '#04060D'}}>
-      {/* base */}
+    <AbsoluteFill style={{background: '#03050D'}}>
       <Scene T={T} />
       {/* bloom global */}
       <AbsoluteFill
         style={{
           filter: 'blur(26px)',
-          opacity: 0.28,
+          opacity: 0.3,
           mixBlendMode: 'screen',
         }}
       >
@@ -533,13 +657,13 @@ export const Motion: React.FC = () => {
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1500px 1000px at 50% 46%, rgba(2,4,10,0) 52%, rgba(2,4,10,0.55) 100%)',
+            'radial-gradient(1500px 1000px at 50% 44%, rgba(2,4,10,0) 50%, rgba(2,4,10,0.6) 100%)',
         }}
       />
       <AbsoluteFill
         style={{
           background:
-            'linear-gradient(180deg, rgba(2,4,10,0.25) 0%, rgba(2,4,10,0) 14%, rgba(2,4,10,0) 82%, rgba(2,4,10,0.35) 100%)',
+            'linear-gradient(180deg, rgba(2,4,10,0.28) 0%, rgba(2,4,10,0) 14%, rgba(2,4,10,0) 80%, rgba(2,4,10,0.4) 100%)',
         }}
       />
     </AbsoluteFill>
