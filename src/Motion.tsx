@@ -8,18 +8,18 @@ import {
 } from 'remotion';
 
 // ============================================================================
-// MOTION 29 — "FINGERPRINT SCAN · ACCESS GRANTED"
-// 1920×1080 · 60 fps · 1080 frames (18 s) · PERFECT LOOP (frame 1080 ≡ 0)
+// MOTION 30 — "HEALTH MONITOR · ECG PULSE"
+// 1920×1080 · 60 fps · 1200 frames (20 s) · PERFECT LOOP (frame 1200 ≡ 0)
 //
-// Pola "proses → hold → reset" (pelajaran Motion20):
-//   idle (AWAITING FINGERPRINT)
-//   → scan turun LINEAR 1,55–9,05 s, ridge menyala mengikuti garis,
-//     minutiae ter-deteksi satu per satu, % naik 0–100
-//   → MATCH: flash, sidik jari & ring berubah hijau, badge ACCESS GRANTED
-//   → hold hidup → clear-down (wipe naik) → idle ≡ frame 0
-//
-// Sidik jari digambar PROSEDURAL (14 ring whorl ber-noise, celah ridge
-// di-hash) — bebas lisensi, tiap segmen adalah path sendiri.
+// Monitor vital ala ICU, mode SWEEP asli (write-head + erase-gap seperti
+// monitor sungguhan, bukan scroll):
+//   ECG Lead II (PQRST parametrik) · PLETH SpO2 (delay 0,18 s dari R) ·
+//   RESP (napas asimetris)
+// Matematika loop — semua periode membagi 20 s:
+//   detak 72 BPM = 0,8333 s × 24 · sweep 4 s × 5 · napas 4 s × 5 ·
+//   blink LIVE 1 s × 20 · slot angka 2,5 s × 8
+// Puncak R di-sampel EKSAK (titik sampel disisipkan di pusat P/Q/R/S/T)
+// supaya tinggi spike tidak berkedip akibat grid sampling.
 // ============================================================================
 
 // ---------------------------------------------------------------- fonts ----
@@ -70,506 +70,338 @@ const smooth = (a: number, b: number, x: number) => {
   return u * u * (3 - 2 * u);
 };
 const mod = (a: number, n: number) => ((a % n) + n) % n;
-const rnd = (i: number) => {
-  const s = Math.sin(i * 127.1 + 311.7) * 43758.5453;
-  return s - Math.floor(s);
-};
+const g = (p: number, c: number, w: number) =>
+  Math.exp(-((p - c) * (p - c)) / (2 * w * w));
 
-const DUR = 18;
+const DUR = 20;
 const TAU = Math.PI * 2;
 const W = 1920;
 const H = 1080;
-const CX = 960;
-const FP_CY = 470;
-const RING_R = 310;
-const FP_TOP = 250;
-const FP_BOT = 690;
-const FP_H = FP_BOT - FP_TOP;
 
-// warna state
-const CYAN = '#45D6FF';
-const GREEN = '#2BE58A';
+// ---- konstanta monitor ----
+const BPS = 1.2; // 72 BPM
+const BEAT = 1 / BPS; // 0,8333 s
+const SWEEP_P = 4; // periode sweep (s)
+const X0 = 120;
+const X1 = 1500;
+const TW = X1 - X0; // 1380 px
+const SPEED = TW / SWEEP_P; // 345 px/s
+const GAP = 92; // erase gap di depan head
 
-// ---------------------------------------------------------- geometry -------
-// Sidik jari: SVG DARI USER (11 path fill, viewBox 512x536, konten y 6-518),
-// dipakai langsung; filter drop-shadow & clip bawaan SVG dibuang.
-const FP_SCALE = 440 / 512; // tinggi tampil 440 px
-const FP_TF = `translate(${CX - 256 * FP_SCALE} ${FP_CY - 262 * FP_SCALE}) scale(${FP_SCALE})`;
-const FP_PATHS: string[] = [
-  'M367.126 28.293C334.635 13.509 297.259 6 256.022 6C214.486 6 177.089 13.509 144.897 28.315C139.564 30.768 137.217 37.104 139.67 42.459C142.145 47.792 148.438 50.139 153.814 47.686C183.211 34.182 217.601 27.334 256.022 27.334C294.187 27.334 328.577 34.182 358.273 47.707C359.702 48.368 361.217 48.667 362.689 48.667C366.742 48.667 370.625 46.342 372.417 42.416C374.849 37.061 372.481 30.725 367.126 28.293Z',
-  'M412.971 115.845C369.728 71.898 315.435 48.666 255.979 48.666C196.758 48.666 142.507 71.898 99.1148 115.823C94.9758 120.026 95.0188 126.788 99.1998 130.927C103.403 135.066 110.144 135.002 114.283 130.842C153.601 91.035 202.582 70 255.979 70C309.59 70 358.635 91.035 397.76 130.821C399.851 132.933 402.603 134 405.355 134C408.043 134 410.752 132.976 412.843 130.928C417.046 126.789 417.11 120.048 412.971 115.845Z',
-  'M255.979 91.333C240.768 91.333 225.664 93.21 211.072 96.922C205.355 98.373 201.899 104.175 203.349 109.893C204.8 115.61 210.645 119.024 216.32 117.594C229.184 114.33 242.539 112.666 255.979 112.666C344.214 112.666 415.979 184.431 415.979 272.666C415.979 278.554 420.758 283.333 426.646 283.333C432.534 283.333 437.313 278.554 437.313 272.666C437.313 172.677 355.969 91.333 255.979 91.333Z',
-  'M179.521 119.664C176.577 114.608 170.07 112.88 164.929 115.845C151.318 123.802 138.668 133.637 127.382 145.072C94.1656 178.651 75.4566 223.899 74.6886 272.517C74.6036 278.405 79.2966 283.248 85.2056 283.333C85.2486 283.333 85.3126 283.333 85.3766 283.333C91.1796 283.333 95.9366 278.682 96.0216 272.837C96.7046 229.744 113.217 189.701 142.55 160.048C152.534 149.936 163.691 141.275 175.702 134.256C180.779 131.291 182.486 124.763 179.521 119.664Z',
-  'M360.513 181.637C334.102 151.365 296.001 134 255.979 134C218.774 134 183.894 148.592 157.739 175.067C131.67 201.392 117.334 236.998 117.334 275.846C117.398 298.801 110.23 326.321 97.3873 352.753L91.3923 363.42C88.5123 368.561 90.3253 375.047 95.4673 377.948C97.1313 378.887 98.9233 379.335 100.694 379.335C104.427 379.335 108.054 377.372 109.995 373.895L116.288 362.674C131.029 332.338 138.752 302.301 138.667 275.293C138.667 242.632 150.806 212.381 172.886 190.066C195.03 167.666 224.513 155.335 255.979 155.335C289.835 155.335 322.091 170.034 344.427 195.676C348.288 200.113 355.051 200.561 359.488 196.7C363.926 192.816 364.374 186.075 360.513 181.637Z',
-  'M414.486 395.632L402.454 356.272C395.691 325.403 395.115 295.941 394.753 278.32L394.646 272.667C394.646 256.859 391.979 241.328 386.731 226.502C384.768 220.955 378.731 218.054 373.12 220.017C367.573 221.98 364.672 228.06 366.635 233.628C371.072 246.151 373.312 259.292 373.312 272.945L373.44 278.748C373.824 297.137 374.421 327.921 381.845 361.649L394.048 401.841C395.435 406.449 399.68 409.393 404.267 409.393C405.291 409.393 406.336 409.244 407.382 408.945C413.014 407.216 416.193 401.285 414.486 395.632Z',
-  'M383.361 444.912L373.441 413.147C355.841 358.192 352.556 296.411 351.98 272.667C351.98 219.739 308.908 176.667 255.98 176.667C203.052 176.667 160.001 220.4 160.001 274.523C160.044 285.744 157.974 345.03 112.918 410.011C109.547 414.854 110.763 421.51 115.585 424.859C120.406 428.208 127.084 427.014 130.433 422.192C177.921 353.733 181.398 291.803 181.334 274.181C181.334 232.176 214.827 198.021 255.979 198.021C297.152 198.021 330.646 231.514 330.646 272.944C331.414 303.92 335.361 364.165 353.11 419.611L362.966 451.248C364.395 455.813 368.598 458.736 373.163 458.736C374.208 458.736 375.275 458.587 376.342 458.267C381.974 456.496 385.11 450.523 383.361 444.912Z',
-  'M309.313 272.667C309.313 243.27 285.377 219.334 255.98 219.334C226.583 219.334 202.647 243.27 202.647 273.073C202.775 276.593 205.143 360.39 137.388 448.561C133.804 453.233 134.679 459.932 139.351 463.516C144.044 467.121 150.722 466.204 154.306 461.553C226.69 367.345 224.087 276.102 223.959 272.668C223.959 255.025 238.316 240.668 255.959 240.668C273.602 240.668 287.959 255.025 287.98 272.903C288.279 284.85 288.343 392.626 205.057 500.828C201.473 505.5 202.326 512.199 206.998 515.783C208.961 517.276 211.243 518.002 213.505 518.002C216.705 518.002 219.862 516.573 221.953 513.842C309.867 399.664 309.611 285.104 309.313 272.667Z',
-  'M266.603 272.197C266.326 266.33 261.718 261.658 255.488 262.021C249.621 262.277 245.056 267.248 245.291 273.136C245.291 273.285 245.888 288.901 241.92 313.584C241.003 319.408 244.971 324.891 250.773 325.829C251.349 325.914 251.925 325.957 252.48 325.957C257.621 325.957 262.165 322.224 262.997 316.997C267.35 289.925 266.646 272.901 266.603 272.197Z',
-  'M245.675 348.08C240 346.395 234.091 349.637 232.406 355.269C219.073 400.304 196.886 442.416 166.507 480.474C162.838 485.082 163.584 491.781 168.192 495.471C170.155 497.05 172.501 497.796 174.848 497.796C177.984 497.796 181.077 496.431 183.189 493.785C215.296 453.593 238.741 409.028 252.885 361.348C254.55 355.696 251.329 349.744 245.675 348.08Z',
-  'M349.057 475.888L336.193 435.035C331.073 419.718 326.294 403.526 326.273 403.462C324.993 399.131 321.153 396.081 316.652 395.825C312.044 395.505 307.969 398.15 306.22 402.31C305.985 402.865 282.22 458.737 254.977 501.617C251.82 506.588 253.292 513.18 258.262 516.337C260.033 517.468 262.017 518.001 263.979 518.001C267.52 518.001 270.955 516.252 272.982 513.052C289.473 487.089 304.449 457.244 314.219 436.487C314.774 438.194 315.35 439.922 315.926 441.628L328.705 482.289C330.476 487.9 336.406 491.057 342.081 489.265C347.691 487.493 350.827 481.52 349.057 475.888Z',
-];
-// Minutiae: di-hash dari endpoint path SVG (menempel outline ridge), koordinat viewBox
-const FP_MINU = [
-  {x: 306.2, y: 402.3},
-  {x: 139.4, y: 463.5},
-  {x: 256.0, y: 176.7},
-  {x: 383.4, y: 444.9},
-  {x: 373.3, y: 272.9},
-  {x: 202.6, y: 273.1},
-  {x: 288.0, y: 272.9},
-  {x: 359.5, y: 196.7},
-];
-const fpMX = (x: number) => CX + (x - 256) * FP_SCALE;
-const fpMY = (y: number) => FP_CY + (y - 262) * FP_SCALE;
+const ECG_Y = 390;
+const PLETH_Y = 640;
+const RESP_Y = 840;
 
-// ============================================================================
-// SCENE — dirender 2× (base + bloom)
+const C_ECG = '#3EF29A';
+const C_PLETH = '#38C8FF';
+const C_RESP = '#FFB65C';
+const C_NIBP = '#FF7A6B';
+
+// ---- bentuk gelombang (fase 0..1) ----
+const ecgShape = (p: number) =>
+  0.12 * g(p, 0.16, 0.02) -
+  0.07 * g(p, 0.232, 0.009) +
+  1.0 * g(p, 0.252, 0.011) -
+  0.24 * g(p, 0.272, 0.01) +
+  0.27 * g(p, 0.4, 0.03) +
+  0.03 * g(p, 0.6, 0.05);
+const plethShape = (p: number) => 1.05 * g(p, 0.2, 0.075) + 0.42 * g(p, 0.38, 0.085);
+const respShape = (p: number) => {
+  const q = p < 0.42 ? (p / 0.42) * 0.5 : 0.5 + ((p - 0.42) / 0.58) * 0.5;
+  return 0.5 - 0.5 * Math.cos(TAU * q);
+};
+
+const ecgVal = (t: number) => ecgShape(mod(BPS * t, 1));
+const plethVal = (t: number) => plethShape(mod(BPS * t - 0.216, 1));
+const respVal = (t: number) => respShape(mod(t / 4, 1));
+
+// pusat fitur PQRST (fraksi beat) untuk sampel eksak
+const FEATS = [0.16, 0.232, 0.252, 0.272, 0.4];
+
+// ---- polyline satu segmen trace ----
+// xa..xb (layar), waktu sampel t(x) = tHead − (xHead − x)/SPEED − offset
+const buildSeg = (
+  xa: number,
+  xb: number,
+  xHead: number,
+  T: number,
+  offset: number,
+  val: (t: number) => number,
+  baseY: number,
+  amp: number,
+  exact: boolean
+): string => {
+  if (xb - xa < 4) return '';
+  const txa = T - (xHead - xa) / SPEED - offset;
+  const txb = T - (xHead - xb) / SPEED - offset;
+  const xs: number[] = [];
+  for (let x = xa; x <= xb; x += 3) xs.push(x);
+  if (xs[xs.length - 1] < xb) xs.push(xb);
+  if (exact) {
+    // sisipkan sampel tepat di pusat fitur beat dalam rentang [txa, txb]
+    for (let k = Math.floor(txa * BPS) - 1; k <= Math.ceil(txb * BPS) + 1; k++) {
+      for (const f of FEATS) {
+        const tf = (k + f) * BEAT;
+        if (tf > txa && tf < txb) {
+          xs.push(xHead - (T - offset - tf) * SPEED);
+        }
+      }
+    }
+    xs.sort((a, b) => a - b);
+  }
+  const pts: string[] = [];
+  for (const x of xs) {
+    const t = T - (xHead - x) / SPEED - offset;
+    pts.push(`${x.toFixed(1)},${(baseY - amp * val(t)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+
+// ---- slot angka vital (8 slot × 2,5 s, kembali ke awal → loop) ----
+const HR_SLOTS = [72, 72, 71, 73, 72, 74, 72, 71];
+const SPO2_SLOTS = [98, 98, 97, 98, 98, 99, 98, 98];
+
 // ============================================================================
 const Scene: React.FC<{T: number; layer: string}> = ({T, layer}) => {
-  // ---- envelope fase ----
-  const scanFrac = clamp01((T - 1.55) / 7.5); // LINEAR murni (temuan Motion20)
-  const opScan = smooth(1.5, 2.1, T) * (1 - smooth(8.95, 9.35, T));
-  const opStatusScan = smooth(1.9, 2.5, T) * (1 - smooth(8.95, 9.4, T));
-  const opIdle = 1 - smooth(1.0, 1.7, T) + smooth(17.0, 17.7, T);
-  const grantW = smooth(9.25, 9.85, T) * (1 - smooth(15.5, 16.6, T));
-  const flash = smooth(9.2, 9.45, T) * (1 - smooth(9.5, 10.2, T));
-  const opBadge = smooth(9.7, 10.25, T) * (1 - smooth(15.3, 16.1, T));
-  const checkDraw = smooth(9.85, 10.35, T);
-  const clearW = smooth(15.6, 16.8, T);
-  const litFrac = scanFrac * (1 - clearW);
-  const scanY = FP_TOP - 12 + (FP_H + 24) * scanFrac;
-  const edgeY = FP_TOP - 12 + (FP_H + 24) * litFrac; // tepi menyala (turun lalu ditarik naik)
-  const bandOp =
-    opScan + 0.5 * smooth(15.6, 16.0, T) * (1 - smooth(16.7, 17.05, T));
-  const pct = Math.round(scanFrac * 100);
-  const energy = clamp01(0.12 + 0.5 * opScan + 0.85 * grantW + 0.6 * flash);
+  const uid = layer;
+  const xHead = X0 + TW * (mod(T, SWEEP_P) / SWEEP_P);
 
-  // ---- ambient ----
-  const camScale = 1 + 0.006 * Math.sin((TAU * T) / DUR);
-  const bracketB = 1 + 0.012 * Math.sin((TAU * (6 * T)) / DUR);
-  const ringRot = (360 * T) / DUR;
-  const dotPh = mod(T, 0.75) / 0.75;
-  const dotOp = (i: number) =>
-    smooth(0.05 + 0.2 * i, 0.18 + 0.2 * i, dotPh) * (1 - smooth(0.78, 0.96, dotPh));
+  // detak & pompa jantung
+  const bp = mod(BPS * T, 1);
+  const pump = g(bp, 0.26, 0.045) + 0.45 * g(bp, 0.43, 0.06);
+  const heartScale = 1 + 0.14 * pump;
+  const beatGlow = 0.45 + 0.55 * g(bp, 0.26, 0.06);
 
-  const ambBlobs = [
-    {
-      x: 380 + 120 * Math.sin((TAU * T) / DUR + 0.9),
-      y: 330 + 80 * Math.sin((TAU * 2 * T) / DUR + 2.2),
-      r: 600,
-      c: '30,110,220',
-      a: 0.13,
-    },
-    {
-      x: 1560 + 110 * Math.sin((TAU * 2 * T) / DUR + 4.5),
-      y: 420 + 100 * Math.sin((TAU * T) / DUR + 1.4),
-      r: 560,
-      c: '30,210,255',
-      a: 0.09,
-    },
-    {
-      x: 1120 + 140 * Math.sin((TAU * T) / DUR + 3.3),
-      y: 950 + 60 * Math.sin((TAU * 3 * T) / DUR + 5.2),
-      r: 620,
-      c: '20,200,150',
-      a: 0.08,
-    },
+  const slot = Math.floor(mod(T / 2.5, 8));
+  const hr = HR_SLOTS[slot];
+  const spo2 = SPO2_SLOTS[slot];
+
+  const liveBlink = 0.3 + 0.7 * smooth(0.35, 0.65, 0.5 + 0.5 * Math.sin(TAU * (20 * T) / DUR));
+  const camScale = 1 + 0.004 * Math.sin((TAU * T) / DUR);
+
+  // ---- segmen trace: [X0, xHead] sweep kini · [xHead+GAP, X1] sweep lalu ----
+  type TraceDef = {
+    val: (t: number) => number;
+    y: number;
+    amp: number;
+    col: string;
+    exact: boolean;
+    w: number;
+  };
+  const traces: TraceDef[] = [
+    {val: ecgVal, y: ECG_Y, amp: 150, col: C_ECG, exact: true, w: 3.4},
+    {val: plethVal, y: PLETH_Y, amp: 55, col: C_PLETH, exact: false, w: 3.2},
+    {val: respVal, y: RESP_Y, amp: 38, col: C_RESP, exact: false, w: 3.0},
   ];
 
-  // ---- partikel data naik (koridor 270 px, v=15 px/s → 15·18=270 eksak) ----
-  const partOp = smooth(1.8, 2.6, T) * (1 - smooth(16.2, 16.9, T));
-  const parts: {x: number; y: number; r: number; op: number}[] = [];
-  for (let i = 0; i < 16; i++) {
-    const x0 = CX - 150 + rnd(i + 21) * 300 + 14 * Math.sin((TAU * (2 + Math.floor(rnd(i + 61) * 2)) * T) / DUR + rnd(i + 91) * TAU);
-    const y0 = FP_TOP + rnd(i + 121) * 270;
-    const y = FP_TOP - 10 + mod(y0 - 15 * T - FP_TOP, 270);
-    const fade = Math.sin((Math.PI * (y - (FP_TOP - 10))) / 290);
-    parts.push({
-      x: x0,
-      y,
-      r: 1.4 + 2 * rnd(i + 151),
-      op: (0.14 + 0.3 * rnd(i + 181)) * partOp * Math.max(0, fade),
-    });
-  }
-
-  const monoStyle: React.CSSProperties = {
+  const monoS: React.CSSProperties = {
     fontFamily: "'MxMono', monospace",
     position: 'absolute',
-    color: '#9FC2E8',
   };
 
-  const uid = layer; // prefix id unik per salinan (base/bloom) — hindari bentrok defs
+  const vitalBlock = (
+    top: number,
+    label: string,
+    value: string,
+    unit: string,
+    col: string,
+    size: number,
+    glow: number
+  ) => (
+    <div style={{position: 'absolute', right: 90, top, width: 330, textAlign: 'right'}}>
+      <div
+        style={{
+          fontFamily: "'MxMono', monospace",
+          fontSize: 22,
+          letterSpacing: '0.24em',
+          color: '#7E9BC4',
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 10}}>
+        <span
+          style={{
+            fontFamily: "'MxMono', monospace",
+            fontSize: size,
+            color: col,
+            lineHeight: 1,
+            textShadow: `0 0 ${22 + 18 * glow}px ${col}66`,
+          }}
+        >
+          {value}
+        </span>
+        <span style={{fontFamily: "'MxMono', monospace", fontSize: 22, color: '#7E9BC4'}}>{unit}</span>
+      </div>
+    </div>
+  );
 
   return (
     <AbsoluteFill style={{background: 'transparent'}}>
-      {/* latar */}
+      {/* latar monitor */}
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1400px 900px at 50% 40%, #081226 0%, #050B1B 52%, #030710 100%)',
+            'radial-gradient(1500px 950px at 46% 40%, #071120 0%, #050B16 55%, #03060D 100%)',
         }}
       />
-      {ambBlobs.map((bl, i) => (
-        <div
-          key={`ab${i}`}
-          style={{
-            position: 'absolute',
-            left: bl.x - bl.r,
-            top: bl.y - bl.r,
-            width: bl.r * 2,
-            height: bl.r * 2,
-            background: `radial-gradient(circle, rgba(${bl.c},${bl.a}) 0%, rgba(${bl.c},${
-              bl.a * 0.45
-            }) 34%, rgba(${bl.c},0) 68%)`,
-          }}
-        />
-      ))}
 
       <AbsoluteFill style={{transform: `scale(${camScale})`}}>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{position: 'absolute'}}>
           <defs>
-            <pattern id={`${uid}dotg`} width="44" height="44" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.1" fill="#7FD4FF" opacity="0.05" />
+            <pattern id={`${uid}gridS`} width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#2AF598" strokeWidth="0.7" opacity="0.05" />
             </pattern>
-            <clipPath id={`${uid}litClip`}>
-              <rect x={CX - 260} y={FP_TOP - 30} width={520} height={Math.max(0, edgeY - (FP_TOP - 30))} />
-            </clipPath>
-            <clipPath id={`${uid}bandClip`}>
-              <rect x={CX - 260} y={edgeY - 17} width={520} height={34} />
-            </clipPath>
-            <linearGradient id={`${uid}scanG`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={CYAN} stopOpacity="0" />
-              <stop offset="18%" stopColor={CYAN} stopOpacity="0.55" />
-              <stop offset="50%" stopColor="#DFF6FF" stopOpacity="0.95" />
-              <stop offset="82%" stopColor={CYAN} stopOpacity="0.55" />
-              <stop offset="100%" stopColor={CYAN} stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id={`${uid}wingG`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={CYAN} stopOpacity="0" />
-              <stop offset="50%" stopColor={CYAN} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={CYAN} stopOpacity="0" />
-            </linearGradient>
-            <radialGradient id={`${uid}glowC`}>
-              <stop offset="0%" stopColor={CYAN} stopOpacity="0.16" />
-              <stop offset="60%" stopColor={CYAN} stopOpacity="0.05" />
-              <stop offset="100%" stopColor={CYAN} stopOpacity="0" />
+            <pattern id={`${uid}gridL`} width="120" height="120" patternUnits="userSpaceOnUse">
+              <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#2AF598" strokeWidth="1" opacity="0.09" />
+            </pattern>
+            <radialGradient id={`${uid}colGlow`}>
+              <stop offset="0%" stopColor="#38C8FF" stopOpacity="0.07" />
+              <stop offset="100%" stopColor="#38C8FF" stopOpacity="0" />
             </radialGradient>
-            <radialGradient id={`${uid}glowG`}>
-              <stop offset="0%" stopColor={GREEN} stopOpacity="0.16" />
-              <stop offset="60%" stopColor={GREEN} stopOpacity="0.05" />
-              <stop offset="100%" stopColor={GREEN} stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id={`${uid}flashG`}>
-              <stop offset="0%" stopColor="#CFFFE8" stopOpacity="0" />
-              <stop offset="70%" stopColor={GREEN} stopOpacity="0.5" />
-              <stop offset="100%" stopColor={GREEN} stopOpacity="0" />
-            </radialGradient>
-            <filter id={`${uid}soft`} x="-60%" y="-60%" width="220%" height="220%">
-              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#8FE8FF" floodOpacity="0.5" />
-            </filter>
           </defs>
 
-          {/* grid titik halus */}
-          <rect x={0} y={0} width={W} height={H} fill={`url(#${uid}dotg)`} />
+          {/* grid medis */}
+          <rect x={0} y={150} width={W} height={790} fill={`url(#${uid}gridS)`} />
+          <rect x={0} y={150} width={W} height={790} fill={`url(#${uid}gridL)`} />
+          {/* glow lembut kolom vital */}
+          <circle cx={1720} cy={520} r={420} fill={`url(#${uid}colGlow)`} />
+          {/* pembatas kolom */}
+          <line x1={1540} y1={200} x2={1540} y2={900} stroke="#9FC4FF" strokeWidth={1} opacity={0.12} />
 
-          {/* halo lembut di belakang sidik jari (crossfade cyan→hijau) */}
-          <circle cx={CX} cy={FP_CY} r={330} fill={`url(#${uid}glowC)`} opacity={(0.5 + 0.5 * energy) * (1 - grantW)} />
-          <circle cx={CX} cy={FP_CY} r={330} fill={`url(#${uid}glowG)`} opacity={(0.5 + 0.5 * energy) * grantW} />
-
-          {/* partikel data */}
-          {parts.map((p, i) => (
-            <circle key={`p${i}`} cx={p.x} cy={p.y} r={p.r} fill="#9FE2FF" opacity={p.op} />
-          ))}
-
-          {/* ================= RING HUD ================= */}
-          <g transform={`rotate(${ringRot} ${CX} ${FP_CY})`}>
-            <circle
-              cx={CX}
-              cy={FP_CY}
-              r={RING_R}
-              fill="none"
-              stroke="#8FD0FF"
-              strokeWidth={1.6}
-              strokeDasharray="3 24.06"
-              opacity={0.28}
-            />
-          </g>
-          <g transform={`rotate(${-2 * ringRot} ${CX} ${FP_CY})`}>
-            <circle
-              cx={CX}
-              cy={FP_CY}
-              r={RING_R + 16}
-              fill="none"
-              stroke="#8FD0FF"
-              strokeWidth={1.2}
-              strokeDasharray="130 1918.6"
-              strokeLinecap="round"
-              opacity={0.16}
-            />
-          </g>
-          <circle cx={CX} cy={FP_CY} r={252} fill="none" stroke="#FFFFFF" strokeWidth={1} opacity={0.05} />
-
-          {/* progress arc (cyan → hijau saat granted) */}
-          {(['c', 'g'] as const).map((m) => {
-            const frac = scanFrac * (1 - clearW);
-            const C = TAU * 296;
-            return (
-              <circle
-                key={`pa${m}`}
-                cx={CX}
-                cy={FP_CY}
-                r={296}
-                fill="none"
-                stroke={m === 'c' ? CYAN : GREEN}
-                strokeWidth={3.4}
-                strokeLinecap="round"
-                strokeDasharray={`${C * frac} ${C * (1 - frac)}`}
-                strokeDashoffset={C * 0.25}
-                opacity={(m === 'c' ? 1 - grantW : grantW) * (0.25 + 0.75 * frac) * 0.9}
-              />
+          {/* ================= TRACES (sweep mode) ================= */}
+          {traces.map((tr, ti) => {
+            const cur = buildSeg(X0, xHead, xHead, T, 0, tr.val, tr.y, tr.amp, tr.exact);
+            const tailA = Math.max(X0, xHead - 120);
+            const tail = buildSeg(tailA, xHead, xHead, T, 0, tr.val, tr.y, tr.amp, tr.exact);
+            const old = buildSeg(
+              Math.min(xHead + GAP, X1),
+              X1,
+              xHead,
+              T,
+              SWEEP_P,
+              tr.val,
+              tr.y,
+              tr.amp,
+              tr.exact
             );
-          })}
-
-          {/* corner brackets target */}
-          <g
-            opacity={0.3 + 0.25 * energy}
-            transform={`translate(${CX} ${FP_CY}) scale(${bracketB}) translate(${-CX} ${-FP_CY})`}
-            stroke="#9FD8FF"
-            strokeWidth={3}
-            fill="none"
-            strokeLinecap="round"
-          >
-            {[
-              [CX - 205, FP_TOP - 28, 1, 1],
-              [CX + 205, FP_TOP - 28, -1, 1],
-              [CX - 205, FP_BOT + 28, 1, -1],
-              [CX + 205, FP_BOT + 28, -1, -1],
-            ].map(([x, y, sx, sy], i) => (
-              <path key={`br${i}`} d={`M ${x} ${(y as number) + (sy as number) * 34} L ${x} ${y} L ${(x as number) + (sx as number) * 34} ${y}`} />
-            ))}
-          </g>
-
-          {/* ================= SIDIK JARI (SVG user) ================= */}
-          {/* lapisan dasar redup */}
-          <g transform={FP_TF} fill="#22456A" opacity={0.62 + 0.1 * energy}>
-            {FP_PATHS.map((d, i) => (
-              <path key={`d${i}`} d={d} />
-            ))}
-          </g>
-          {/* lapisan menyala (clip mengikuti tepi scan) — cyan & hijau crossfade */}
-          <g clipPath={`url(#${uid}litClip)`}>
-            <g filter={`url(#${uid}soft)`}>
-              <g transform={FP_TF} fill={CYAN} opacity={0.92 * (1 - grantW)}>
-                {FP_PATHS.map((d, i) => (
-                  <path key={`lc${i}`} d={d} />
-                ))}
-              </g>
-              <g transform={FP_TF} fill={GREEN} opacity={0.95 * grantW}>
-                {FP_PATHS.map((d, i) => (
-                  <path key={`lg${i}`} d={d} />
-                ))}
-              </g>
-            </g>
-          </g>
-          {/* pita panas di tepi scan */}
-          <g clipPath={`url(#${uid}bandClip)`} opacity={bandOp}>
-            <g transform={FP_TF} fill="#EAFBFF">
-              {FP_PATHS.map((d, i) => (
-                <path key={`h${i}`} d={d} />
-              ))}
-            </g>
-          </g>
-
-          {/* minutiae markers */}
-          {FP_MINU.map((mn, i) => {
-            const mx = fpMX(mn.x);
-            const my = fpMY(mn.y);
-            const reveal = smooth(my - 8, my + 8, scanY) * (1 - smooth(15.4, 16.3, T));
-            const pop = 1 + 0.9 * (1 - smooth(my - 2, my + 26, scanY));
-            const col = grantW > 0.5 ? '#EAFFF4' : CYAN;
+            const headY = tr.y - tr.amp * tr.val(T);
             return (
-              <g key={`mn${i}`} opacity={reveal * 0.9} transform={`translate(${mx} ${my}) scale(${pop})`}>
-                <circle r={7.5} fill="none" stroke={col} strokeWidth={1.8} />
-                <path d="M -12 0 L -7.5 0 M 7.5 0 L 12 0 M 0 -12 L 0 -7.5 M 0 7.5 L 0 12" stroke={col} strokeWidth={1.8} />
+              <g key={`tr${ti}`} fill="none" strokeLinejoin="round" strokeLinecap="round">
+                {old ? <polyline points={old} stroke={tr.col} strokeWidth={tr.w - 0.4} opacity={0.4} /> : null}
+                {cur ? <polyline points={cur} stroke={tr.col} strokeWidth={tr.w} opacity={0.85} /> : null}
+                {tail ? <polyline points={tail} stroke={tr.col} strokeWidth={tr.w + 1.2} opacity={1} /> : null}
+                {/* write head */}
+                <circle cx={xHead} cy={headY} r={10} fill={tr.col} opacity={0.22} />
+                <circle cx={xHead} cy={headY} r={4.2} fill="#F2FFF9" opacity={0.95} />
               </g>
             );
           })}
-
-          {/* ================= SCAN LINE ================= */}
-          <g opacity={opScan}>
-            <rect x={260} y={scanY - 1} width={1400} height={2} fill={`url(#${uid}wingG)`} />
-            <rect x={CX - 300} y={scanY - 2} width={600} height={4} fill={`url(#${uid}scanG)`} />
-            <rect x={CX - 300} y={scanY - 26} width={600} height={52} fill={`url(#${uid}scanG)`} opacity={0.18} />
-            {/* readout % mengikuti scan line */}
-          </g>
-
-          {/* flash granted */}
-          <circle cx={CX} cy={FP_CY} r={140 + 420 * (1 - Math.pow(1 - clamp01((T - 9.2) / 1.0), 3))} fill="none" stroke={GREEN} strokeWidth={2.5 * (1 - clamp01((T - 9.2) / 1.0))} opacity={flash * 0.8} />
-          <circle cx={CX} cy={FP_CY} r={330} fill={`url(#${uid}flashG)`} opacity={flash * 0.55} />
         </svg>
 
-        {/* ---- readout % (HTML, mengikuti scanY) ---- */}
-        <div
-          style={{
-            ...monoStyle,
-            left: CX + 330,
-            top: scanY - 16,
-            fontSize: 30,
-            color: '#CFEFFF',
-            opacity: opScan,
-            textShadow: '0 0 18px rgba(69,214,255,0.6)',
-          }}
-        >
-          {pct}%
+        {/* ---- label trace ---- */}
+        <div style={{...monoS, left: X0, top: 216, fontSize: 22, letterSpacing: '0.26em', color: C_ECG, opacity: 0.75}}>
+          ECG · LEAD II
         </div>
-        <div
-          style={{
-            position: 'absolute',
-            left: CX + 306,
-            top: scanY - 1,
-            width: 18,
-            height: 2,
-            background: CYAN,
-            opacity: opScan * 0.7,
-          }}
-        />
-
-        {/* ---- caption atas ---- */}
-        <div
-          style={{
-            ...monoStyle,
-            width: '100%',
-            textAlign: 'center',
-            top: 74,
-            fontSize: 25,
-            letterSpacing: '0.5em',
-            paddingLeft: '0.5em',
-            color: '#8FB4DC',
-            opacity: 0.66 + 0.05 * Math.sin((TAU * 5 * T) / DUR),
-          }}
-        >
-          BIOMETRIC AUTHENTICATION
+        <div style={{...monoS, left: X0, top: 556, fontSize: 22, letterSpacing: '0.26em', color: C_PLETH, opacity: 0.72}}>
+          SpO2 · PLETH
+        </div>
+        <div style={{...monoS, left: X0, top: 762, fontSize: 22, letterSpacing: '0.26em', color: C_RESP, opacity: 0.72}}>
+          RESP
         </div>
 
-        {/* ---- status bawah (sekuensial, tanpa tumpang-tindih) ---- */}
-        {/* idle */}
-        <div
-          style={{
-            ...monoStyle,
-            width: '100%',
-            textAlign: 'center',
-            top: 906,
-            fontSize: 27,
-            letterSpacing: '0.34em',
-            paddingLeft: '0.34em',
-            color: '#7E9BC4',
-            opacity: opIdle * 0.85,
-          }}
-        >
-          AWAITING FINGERPRINT
-        </div>
-        {/* scanning */}
-        <div
-          style={{
-            position: 'absolute',
-            width: '100%',
-            top: 906,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: 13,
-            opacity: opStatusScan,
-          }}
-        >
-          <span
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: 5,
-              background: CYAN,
-              boxShadow: `0 0 13px ${CYAN}`,
-            }}
-          />
-          <span
-            style={{
-              fontFamily: "'MxMono', monospace",
-              fontSize: 27,
-              letterSpacing: '0.34em',
-              color: '#D6EFFF',
-            }}
-          >
-            SCANNING FINGERPRINT
-          </span>
-          <span style={{display: 'inline-flex', gap: 6}}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={`sd${i}`}
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  background: '#9FE2FF',
-                  opacity: dotOp(i),
-                }}
-              />
-            ))}
-          </span>
-        </div>
-        {/* badge granted */}
-        <div
-          style={{
-            position: 'absolute',
-            width: '100%',
-            top: 888,
-            display: 'flex',
-            justifyContent: 'center',
-            opacity: opBadge,
-            transform: `translateY(${12 * (1 - smooth(9.7, 10.25, T))}px)`,
-          }}
-        >
+        {/* ---- kolom vital kanan ---- */}
+        {/* HR + jantung */}
+        <div style={{position: 'absolute', right: 90, top: 236, width: 330, textAlign: 'right'}}>
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 15,
-              padding: '15px 34px',
-              borderRadius: 46,
-              border: `1.6px solid rgba(43,229,138,0.65)`,
-              background: 'rgba(18,60,42,0.4)',
-              boxShadow: '0 0 34px rgba(43,229,138,0.3), inset 0 0 22px rgba(43,229,138,0.12)',
+              fontFamily: "'MxMono', monospace",
+              fontSize: 22,
+              letterSpacing: '0.24em',
+              color: '#7E9BC4',
+              marginBottom: 2,
             }}
           >
-            <svg width={30} height={30} viewBox="-15 -15 30 30">
-              <circle r={13.4} fill="none" stroke={GREEN} strokeWidth={2} opacity={0.9} />
-              {(() => {
-                const L = 26;
-                return (
-                  <path
-                    d="M -6.5 0.5 L -1.5 5.5 L 7.5 -5.5"
-                    fill="none"
-                    stroke="#CFFFE4"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray={L}
-                    strokeDashoffset={L * (1 - checkDraw)}
-                  />
-                );
-              })()}
+            HR
+          </div>
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18}}>
+            <svg
+              width={56}
+              height={56}
+              viewBox="-28 -28 56 56"
+              style={{transform: `scale(${heartScale})`, overflow: 'visible'}}
+            >
+              <path
+                d="M 0 16 C -22 2 -20 -14 -10 -16 C -4 -17.4 0 -12 0 -8.5 C 0 -12 4 -17.4 10 -16 C 20 -14 22 2 0 16 Z"
+                fill={C_ECG}
+                opacity={0.28 + 0.6 * beatGlow}
+              />
             </svg>
             <span
               style={{
-                fontFamily: "'MxInter', sans-serif",
-                fontWeight: 700,
-                fontSize: 29,
-                letterSpacing: '0.3em',
-                color: '#DCFFEC',
-                textShadow: '0 0 20px rgba(43,229,138,0.55)',
+                fontFamily: "'MxMono', monospace",
+                fontSize: 130,
+                color: C_ECG,
+                lineHeight: 1,
+                textShadow: `0 0 ${24 + 26 * beatGlow}px ${C_ECG}77`,
               }}
             >
-              ACCESS GRANTED
+              {hr}
             </span>
+            <span style={{fontFamily: "'MxMono', monospace", fontSize: 22, color: '#7E9BC4'}}>bpm</span>
           </div>
+        </div>
+        {vitalBlock(492, 'SpO2', `${spo2}`, '%', C_PLETH, 92, 0.4)}
+        {vitalBlock(688, 'RESP', '15', 'rpm', C_RESP, 68, 0.3)}
+        {vitalBlock(838, 'NIBP', '120/80', 'mmHg', C_NIBP, 56, 0.25)}
+
+        {/* ---- chrome atas & bawah ---- */}
+        <div
+          style={{
+            position: 'absolute',
+            left: X0,
+            top: 76,
+            fontFamily: "'MxInter', sans-serif",
+            fontWeight: 700,
+            fontSize: 27,
+            letterSpacing: '0.42em',
+            color: '#C9DCF5',
+            opacity: 0.85,
+          }}
+        >
+          VITAL SIGNS MONITOR
+        </div>
+        <div style={{position: 'absolute', right: 90, top: 80, display: 'flex', alignItems: 'center', gap: 12}}>
+          <span
+            style={{
+              width: 11,
+              height: 11,
+              borderRadius: 6,
+              background: '#4CFF9A',
+              boxShadow: '0 0 14px #4CFF9A',
+              opacity: liveBlink,
+              display: 'inline-block',
+            }}
+          />
+          <span style={{fontFamily: "'MxMono', monospace", fontSize: 24, letterSpacing: '0.3em', color: '#B8E8CF'}}>
+            LIVE
+          </span>
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: X0,
+            right: 90,
+            top: 934,
+            borderTop: '1px solid rgba(159,196,255,0.14)',
+          }}
+        />
+        <div style={{...monoS, left: X0, top: 956, fontSize: 20, letterSpacing: '0.22em', color: '#5F7AA3'}}>
+          MONITORING · ADULT
+        </div>
+        <div style={{...monoS, right: 90, top: 956, fontSize: 20, letterSpacing: '0.22em', color: '#5F7AA3', textAlign: 'right' as const}}>
+          SWEEP 25 mm/s
         </div>
       </AbsoluteFill>
     </AbsoluteFill>
@@ -581,28 +413,27 @@ export const Motion: React.FC = () => {
   useEmbeddedFonts();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  // mod dalam DETIK: frame 1080 → mod(18,18) = 0 EKSAK (bit-identik dengan
-  // frame 0, bebas noise ULP sin(2πk)) — loop tertutup secara konstruksi
+  // mod dalam DETIK: frame 1200 → mod(20,20) = 0 EKSAK — loop by construction
   const T = mod(frame / fps, DUR);
 
   return (
-    <AbsoluteFill style={{background: '#030710'}}>
+    <AbsoluteFill style={{background: '#03060D'}}>
       <Scene T={T} layer="a" />
       {/* bloom global */}
-      <AbsoluteFill style={{filter: 'blur(26px)', opacity: 0.3, mixBlendMode: 'screen'}}>
+      <AbsoluteFill style={{filter: 'blur(24px)', opacity: 0.3, mixBlendMode: 'screen'}}>
         <Scene T={T} layer="b" />
       </AbsoluteFill>
       {/* vignette */}
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(1500px 1000px at 50% 44%, rgba(2,4,10,0) 50%, rgba(2,4,10,0.6) 100%)',
+            'radial-gradient(1500px 1000px at 50% 46%, rgba(2,4,10,0) 52%, rgba(2,4,10,0.55) 100%)',
         }}
       />
       <AbsoluteFill
         style={{
           background:
-            'linear-gradient(180deg, rgba(2,4,10,0.28) 0%, rgba(2,4,10,0) 14%, rgba(2,4,10,0) 80%, rgba(2,4,10,0.4) 100%)',
+            'linear-gradient(180deg, rgba(2,4,10,0.25) 0%, rgba(2,4,10,0) 13%, rgba(2,4,10,0) 84%, rgba(2,4,10,0.35) 100%)',
         }}
       />
     </AbsoluteFill>
